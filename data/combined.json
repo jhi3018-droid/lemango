@@ -1,0 +1,1374 @@
+[
+  {
+    "no": 1,
+    "brand": "르망고",
+    "productCode": "LSWON16266707",
+    "sampleNo": "26SS0128",
+    "nameKr": "코트다쥐르 쉘",
+    "nameEn": "Côte d'Azur Shell",
+    "colorKr": "",
+    "colorEn": "",
+    "costPrice": 57000,
+    "salePrice": 150000,
+    "comment": "이번 시즌 컨셉인 프렌치 리비에라의 메인 제품인 코트다쥐르 쉘은 깊은 네이비 컬러를 배경으로 바닷속 보물들이 빛나는 모습을 형상화했습니다. 화려한 패턴이지만 톤다운된 베이스 덕분에 차분하고 우아한 분위기를 자아내며, 수영장 물속에서 더욱 선명하게 돋보입니다.",
+    "sizeSpec": "s\n어깨 44cm / 허리 22cm\nm\n어깨 44cm / 허리 22cm",
+    "guide": "보통\n노멀컷\n없음\n없음\n없음",
+    "modelSize": "M",
+    "material": "겉감 - 폴리에스터 70% 폴리우레탄 30% 안감 - 폴리에스터 90% 폴리우레탄 10%",
+    "fabricType": "포일",
+    "washMethod": "",
+    "type": "onepiece",
+    "backStyle": "Crossed X",
+    "legCut": "normal cut",
+    "madeMonth": "2026년 2월",
+    "madeBy": "르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "design": null,
+      "shoot": null
+    },
+    "stock": {
+      "XS": 5,
+      "S": 50,
+      "M": 32,
+      "L": 32,
+      "XL": 18
+    },
+    "sales": {
+      "공홈": 37,
+      "GS": 8,
+      "29cm": 12,
+      "W쇼핑": 0,
+      "기타": 0
+    },
+    "registDate": "2026-02-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 2,
+    "brand": "르망고",
+    "productCode": "LSWON15986708",
+    "sampleNo": "26SS0105",
+    "nameKr": "쟈뎅 수마린",
+    "nameEn": "Azure Coral",
+    "colorKr": "",
+    "colorEn": "",
+    "costPrice": 57000,
+    "salePrice": 150000,
+    "comment": "리비에라의 상징인 푸른 바다(Cote d'Azur)와 수영복 속 산호 패턴의 조화를 강조했습니다. 마치 맑은 바닷속 비밀 정원(쟈뎅 수마린)을 보는 듯한 우아함을 선사합니다.",
+    "sizeSpec": "",
+    "guide": "보통\n노멀컷\n없음\n없음\n없음",
+    "modelSize": "M",
+    "material": "겉감 - 폴리에스터 70% 폴리우레탄 30% 안감 - 폴리에스터 90% 폴리우레탄 10%",
+    "fabricType": "포일",
+    "washMethod": "",
+    "type": "onepiece",
+    "backStyle": "Ballet back",
+    "legCut": "normal cut",
+    "madeMonth": "2026년 2월",
+    "madeBy": "르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "design": null,
+      "shoot": null
+    },
+    "stock": {
+      "XS": 10,
+      "S": 42,
+      "M": 41,
+      "L": 18,
+      "XL": 9
+    },
+    "sales": {
+      "공홈": 48,
+      "GS": 1,
+      "29cm": 0,
+      "W쇼핑": 0,
+      "기타": 1
+    },
+    "registDate": "2026-02-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 3,
+    "brand": "르망고",
+    "productCode": "LSWON16156709",
+    "sampleNo": "26SS0135",
+    "nameKr": "마르세유 플로",
+    "nameEn": "Marseille Flot",
+    "colorKr": "피치",
+    "colorEn": "Peach",
+    "costPrice": 67640,
+    "salePrice": 178000,
+    "comment": "생동감 넘치는 오렌지 컬러의 플라워 패턴이 얼굴 톤을 한 층 밝혀주며 활기찬 에너지를 전달합니다. 은은하고 잔잔한 패턴이 고급스러움을 느낄수 있습니다.",
+    "sizeSpec": "",
+    "guide": "보통\n노멀컷\n없음\n없음\n없음",
+    "modelSize": "M",
+    "material": "겉감 - 폴리에스터 70% 폴리우레탄 30% 안감 - 폴리에스터 90% 폴리우레탄 10%",
+    "fabricType": "포일",
+    "washMethod": "",
+    "type": "onepiece",
+    "backStyle": "Double cross",
+    "legCut": "normal cut",
+    "madeMonth": "2026년 2월",
+    "madeBy": "르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "design": null,
+      "shoot": null
+    },
+    "stock": {
+      "XS": 17,
+      "S": 21,
+      "M": 42,
+      "L": 37,
+      "XL": 16
+    },
+    "sales": {
+      "공홈": 5,
+      "GS": 58,
+      "29cm": 17,
+      "W쇼핑": 0,
+      "기타": 4
+    },
+    "registDate": "2026-02-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 4,
+    "brand": "르망고",
+    "productCode": "LSWON16156710",
+    "sampleNo": "26SS0133",
+    "nameKr": "마르세유 플로",
+    "nameEn": "Marseille Flot",
+    "colorKr": "민트",
+    "colorEn": "Mint",
+    "costPrice": 63840,
+    "salePrice": 168000,
+    "comment": "아래에서 위로 길게 뻗어 올라가는 선들이 마치 들판에 꽃과 풀이 우거진 모습을 형상화한 듯하며, 역동적이고 시원한 분위기를 자아냅니다",
+    "sizeSpec": "",
+    "guide": "보통\n노멀컷\n없음\n없음\n없음",
+    "modelSize": "M",
+    "material": "겉감 - 폴리에스터 70% 폴리우레탄 30% 안감 - 폴리에스터 90% 폴리우레탄 10%",
+    "fabricType": "포일",
+    "washMethod": "",
+    "type": "onepiece",
+    "backStyle": "Double Cross",
+    "legCut": "normal cut",
+    "madeMonth": "2026년 2월",
+    "madeBy": "르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "design": null,
+      "shoot": null
+    },
+    "stock": {
+      "XS": 17,
+      "S": 20,
+      "M": 55,
+      "L": 19,
+      "XL": 16
+    },
+    "sales": {
+      "공홈": 8,
+      "GS": 5,
+      "29cm": 29,
+      "W쇼핑": 18,
+      "기타": 18
+    },
+    "registDate": "2026-02-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 5,
+    "brand": "르망고",
+    "productCode": "LSWON16106711",
+    "sampleNo": "26SS0132",
+    "nameKr": "블라썸 웨이브-(페이크 타이)(5711)",
+    "nameEn": "Blossom Wave-(Fake Tie)(5711)",
+    "colorKr": "오렌지민트",
+    "colorEn": "Orange Mint",
+    "costPrice": 63840,
+    "salePrice": 168000,
+    "comment": "비비드한 오렌지 플라워와 차분한 민트 컬러가 만나 시선을 사로잡는 경쾌한 무드를 완성합니다. 수영장에서도, 해변에서도 당신을 가장 돋보이게 해줄 '인생 사진' 보장 아이템이에요.",
+    "sizeSpec": "",
+    "guide": "보통\n미들컷\n없음\n없음\n없음",
+    "modelSize": "M",
+    "material": "겉감 - 폴리에스터 70% 폴리우레탄 30% 안감 - 폴리에스터 90% 폴리우레탄 10%",
+    "fabricType": "포일",
+    "washMethod": "",
+    "type": "onepiece",
+    "backStyle": "Fake Tie",
+    "legCut": "middle\ncut",
+    "madeMonth": "2026년 2월",
+    "madeBy": "르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "design": null,
+      "shoot": null
+    },
+    "stock": {
+      "XS": 7,
+      "S": 29,
+      "M": 26,
+      "L": 22,
+      "XL": 13
+    },
+    "sales": {
+      "공홈": 53,
+      "GS": 0,
+      "29cm": 0,
+      "W쇼핑": 0,
+      "기타": 0
+    },
+    "registDate": "2026-02-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 6,
+    "brand": "르망고",
+    "productCode": "LSWON16286712",
+    "sampleNo": "26SS0111",
+    "nameKr": "페이즐리 웨이브-(브이숄더)(5712)",
+    "nameEn": "Paisley Wave-(V-Shoulder)(5712)",
+    "colorKr": "레드",
+    "colorEn": "Red",
+    "costPrice": 63840,
+    "salePrice": 168000,
+    "comment": "우아하면서도 화려한 페이즐리 문양이 시선을 사로잡는 디자인입니다. 촘촘하게 짜여진 복잡한 패턴은 바디 라인을 시각적으로 분산시켜 슬림해 보이는 효과를 주며,. 고혹적이면서도 세련된 여성미를 원하는 분들께 완벽한 선택입니다.",
+    "sizeSpec": "",
+    "guide": "보통\n미들컷\n없음\n없음\n없음",
+    "modelSize": "M",
+    "material": "겉감 - 폴리에스터 70% 폴리우레탄 30% 안감 - 폴리에스터 90% 폴리우레탄 10%",
+    "fabricType": "일반",
+    "washMethod": "",
+    "type": "onepiece",
+    "backStyle": "V-Shoulder",
+    "legCut": "middle\ncut",
+    "madeMonth": "2026년 2월",
+    "madeBy": "르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "design": null,
+      "shoot": null
+    },
+    "stock": {
+      "XS": 16,
+      "S": 28,
+      "M": 37,
+      "L": 32,
+      "XL": 7
+    },
+    "sales": {
+      "공홈": 21,
+      "GS": 34,
+      "29cm": 7,
+      "W쇼핑": 2,
+      "기타": 12
+    },
+    "registDate": "2026-02-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 7,
+    "brand": "르망고",
+    "productCode": "LSWON16096713",
+    "sampleNo": "26SS0119",
+    "nameKr": "액상프로방스 -\n(페리크로스 \n스트랩)\n(5713)",
+    "nameEn": "Aix-en-Provence-( Perry Cross Strap)(5713)",
+    "colorKr": "",
+    "colorEn": "",
+    "costPrice": 57000,
+    "salePrice": 150000,
+    "comment": "남프랑스 화가들의 작업실(Atelier)에서 튄 물감처럼 감각적인 느낌입니다. 파스텔 톤의 부드러운 터치감은 보는 사람마저 기분 좋게 만드는 마법 같은 매력을 지니고 있습니다.심플하면서도 감각적인 스타일을 선호하시는 분들께 추천합니다.",
+    "sizeSpec": "",
+    "guide": "보통\n미들컷\n없음\n없음\n없음",
+    "modelSize": "M",
+    "material": "겉감 - 폴리에스터 70% 폴리우레탄 30% 안감 - 폴리에스터 90% 폴리우레탄 10%",
+    "fabricType": "일반",
+    "washMethod": "",
+    "type": "onepiece",
+    "backStyle": "Perry Cross Strap",
+    "legCut": "middle\ncut",
+    "madeMonth": "2026년 2월",
+    "madeBy": "르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "design": null,
+      "shoot": null
+    },
+    "stock": {
+      "XS": 19,
+      "S": 39,
+      "M": 37,
+      "L": 39,
+      "XL": 12
+    },
+    "sales": {
+      "공홈": 98,
+      "GS": 0,
+      "29cm": 0,
+      "W쇼핑": 0,
+      "기타": 0
+    },
+    "registDate": "2026-02-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 8,
+    "brand": "르망고",
+    "productCode": "LSWON16166714",
+    "sampleNo": "26SS0117",
+    "nameKr": "모나코 하트 -(크로스트 X모디파이)(5714)",
+    "nameEn": "Monaco Heart-(Crossed X Modified)(5714)",
+    "colorKr": "",
+    "colorEn": "",
+    "costPrice": 57000,
+    "salePrice": 150000,
+    "comment": "고급스러운 모나코 해변의 파티와 설레는 감성을 담았습니다.시크한 블랙 컬러 위에 흩뿌려진 하트 패턴이 사랑스러우면서도 세련된 느낌을 줍니다.",
+    "sizeSpec": "",
+    "guide": "보통\n미들컷\n없음\n없음\n없음",
+    "modelSize": "M",
+    "material": "겉감 - 폴리에스터 70% 폴리우레탄 30% 안감 - 폴리에스터 90% 폴리우레탄 10%",
+    "fabricType": "일반",
+    "washMethod": "",
+    "type": "onepiece",
+    "backStyle": "Crossed X Modified",
+    "legCut": "middle\ncut",
+    "madeMonth": "2026년 2월",
+    "madeBy": "르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "design": null,
+      "shoot": null
+    },
+    "stock": {
+      "XS": 15,
+      "S": 40,
+      "M": 37,
+      "L": 12,
+      "XL": 11
+    },
+    "sales": {
+      "공홈": 72,
+      "GS": 10,
+      "29cm": 3,
+      "W쇼핑": 7,
+      "기타": 0
+    },
+    "registDate": "2026-02-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 9,
+    "brand": "르망고",
+    "productCode": "LSWON15986715",
+    "sampleNo": "26SS0106",
+    "nameKr": "에투알 드 메르-(발레)(5715)",
+    "nameEn": "Étoile de Mer-(Ballet back)(5715)",
+    "colorKr": "",
+    "colorEn": "",
+    "costPrice": 75240,
+    "salePrice": 198000,
+    "comment": "프랑스어로 '바다의 별'을 뜻하며, 불가사리 패턴과 해변의 모티브를 우아하게 표현합니다.",
+    "sizeSpec": "",
+    "guide": "보통\n노멀컷\n없음\n없음\n없음",
+    "modelSize": "M",
+    "material": "겉감 - 폴리에스터 70% 폴리우레탄 30% 안감 - 폴리에스터 90% 폴리우레탄 10%",
+    "fabricType": "일반",
+    "washMethod": "",
+    "type": "onepiece",
+    "backStyle": "Ballet back",
+    "legCut": "normal cut",
+    "madeMonth": "2026년 2월",
+    "madeBy": "르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "design": null,
+      "shoot": null
+    },
+    "stock": {
+      "XS": 17,
+      "S": 44,
+      "M": 29,
+      "L": 18,
+      "XL": 9
+    },
+    "sales": {
+      "공홈": 35,
+      "GS": 8,
+      "29cm": 6,
+      "W쇼핑": 1,
+      "기타": 0
+    },
+    "registDate": "2026-02-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 10,
+    "brand": "르망고",
+    "productCode": "LSWON16286716",
+    "sampleNo": "26SS0123",
+    "nameKr": "앙티브 블루 블룸-(브이숄더)(5716)",
+    "nameEn": "Antibes Blue Bloom-(V-Shoulder)(5716)",
+    "colorKr": "",
+    "colorEn": "",
+    "costPrice": 57000,
+    "salePrice": 150000,
+    "comment": "바람에 흩날리는 작은 꽃잎들을 촘촘하게 수놓은 듯한 패턴이 인상적입니다. 복잡한 꽃무늬가 시선을 분산시켜 몸매를 더욱 슬림하게 보이게 하며 맑은 앙티브 바다 앞에 핀 야생화 같은 청량한 느낌입니다.",
+    "sizeSpec": "",
+    "guide": "보통\n미들컷\n없음\n없음\n없음",
+    "modelSize": "M",
+    "material": "겉감 - 폴리에스터 70% 폴리우레탄 30% 안감 - 폴리에스터 90% 폴리우레탄 10%",
+    "fabricType": "일반",
+    "washMethod": "",
+    "type": "onepiece",
+    "backStyle": "V-Shoulder",
+    "legCut": "middle\ncut",
+    "madeMonth": "2026년 2월",
+    "madeBy": "르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "design": null,
+      "shoot": null
+    },
+    "stock": {
+      "XS": 16,
+      "S": 29,
+      "M": 28,
+      "L": 26,
+      "XL": 20
+    },
+    "sales": {
+      "공홈": 3,
+      "GS": 7,
+      "29cm": 9,
+      "W쇼핑": 20,
+      "기타": 2
+    },
+    "registDate": "2026-02-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 11,
+    "brand": "르망고",
+    "productCode": "LSWON16286717",
+    "sampleNo": "26SS0139",
+    "nameKr": "니스 아틀리에-(브이숄더)(5717)",
+    "nameEn": "Nice Atelier-(V-Shoulder)(5717)",
+    "colorKr": "",
+    "colorEn": "",
+    "costPrice": 57000,
+    "salePrice": 150000,
+    "comment": "캔버스에 물감을 뿌린 듯한 회화적인 패턴에 어울리는 이름입니다.네이비칼라로 완성감을 더한 실루엣은 몸매를 더욱 선명하고 탄탄하게 잡아줍니다.",
+    "sizeSpec": "",
+    "guide": "보통\n미들컷\n없음\n없음\n없음",
+    "modelSize": "M",
+    "material": "겉감 - 폴리에스터 70% 폴리우레탄 30% 안감 - 폴리에스터 90% 폴리우레탄 10%",
+    "fabricType": "포일",
+    "washMethod": "",
+    "type": "onepiece",
+    "backStyle": "V-Shoulder",
+    "legCut": "middle\ncut",
+    "madeMonth": "2026년 2월",
+    "madeBy": "르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "design": null,
+      "shoot": null
+    },
+    "stock": {
+      "XS": 10,
+      "S": 42,
+      "M": 58,
+      "L": 12,
+      "XL": 17
+    },
+    "sales": {
+      "공홈": 59,
+      "GS": 8,
+      "29cm": 2,
+      "W쇼핑": 0,
+      "기타": 1
+    },
+    "registDate": "2026-02-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 12,
+    "brand": "르망고",
+    "productCode": "LSWON16286718",
+    "sampleNo": "26SS0167",
+    "nameKr": "비시 리비에라-(브이숄더)(5718)",
+    "nameEn": "Vichy Riviera-(V-Shoulder)(5718)",
+    "colorKr": "",
+    "colorEn": "",
+    "costPrice": 57000,
+    "salePrice": 150000,
+    "comment": "비시(Vichy)'는 프랑스어로 체크 패턴을 뜻합니다. 리비에라의 정통 빈티지 감성을 가장 잘 나타냅니다.밝고 경쾌한 무드가 특징이며, 실내 수영장에서 기분 전환을 하고 싶은 날 가장 먼저 손이 갈 아이템입니다.",
+    "sizeSpec": "",
+    "guide": "보통\n미들컷\n없음\n없음\n없음",
+    "modelSize": "M",
+    "material": "겉감 - 폴리에스터 70% 폴리우레탄 30% 안감 - 폴리에스터 90% 폴리우레탄 10%",
+    "fabricType": "일반",
+    "washMethod": "",
+    "type": "onepiece",
+    "backStyle": "V-Shoulder",
+    "legCut": "middle\ncut",
+    "madeMonth": "2026년 2월",
+    "madeBy": "르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "design": null,
+      "shoot": null
+    },
+    "stock": {
+      "XS": 8,
+      "S": 49,
+      "M": 37,
+      "L": 34,
+      "XL": 15
+    },
+    "sales": {
+      "공홈": 27,
+      "GS": 5,
+      "29cm": 14,
+      "W쇼핑": 0,
+      "기타": 5
+    },
+    "registDate": "2026-02-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 13,
+    "brand": "르망고",
+    "productCode": "LSWON16286719",
+    "sampleNo": "26SS0169",
+    "nameKr": "마드무아젤 깅엄-(브이숄더)(5719)",
+    "nameEn": "Mademoiselle Gingham-(V-Shoulder)(5719)",
+    "colorKr": "",
+    "colorEn": "",
+    "costPrice": 63840,
+    "salePrice": 168000,
+    "comment": "땋은 머리에 가장 잘 어울리는, 클래식하고 순수한 프랑스 소녀의 느낌을 강조했습니다.",
+    "sizeSpec": "",
+    "guide": "보통\n미들컷\n없음\n없음\n없음",
+    "modelSize": "M",
+    "material": "겉감 - 폴리에스터 70% 폴리우레탄 30% 안감 - 폴리에스터 90% 폴리우레탄 10%",
+    "fabricType": "일반",
+    "washMethod": "",
+    "type": "onepiece",
+    "backStyle": "V-Shoulder",
+    "legCut": "middle\ncut",
+    "madeMonth": "2026년 2월",
+    "madeBy": "르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "design": null,
+      "shoot": null
+    },
+    "stock": {
+      "XS": 13,
+      "S": 47,
+      "M": 31,
+      "L": 26,
+      "XL": 8
+    },
+    "sales": {
+      "공홈": 38,
+      "GS": 53,
+      "29cm": 5,
+      "W쇼핑": 0,
+      "기타": 1
+    },
+    "registDate": "2026-02-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 14,
+    "brand": "르망고",
+    "productCode": "LSWON16156720",
+    "sampleNo": "26SS0163",
+    "nameKr": "쥬앙레팽 블루-(더블크로스)(5720)",
+    "nameEn": "Juan-les-Pins Bleu-(Double Cross)(5720)",
+    "colorKr": "",
+    "colorEn": "",
+    "costPrice": 63840,
+    "salePrice": 168000,
+    "comment": "야자수가 아름다운 리비에라의 휴양 도시 '쥬앙레팽'의 해변을 연상시킵니다. 상단의 야자수 패턴과 하단의 바다 물결 패턴이 자연스럽게 이어져 하체가 길어 보이는 효과를 줍니다.",
+    "sizeSpec": "",
+    "guide": "보통\n노멀컷\n없음\n없음\n없음",
+    "modelSize": "M",
+    "material": "겉감 - 폴리에스터 70% 폴리우레탄 30% 안감 - 폴리에스터 90% 폴리우레탄 10%",
+    "fabricType": "일반",
+    "washMethod": "",
+    "type": "onepiece",
+    "backStyle": "Double Cross",
+    "legCut": "normal cut",
+    "madeMonth": "2026년 2월",
+    "madeBy": "르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "design": null,
+      "shoot": null
+    },
+    "stock": {
+      "XS": 9,
+      "S": 38,
+      "M": 30,
+      "L": 27,
+      "XL": 5
+    },
+    "sales": {
+      "공홈": 62,
+      "GS": 0,
+      "29cm": 0,
+      "W쇼핑": 2,
+      "기타": 4
+    },
+    "registDate": "2026-02-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 1,
+    "brand": "르망고 느와",
+    "cafe24Code": "5SW029",
+    "productCode": "5SW029",
+    "nameKr": "루나르 투피스",
+    "nameEn": "LUNAR Two-Piece",
+    "colorKr": "블랙",
+    "colorEn": "black",
+    "costPrice": 0,
+    "salePrice": 330000,
+    "sizeSpec": "s TOP LENGTH-27.5 / BUST- 30.5 BOTTOM LENGTH-29 / WAIST-27.5 / TIGHT-21.5  m TOP LENGTH-29.5 / BUST- 32.5 BOTTOM LENGTH-31 / WAIST-29.5 / TIGHT-23.5",
+    "modelSize": "s",
+    "material": "Shell : P80% , SP 20% Lining : P90% , SP10%  Flowers:  F)P93%SP7% B)P80%SP20%",
+    "comment": "* 플라워 모티프 아플리케와 금속장식 디테일 * 절제된 스퀘어 네크라인과 가슴라인의 형태를 아름답게 감싸주는 입체적 패턴의 브라톱 디자인 * 안정감 있는 하이웨이스트 실루엣 * 안감있음 . 브라캡 없음",
+    "type": "bikini",
+    "backStyle": "",
+    "legCut": "로우컷",
+    "guide": "보통",
+    "madeMonth": "2025년 12월",
+    "madeBy": "주식회사 르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "lemango": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW029/5SW029_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW029/5SW029_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW029/5SW029_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW029/5SW029_04.jpg"
+      ],
+      "noir": [
+        "https://lemangonoir.cafe24.com/goods/2025/5SW029/5SW029_01.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW029/5SW029_02.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW029/5SW029_03.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW029/5SW029_04.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW029/5SW029_05.jpg"
+      ],
+      "external": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW029_900/5SW029_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW029_900/5SW029_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW029_900/5SW029_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW029_900/5SW029_04.jpg"
+      ]
+    },
+    "videoUrl": "https://youtube.com/shorts/oeKXEmgAtjM?si=hpUhDKgYpQMa-QS2",
+    "stock": {
+      "XS": 14,
+      "S": 30,
+      "M": 23,
+      "L": 17,
+      "XL": 7
+    },
+    "sales": {
+      "공홈": 31,
+      "GS": 0,
+      "29cm": 0,
+      "W쇼핑": 0,
+      "기타": 0
+    },
+    "registDate": "2025-12-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 2,
+    "brand": "르망고 느와",
+    "cafe24Code": "5SW030",
+    "productCode": "5SW030",
+    "nameKr": "루나르",
+    "nameEn": "LUNAR",
+    "colorKr": "블랙",
+    "colorEn": "black",
+    "costPrice": 0,
+    "salePrice": 350000,
+    "sizeSpec": "s LENGTH-52.5 / BUST-31.5 / WAIST 27.5 / HIP-34.5 / TIGHT-24 m LENGTH-54.5 / BUST-33.5 / WAIST 29.5 / HIP-36.5 / TIGHT-26",
+    "modelSize": "s",
+    "material": "Shell : P80% , SP20% Lining : P90% , SP10%  Flowers:  F)P93%SP7% B)P80%SP20%",
+    "comment": "* 플라워 모티프 아플리케와 금속장식 디테일 * 안정적인 착용감과 아름다운 바디라인을 위한 구조적인패턴으로 제작  * 어깨와 쇄골 라인을 강조하는 미니멀 디자인, 탈부착가능 홀터스트랩  * 안감있음 . 브라캡 없음",
+    "type": "one piece",
+    "backStyle": "",
+    "legCut": "미들컷",
+    "guide": "보통",
+    "madeMonth": "2025년 12월",
+    "madeBy": "주식회사 르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "lemango": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW030/5SW030_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW030/5SW030_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW030/5SW030_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW030/5SW030_04.jpg"
+      ],
+      "noir": [
+        "https://lemangonoir.cafe24.com/goods/2025/5SW030/5SW030_01.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW030/5SW030_02.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW030/5SW030_03.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW030/5SW030_04.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW030/5SW030_05.jpg"
+      ],
+      "external": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW030_900/5SW030_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW030_900/5SW030_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW030_900/5SW030_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW030_900/5SW030_04.jpg"
+      ]
+    },
+    "videoUrl": "https://youtube.com/shorts/vmpGEPtZhNo?si=ziQ8OiqZf3XPDt_B",
+    "stock": {
+      "XS": 20,
+      "S": 50,
+      "M": 30,
+      "L": 18,
+      "XL": 18
+    },
+    "sales": {
+      "공홈": 69,
+      "GS": 12,
+      "29cm": 19,
+      "W쇼핑": 6,
+      "기타": 6
+    },
+    "registDate": "2025-12-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 3,
+    "brand": "르망고 느와",
+    "cafe24Code": "5SW019",
+    "productCode": "5SW019",
+    "nameKr": "시길",
+    "nameEn": "SIGIL",
+    "colorKr": "앤틱",
+    "colorEn": "antique",
+    "costPrice": 0,
+    "salePrice": 310000,
+    "sizeSpec": "s LENGTH-64.5  BUST-32.5  WAIST-25.5  HIP-32  THIGH  -29(LEFT)  24.5(RIGHT)  m LENGTH-66.5  BUST-34.5  WAIST-27.5  HIP-34  THIGH  -31(LEFT)  26.5(RIGHT)",
+    "modelSize": "s",
+    "material": "Shell : P80% , SP20% Lining : P90% , SP10%",
+    "comment": "* 조선 민화 화조도를 현대적으로 재해석한 프린트 원피스 스윔웨어 * 느와만의 엔틱 컬러로 차분하고 깊이 있는 분위기를 완성 * 블랙톤에에 은은하게 표현된 패턴과 비대칭 드레이프 디테일이 절제된 실루엣 속에 깊이 있는 분위기를 더함 * 사이드트임 디테일과 연결되는 끈을 묶거나 리본으로 만들어 연출 가능 * 리조트룩을 아트피스처럼 완성한 르망고느와의 시즌 시그니처 아이템 * 안감있음 . 탈부착 브라캡 있음 원형패드 (탈부착 가능)",
+    "type": "one piece",
+    "backStyle": "",
+    "legCut": "미들컷",
+    "guide": "보통",
+    "madeMonth": "2026년 1월",
+    "madeBy": "주식회사 르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "lemango": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW019/5SW019_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW019/5SW019_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW019/5SW019_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW019/5SW019_04.jpg"
+      ],
+      "noir": [
+        "https://lemangonoir.cafe24.com/goods/2025/5SW019/5SW019_01.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW019/5SW019_02.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW019/5SW019_03.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW019/5SW019_04.jpg"
+      ],
+      "external": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW019_900/5SW019_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW019_900/5SW019_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW019_900/5SW019_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW019_900/5SW019_04.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW019_900/5SW019_05.jpg"
+      ]
+    },
+    "videoUrl": "https://youtube.com/shorts/AR72CWaHtxo?si=iLAqPIw3P3JDE-pE",
+    "stock": {
+      "XS": 16,
+      "S": 43,
+      "M": 53,
+      "L": 24,
+      "XL": 8
+    },
+    "sales": {
+      "공홈": 4,
+      "GS": 21,
+      "29cm": 1,
+      "W쇼핑": 35,
+      "기타": 1
+    },
+    "registDate": "2025-12-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 4,
+    "brand": "르망고 느와",
+    "cafe24Code": "5SW020",
+    "productCode": "5SW020",
+    "nameKr": "오스피스",
+    "nameEn": "AUSPICE",
+    "colorKr": "앤틱",
+    "colorEn": "antique",
+    "costPrice": 0,
+    "salePrice": 210000,
+    "sizeSpec": "s LENGTH-63 BUST-24 WAIST-23 HIP-34 THIGH-24  m LENGTH-65 BUST-26 WAIST-25 HIP-36 THIGH-26",
+    "modelSize": "s",
+    "material": "P70% , SP30%",
+    "comment": "* 조선 민화 화조도를 현대적으로 재해석한 프린트 원피스 스윔웨어  * 직접적인 장식보다 상징의 분위기와 여백을 살려,  기본형의 스윔웨어로 엔틱한 컬러감으로 차분하면서도 깊이있는 디자인으로 완성  * 단정한 라운드 네크라인과 바디에 안정적으로 밀착되는 실루엣  * 인도어 수영은 물론 리조트웨어 스타일링까지 고려한 균형 잡힌 디자인  * 실리콘 패드 제공",
+    "type": "one piece",
+    "backStyle": "",
+    "legCut": "미들컷",
+    "guide": "보통",
+    "madeMonth": "2026년 1월",
+    "madeBy": "주식회사 르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "lemango": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW020/5SW020_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW020/5SW020_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW020/5SW020_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW020/5SW020_04.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW020/5SW020_05.jpg"
+      ],
+      "noir": [
+        "https://lemangonoir.cafe24.com/goods/2025/5SW020/5SW020_01.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW020/5SW020_02.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW020/5SW020_03.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW020/5SW020_04.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW020/5SW020_05.jpg"
+      ],
+      "external": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW020_900/5SW020_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW020_900/5SW020_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW020_900/5SW020_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW020_900/5SW020_04.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW020_900/5SW020_05.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW020_900/5SW020_06.jpg"
+      ]
+    },
+    "videoUrl": null,
+    "stock": {
+      "XS": 12,
+      "S": 29,
+      "M": 20,
+      "L": 12,
+      "XL": 6
+    },
+    "sales": {
+      "공홈": 2,
+      "GS": 21,
+      "29cm": 1,
+      "W쇼핑": 8,
+      "기타": 1
+    },
+    "registDate": "2025-12-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 5,
+    "brand": "르망고 느와",
+    "cafe24Code": "5SW021",
+    "productCode": "5SW021",
+    "nameKr": "오스피스",
+    "nameEn": "AUSPICE",
+    "colorKr": "블루",
+    "colorEn": "blue",
+    "costPrice": 0,
+    "salePrice": 210000,
+    "sizeSpec": "s LENGTH-63 BUST-24 WAIST-23 HIP-34 THIGH-24  m LENGTH-65 BUST-26 WAIST-25 HIP-36 THIGH-26",
+    "modelSize": "s",
+    "material": "P70% , SP30%",
+    "comment": "* 조선 민화 화조도를 현대적으로 재해석한 프린트 원피스 스윔웨어  * 직접적인 장식보다 상징의 분위기와 여백을 살려,  기본형의 스윔웨어로 깊이있는 블루톤의 컬러감으로 차분하면서도 깊이있는 디자인으로 완성  * 단정한 라운드 네크라인과 바디에 안정적으로 밀착되는 실루엣  * 인도어 수영은 물론 리조트웨어 스타일링까지 고려한 균형 잡힌 디자인  * 실리콘 패드 제공",
+    "type": "one piece",
+    "backStyle": "",
+    "legCut": "미들컷",
+    "guide": "보통",
+    "madeMonth": "2026년 1월",
+    "madeBy": "주식회사 르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "lemango": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW021/5SW021_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW021/5SW021_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW021/5SW021_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW021/5SW021_04.jpg"
+      ],
+      "noir": [
+        "https://lemangonoir.cafe24.com/goods/2025/5SW021/5SW021_01.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW021/5SW021_02.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW021/5SW021_03.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW021/5SW021_04.jpg"
+      ],
+      "external": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW021_900/5SW021_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW021_900/5SW021_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW021_900/5SW021_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW021_900/5SW021_04.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW021_900/5SW021_05.jpg"
+      ]
+    },
+    "videoUrl": null,
+    "stock": {
+      "XS": 12,
+      "S": 32,
+      "M": 51,
+      "L": 16,
+      "XL": 9
+    },
+    "sales": {
+      "공홈": 73,
+      "GS": 9,
+      "29cm": 1,
+      "W쇼핑": 0,
+      "기타": 0
+    },
+    "registDate": "2025-12-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 6,
+    "brand": "르망고 느와",
+    "cafe24Code": "5SW022",
+    "productCode": "5SW022",
+    "nameKr": "디비나",
+    "nameEn": "DIVINA",
+    "colorKr": "옐로우",
+    "colorEn": "yellow",
+    "costPrice": 0,
+    "salePrice": 350000,
+    "sizeSpec": "s LENGTH-50 BUST-30.5 WAIST-29.5 HIP-35 THIGH-50  m LENGTH-52 BUST-32.5 WAIST-31.5 HIP-37 THIGH-52",
+    "modelSize": "s",
+    "material": "Shell : P80% , SP20% Lining : P90% , SP10%",
+    "comment": "* 조선 민화 화조도를 현대적으로 재해석한 프린트 원피스 스윔웨어  * 스퀘어 라인을 따라 더해진 통끈 디테일로 독특한 무드 표현  * 상단 사이드에 고리를 달아 착용시 불편함이 없게 설계  * 안감 있음, 탈부착 브라캡 있음",
+    "type": "one piece",
+    "backStyle": "",
+    "legCut": "미들컷",
+    "guide": "낮음",
+    "madeMonth": "2026년 1월",
+    "madeBy": "주식회사 르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "lemango": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW022/5SW022_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW022/5SW022_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW022/5SW022_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW022/5SW022_04.jpg"
+      ],
+      "noir": [
+        "https://lemangonoir.cafe24.com/goods/2025/5SW022/5SW022_01.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW022/5SW022_02.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW022/5SW022_03.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW022/5SW022_04.jpg"
+      ],
+      "external": [
+        "https://lemangonoir.cafe24.com/goods/2025/5SW022_900/5SW022_01.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW022_900/5SW022_02.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW022_900/5SW022_03.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW022_900/5SW022_04.jpg"
+      ]
+    },
+    "videoUrl": "https://youtube.com/shorts/ZAy6fJuvyYE?si=yx7PQ64th0ZL3SjG",
+    "stock": {
+      "XS": 20,
+      "S": 41,
+      "M": 32,
+      "L": 13,
+      "XL": 8
+    },
+    "sales": {
+      "공홈": 45,
+      "GS": 13,
+      "29cm": 13,
+      "W쇼핑": 3,
+      "기타": 1
+    },
+    "registDate": "2025-12-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 7,
+    "brand": "르망고 느와",
+    "cafe24Code": "5SW023",
+    "productCode": "5SW023",
+    "nameKr": "디비나",
+    "nameEn": "DIVINA",
+    "colorKr": "블랙",
+    "colorEn": "black",
+    "costPrice": 0,
+    "salePrice": 350000,
+    "sizeSpec": "s LENGTH-50 BUST-30.5 WAIST-29.5 HIP-35 THIGH-50  m LENGTH-52 BUST-32.5 WAIST-31.5 HIP-37 THIGH-52",
+    "modelSize": "s",
+    "material": "Shell : P80% , SP20% Lining : P90% , SP10%",
+    "comment": "* 조선 민화 화조도를 현대적으로 재해석한 프린트 원피스 스윔웨어  * 스퀘어 라인을 따라 더해진 통끈 디테일로 독특한 무드 표현  * 상단 사이드에 고리를 달아 착용시 불편함이 없게 설계  * 안감 있음, 탈부착 브라캡 있음",
+    "type": "one piece",
+    "backStyle": "",
+    "legCut": "미들컷",
+    "guide": "낮음",
+    "madeMonth": "2026년 1월",
+    "madeBy": "주식회사 르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "lemango": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW023/5SW023_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW023/5SW023_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW023/5SW023_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW023/5SW023_04.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW023/5SW023_05.jpg"
+      ],
+      "noir": [
+        "https://lemangonoir.cafe24.com/goods/2025/5SW023/5SW023_01.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW023/5SW023_02.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW023/5SW023_03.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW023/5SW023_04.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW023/5SW023_05.jpg"
+      ],
+      "external": [
+        "https://lemangonoir.cafe24.com/goods/2025/5SW023_900/5SW023_01.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW023_900/5SW023_02.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW023_900/5SW023_03.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW023_900/5SW023_04.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW023_900/5SW023_05.jpg"
+      ]
+    },
+    "videoUrl": null,
+    "stock": {
+      "XS": 6,
+      "S": 21,
+      "M": 23,
+      "L": 22,
+      "XL": 15
+    },
+    "sales": {
+      "공홈": 13,
+      "GS": 15,
+      "29cm": 12,
+      "W쇼핑": 6,
+      "기타": 18
+    },
+    "registDate": "2025-12-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 8,
+    "brand": "르망고 느와",
+    "cafe24Code": "5SW024",
+    "productCode": "5SW024",
+    "nameKr": "셀레네",
+    "nameEn": "SELENE",
+    "colorKr": "블랙",
+    "colorEn": "black",
+    "costPrice": 0,
+    "salePrice": 270000,
+    "sizeSpec": "s TOP LENGTH-41 BUST- 23  BOTTOM LENGTH-29 WAIST-27.5 TIGHT-21.5  m TOP LENGTH-43 BUST- 25  BOTTOM LENGTH-31 WAIST-29.5 TIGHT-23.5",
+    "modelSize": "s",
+    "material": "Shell : P80% , SP20% Lining : P90% , SP10%",
+    "comment": "* 조선 민화 화조도를 현대적으로 재해석한 프린트 상의와  블랙 솔리드 하의 조합의 투피스 스윔웨어 * 상의는 여유로운 핏의 수영복. 보편의 수영복과 달리 타이트하기보다  가볍게 걸쳐서 착용, 레이어드해서 연출 가능. * 상의 후면에 밴드를 활용하여 가슴라인을 보다 편안하고 안정적으로 잡아줌 * 어깨와 쇄골을 드러내는 디자인으로 우아하지만 경쾌한 느낌의 실루엣 * 하의는 하이웨이스트 디자인으로 복부를 안정감있게 감싸주며  다리가 슬림하고 길어보이는 효과를 연출 * 탈부착 브라캡있음 원형패드 (탈부착 가능)",
+    "type": "two piece",
+    "backStyle": "",
+    "legCut": "로우컷",
+    "guide": "보통",
+    "madeMonth": "2026년 1월",
+    "madeBy": "주식회사 르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "lemango": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW024/5SW024_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW024/5SW024_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW024/5SW024_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW024/5SW024_04.jpg"
+      ],
+      "noir": [
+        "https://lemangonoir.cafe24.com/goods/2025/5SW024/5SW024_01.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW024/5SW024_02.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW024/5SW024_03.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW024/5SW024_04.jpg"
+      ],
+      "external": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW024_900/5SW024_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW024_900/5SW024_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW024_900/5SW024_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW024_900/5SW024_04.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW024_900/5SW024_05.jpg"
+      ]
+    },
+    "videoUrl": "https://youtube.com/shorts/PxMq1GuDuYo?si=UJy_DYJQL0fsPc86",
+    "stock": {
+      "XS": 19,
+      "S": 23,
+      "M": 47,
+      "L": 15,
+      "XL": 13
+    },
+    "sales": {
+      "공홈": 9,
+      "GS": 28,
+      "29cm": 25,
+      "W쇼핑": 2,
+      "기타": 0
+    },
+    "registDate": "2025-12-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 9,
+    "brand": "르망고 느와",
+    "cafe24Code": "5SW025",
+    "productCode": "5SW025",
+    "nameKr": "셀레네",
+    "nameEn": "SELENE",
+    "colorKr": "옐로우",
+    "colorEn": "yellow",
+    "costPrice": 0,
+    "salePrice": 270000,
+    "sizeSpec": "s TOP LENGTH-41 BUST- 23  BOTTOM LENGTH-29 WAIST-27.5 TIGHT-21.5  m TOP LENGTH-43 BUST- 25  BOTTOM LENGTH-31 WAIST-29.5 TIGHT-23.5",
+    "modelSize": "s",
+    "material": "Shell : P80% , SP20% Lining : P90% , SP10%",
+    "comment": "* 조선 민화 화조도를 현대적으로 재해석한 프린트 상의와  블랙 솔리드 하의 조합의 투피스 스윔웨어 * 상의는 여유로운 핏의 수영복. 보편의 수영복과 달리 타이트하기보다  가볍게 걸쳐서 착용, 레이어드해서 연출 가능. * 상의 후면에 밴드를 활용하여 가슴라인을 보다 편안하고 안정적으로 잡아줌 * 어깨와 쇄골을 드러내는 디자인으로 우아하지만 경쾌한 느낌의 실루엣 * 하의는 하이웨이스트 디자인으로 복부를 안정감있게 감싸주며  다리가 슬림하고 길어보이는 효과를 연출 * 탈부착 브라캡있음 원형패드 (탈부착 가능)",
+    "type": "two piece",
+    "backStyle": "",
+    "legCut": "로우컷",
+    "guide": "보통",
+    "madeMonth": "2026년 1월",
+    "madeBy": "주식회사 르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "lemango": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW025/5SW025_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW025/5SW025_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW025/5SW025_03.jpg"
+      ],
+      "noir": [
+        "https://lemangonoir.cafe24.com/goods/2025/5SW025/5SW025_01.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW025/5SW025_02.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW025/5SW025_03.jpg"
+      ],
+      "external": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW025_900/5SW025_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW025_900/5SW025_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW025_900/5SW025_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW025_900/5SW025_04.jpg"
+      ]
+    },
+    "videoUrl": null,
+    "stock": {
+      "XS": 8,
+      "S": 18,
+      "M": 54,
+      "L": 36,
+      "XL": 5
+    },
+    "sales": {
+      "공홈": 96,
+      "GS": 1,
+      "29cm": 1,
+      "W쇼핑": 1,
+      "기타": 1
+    },
+    "registDate": "2025-12-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 10,
+    "brand": "르망고 느와",
+    "cafe24Code": "5SW026",
+    "productCode": "5SW026",
+    "nameKr": "녹턴",
+    "nameEn": "NOCTURNE",
+    "colorKr": "블랙",
+    "colorEn": "black",
+    "costPrice": 0,
+    "salePrice": 350000,
+    "sizeSpec": "s LENGTH-52.5  BUST-31.5  WAIST 27.5  HIP-34.5  THIGH-24  STRING-33  m LENGTH-54.5  BUST-33.5  WAIST 29.5  HIP-36.5  THIGH-26  STRING-35",
+    "modelSize": "s",
+    "material": "Shell : P80% , SP20% Lining : P90% , SP10%",
+    "comment": "* 조선 민화 화조도를 현대적으로 재해석한 프린트 스윔웨어  * 감각적인 비대칭 원숄더 디자인의 원피스 스윔웨어  * 깔끔하고 미니멀한 원피스 수영복에  어깨선을 따라 자연스럽게 흐르는 끈묶음을 더해 독보적인 실루엣을 만듦  * 안감있음, 탈부착 브라캡 있음 원형패드  (탈부착 가능)",
+    "type": "one piece",
+    "backStyle": "",
+    "legCut": "미들컷",
+    "guide": "보통",
+    "madeMonth": "2026년 1월",
+    "madeBy": "주식회사 르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "lemango": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW026/5SW026_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW026/5SW026_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW026/5SW026_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW026/5SW026_04.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW026/5SW026_05.jpg"
+      ],
+      "noir": [
+        "https://lemangonoir.cafe24.com/goods/2025/5SW026/5SW026_01.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW026/5SW026_02.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW026/5SW026_03.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW026/5SW026_04.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW026/5SW026_05.jpg"
+      ],
+      "external": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW026_900/5SW026_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW026_900/5SW026_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW026_900/5SW026_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW026_900/5SW026_04.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW026_900/5SW026_05.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW026_900/5SW026_06.jpg"
+      ]
+    },
+    "videoUrl": "https://youtube.com/shorts/TD60r4m1MwQ?si=rKBzcpSQFK3DdJ3g",
+    "stock": {
+      "XS": 20,
+      "S": 45,
+      "M": 33,
+      "L": 37,
+      "XL": 17
+    },
+    "sales": {
+      "공홈": 21,
+      "GS": 48,
+      "29cm": 0,
+      "W쇼핑": 24,
+      "기타": 28
+    },
+    "registDate": "2025-12-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 11,
+    "brand": "르망고 느와",
+    "cafe24Code": "5SW027",
+    "productCode": "5SW027",
+    "nameKr": "엄브라",
+    "nameEn": "UMBRA",
+    "colorKr": "블랙",
+    "colorEn": "black",
+    "costPrice": 0,
+    "salePrice": 250000,
+    "sizeSpec": "s TOP  SIDE-16   BOTTOM  LENGTH-22  FRONT WAIST-21.5  BACK  WAIST-28  THIGH-26  m TOP  SIDE-17   BOTTOM  LENGTH-24  FRONT WAIST-23.5  BACK  WAIST-30  THIGH-28",
+    "modelSize": "s",
+    "material": "Shell : P80% , SP20% Lining : P90% , SP10%",
+    "comment": "* 조선민화의 호랑이 모티프를 선묘로 표현한 비키니 * 상의의 좌우에 언발란스하게 새겨진 프린트를 통해 위트 전달 * 통끈으로 자신의 몸에 맞게 조절해 착용 가능 * 정교한 핏으로 입을 수 있도록 세심하게 설계된 하의 라인  * 안감있음, 탈부착 브라캡 있음 삼각 패드 (탈부착 가능)",
+    "type": "bikini",
+    "backStyle": "",
+    "legCut": "하이컷",
+    "guide": "낮음",
+    "madeMonth": "2026년 1월",
+    "madeBy": "주식회사 르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "lemango": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW027/5SW027_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW027/5SW027_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW027/5SW027_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW027/5SW027_04.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW027/5SW027_05.jpg"
+      ],
+      "noir": [
+        "https://lemangonoir.cafe24.com/goods/2025/5SW027/5SW027_01.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW027/5SW027_02.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW027/5SW027_03.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW027/5SW027_04.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW027/5SW027_05.jpg"
+      ],
+      "external": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW027_900/5SW027_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW027_900/5SW027_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW027_900/5SW027_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW027_900/5SW027_04.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW027_900/5SW027_05.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW027_900/5SW027_06.jpg"
+      ]
+    },
+    "videoUrl": "https://youtube.com/shorts/PbWu9FBq5Fw?si=wai4Z0_1w2KmPI6G",
+    "stock": {
+      "XS": 13,
+      "S": 44,
+      "M": 38,
+      "L": 23,
+      "XL": 20
+    },
+    "sales": {
+      "공홈": 18,
+      "GS": 13,
+      "29cm": 1,
+      "W쇼핑": 18,
+      "기타": 3
+    },
+    "registDate": "2025-12-01",
+    "logisticsDate": null
+  },
+  {
+    "no": 12,
+    "brand": "르망고 느와",
+    "cafe24Code": "5SW028",
+    "productCode": "5SW028",
+    "nameKr": "헤일로",
+    "nameEn": "HALO",
+    "colorKr": "화이트",
+    "colorEn": "white",
+    "costPrice": 0,
+    "salePrice": 250000,
+    "sizeSpec": "s LENGTH-52.5  BUST-31.5  WAIST 27.5  HIP-34.5  THIGH-24  STRING-140  m LENGTH-54.5  BUST-33.5  WAIST 29.5  HIP-36.5  THIGH-26  STRING-140",
+    "modelSize": "s",
+    "material": "Shell : P80% , SP20% Lining : P90% , SP10%",
+    "comment": "* 조선 민화의 호랑이 모티프를 선묘로 표현한 원피스 스윔웨어 * 화이트 여백과 절제된 실루엣이 어우러져 미니멀하면서도 상징적인 분위기를 완성 * 어깨와 쇄골 라인을 강조하는 미니멀 디자인, 탈부착 가능한 홀터스트랩 * 안감있음 . 탈부착 브라캡 있음 원형패드  (탈부착 가능)",
+    "type": "one piece",
+    "backStyle": "",
+    "legCut": "미들컷",
+    "guide": "보통",
+    "madeMonth": "2026년 1월",
+    "madeBy": "주식회사 르망고",
+    "madeIn": "대한민국",
+    "images": {
+      "lemango": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW028/5SW028_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW028/5SW028_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW028/5SW028_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW028/5SW028_04.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW028/5SW028_05.jpg"
+      ],
+      "noir": [
+        "https://lemangonoir.cafe24.com/goods/2025/5SW028/5SW028_01.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW028/5SW028_02.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW028/5SW028_03.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW028/5SW028_04.jpg",
+        "https://lemangonoir.cafe24.com/goods/2025/5SW028/5SW028_05.jpg"
+      ],
+      "external": [
+        "https://lemango.cafe24.com/goods/noir/2025/5SW028_900/5SW028_01.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW028_900/5SW028_02.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW028_900/5SW028_03.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW028_900/5SW028_04.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW028_900/5SW028_05.jpg",
+        "https://lemango.cafe24.com/goods/noir/2025/5SW028_900/5SW028_06.jpg"
+      ]
+    },
+    "videoUrl": "https://youtube.com/shorts/nHeuWp15qAk?si=2oIaSHaMWA5DRDC_",
+    "stock": {
+      "XS": 6,
+      "S": 35,
+      "M": 23,
+      "L": 11,
+      "XL": 20
+    },
+    "sales": {
+      "공홈": 54,
+      "GS": 0,
+      "29cm": 0,
+      "W쇼핑": 0,
+      "기타": 0
+    },
+    "registDate": "2025-12-01",
+    "logisticsDate": null
+  }
+]

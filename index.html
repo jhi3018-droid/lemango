@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>르망고 상품 관리 시스템</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- 헤더 -->
+<header class="header">
+  <div class="header-inner">
+    <div class="logo">
+      <span class="logo-main">LEMANGO</span>
+      <span class="logo-sub">관리 시스템</span>
+    </div>
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="dashboard">대시보드</button>
+      <button class="tab-btn" data-tab="product">상품조회</button>
+      <button class="tab-btn" data-tab="stock">재고 관리</button>
+      <button class="tab-btn" data-tab="sales">판매조회</button>
+    </nav>
+    <div class="header-date" id="headerDate"></div>
+  </div>
+</header>
+
+<!-- 메인 콘텐츠 -->
+<main class="main">
+
+  <!-- ===== 대시보드 탭 ===== -->
+  <section class="tab-content active" id="tab-dashboard">
+    <div class="kpi-row" id="kpiRow"></div>
+    <div class="dashboard-grid">
+      <div class="card best-card">
+        <div class="card-header">
+          <h2 class="card-title">당월 BEST 상품 <span class="card-sub">TOP 10</span></h2>
+          <span class="card-hint">클릭하면 판매현황으로 이동</span>
+        </div>
+        <div class="best-list" id="bestList"></div>
+      </div>
+      <div class="card summary-card">
+        <div class="card-header">
+          <h2 class="card-title">매출현황</h2>
+          <span class="card-sub">2026년 3월 기준</span>
+        </div>
+        <div id="salesSummary"></div>
+        <div class="chart-wrap">
+          <canvas id="salesChart" width="320" height="180"></canvas>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 상품조회 탭 ===== -->
+  <section class="tab-content" id="tab-product">
+    <div class="search-bar card">
+      <div class="search-row">
+        <div class="search-group">
+          <label>검색조건</label>
+          <select id="pSearchField">
+            <option value="all">전체</option>
+            <option value="nameKr">상품명</option>
+            <option value="productCode">품번</option>
+            <option value="backStyle">백스타일</option>
+            <option value="barcode">바코드</option>
+          </select>
+          <input type="text" id="pKeyword" placeholder="검색어 입력 — 여러 개는 쉼표(,) 또는 줄바꿈으로 구분, 최대 200개" onpaste="handleSearchPaste(event,'pKeyword')" />
+        </div>
+        <div class="search-group">
+          <label>날짜</label>
+          <select id="pDateType">
+            <option value="registDate">등록일</option>
+            <option value="logisticsDate">물류완료일</option>
+          </select>
+          <input type="date" id="pDateFrom" />
+          <span class="date-sep">~</span>
+          <input type="date" id="pDateTo" />
+        </div>
+        <div class="search-group">
+          <label>브랜드</label>
+          <select id="pBrand">
+            <option value="all">전체</option>
+            <option value="르망고">르망고</option>
+            <option value="르망고 느와">르망고 느와</option>
+          </select>
+        </div>
+        <div class="search-group">
+          <label>타입</label>
+          <select id="pType">
+            <option value="all">전체</option>
+            <option value="onepiece">원피스</option>
+            <option value="bikini">비키니</option>
+            <option value="two piece">투피스</option>
+          </select>
+        </div>
+      </div>
+      <div class="search-actions">
+        <button class="btn btn-primary" onclick="searchProduct()">검색</button>
+        <button class="btn btn-outline" onclick="resetProduct()">초기화</button>
+        <button class="btn btn-new" onclick="openRegisterModal()">＋ 신규등록</button>
+        <div class="action-btns">
+          <button class="btn btn-accent" onclick="downloadExcel('product')">⬇ 다운로드</button>
+          <label class="btn btn-outline" for="pUploadFile">⬆ 업로드</label>
+          <input type="file" id="pUploadFile" accept=".xlsx,.xls" style="display:none" onchange="handleUpload(this,'product')" />
+          <button class="btn btn-ghost" onclick="downloadSample('product')">샘플</button>
+        </div>
+      </div>
+    </div>
+    <div class="table-meta" id="pTableMeta"></div>
+    <div class="table-wrap card" id="pTableWrap">
+      <div class="loading">데이터를 불러오는 중...</div>
+    </div>
+  </section>
+
+  <!-- ===== 재고조회 탭 ===== -->
+  <section class="tab-content" id="tab-stock">
+    <div class="search-bar card">
+      <div class="search-row">
+        <div class="search-group">
+          <label>품번</label>
+          <input type="text" id="sKeyword" placeholder="품번/상품명 — 여러 개는 쉼표(,) 또는 줄바꿈, 최대 200개" onpaste="handleSearchPaste(event,'sKeyword')" />
+        </div>
+        <div class="search-group">
+          <label>기간</label>
+          <input type="date" id="sDateFrom" />
+          <span class="date-sep">~</span>
+          <input type="date" id="sDateTo" />
+        </div>
+        <div class="search-group">
+          <label>재고상태</label>
+          <select id="sStockStatus">
+            <option value="all">전체</option>
+            <option value="instock">재고있음</option>
+            <option value="soldout">품절</option>
+          </select>
+        </div>
+      </div>
+      <div class="search-actions">
+        <button class="btn btn-primary" onclick="searchStock()">조회</button>
+        <button class="btn btn-outline" onclick="resetStock()">초기화</button>
+        <div class="action-btns">
+          <button class="btn btn-new" onclick="openStockRegisterModal()">+ 재고 등록</button>
+          <button class="btn btn-accent" onclick="downloadExcel('stock')">⬇ 다운로드</button>
+          <button class="btn btn-ghost" onclick="downloadSample('stock')">샘플</button>
+        </div>
+      </div>
+    </div>
+    <div class="table-meta" id="sTableMeta"></div>
+    <div class="table-wrap card" id="sTableWrap">
+      <div class="loading">데이터를 불러오는 중...</div>
+    </div>
+  </section>
+
+  <!-- ===== 판매조회 탭 ===== -->
+  <section class="tab-content" id="tab-sales">
+    <div class="search-bar card">
+      <div class="search-row">
+        <div class="search-group">
+          <label>품번</label>
+          <input type="text" id="slKeyword" placeholder="품번/상품명 — 여러 개는 쉼표(,) 또는 줄바꿈, 최대 200개" onpaste="handleSearchPaste(event,'slKeyword')" />
+        </div>
+        <div class="search-group">
+          <label>기간</label>
+          <input type="date" id="slDateFrom" />
+          <span class="date-sep">~</span>
+          <input type="date" id="slDateTo" />
+        </div>
+        <div class="search-group">
+          <label>플랫폼</label>
+          <select id="slPlatform">
+            <option value="all">전체</option>
+            <option value="공홈">공홈</option>
+            <option value="GS">GS</option>
+            <option value="29cm">29cm</option>
+            <option value="W쇼핑">W쇼핑</option>
+            <option value="기타">기타</option>
+          </select>
+        </div>
+      </div>
+      <div class="search-actions">
+        <button class="btn btn-primary" onclick="searchSales()">조회</button>
+        <button class="btn btn-outline" onclick="resetSales()">초기화</button>
+        <div class="action-btns">
+          <button class="btn btn-accent" onclick="downloadExcel('sales')">⬇ 다운로드</button>
+          <label class="btn btn-outline" for="slUploadFile">⬆ 업로드</label>
+          <input type="file" id="slUploadFile" accept=".xlsx,.xls" style="display:none" onchange="handleUpload(this,'sales')" />
+          <button class="btn btn-ghost" onclick="downloadSample('sales')">샘플</button>
+        </div>
+      </div>
+    </div>
+    <div class="table-meta" id="slTableMeta"></div>
+    <div class="table-wrap card" id="slTableWrap">
+      <div class="loading">데이터를 불러오는 중...</div>
+    </div>
+  </section>
+
+</main>
+
+<!-- 신규등록 모달 -->
+<dialog id="registerModal" class="register-modal">
+  <div class="rmodal-header">
+    <h2 class="rmodal-title">신규 상품 등록</h2>
+    <div class="rmodal-header-actions">
+      <button type="button" class="btn btn-outline rmodal-btn-sm" onclick="downloadSample('product')">샘플 다운로드</button>
+      <label class="btn btn-accent rmodal-btn-sm" style="cursor:pointer;margin:0">
+        엑셀 일괄 등록
+        <input type="file" accept=".xlsx,.xls" style="display:none" onchange="handleRegisterUpload(this)" />
+      </label>
+      <button class="modal-close" onclick="closeRegisterModal()">✕</button>
+    </div>
+  </div>
+  <form id="registerForm" class="rmodal-body" onsubmit="submitRegister(event)">
+
+    <div class="rform-section">
+      <div class="rform-section-title">기본 정보</div>
+      <div class="rform-grid">
+        <div class="rform-field required">
+          <label>브랜드</label>
+          <select id="rBrand" required>
+            <option value="르망고">르망고</option>
+            <option value="르망고 느와">르망고 느와</option>
+          </select>
+        </div>
+        <div class="rform-field required" style="grid-column:span 4">
+          <label>품번</label>
+          <div class="pcode-wrap">
+            <div class="pcode-input-row">
+              <input type="text" id="rProductCode" placeholder="예: LSWON16266707" required />
+              <button type="button" class="btn-pcode-toggle" id="pcodeToggleBtn" onclick="togglePcodePanel()">자동생성 ▾</button>
+            </div>
+            <div class="pcode-panel" id="pcodePanel" style="display:none">
+              <div class="pcode-row">
+                <div class="pcode-sel-group">
+                  <label>분류</label>
+                  <select id="pcClass" onchange="updateProductCode()">
+                    <option value="LS">LS - 르망고 수영복</option>
+                    <option value="LW">LW - 르망고 의류</option>
+                    <option value="LG">LG - 르망고 굿즈</option>
+                    <option value="NS">NS - 느와 수영복</option>
+                    <option value="NW">NW - 느와 의류</option>
+                    <option value="NG">NG - 느와 굿즈</option>
+                  </select>
+                </div>
+                <div class="pcode-sel-group">
+                  <label>성별</label>
+                  <select id="pcGender" onchange="updateProductCode()">
+                    <option value="W">W - 여성</option>
+                    <option value="M">M - 남성</option>
+                    <option value="G">G - 걸즈</option>
+                    <option value="B">B - 보이즈</option>
+                    <option value="N">N - 공용</option>
+                    <option value="K">K - 키즈</option>
+                  </select>
+                </div>
+                <div class="pcode-sel-group">
+                  <label>타입</label>
+                  <select id="pcType" onchange="updateProductCode()">
+                    <option value="ON">ON - 원피스</option>
+                    <option value="MO">MO - 모노키니</option>
+                    <option value="BK">BK - 비키니</option>
+                    <option value="BR">BR - 브리프</option>
+                    <option value="JM">JM - 재머</option>
+                    <option value="RG">RG - 래시가드</option>
+                    <option value="AL">AL - 애슬레저</option>
+                    <option value="GM">GM - 의류</option>
+                    <option value="SC">SC - 수영모</option>
+                    <option value="BG">BG - 가방</option>
+                    <option value="ET">ET - 기타</option>
+                  </select>
+                </div>
+                <div class="pcode-sel-group">
+                  <label>연도</label>
+                  <select id="pcYear" onchange="updateProductCode()">
+                    <option value="1">1 - 2021</option>
+                    <option value="2">2 - 2022</option>
+                    <option value="3">3 - 2023</option>
+                    <option value="4">4 - 2024</option>
+                    <option value="5">5 - 2025</option>
+                    <option value="6" selected>6 - 2026</option>
+                    <option value="7">7 - 2027</option>
+                    <option value="8">8 - 2028</option>
+                    <option value="9">9 - 2029</option>
+                    <option value="0">0 - 2030</option>
+                  </select>
+                </div>
+                <div class="pcode-sel-group">
+                  <label>시즌</label>
+                  <select id="pcSeasonNum" onchange="updateProductCode()">
+                    <option value="01">01</option>
+                    <option value="02">02</option>
+                    <option value="03">03</option>
+                    <option value="04">04</option>
+                    <option value="05">05</option>
+                  </select>
+                </div>
+              </div>
+              <div class="pcode-row">
+                <div class="pcode-sel-group pcode-design">
+                  <label>디자인 번호 (패턴) — 코드·영문·한글 검색 가능</label>
+                  <div class="design-search-wrap" id="designSearchWrap">
+                    <input type="text" id="pcDesignSearch" class="design-search-input"
+                      placeholder="코드 또는 패턴명 검색 (예: 1626 / Crossed / 크로스)"
+                      autocomplete="off"
+                      oninput="filterDesignList()"
+                    />
+                    <input type="hidden" id="pcDesign" value="1626" />
+                    <div class="design-listbox" id="designDropdown"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="pcode-preview-row">
+                <div class="pcode-preview-label">생성될 품번</div>
+                <div class="pcode-preview" id="pcPreview">-</div>
+                <div class="pcode-seq-wrap">
+                  <label>일련번호</label>
+                  <span class="pcode-seq-display" id="pcSeqDisplay">-</span>
+                </div>
+                <button type="button" class="btn btn-accent" onclick="applyGeneratedCode()">적용</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="rform-field">
+          <label>샘플번호</label>
+          <input type="text" id="rSampleNo" placeholder="예: 26SS0128" />
+        </div>
+        <div class="rform-field">
+          <label>카페24 코드</label>
+          <input type="text" id="rCafe24Code" placeholder="예: 5SW029" />
+        </div>
+        <div class="rform-field">
+          <label>바코드</label>
+          <input type="text" id="rBarcode" placeholder="예: 8809012345678" />
+        </div>
+        <div class="rform-field required" style="grid-column:span 2">
+          <label>상품명 (한글)</label>
+          <input type="text" id="rNameKr" placeholder="예: 코트다쥐르 쉘" required />
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>상품명 (영문)</label>
+          <input type="text" id="rNameEn" placeholder="예: Côte d'Azur Shell" />
+        </div>
+        <div class="rform-field">
+          <label>색상 (한글)</label>
+          <input type="text" id="rColorKr" placeholder="예: 네이비" />
+        </div>
+        <div class="rform-field">
+          <label>색상 (영문)</label>
+          <input type="text" id="rColorEn" placeholder="예: Navy" />
+        </div>
+      </div>
+    </div>
+
+    <div class="rform-section">
+      <div class="rform-section-title">가격 / 디자인</div>
+      <div class="rform-grid">
+        <div class="rform-field">
+          <label>판매가 (원)</label>
+          <input type="number" id="rSalePrice" placeholder="150000" min="0" step="1000" />
+        </div>
+        <div class="rform-field">
+          <label>원가 (원)</label>
+          <input type="number" id="rCostPrice" placeholder="60000" min="0" step="1000" />
+        </div>
+        <div class="rform-field">
+          <label>타입</label>
+          <select id="rType">
+            <option value="onepiece">원피스</option>
+            <option value="bikini">비키니</option>
+            <option value="two piece">투피스</option>
+          </select>
+        </div>
+        <div class="rform-field">
+          <label>원단 타입</label>
+          <select id="rFabricType">
+            <option value="포일">포일</option>
+            <option value="일반">일반</option>
+          </select>
+        </div>
+        <div class="rform-field">
+          <label>백스타일</label>
+          <input type="text" id="rBackStyle" placeholder="예: Crossed X" />
+        </div>
+        <div class="rform-field">
+          <label>다리파임</label>
+          <select id="rLegCut">
+            <option value="normal cut">노멀컷</option>
+            <option value="middle cut">미들컷</option>
+            <option value="high cut">하이컷</option>
+            <option value="low cut">로우컷</option>
+          </select>
+        </div>
+        <div class="rform-field">
+          <label>가이드</label>
+          <input type="text" id="rGuide" placeholder="예: 없음" />
+        </div>
+        <div class="rform-field">
+          <label>가슴선</label>
+          <select id="rChestLine">
+            <option value="">선택</option>
+            <option value="낮음">낮음</option>
+            <option value="보통">보통</option>
+            <option value="높음">높음</option>
+          </select>
+        </div>
+        <div class="rform-field">
+          <label>비침</label>
+          <select id="rTransparency">
+            <option value="">선택</option>
+            <option value="없음">없음</option>
+            <option value="약간있음">약간있음</option>
+          </select>
+        </div>
+        <div class="rform-field">
+          <label>안감</label>
+          <select id="rLining">
+            <option value="">선택</option>
+            <option value="없음">없음</option>
+            <option value="있음">있음</option>
+          </select>
+        </div>
+        <div class="rform-field">
+          <label>캡고리</label>
+          <select id="rCapRing">
+            <option value="">선택</option>
+            <option value="없음">없음</option>
+            <option value="있음">있음</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="rform-section">
+      <div class="rform-section-title">사이즈 규격</div>
+      <div class="rform-grid">
+        <div class="rform-field">
+          <label>가슴(cm)</label>
+          <input type="text" id="rBust" placeholder="예: 30.5" />
+        </div>
+        <div class="rform-field">
+          <label>허리(cm)</label>
+          <input type="text" id="rWaist" placeholder="예: 26.0" />
+        </div>
+        <div class="rform-field">
+          <label>엉덩이(cm)</label>
+          <input type="text" id="rHip" placeholder="예: 34.0" />
+        </div>
+        <div class="rform-field">
+          <label>모델 착용사이즈</label>
+          <input type="text" id="rModelSize" placeholder="예: S" />
+        </div>
+      </div>
+    </div>
+
+    <div class="rform-section">
+      <div class="rform-section-title">소재 / 제조</div>
+      <div class="rform-grid">
+        <div class="rform-field" style="grid-column:span 2">
+          <label>소재</label>
+          <input type="text" id="rMaterial" placeholder="예: 겉감 - 폴리에스터 70% 폴리우레탄 30%" />
+        </div>
+        <div class="rform-field">
+          <label>제조년월</label>
+          <input type="text" id="rMadeMonth" placeholder="예: 2026년 2월" />
+        </div>
+        <div class="rform-field">
+          <label>제조국</label>
+          <input type="text" id="rMadeIn" placeholder="대한민국" value="대한민국" />
+        </div>
+        <div class="rform-field">
+          <label>제조사</label>
+          <input type="text" id="rMadeBy" placeholder="예: 르망고" />
+        </div>
+        <div class="rform-field">
+          <label>등록일</label>
+          <input type="date" id="rRegistDate" />
+        </div>
+      </div>
+    </div>
+
+
+    <div class="rform-section">
+      <div class="rform-section-title">이미지 URL</div>
+      <div class="rform-grid">
+        <div class="rform-field" style="grid-column:span 2">
+          <label>이미지 URL 1</label>
+          <input type="url" id="rImg1" placeholder="https://..." />
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>이미지 URL 2</label>
+          <input type="url" id="rImg2" placeholder="https://..." />
+        </div>
+        <div class="rform-field" style="grid-column:span 4">
+          <label>디자이너 코멘트</label>
+          <textarea id="rComment" rows="3" placeholder="상품 소개 문구를 입력하세요"></textarea>
+        </div>
+      </div>
+    </div>
+
+  </form>
+  <div class="rmodal-footer">
+    <button type="button" class="btn btn-outline" onclick="closeRegisterModal()">취소</button>
+    <button type="button" class="btn btn-new" onclick="document.getElementById('registerForm').requestSubmit()">등록하기</button>
+  </div>
+</dialog>
+
+<!-- 상품 상세 모달 -->
+<dialog id="detailModal" class="detail-modal">
+  <!-- 리사이즈 핸들 8방향 -->
+  <div class="resize-handle lt" data-dir="lt"></div>
+  <div class="resize-handle t"  data-dir="t"></div>
+  <div class="resize-handle rt" data-dir="rt"></div>
+  <div class="resize-handle r"  data-dir="r"></div>
+  <div class="resize-handle rb" data-dir="rb"></div>
+  <div class="resize-handle b"  data-dir="b"></div>
+  <div class="resize-handle lb" data-dir="lb"></div>
+  <div class="resize-handle l"  data-dir="l"></div>
+
+  <div class="dmodal-header">
+    <div class="dmodal-title-wrap">
+      <span class="dmodal-brand" id="dBrand"></span>
+      <h2 class="dmodal-title" id="dNameKr"></h2>
+      <span class="dmodal-code" id="dCode"></span>
+    </div>
+    <div class="dmodal-header-actions">
+      <button class="btn btn-new" id="dEditBtn" onclick="toggleDetailEdit()">✏️ 수정</button>
+      <button class="modal-close" onclick="document.getElementById('detailModal').close()">✕</button>
+    </div>
+  </div>
+  <div class="dmodal-body">
+    <!-- 왼쪽: 이미지 -->
+    <div class="dmodal-left">
+      <div class="dimg-main-wrap">
+        <img id="dImgMain" src="" alt="" class="dimg-main" onerror="this.style.display='none'" />
+        <div id="dImgNone" class="dimg-none" style="display:none">이미지 없음</div>
+      </div>
+      <div class="dimg-thumbs" id="dImgThumbs"></div>
+      <div id="dVideoWrap" class="dvideo-wrap" style="display:none">
+        <a id="dVideoLink" href="" target="_blank" class="btn btn-outline" style="width:100%;justify-content:center">▶ 영상 보기</a>
+      </div>
+    </div>
+    <!-- 오른쪽: 상세 정보 -->
+    <div class="dmodal-right" id="dDetailContent"></div>
+  </div>
+</dialog>
+
+<!-- 이미지 모달 -->
+<dialog id="imageModal" class="image-modal">
+  <button class="modal-close" onclick="document.getElementById('imageModal').close()">✕</button>
+  <button class="modal-prev" id="modalPrev" onclick="modalNav(-1)">‹</button>
+  <button class="modal-next" id="modalNext" onclick="modalNav(1)">›</button>
+  <img id="modalImg" src="" alt="" class="modal-img" />
+  <div class="modal-counter" id="modalCounter"></div>
+</dialog>
+
+<!-- 엑셀 업로드 미리보기 모달 -->
+<dialog id="uploadPreviewModal" class="upm-modal">
+  <div class="upm-header">
+    <div class="upm-header-left">
+      <h2 class="upm-title">업로드 미리보기</h2>
+      <div class="upm-summary" id="upmSummary"></div>
+    </div>
+    <div class="upm-header-right">
+      <div class="upm-legend">
+        <span class="upm-badge ok">✅ 정상</span>
+        <span class="upm-badge warn">⚠️ 중복(덮어쓰기)</span>
+        <span class="upm-badge err">❌ 오류(제외)</span>
+      </div>
+      <button class="modal-close" onclick="document.getElementById('uploadPreviewModal').close()">✕</button>
+    </div>
+  </div>
+  <div class="upm-body">
+    <div class="upm-table-wrap">
+      <table class="upm-table" id="upmTable">
+        <thead>
+          <tr>
+            <th>행</th>
+            <th>상태</th>
+            <th>품번 *</th>
+            <th>브랜드</th>
+            <th>상품명(한글) *</th>
+            <th>색상</th>
+            <th>판매가</th>
+            <th>타입</th>
+            <th>소재</th>
+            <th>제조국</th>
+          </tr>
+        </thead>
+        <tbody id="upmTbody"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="upm-footer">
+    <span class="upm-required-note">* 필수 항목 — 오류 행은 등록에서 제외됩니다</span>
+    <div class="upm-footer-btns">
+      <button type="button" class="btn btn-outline" onclick="document.getElementById('uploadPreviewModal').close()">취소</button>
+      <button type="button" class="btn btn-accent" id="upmConfirmBtn" onclick="confirmRegisterUpload()">등록하기</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- 재고 등록 모달 -->
+<dialog id="stockRegisterModal" class="srm-modal">
+  <div class="srm-header">
+    <h2 class="srm-title">재고 등록</h2>
+    <div class="srm-header-actions">
+      <button type="button" class="btn btn-outline rmodal-btn-sm" onclick="downloadSample('stock')">샘플 다운로드</button>
+      <label class="btn btn-accent rmodal-btn-sm" style="cursor:pointer;margin:0">
+        엑셀 일괄 등록
+        <input type="file" accept=".xlsx,.xls" style="display:none" onchange="handleStockRegisterUpload(this)" />
+      </label>
+      <button class="modal-close" onclick="document.getElementById('stockRegisterModal').close()">✕</button>
+    </div>
+  </div>
+  <div class="srm-body">
+
+    <!-- 개별 입력 -->
+    <div class="srm-section">
+      <div class="srm-section-title">개별 입력</div>
+      <div class="srm-search-row">
+        <input type="text" id="srmKeyword" placeholder="품번 입력 후 Enter 또는 조회"
+          onkeydown="if(event.key==='Enter') findSrmProduct()" />
+        <button class="btn btn-primary" onclick="findSrmProduct()">조회</button>
+      </div>
+      <div id="srmProductArea">
+        <div class="srm-empty">품번을 입력하세요</div>
+      </div>
+    </div>
+
+    <!-- 엑셀 업로드 미리보기 -->
+    <div class="srm-section" id="srmPreviewSection" style="display:none">
+      <div class="srm-section-title">업로드 미리보기 <span id="srmPreviewCount"></span></div>
+      <div class="srm-preview-wrap">
+        <table class="upm-table">
+          <thead>
+            <tr><th>행</th><th>품번</th><th>상품명</th><th>XS</th><th>S</th><th>M</th><th>L</th><th>XL</th><th>합계</th><th>상태</th></tr>
+          </thead>
+          <tbody id="srmPreviewTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+  <div class="srm-footer" id="srmFooter">
+    <button type="button" class="btn btn-outline" onclick="document.getElementById('stockRegisterModal').close()">닫기</button>
+    <button type="button" class="btn btn-new" id="srmConfirmBtn" onclick="confirmStockUpload()" style="display:none">업로드 저장</button>
+  </div>
+</dialog>
+
+<!-- 토스트 알림 -->
+<div id="toast" class="toast"></div>
+
+<!-- SheetJS -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
