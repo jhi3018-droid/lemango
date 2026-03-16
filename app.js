@@ -692,7 +692,7 @@ function renderStockTable() {
         const total = getTotalStock(p)
         return `<tr>
           <td>${renderThumb(p)}</td>
-          <td style="font-family:Inter;font-size:12px">${p.productCode}</td>
+          <td><span class="code-link" onclick="openDetailModal('${p.productCode}')">${p.productCode}</span></td>
           <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis" title="${p.nameKr}">${p.nameKr}</td>
           <td style="font-size:12px">${p.brand}</td>
           <td style="text-align:right"><span class="price">${fmtPrice(p.salePrice)}</span></td>

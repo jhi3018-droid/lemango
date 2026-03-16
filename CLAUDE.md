@@ -161,6 +161,7 @@ flex 레이아웃에서 내부 스크롤 활성화 조건:
 - `copyFieldUrl(key, btn)` — 이미지 URL 클립보드 복사
 
 ## 2026-03-16 작업 내역
+
 ### 바코드 항목 추가
 - 상품 스키마에 `barcode` 필드 추가
 - 상품조회 테이블에 바코드 컬럼 추가 (품번 옆)
@@ -183,6 +184,13 @@ flex 레이아웃에서 내부 스크롤 활성화 조건:
 - `capRing` (캡고리): 없음 / 있음 — select
 - `guide` (가이드): 텍스트 입력
 - `legCut` 라벨: '레그컷' → '다리파임' 변경
+
+### 재고 관리 품번 클릭 모달
+- `renderStockTable()` 품번 셀에 `code-link` 클릭 이벤트 추가
+- 재고 관리 화면에서 품번 클릭 시 상세 모달(`openDetailModal`) 오픈
+
+### GitHub 연동
+- `https://github.com/jhi3018-droid/lemango` 저장소에 초기 커밋 및 push 완료
 
 ## 다음 작업 후보 (미구현)
 - [ ] 재고/판매 상세 모달에서도 직접 수정
