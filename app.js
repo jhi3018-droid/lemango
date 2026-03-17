@@ -2,12 +2,120 @@
    르망고 관리 시스템 - app.js
    =================================================== */
 
+// =============================================
+// ===== 설정 관리 =====
+// =============================================
+const SETTINGS_KEY = 'lemango_settings_v1'
+
+const DEFAULT_SETTINGS = {
+  brands:         ['르망고', '르망고 느와'],
+  types:          [['onepiece','원피스'],['bikini','비키니'],['two piece','투피스']],
+  saleStatuses:   ['판매중', '종료', '추가생산'],
+  legCuts:        [['normal cut','노멀컷'],['middle cut','미들컷'],['high cut','하이컷'],['low cut','로우컷']],
+  fabricTypes:    ['포일', '일반'],
+  chestLines:     ['낮음', '보통', '높음'],
+  transparencies: ['없음', '약간있음'],
+  linings:        ['없음', '있음'],
+  capRings:       ['없음', '있음'],
+}
+
+const SETTING_DEFS = [
+  // group: 'design'
+  { key: 'types',          title: '상품 타입', group: 'design', type: 'pair',   ph1: '코드 (예: onepiece)', ph2: '표시명 (예: 원피스)' },
+  { key: 'legCuts',        title: '다리파임',  group: 'design', type: 'pair',   ph1: '코드 (예: high cut)', ph2: '표시명 (예: 하이컷)' },
+  { key: 'fabricTypes',    title: '원단타입',  group: 'design', type: 'simple', ph: '타입명 (예: 포일)' },
+  { key: 'chestLines',     title: '가슴선',    group: 'design', type: 'simple', ph: '옵션명 (예: 낮음)' },
+  { key: 'transparencies', title: '비침',      group: 'design', type: 'simple', ph: '옵션명 (예: 없음)' },
+  { key: 'linings',        title: '안감',      group: 'design', type: 'simple', ph: '옵션명 (예: 없음)' },
+  { key: 'capRings',       title: '캡고리',    group: 'design', type: 'simple', ph: '옵션명 (예: 없음)' },
+  // group: 'info'
+  { key: 'brands',         title: '브랜드',    group: 'info',   type: 'simple', ph: '브랜드명 (예: 르망고)' },
+  { key: 'saleStatuses',   title: '판매상태',  group: 'info',   type: 'simple', ph: '상태명 (예: 판매중)' },
+]
+
+// =============================================
+// ===== 판매 채널(플랫폼) 관리 =====
+// =============================================
+const DEFAULT_PLATFORMS = ['공홈', 'GS', '29cm', 'W쇼핑', '기타']
+
+let _platforms = (() => {
+  try {
+    const saved = localStorage.getItem('lemango_platforms_v1')
+    return saved ? JSON.parse(saved) : [...DEFAULT_PLATFORMS]
+  } catch { return [...DEFAULT_PLATFORMS] }
+})()
+
+function savePlatforms() {
+  localStorage.setItem('lemango_platforms_v1', JSON.stringify(_platforms))
+}
+
+let _settings = (() => {
+  try {
+    const saved = localStorage.getItem(SETTINGS_KEY)
+    if (!saved) return JSON.parse(JSON.stringify(DEFAULT_SETTINGS))
+    const parsed = JSON.parse(saved)
+    // 누락된 키는 DEFAULT로 채움
+    return Object.fromEntries(
+      Object.keys(DEFAULT_SETTINGS).map(k => [k, parsed[k] ?? JSON.parse(JSON.stringify(DEFAULT_SETTINGS[k]))])
+    )
+  } catch { return JSON.parse(JSON.stringify(DEFAULT_SETTINGS)) }
+})()
+
+function saveSettings() {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(_settings))
+}
+
+// select 요소 하나를 채우는 유틸
+function populateSelect(id, items, withAll = false, withBlank = false) {
+  const el = document.getElementById(id)
+  if (!el) return
+  const current = el.value
+  let html = ''
+  if (withAll)   html += '<option value="all">전체</option>'
+  if (withBlank) html += '<option value="">선택</option>'
+  html += items.map(item => {
+    const [val, label] = Array.isArray(item) ? item : [item, item]
+    return `<option value="${val}">${label}</option>`
+  }).join('')
+  el.innerHTML = html
+  // 이전 값 유지 시도
+  if ([...el.options].some(o => o.value === current)) el.value = current
+}
+
+// 모든 managed select 갱신
+function populateAllSelects() {
+  const s = _settings
+  // 상품조회 검색
+  populateSelect('pBrand',       s.brands,         true)
+  populateSelect('pLegCut',      s.legCuts,         true)
+  populateSelect('pSaleStatus',  s.saleStatuses,    true)
+  // 신규기획 검색
+  populateSelect('npBrand',      s.brands,          true)
+  populateSelect('npType',       s.types,           true)
+  // 신규등록 모달 폼
+  populateSelect('rBrand',       s.brands)
+  populateSelect('rType',        s.types)
+  populateSelect('rLegCut',      s.legCuts,         false, true)
+  populateSelect('rFabricType',  s.fabricTypes,     false, true)
+  populateSelect('rChestLine',   s.chestLines,      false, true)
+  populateSelect('rTransparency',s.transparencies,  false, true)
+  populateSelect('rLining',      s.linings,         false, true)
+  populateSelect('rCapRing',     s.capRings,        false, true)
+  // 신규기획 모달 폼
+  populateSelect('plBrand',      s.brands)
+  populateSelect('plType',       s.types,           false, true)
+  // 판매조회 플랫폼 필터
+  populateSelect('slPlatform',   _platforms,        true)
+}
+
 // ===== 전역 상태 =====
 const State = {
   allProducts: [],
+  planItems:   [],
   product: { filtered: [], sort: { key: 'no', dir: 'asc' } },
   stock:   { filtered: [], sort: { key: 'no', dir: 'asc' } },
   sales:   { filtered: [], sort: { key: 'totalSales', dir: 'desc' } },
+  plan:    { filtered: [], sort: { key: 'no', dir: 'asc' } },
   modal:   { images: [], idx: 0 }
 }
 
@@ -16,6 +124,12 @@ async function init() {
   renderDate()
   bindTabs()
   initDraggable()
+  initRegisterDraggable()
+  initPlanRegisterDraggable()
+  initPlanDetailDraggable()
+  makeDraggableResizable(document.getElementById('stockRegisterModal'))
+  makeDraggableResizable(document.getElementById('outgoingModal'))
+  makeDraggableResizable(document.getElementById('gonghomPreviewModal'))
   try {
     const [lem, noir] = await Promise.all([
       fetch('data/products_lemango.json').then(r => r.json()),
@@ -25,16 +139,49 @@ async function init() {
     State.product.filtered = [...State.allProducts]
     State.stock.filtered   = [...State.allProducts]
     State.sales.filtered   = [...State.allProducts]
+    // 샘플 기획 데이터
+    State.planItems.push({
+      no: 1,
+      sampleNo: '26SS0201',
+      productCode: '',
+      brand: '르망고',
+      nameKr: '아말피 홀터넥',
+      nameEn: 'Amalfi Halterneck',
+      colorKr: '코랄 핑크',
+      colorEn: 'Coral Pink',
+      salePrice: 168000,
+      costPrice: 58000,
+      type: 'onepiece',
+      year: '2026',
+      season: '2',
+      gender: 'W',
+      memo: '26SS2 시즌 원피스 신규 기획. 홀터넥 + 오픈백 구조. 포일 원단 검토 중.',
+      images: {
+        sum: ['https://images.unsplash.com/photo-1604871000636-074fa5117945?w=400'],
+        lemango: '',
+        noir: ''
+      },
+      schedule: {
+        design:     { start: '2026-02-01', end: '2026-02-20' },
+        production: { start: '2026-02-21', end: '2026-03-25' },
+        image:      { start: '2026-03-26', end: '2026-04-05' },
+        register:   { start: '2026-04-06', end: '2026-04-10' },
+        logistics:  { start: '2026-04-11', end: '2026-04-20' }
+      }
+    })
+    State.plan.filtered    = [...State.planItems]
+    populateAllSelects()
     renderDashboard()
     renderProductTable()
     renderStockTable()
     renderSalesTable()
+    renderPlanTable()
   } catch (e) {
     showToast('데이터 로드 실패: ' + e.message, 'error')
     console.error(e)
   }
   // Enter 키 검색
-  ['pKeyword','sKeyword','slKeyword'].forEach(id => {
+  ['pKeyword','sKeyword','slKeyword','npKeyword'].forEach(id => {
     const el = document.getElementById(id)
     if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') el.closest('.tab-content')?.querySelector('.btn-primary')?.click() })
   })
@@ -76,6 +223,7 @@ function bindTabs() {
 function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab))
   document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + tab))
+  if (tab === 'settings') renderSettings()
 }
 
 // ===== 유틸 =====
@@ -270,14 +418,15 @@ function renderMiniChart() {
   const canvas = document.getElementById('salesChart')
   if (!canvas) return
   const ctx = canvas.getContext('2d')
-  const platforms = ['공홈','GS','29cm','W쇼핑','기타']
+  const platforms = _platforms
   const totals = platforms.map(pl =>
     State.allProducts.reduce((s,p) => s + (p.sales?.[pl] || 0), 0)
   )
   const max = Math.max(...totals) || 1
   const w = canvas.width, h = canvas.height
   const barW = 44, gap = (w - platforms.length * barW) / (platforms.length + 1)
-  const colors = ['#1a1a2e','#c9a96e','#4caf7d','#f0a500','#e05252']
+  const CHART_COLORS = ['#1a1a2e','#c9a96e','#4caf7d','#f0a500','#e05252','#7b68ee','#20b2aa','#ff7f50','#9370db','#3cb371']
+  const colors = _platforms.map((_, i) => CHART_COLORS[i % CHART_COLORS.length])
   ctx.clearRect(0, 0, w, h)
   // 배경 격자
   ctx.strokeStyle = '#eeebe5'; ctx.lineWidth = 1
@@ -306,6 +455,21 @@ function renderMiniChart() {
 // =============================================
 // ===== 상품조회 =====
 // =============================================
+// 품번 13자리에서 성별 코드(char 2) 추출
+function _codeGender(code) {
+  return (code && code.length === 13) ? code[2] : null
+}
+// 품번 13자리에서 타입 코드(chars 3-4) 추출
+function _codeType(code) {
+  return (code && code.length === 13) ? code.slice(3, 5) : null
+}
+// p.type(onepiece/bikini/two piece) → pcType 코드 집합으로 매핑 (품번 없을 때 fallback)
+const _TYPE_FALLBACK = {
+  ON: ['onepiece'], MO: ['onepiece'],
+  BK: ['bikini'],   BR: ['bikini'],
+  JM: ['two piece'], RG: ['two piece'], AL: ['two piece'],
+}
+
 function searchProduct() {
   const raw      = document.getElementById('pKeyword').value
   const keywords = parseKeywords(raw)
@@ -314,7 +478,9 @@ function searchProduct() {
   const dateFrom = document.getElementById('pDateFrom').value
   const dateTo   = document.getElementById('pDateTo').value
   const brand    = document.getElementById('pBrand').value
+  const gender   = document.getElementById('pGender').value
   const type     = document.getElementById('pType').value
+  const legCut   = document.getElementById('pLegCut').value
 
   let result = State.allProducts.filter(p => {
     if (keywords.length) {
@@ -326,14 +492,36 @@ function searchProduct() {
         return [p.nameKr, p.nameEn, p.productCode, p.sampleNo, p.colorKr, p.backStyle, p.barcode]
       }
       const targets = getTargets()
-      // 키워드 중 하나라도 포함되면 통과 (OR 검색)
       if (!keywords.some(kw => targets.some(t => (t||'').toLowerCase().includes(kw)))) return false
     }
     if (dateFrom || dateTo) {
       if (!isInRange(p[dateType], dateFrom, dateTo)) return false
     }
     if (brand !== 'all' && p.brand !== brand) return false
-    if (type  !== 'all' && !((p.type||'').toLowerCase().includes(type.toLowerCase()))) return false
+
+    // 성별 필터 — 품번 3번째 자리에서 추출
+    if (gender !== 'all') {
+      const g = _codeGender(p.productCode)
+      if (!g || g !== gender) return false
+    }
+
+    // 타입 필터 — 품번 4-5번째 자리 우선, p.type fallback
+    if (type !== 'all') {
+      const t = _codeType(p.productCode)
+      if (t) {
+        if (t !== type) return false
+      } else {
+        // 품번이 없거나 형식 미일치 → p.type으로 fallback
+        const fallbackTypes = _TYPE_FALLBACK[type] || []
+        if (!fallbackTypes.includes((p.type||'').toLowerCase())) return false
+      }
+    }
+
+    if (legCut !== 'all' && (p.legCut || '') !== legCut) return false
+
+    const saleStatus = document.getElementById('pSaleStatus').value
+    if (saleStatus !== 'all' && (p.saleStatus || '판매중') !== saleStatus) return false
+
     return true
   })
   State.product.filtered = sortData(result, State.product.sort.key, State.product.sort.dir)
@@ -345,7 +533,10 @@ function resetProduct() {
   document.getElementById('pSearchField').value = 'all'
   document.getElementById('pDateType').value = 'registDate'
   document.getElementById('pBrand').value = 'all'
+  document.getElementById('pGender').value = 'all'
   document.getElementById('pType').value = 'all'
+  document.getElementById('pLegCut').value = 'all'
+  document.getElementById('pSaleStatus').value = 'all'
   State.product.filtered = [...State.allProducts]
   renderProductTable()
 }
@@ -521,7 +712,10 @@ function openStockRegisterModal() {
   document.getElementById('srmPreviewSection').style.display = 'none'
   document.getElementById('srmConfirmBtn').style.display = 'none'
   _stockUploadData = null
-  document.getElementById('stockRegisterModal').showModal()
+  const modal = document.getElementById('stockRegisterModal')
+  centerModal(modal)
+  modal.showModal()
+  centerModal(modal)
 }
 
 function findSrmProduct() {
@@ -543,21 +737,41 @@ function findSrmProduct() {
       <span class="sip-code">${p.productCode}</span>
       <span class="sip-name">${p.nameKr}</span>
     </div>
-    <div class="sip-sizes">
-      ${sizes.map(sz => `
-        <div class="sip-size-item">
-          <label class="sip-size-label">${sz}</label>
-          <input type="number" class="sip-size-input" id="srmStock_${sz}"
-            value="${p.stock?.[sz]||0}" min="0"
-            oninput="updateSrmTotal()" />
-        </div>`).join('')}
-      <div class="sip-size-item sip-total-item">
-        <label class="sip-size-label">합계</label>
-        <span class="sip-total-num" id="srmTotal">${getTotalStock(p)}</span>
-      </div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:10px;font-size:12px">
+      <thead>
+        <tr style="background:var(--table-header)">
+          <th style="padding:5px 8px;text-align:left;border:1px solid var(--border)">사이즈</th>
+          <th style="padding:5px 8px;text-align:left;border:1px solid var(--border)">바코드</th>
+          <th style="padding:5px 8px;text-align:right;border:1px solid var(--border)">현재재고</th>
+          <th style="padding:5px 8px;text-align:center;border:1px solid var(--border)">추가입고수량</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${sizes.map(sz => `
+          <tr>
+            <td style="padding:5px 8px;border:1px solid var(--border);font-weight:600">${sz}</td>
+            <td style="padding:5px 8px;border:1px solid var(--border);font-family:Inter;color:var(--text-sub)">${p.barcodes?.[sz] || p.barcode || '-'}</td>
+            <td style="padding:5px 8px;border:1px solid var(--border);text-align:right">${p.stock?.[sz]||0}</td>
+            <td style="padding:5px 8px;border:1px solid var(--border);text-align:center">
+              <input type="number" class="sip-size-input" id="srmStock_${sz}"
+                value="0" min="0" style="width:70px;text-align:center"
+                oninput="updateSrmTotal()" />
+            </td>
+          </tr>`).join('')}
+        <tr style="background:var(--table-header);font-weight:700">
+          <td colspan="3" style="padding:5px 8px;border:1px solid var(--border);text-align:right">입고 합계</td>
+          <td style="padding:5px 8px;border:1px solid var(--border);text-align:center" id="srmTotal">0</td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="display:flex;gap:8px;align-items:center;margin:8px 0 0">
+      <label style="font-size:12px;white-space:nowrap">입고일</label>
+      <input type="date" id="srmDate" value="${new Date().toISOString().slice(0,10)}" style="flex:1;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" />
+      <label style="font-size:12px;white-space:nowrap">메모</label>
+      <input type="text" id="srmMemo" placeholder="메모 (선택)" style="flex:2;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px" />
     </div>
     <div class="sip-actions">
-      <button class="btn btn-primary" onclick="saveSrmStock('${p.productCode}')">저장</button>
+      <button class="btn btn-primary" onclick="saveSrmStock('${p.productCode}')">입고 저장</button>
     </div>
   `
 }
@@ -572,12 +786,43 @@ function saveSrmStock(productCode) {
   const p = State.allProducts.find(x => x.productCode === productCode)
   if (!p) return
   const sizes = ['XS','S','M','L','XL']
-  sizes.forEach(sz => { p.stock[sz] = parseInt(document.getElementById(`srmStock_${sz}`).value)||0 })
+  const inQty = {}
+  sizes.forEach(sz => { inQty[sz] = parseInt(document.getElementById(`srmStock_${sz}`)?.value)||0 })
+  const total = Object.values(inQty).reduce((a,b) => a+b, 0)
+  if (total === 0) { showToast('입고 수량을 입력해주세요.', 'warning'); return }
+
+  // 누적 추가
+  if (!p.stock) p.stock = { XS:0, S:0, M:0, L:0, XL:0 }
+  sizes.forEach(sz => { p.stock[sz] = (p.stock[sz]||0) + inQty[sz] })
+
+  // 입고 이력 저장
+  if (!p.stockLog) p.stockLog = []
+  p.stockLog.push({
+    type: 'in',
+    date: document.getElementById('srmDate')?.value || new Date().toISOString().slice(0,10),
+    memo: document.getElementById('srmMemo')?.value.trim() || '',
+    ...inQty,
+    registeredAt: new Date().toISOString()
+  })
+
   State.stock.filtered = State.stock.filtered.map(x => x.productCode === productCode ? p : x)
   renderStockTable()
-  showToast(`${p.nameKr} 재고 저장 완료`, 'success')
+  showToast(`${p.nameKr} 입고 ${total}개 저장 완료`, 'success')
   document.getElementById('srmProductArea').innerHTML = '<div class="srm-empty">저장됐습니다. 다른 품번을 입력하세요.</div>'
   document.getElementById('srmKeyword').value = ''
+}
+
+// Excel 날짜 변환 (시리얼 숫자 또는 문자열 → YYYY-MM-DD)
+function parseExcelDate(val) {
+  if (!val) return new Date().toISOString().slice(0,10)
+  if (val instanceof Date) return val.toISOString().slice(0,10)
+  if (typeof val === 'number') {
+    const d = new Date((val - 25569) * 86400 * 1000)
+    return d.toISOString().slice(0,10)
+  }
+  const s = String(val).trim()
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10)
+  return s
 }
 
 function handleStockRegisterUpload(input) {
@@ -588,50 +833,53 @@ function handleStockRegisterUpload(input) {
   const reader = new FileReader()
   reader.onload = e => {
     try {
-      const wb  = XLSX.read(e.target.result, { type: 'array' })
+      const wb  = XLSX.read(e.target.result, { type: 'array', cellDates: true })
       const ws  = wb.Sheets[wb.SheetNames[0]]
       const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
-      const dataRows = raw.slice(1).filter(r => String(r[0]||'').trim())
+      // 1행 헤더: 입고일(0) 품번(1) 사이즈(2) 바코드(3) 수량(4) 메모(5)
+      const dataRows = raw.slice(1).filter(r => String(r[1]||'').trim())
       if (!dataRows.length) { showToast('데이터가 없습니다.', 'error'); return }
 
       _stockUploadData = dataRows.map((row, idx) => {
-        const code = String(row[0]||'').trim()
-        const p = State.allProducts.find(x => x.productCode === code)
+        const code    = String(row[1]||'').trim()
+        const p       = State.allProducts.find(x => x.productCode === code)
         return {
-          rowNum: idx + 2,
+          rowNum:  idx + 2,
+          date:    parseExcelDate(row[0]),
           code,
-          nameKr: p ? p.nameKr : '—',
-          XS: parseInt(row[2])||0, S: parseInt(row[3])||0,
-          M:  parseInt(row[4])||0, L: parseInt(row[5])||0, XL: parseInt(row[6])||0,
-          found: !!p
+          size:    String(row[2]||'').trim().toUpperCase(),
+          barcode: String(row[3]||'').trim(),
+          qty:     parseInt(row[4]) || 0,
+          memo:    String(row[5]||'').trim(),
+          found:   !!p,
+          nameKr:  p ? p.nameKr : '—'
         }
       })
 
-      const valid = _stockUploadData.filter(r => r.found).length
+      const valid    = _stockUploadData.filter(r => r.found).length
       const notFound = _stockUploadData.filter(r => !r.found).length
       document.getElementById('srmPreviewCount').innerHTML =
         `<span style="font-weight:400;font-size:12px;color:var(--text-sub)">
-          전체 ${_stockUploadData.length}건 | <span style="color:var(--success)">매칭 ${valid}건</span>
-          ${notFound ? ` | <span style="color:var(--danger)">미매칭 ${notFound}건</span>` : ''}
+          전체 ${_stockUploadData.length}행 | <span style="color:var(--success)">매칭 ${valid}행</span>
+          ${notFound ? ` | <span style="color:var(--danger)">미매칭 ${notFound}행</span>` : ''}
         </span>`
 
       document.getElementById('srmPreviewTbody').innerHTML = _stockUploadData.map(r => `
         <tr class="${r.found ? '' : 'upm-row-error'}">
           <td>${r.rowNum}</td>
-          <td>${r.code}</td>
+          <td style="font-size:11px">${r.date}</td>
+          <td style="font-family:Inter;font-size:11px">${r.code}</td>
           <td>${r.nameKr}</td>
-          <td style="text-align:center">${r.XS}</td>
-          <td style="text-align:center">${r.S}</td>
-          <td style="text-align:center">${r.M}</td>
-          <td style="text-align:center">${r.L}</td>
-          <td style="text-align:center">${r.XL}</td>
-          <td style="text-align:center;font-weight:700">${r.XS+r.S+r.M+r.L+r.XL}</td>
-          <td>${r.found ? '<span class="upm-badge ok">✅ 매칭</span>' : '<span class="upm-badge err">❌ 미매칭</span>'}</td>
+          <td style="text-align:center;font-weight:600">${r.size}</td>
+          <td style="font-family:Inter;font-size:11px">${r.barcode || '-'}</td>
+          <td style="text-align:center;font-weight:700;color:var(--accent)">${r.qty}</td>
+          <td style="font-size:11px;color:var(--text-sub)">${r.memo || '-'}</td>
+          <td>${r.found ? '<span class="upm-badge ok">✅</span>' : '<span class="upm-badge err">❌ 미매칭</span>'}</td>
         </tr>`).join('')
 
       document.getElementById('srmPreviewSection').style.display = ''
       document.getElementById('srmConfirmBtn').style.display = valid > 0 ? '' : 'none'
-      document.getElementById('srmConfirmBtn').textContent = `${valid}건 저장`
+      document.getElementById('srmConfirmBtn').textContent = `${valid}행 입고 저장`
     } catch (err) {
       showToast('파일 읽기 오류: ' + err.message, 'error')
     }
@@ -641,18 +889,155 @@ function handleStockRegisterUpload(input) {
 
 function confirmStockUpload() {
   if (!_stockUploadData) return
-  let cnt = 0
+
+  // 품번+입고일+메모로 그룹화 → 사이즈별 합산
+  const groups = {}
   _stockUploadData.filter(r => r.found).forEach(r => {
-    const p = State.allProducts.find(x => x.productCode === r.code)
+    const key = `${r.code}||${r.date}||${r.memo}`
+    if (!groups[key]) groups[key] = { code: r.code, date: r.date, memo: r.memo, sizes: {}, barcodes: {} }
+    const sz = r.size
+    if (['XS','S','M','L','XL'].includes(sz)) {
+      groups[key].sizes[sz] = (groups[key].sizes[sz] || 0) + r.qty
+      if (r.barcode) groups[key].barcodes[sz] = r.barcode
+    }
+  })
+
+  let cnt = 0
+  Object.values(groups).forEach(g => {
+    const p = State.allProducts.find(x => x.productCode === g.code)
     if (!p) return
-    p.stock = { XS: r.XS, S: r.S, M: r.M, L: r.L, XL: r.XL }
+    if (!p.stock)    p.stock    = { XS:0, S:0, M:0, L:0, XL:0 }
+    if (!p.barcodes) p.barcodes = {}
+    if (!p.stockLog) p.stockLog = []
+
+    // 누적 입고
+    Object.entries(g.sizes).forEach(([sz, qty]) => { p.stock[sz] = (p.stock[sz]||0) + qty })
+    // 바코드 업데이트
+    Object.entries(g.barcodes).forEach(([sz, bc]) => { p.barcodes[sz] = bc })
+    // 이력
+    p.stockLog.push({ type:'in', date: g.date, memo: g.memo || '엑셀 일괄 입고',
+      ...g.sizes, barcodes: g.barcodes, registeredAt: new Date().toISOString() })
     cnt++
   })
+
   State.stock.filtered = [...State.allProducts]
   renderStockTable()
-  showToast(`${cnt}건 재고 저장 완료`, 'success')
+  showToast(`${cnt}개 상품 입고 저장 완료`, 'success')
   document.getElementById('stockRegisterModal').close()
   _stockUploadData = null
+}
+
+// =============================================
+// ===== 개별출고 모달 =====
+// =============================================
+function openOutgoingModal() {
+  document.getElementById('ougKeyword').value = ''
+  document.getElementById('ougProductArea').innerHTML = '<div class="srm-empty">품번을 입력하세요</div>'
+  document.getElementById('ougDate').value = new Date().toISOString().slice(0,10)
+  document.getElementById('ougMemo').value = ''
+  const modal = document.getElementById('outgoingModal')
+  centerModal(modal)
+  modal.showModal()
+  centerModal(modal)
+}
+
+function closeOutgoingModal() {
+  document.getElementById('outgoingModal').close()
+}
+
+function findOutgoingProduct() {
+  const keyword = document.getElementById('ougKeyword').value.trim()
+  if (!keyword) { showToast('품번을 입력하세요.', 'warning'); return }
+  const p = State.allProducts.find(x =>
+    (x.productCode||'').toLowerCase() === keyword.toLowerCase() ||
+    (x.productCode||'').toLowerCase().includes(keyword.toLowerCase())
+  )
+  const area = document.getElementById('ougProductArea')
+  if (!p) {
+    area.innerHTML = `<div class="srm-empty srm-notfound">품번 <b>${keyword}</b>을(를) 찾을 수 없습니다.</div>`
+    return
+  }
+  const sizes = ['XS','S','M','L','XL']
+  area.innerHTML = `
+    <div class="sip-product-info" style="margin:12px 0 10px">
+      <span class="sip-brand">${p.brand}</span>
+      <span class="sip-code">${p.productCode}</span>
+      <span class="sip-name">${p.nameKr}</span>
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:10px;font-size:12px">
+      <thead>
+        <tr style="background:var(--table-header)">
+          <th style="padding:5px 8px;text-align:left;border:1px solid var(--border)">사이즈</th>
+          <th style="padding:5px 8px;text-align:left;border:1px solid var(--border)">바코드</th>
+          <th style="padding:5px 8px;text-align:right;border:1px solid var(--border)">현재재고</th>
+          <th style="padding:5px 8px;text-align:center;border:1px solid var(--border)">출고수량</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${sizes.map(sz => `
+          <tr>
+            <td style="padding:5px 8px;border:1px solid var(--border);font-weight:600">${sz}</td>
+            <td style="padding:5px 8px;border:1px solid var(--border);font-family:Inter;color:var(--text-sub)">${p.barcodes?.[sz] || p.barcode || '-'}</td>
+            <td style="padding:5px 8px;border:1px solid var(--border);text-align:right" id="ougCur_${sz}">${p.stock?.[sz]||0}</td>
+            <td style="padding:5px 8px;border:1px solid var(--border);text-align:center">
+              <input type="number" class="sip-size-input" id="ougStock_${sz}"
+                value="0" min="0" max="${p.stock?.[sz]||0}" style="width:70px;text-align:center"
+                oninput="updateOugTotal()" />
+            </td>
+          </tr>`).join('')}
+        <tr style="background:var(--table-header);font-weight:700">
+          <td colspan="3" style="padding:5px 8px;border:1px solid var(--border);text-align:right">출고 합계</td>
+          <td style="padding:5px 8px;border:1px solid var(--border);text-align:center" id="ougTotal">0</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="sip-actions">
+      <button class="btn btn-danger" onclick="submitOutgoing('${p.productCode}')">출고 처리</button>
+    </div>
+  `
+}
+
+function updateOugTotal() {
+  const sizes = ['XS','S','M','L','XL']
+  const total = sizes.reduce((s, sz) => s + (parseInt(document.getElementById(`ougStock_${sz}`)?.value)||0), 0)
+  const el = document.getElementById('ougTotal')
+  if (el) el.textContent = total
+}
+
+function submitOutgoing(productCode) {
+  const p = State.allProducts.find(x => x.productCode === productCode)
+  if (!p) return
+  const sizes = ['XS','S','M','L','XL']
+  const outQty = {}
+  sizes.forEach(sz => { outQty[sz] = parseInt(document.getElementById(`ougStock_${sz}`)?.value)||0 })
+  const total = Object.values(outQty).reduce((a,b) => a+b, 0)
+  if (total === 0) { showToast('출고 수량을 입력해주세요.', 'warning'); return }
+
+  // 재고 초과 체크
+  const overSize = sizes.find(sz => outQty[sz] > (p.stock?.[sz]||0))
+  if (overSize) {
+    showToast(`${overSize} 출고 수량이 현재 재고(${p.stock?.[overSize]||0})를 초과합니다.`, 'error')
+    return
+  }
+
+  // 누적 차감
+  if (!p.stock) p.stock = { XS:0, S:0, M:0, L:0, XL:0 }
+  sizes.forEach(sz => { p.stock[sz] = (p.stock[sz]||0) - outQty[sz] })
+
+  // 출고 이력 저장
+  if (!p.stockLog) p.stockLog = []
+  p.stockLog.push({
+    type: 'out',
+    date: document.getElementById('ougDate')?.value || new Date().toISOString().slice(0,10),
+    memo: document.getElementById('ougMemo')?.value.trim() || '',
+    ...outQty,
+    registeredAt: new Date().toISOString()
+  })
+
+  State.stock.filtered = State.stock.filtered.map(x => x.productCode === productCode ? p : x)
+  renderStockTable()
+  showToast(`${p.nameKr} 출고 ${total}개 처리 완료`, 'success')
+  closeOutgoingModal()
 }
 
 function resetStock() {
@@ -754,7 +1139,7 @@ function renderSalesTable() {
     return
   }
 
-  const platforms = ['공홈','GS','29cm','W쇼핑','기타']
+  const platforms = _platforms
   const platTotals = {}
   platforms.forEach(pl => platTotals[pl] = data.reduce((s,p) => s + (p.sales?.[pl] || 0), 0))
   const grandTotal = Object.values(platTotals).reduce((a,b) => a+b, 0)
@@ -795,6 +1180,500 @@ function renderSalesTable() {
 }
 
 // =============================================
+// ===== 신규기획 =====
+// =============================================
+let _plLocalImgUrls = []
+
+function openPlanRegisterModal() {
+  const modal = document.getElementById('planRegisterModal')
+  modal.showModal()
+  requestAnimationFrame(() => {
+    modal.style.left = Math.max(0, (window.innerWidth  - modal.offsetWidth)  / 2) + 'px'
+    modal.style.top  = Math.max(0, (window.innerHeight - modal.offsetHeight) / 2) + 'px'
+  })
+  initPlPcodePanel()
+}
+
+function closePlanRegisterModal() {
+  const code = document.getElementById('plProductCode')?.value
+  if (code) _reservedCodes.delete(code)
+  document.getElementById('planRegisterModal').close()
+  document.getElementById('planRegisterForm').reset()
+  const prev = document.getElementById('plImgPreview')
+  if (prev) prev.innerHTML = ''
+  _plLocalImgUrls = []
+}
+
+function submitPlanRegister(e) {
+  e.preventDefault()
+  const sampleNo = document.getElementById('plSampleNo').value.trim()
+  if (!sampleNo) { showToast('샘플번호는 필수입니다.', 'error'); return }
+
+  const sumUrls = (document.getElementById('plImgSum').value || '').split('\n').map(u => u.trim()).filter(Boolean)
+  const item = {
+    no:          State.planItems.length + 1,
+    sampleNo,
+    productCode: document.getElementById('plProductCode').value.trim() || '',
+    brand:       document.getElementById('plBrand').value,
+    nameKr:      document.getElementById('plNameKr').value.trim(),
+    nameEn:      document.getElementById('plNameEn').value.trim(),
+    colorKr:     document.getElementById('plColorKr').value.trim(),
+    colorEn:     document.getElementById('plColorEn').value.trim(),
+    salePrice:   Number(document.getElementById('plSalePrice').value) || 0,
+    costPrice:   Number(document.getElementById('plCostPrice').value) || 0,
+    type:        document.getElementById('plType').value,
+    year:        document.getElementById('plYear').value,
+    season:      document.getElementById('plSeason').value,
+    gender:      document.getElementById('plGender').value,
+    memo:        document.getElementById('plMemo').value.trim(),
+    images: {
+      sum:     [...sumUrls, ..._plLocalImgUrls],
+      lemango: document.getElementById('plImgLemango').value.trim(),
+      noir:    document.getElementById('plImgNoir').value.trim()
+    },
+    schedule: {
+      design:     { start: document.getElementById('plDesignStart').value,     end: document.getElementById('plDesignEnd').value },
+      production: { start: document.getElementById('plProductionStart').value, end: document.getElementById('plProductionEnd').value },
+      image:      { start: document.getElementById('plImageStart').value,      end: document.getElementById('plImageEnd').value },
+      register:   { start: document.getElementById('plRegisterStart').value,   end: document.getElementById('plRegisterEnd').value },
+      logistics:  { start: document.getElementById('plLogisticsStart').value,  end: document.getElementById('plLogisticsEnd').value }
+    }
+  }
+  if (item.productCode) _reservedCodes.delete(item.productCode)
+  State.planItems.push(item)
+  State.plan.filtered = [...State.planItems]
+  _plLocalImgUrls = []
+  renderPlanTable()
+  closePlanRegisterModal()
+  showToast(`"${sampleNo}" 기획 등록 완료`, 'success')
+}
+
+// ===== 신규기획 품번 자동생성 =====
+function togglePlPcodePanel() {
+  const panel = document.getElementById('plPcodePanel')
+  const btn   = document.getElementById('plPcodeToggleBtn')
+  const open  = panel.style.display === 'none' || panel.style.display === ''
+  panel.style.display = open ? 'block' : 'none'
+  btn.textContent = open ? '자동생성 ▴' : '자동생성 ▾'
+  if (open) initPlPcodePanel()
+}
+
+function initPlPcodePanel() {
+  if (!document.getElementById('plPcDesign')) return
+  renderPlDesignList('')
+  selectPlDesign('1626')
+  renderPlBackStyleList('')
+  document.getElementById('plPcPreview').textContent = '-'
+  document.getElementById('plPcSeqDisplay').textContent = '-'
+  const applyBtn = document.getElementById('plPcApplyBtn')
+  if (applyBtn) applyBtn.disabled = true
+}
+
+function renderPlBackStyleList(query) {
+  const q = (query || '').toLowerCase().trim()
+  const list = q
+    ? _backStyles.filter(([c,e,k]) => c.includes(q) || e.toLowerCase().includes(q) || k.toLowerCase().includes(q))
+    : _backStyles
+  const current = document.getElementById('plPcBackStyle')?.value
+  const dd = document.getElementById('plBsDropdown')
+  if (!dd) return
+  dd.innerHTML = list.map(([c,e,k]) =>
+    `<div class="design-listitem${current===c?' selected':''}" onclick="selectPlBackStyle('${c}')">[${c}] ${e} / ${k}</div>`
+  ).join('') || '<div class="design-no-result">없음</div>'
+}
+
+function filterPlBackStyleList() {
+  renderPlBackStyleList(document.getElementById('plPcBsSearch')?.value || '')
+}
+
+function selectPlBackStyle(code) {
+  const found = _backStyles.find(([c]) => c === code)
+  if (!found) return
+  document.getElementById('plPcBackStyle').value = code
+  document.getElementById('plPcBsSearch').value = ''
+  document.getElementById('plPcBsSearch').placeholder = `${code} - ${found[1]} (${found[2]})`
+  renderPlBackStyleList('')
+}
+
+function showPlBsForm(mode) {
+  const form = document.getElementById('plBsForm')
+  if (!form) return
+  if (mode === 'edit') {
+    const cur = document.getElementById('plPcBackStyle')?.value
+    if (!cur) { showToast('수정할 백스타일을 선택하세요.', 'warning'); return }
+    const entry = _backStyles.find(([c]) => c === cur)
+    if (entry) {
+      document.getElementById('plBsFormCode').value = entry[0]
+      document.getElementById('plBsFormEn').value   = entry[1]
+      document.getElementById('plBsFormKr').value   = entry[2]
+    }
+  } else {
+    document.getElementById('plBsFormCode').value = ''
+    document.getElementById('plBsFormEn').value   = ''
+    document.getElementById('plBsFormKr').value   = ''
+  }
+  form.dataset.mode = mode
+  form.style.display = 'flex'
+}
+
+function confirmPlBsForm() {
+  const form = document.getElementById('plBsForm')
+  const mode = form?.dataset.mode
+  const code = document.getElementById('plBsFormCode')?.value.trim()
+  const en   = document.getElementById('plBsFormEn')?.value.trim()
+  const kr   = document.getElementById('plBsFormKr')?.value.trim()
+  if (!code || !en || !kr) { showToast('코드, 영문, 한글 모두 입력해주세요.', 'warning'); return }
+  if (mode === 'add') {
+    if (_backStyles.find(([c]) => c === code)) { showToast('이미 존재하는 코드입니다.', 'error'); return }
+    _backStyles.push([code, en, kr])
+  } else {
+    const idx = _backStyles.findIndex(([c]) => c === code)
+    if (idx !== -1) _backStyles[idx] = [code, en, kr]; else _backStyles.push([code, en, kr])
+  }
+  saveBackStyles()
+  renderPlBackStyleList('')
+  document.getElementById('plPcBackStyle').value = code
+  if (form) form.style.display = 'none'
+}
+
+function renderPlDesignList(query) {
+  const q = (query || '').toLowerCase().trim()
+  const list = q
+    ? _designCodes.filter(([c,e,k]) => c.includes(q) || e.toLowerCase().includes(q) || k.toLowerCase().includes(q))
+    : _designCodes
+  const current = document.getElementById('plPcDesign')?.value
+  const dd = document.getElementById('plDesignDropdown')
+  if (!dd) return
+  dd.innerHTML = list.map(([c,e,k]) =>
+    `<div class="design-option${current===c?' selected':''}" onclick="selectPlDesign('${c}')">
+      <span class="design-code">${c}</span>
+      <span class="design-names"><span class="design-en">${e}</span><span class="design-kr">${k}</span></span>
+    </div>`
+  ).join('') || '<div class="design-no-result">검색 결과 없음</div>'
+  const sel = dd.querySelector('.design-option.selected')
+  if (sel) sel.scrollIntoView({ block: 'nearest' })
+}
+
+function filterPlDesignList() {
+  renderPlDesignList(document.getElementById('plPcDesignSearch')?.value || '')
+}
+
+function selectPlDesign(code) {
+  const found = _designCodes.find(([c]) => c === code)
+  if (!found) return
+  document.getElementById('plPcDesign').value = code
+  document.getElementById('plPcDesignSearch').value = ''
+  document.getElementById('plPcDesignSearch').placeholder = `${code} - ${found[1]} (${found[2]})`
+  renderPlDesignList('')
+}
+
+function updatePlProductCode() {
+  const cls       = document.getElementById('plPcClass')?.value
+  const gen       = document.getElementById('plPcGender')?.value
+  const typ       = document.getElementById('plPcType')?.value
+  const des       = document.getElementById('plPcDesign')?.value
+  const year      = document.getElementById('plPcYear')?.value
+  const seasonNum = document.getElementById('plPcSeasonNum')?.value
+  if (!cls || !des) return
+
+  const prefix = cls + gen + typ + des + year + seasonNum
+  const usedNums = new Set(
+    [...State.allProducts, ...State.planItems]
+      .map(p => p.productCode)
+      .filter(c => c && c.slice(0, 12) === prefix)
+      .map(c => c.slice(12))
+  )
+  _reservedCodes.forEach(c => { if (c.slice(0,12) === prefix) usedNums.add(c.slice(12)) })
+
+  let nextNum = null
+  for (let i = 0; i <= 99; i++) {
+    const n = String(i).padStart(2,'0')
+    if (!usedNums.has(n)) { nextNum = n; break }
+  }
+
+  const seqDisplay = document.getElementById('plPcSeqDisplay')
+  const applyBtn   = document.getElementById('plPcApplyBtn')
+  if (nextNum === null) {
+    seqDisplay.textContent = '만료'
+    document.getElementById('plPcPreview').textContent = '사용 가능한 번호 없음'
+    if (applyBtn) applyBtn.disabled = true
+  } else {
+    seqDisplay.textContent = nextNum
+    document.getElementById('plPcPreview').textContent = prefix + nextNum
+    if (applyBtn) applyBtn.disabled = false
+  }
+}
+
+function applyPlGeneratedCode() {
+  const code = document.getElementById('plPcPreview').textContent
+  if (!code || code === '-' || code === '사용 가능한 번호 없음') return
+
+  if (State.allProducts.some(p => p.productCode === code) ||
+      State.planItems.some(p => p.productCode === code) ||
+      _reservedCodes.has(code)) {
+    showToast(`품번 "${code}"은 이미 사용 중입니다.`, 'error')
+    updatePlProductCode()
+    return
+  }
+  _reservedCodes.add(code)
+  document.getElementById('plProductCode').value = code
+  document.getElementById('plPcodePanel').style.display = 'none'
+  document.getElementById('plPcodeToggleBtn').textContent = '자동생성 ▾'
+
+  const cls = document.getElementById('plPcClass')?.value || ''
+  const typ = document.getElementById('plPcType')?.value || ''
+  document.getElementById('plBrand').value = cls.startsWith('N') ? '르망고 느와' : '르망고'
+
+  const typeEl = document.getElementById('plType')
+  if (typeEl) {
+    const typeMap = { ON: 'onepiece', MO: 'onepiece', BK: 'bikini', BR: 'bikini' }
+    const mapped = typeMap[typ]
+    if (mapped) typeEl.value = mapped
+  }
+
+  const yearMap = {'1':'2021','2':'2022','3':'2023','4':'2024','5':'2025','6':'2026','7':'2027','8':'2028','9':'2029','0':'2030'}
+  const yearVal = document.getElementById('plPcYear')?.value
+  const yearEl = document.getElementById('plYear')
+  if (yearEl && yearVal) yearEl.value = yearMap[yearVal] || yearVal
+  const seasonEl = document.getElementById('plSeason')
+  if (seasonEl) seasonEl.value = document.getElementById('plPcSeasonNum')?.value || ''
+  const genderEl = document.getElementById('plGender')
+  if (genderEl) genderEl.value = document.getElementById('plPcGender')?.value || ''
+
+  showToast(`품번 ${code} 적용됨`, 'success')
+}
+
+function handlePlImgUpload(input) {
+  const files = Array.from(input.files)
+  const preview = document.getElementById('plImgPreview')
+  files.forEach(file => {
+    const url = URL.createObjectURL(file)
+    _plLocalImgUrls.push(url)
+    const wrap = document.createElement('div')
+    wrap.className = 'pl-img-thumb-wrap'
+    const img = document.createElement('img')
+    img.src = url
+    img.className = 'pl-img-thumb'
+    img.onclick = () => window.open(url)
+    const del = document.createElement('button')
+    del.type = 'button'
+    del.className = 'pl-img-del'
+    del.textContent = '✕'
+    del.onclick = () => {
+      _plLocalImgUrls = _plLocalImgUrls.filter(u => u !== url)
+      URL.revokeObjectURL(url)
+      wrap.remove()
+    }
+    wrap.appendChild(img)
+    wrap.appendChild(del)
+    preview.appendChild(wrap)
+  })
+  input.value = ''
+}
+
+function searchPlan() {
+  const raw    = document.getElementById('npKeyword').value
+  const keywords = parseKeywords(raw)
+  const field  = document.getElementById('npSearchField').value
+  const brand  = document.getElementById('npBrand').value
+  const type   = document.getElementById('npType').value
+  const year   = document.getElementById('npYear').value
+  const season = document.getElementById('npSeason').value
+  const gender = document.getElementById('npGenderFilter').value
+
+  let result = State.planItems.filter(p => {
+    if (keywords.length) {
+      const getTargets = () => {
+        if (field === 'nameKr')      return [p.nameKr, p.nameEn]
+        if (field === 'productCode') return [p.productCode, p.sampleNo]
+        return [p.nameKr, p.nameEn, p.productCode, p.sampleNo, p.colorKr, p.memo]
+      }
+      const targets = getTargets()
+      if (!keywords.some(kw => targets.some(t => (t||'').toLowerCase().includes(kw)))) return false
+    }
+    if (brand  !== 'all' && p.brand  !== brand)       return false
+    if (type   !== 'all' && p.type   !== type)         return false
+    if (year   !== 'all' && p.year   !== year)         return false
+    if (season !== 'all' && String(p.season) !== season) return false
+    if (gender !== 'all' && p.gender !== gender)       return false
+    return true
+  })
+  State.plan.filtered = result
+  renderPlanTable()
+}
+
+function resetPlan() {
+  document.getElementById('npKeyword').value = ''
+  document.getElementById('npSearchField').value = 'all'
+  document.getElementById('npBrand').value = 'all'
+  document.getElementById('npType').value = 'all'
+  document.getElementById('npYear').value = 'all'
+  document.getElementById('npSeason').value = 'all'
+  document.getElementById('npGenderFilter').value = 'all'
+  State.plan.filtered = [...State.planItems]
+  renderPlanTable()
+}
+
+function renderPlanTable() {
+  const data = State.plan.filtered
+  const sort = State.plan.sort
+  document.getElementById('npTableMeta').textContent = `검색결과 ${data.length}건`
+
+  if (!data.length) {
+    document.getElementById('npTableWrap').innerHTML = `<div class="empty-state"><p>등록된 기획 상품이 없습니다. <strong>신규기획 등록</strong> 버튼을 눌러 추가하세요.</p></div>`
+    return
+  }
+
+  const schedules = [
+    { key: 'design',     label: '디자인' },
+    { key: 'production', label: '생산' },
+    { key: 'image',      label: '이미지' },
+    { key: 'register',   label: '상품등록' },
+    { key: 'logistics',  label: '물류입고' }
+  ]
+  const fmtD = d => d ? d.replace(/^\d{4}-(\d{2})-(\d{2})$/, '$1/$2') : '-'
+
+  document.getElementById('npTableWrap').innerHTML = `
+    <table class="data-table plan-table" id="planTable">
+      <thead>
+        <tr>
+          <th rowspan="2" style="text-align:center">No.</th>
+          <th rowspan="2">이미지</th>
+          <th rowspan="2">샘플번호</th>
+          <th rowspan="2">품번</th>
+          <th rowspan="2">브랜드</th>
+          <th rowspan="2">상품명</th>
+          <th rowspan="2">색상</th>
+          <th rowspan="2">타입</th>
+          <th rowspan="2" style="text-align:right">판매가</th>
+          ${schedules.map(s => `<th colspan="2" class="schedule-group-th">${s.label}</th>`).join('')}
+        </tr>
+        <tr>
+          ${schedules.map(() => `<th class="schedule-sub-th">시작일</th><th class="schedule-sub-th">완료예정일</th>`).join('')}
+        </tr>
+      </thead>
+      <tbody>${data.map(p => `<tr>
+        <td style="text-align:center">${p.no}</td>
+        <td>${renderThumb(p)}</td>
+        <td><span class="code-link" onclick="openPlanDetailModal(${p.no})">${p.sampleNo}</span></td>
+        <td>${p.productCode ? `<span class="code-link" onclick="openDetailModal('${p.productCode}')">${p.productCode}</span>` : `<span style="color:var(--text-muted);font-size:12px">-</span>`}</td>
+        <td style="font-size:12px">${p.brand || '-'}</td>
+        <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${p.nameKr || ''}">${p.nameKr || '-'}</td>
+        <td style="font-size:12px">${p.colorKr || '-'}</td>
+        <td>${typeBadge(p.type)}</td>
+        <td style="text-align:right"><span class="price">${fmtPrice(p.salePrice)}</span></td>
+        ${schedules.map(s => {
+          const sch = p.schedule?.[s.key] || {}
+          return `<td class="schedule-date-cell${sch.start?' has-date':''}">${fmtD(sch.start)}</td><td class="schedule-date-cell${sch.end?' has-date':''}">${fmtD(sch.end)}</td>`
+        }).join('')}
+      </tr>`).join('')}</tbody>
+    </table>`
+
+  bindSortHeader('planTable', 'plan', renderPlanTable)
+  updateSortIcons('planTable', sort)
+}
+
+// ===== 신규기획 상세 모달 =====
+function openPlanDetailModal(no) {
+  const item = State.planItems.find(p => p.no === no)
+  if (!item) return
+  buildPlanDetailContent(item)
+  const modal = document.getElementById('planDetailModal')
+  modal.showModal()
+  requestAnimationFrame(() => {
+    modal.style.left = Math.max(0, (window.innerWidth  - modal.offsetWidth)  / 2) + 'px'
+    modal.style.top  = Math.max(0, (window.innerHeight - modal.offsetHeight) / 2) + 'px'
+  })
+}
+
+function closePlanDetailModal() {
+  document.getElementById('planDetailModal').close()
+}
+
+function buildPlanDetailContent(item) {
+  document.getElementById('pdBrand').textContent   = item.brand || ''
+  document.getElementById('pdNameKr').textContent  = item.nameKr || '(상품명 없음)'
+  document.getElementById('pdSampleNo').textContent = item.sampleNo
+
+  const schedules = [
+    { key: 'design',     label: '디자인' },
+    { key: 'production', label: '생산' },
+    { key: 'image',      label: '이미지' },
+    { key: 'register',   label: '상품등록' },
+    { key: 'logistics',  label: '물류입고' }
+  ]
+
+  const allImgs = [
+    ...(item.images?.sum    || []),
+    ...(item.images?.lemango ? [item.images.lemango] : []),
+    ...(item.images?.noir    ? [item.images.noir]    : [])
+  ].filter(Boolean)
+
+  const imgHtml = allImgs.length
+    ? allImgs.map((url, i) =>
+        `<img src="${url}" class="pd-thumb" onclick="openModal(${i}, ${JSON.stringify(allImgs).replace(/"/g, '&quot;')})" onerror="this.style.display='none'" />`
+      ).join('')
+    : '<span class="pd-no-img">이미지 없음</span>'
+
+  const fmtDate = d => d || '-'
+  const typeLabel = { onepiece: '원피스', bikini: '비키니', 'two piece': '투피스' }
+  const genderLabel = { W: '여성', M: '남성', G: '걸즈', B: '보이즈', N: '공용', K: '키즈' }
+
+  document.getElementById('pdContent').innerHTML = `
+    <div class="pd-section">
+      <div class="pd-section-title">이미지</div>
+      <div class="pd-img-row">${imgHtml}</div>
+    </div>
+    <div class="pd-section">
+      <div class="pd-section-title">기본 정보</div>
+      <div class="pd-grid">
+        <div class="pd-field"><span class="pd-label">샘플번호</span><span class="pd-value">${item.sampleNo}</span></div>
+        <div class="pd-field"><span class="pd-label">품번</span><span class="pd-value">${item.productCode || '-'}</span></div>
+        <div class="pd-field"><span class="pd-label">브랜드</span><span class="pd-value">${item.brand || '-'}</span></div>
+        <div class="pd-field pd-span2"><span class="pd-label">상품명 (한글)</span><span class="pd-value">${item.nameKr || '-'}</span></div>
+        <div class="pd-field pd-span2"><span class="pd-label">상품명 (영문)</span><span class="pd-value">${item.nameEn || '-'}</span></div>
+        <div class="pd-field"><span class="pd-label">색상 (한글)</span><span class="pd-value">${item.colorKr || '-'}</span></div>
+        <div class="pd-field"><span class="pd-label">색상 (영문)</span><span class="pd-value">${item.colorEn || '-'}</span></div>
+      </div>
+    </div>
+    <div class="pd-section">
+      <div class="pd-section-title">가격 / 타입</div>
+      <div class="pd-grid">
+        <div class="pd-field"><span class="pd-label">판매가</span><span class="pd-value">${fmtPrice(item.salePrice)}</span></div>
+        <div class="pd-field"><span class="pd-label">원가</span><span class="pd-value">${fmtPrice(item.costPrice)}</span></div>
+        <div class="pd-field"><span class="pd-label">타입</span><span class="pd-value">${typeLabel[item.type] || item.type || '-'}</span></div>
+        <div class="pd-field"><span class="pd-label">연도</span><span class="pd-value">${item.year || '-'}</span></div>
+        <div class="pd-field"><span class="pd-label">시즌</span><span class="pd-value">${item.season || '-'}</span></div>
+        <div class="pd-field"><span class="pd-label">성별</span><span class="pd-value">${genderLabel[item.gender] || item.gender || '-'}</span></div>
+      </div>
+    </div>
+    ${item.memo ? `
+    <div class="pd-section">
+      <div class="pd-section-title">메모</div>
+      <div class="pd-memo">${item.memo}</div>
+    </div>` : ''}
+    <div class="pd-section">
+      <div class="pd-section-title">일정 관리</div>
+      <table class="plan-schedule-table">
+        <thead><tr>
+          <th class="pst-label-th">담당</th>
+          <th class="pst-date-th">시작일</th>
+          <th class="pst-date-th">완료예정일</th>
+        </tr></thead>
+        <tbody>${schedules.map(s => {
+          const sch = item.schedule?.[s.key] || {}
+          const hasStart = sch.start, hasEnd = sch.end
+          return `<tr>
+            <td class="pst-label">${s.label}</td>
+            <td class="pst-date-val${hasStart ? ' has-date' : ''}">${fmtDate(sch.start)}</td>
+            <td class="pst-date-val${hasEnd ? ' has-date' : ''}">${fmtDate(sch.end)}</td>
+          </tr>`
+        }).join('')}</tbody>
+      </table>
+    </div>`
+}
+
+// =============================================
 // ===== 이미지 모달 =====
 // =============================================
 function openModal(idx, images) {
@@ -831,10 +1710,10 @@ document.addEventListener('keydown', e => {
 // =============================================
 function downloadExcel(type) {
   if (typeof XLSX === 'undefined') { showToast('SheetJS 라이브러리 로딩 중...', 'warning'); return }
-  const data = State[type === 'product' ? 'product' : type === 'stock' ? 'stock' : 'sales'].filtered
+  const data = State[type === 'product' ? 'product' : type === 'stock' ? 'stock' : type === 'plan' ? 'plan' : 'sales'].filtered
   let rows, headers, sheetName
 
-  if (type === 'product') {
+  if (type === 'product' || type === 'plan') {
     headers = [
       'No.','브랜드','품번','샘플번호','카페24코드','바코드',
       '상품명(한글)','상품명(영문)','색상(한글)','색상(영문)',
@@ -846,7 +1725,7 @@ function downloadExcel(type) {
       '영상URL',
       '이미지_르망고','이미지_느와','이미지_외부몰','이미지_SUM',
       '재고_XS','재고_S','재고_M','재고_L','재고_XL','재고_합계',
-      '판매_공홈','판매_GS','판매_29cm','판매_W쇼핑','판매_기타','판매_합계',
+      ..._platforms.map(pl => '판매_' + pl), '판매_합계',
       '소진율(%)','등록일','물류완료일'
     ]
     rows = data.map(p => [
@@ -863,10 +1742,10 @@ function downloadExcel(type) {
       (p.images?.external||[]).join('\n'),
       (p.images?.sum||[]).join('\n'),
       p.stock?.XS||0, p.stock?.S||0, p.stock?.M||0, p.stock?.L||0, p.stock?.XL||0, getTotalStock(p),
-      p.sales?.공홈||0, p.sales?.GS||0, p.sales?.['29cm']||0, p.sales?.W쇼핑||0, p.sales?.기타||0, getTotalSales(p),
+      ..._platforms.map(pl => p.sales?.[pl]||0), getTotalSales(p),
       getExhaustion(p), p.registDate||'', p.logisticsDate||''
     ])
-    sheetName = '상품전체'
+    sheetName = type === 'plan' ? '신규기획' : '상품전체'
   } else if (type === 'stock') {
     headers = ['품번','상품명','브랜드','판매가','XS','S','M','L','XL','합계']
     rows = data.map(p => [
@@ -876,10 +1755,10 @@ function downloadExcel(type) {
     ])
     sheetName = '재고조회'
   } else {
-    headers = ['품번','상품명','브랜드','판매가','공홈','GS','29cm','W쇼핑','기타','합계']
+    headers = ['품번','상품명','브랜드','판매가',..._platforms,'합계']
     rows = data.map(p => [
       p.productCode, p.nameKr, p.brand, p.salePrice,
-      p.sales?.공홈||0, p.sales?.GS||0, p.sales?.['29cm']||0, p.sales?.W쇼핑||0, p.sales?.기타||0,
+      ..._platforms.map(pl => p.sales?.[pl]||0),
       getTotalSales(p)
     ])
     sheetName = '판매조회'
@@ -965,15 +1844,19 @@ function downloadSample(type) {
     sheetName = '상품등록'
   } else if (type === 'stock') {
     aoa = [
-      ['품번','상품명','재고XS','재고S','재고M','재고L','재고XL'],
-      ['LSWON16266707','코트다쥐르 쉘',3,15,20,12,5]
+      ['입고일','품번','사이즈','바코드','수량','메모'],
+      ['2026-03-17','LSWON16266707','XS','8800354901570',10,''],
+      ['2026-03-17','LSWON16266707','S', '8800354901587',15,''],
+      ['2026-03-17','LSWON16266707','M', '8800354902027',20,''],
+      ['2026-03-17','LSWON16266707','L', '8800354901594',15,''],
+      ['2026-03-17','LSWON16266707','XL','8800354901600',5, '입고예시']
     ]
     filename = '르망고_재고_샘플.xlsx'
     sheetName = '재고'
   } else {
     aoa = [
-      ['품번','상품명','날짜','공홈','GS','29cm','W쇼핑','기타'],
-      ['LSWON16266707','코트다쥐르 쉘','2026-03-01',10,5,8,3,2]
+      ['품번','상품명','날짜',..._platforms],
+      ['LSWON16266707','코트다쥐르 쉘','2026-03-01',..._platforms.map((_,i) => i===0?10:i===1?5:i===2?8:i===3?3:2)]
     ]
     filename = '르망고_판매_샘플.xlsx'
     sheetName = '판매'
@@ -1078,7 +1961,7 @@ function uploadProducts(raw) {
         sum:      sumUrls   // ← 목록 이미지로 사용
       },
       stock: { XS: 0, S: 0, M: 0, L: 0, XL: 0 },
-      sales: { 공홈: 0, GS: 0, '29cm': 0, W쇼핑: 0, 기타: 0 },
+      sales: Object.fromEntries(_platforms.map(pl => [pl, 0])),
       registDate: new Date().toISOString().slice(0, 10),
       logisticsDate: null
     }
@@ -1131,11 +2014,9 @@ function uploadSales(raw) {
     const code = String(row[0]).trim()
     const p = State.allProducts.find(p => p.productCode === code)
     if (!p) return
-    p.sales['공홈']  = (p.sales['공홈']  || 0) + (+row[3]||0)
-    p.sales['GS']   = (p.sales['GS']   || 0) + (+row[4]||0)
-    p.sales['29cm'] = (p.sales['29cm'] || 0) + (+row[5]||0)
-    p.sales['W쇼핑'] = (p.sales['W쇼핑'] || 0) + (+row[6]||0)
-    p.sales['기타']  = (p.sales['기타']  || 0) + (+row[7]||0)
+    _platforms.forEach((pl, i) => {
+      p.sales[pl] = (p.sales[pl] || 0) + (+row[3 + i]||0)
+    })
     cnt++
   })
   State.sales.filtered = [...State.allProducts]
@@ -1161,6 +2042,176 @@ function showToast(msg, type = '') {
 let _detailCode = null   // 현재 열린 상품 코드
 
 // 드래그 + 리사이즈 초기화 (최초 1회)
+function initRegisterDraggable() {
+  const modal  = document.getElementById('registerModal')
+  const header = modal.querySelector('.rmodal-header')
+  let dragging = false, startX, startY, origLeft, origTop
+
+  function snapRect() {
+    const rect = modal.getBoundingClientRect()
+    modal.style.left = rect.left + 'px'
+    modal.style.top  = rect.top  + 'px'
+  }
+
+  header.addEventListener('mousedown', e => {
+    if (e.target.closest('button, label, input')) return
+    snapRect()
+    dragging = true
+    startX = e.clientX; startY = e.clientY
+    origLeft = parseFloat(modal.style.left)
+    origTop  = parseFloat(modal.style.top)
+    e.preventDefault()
+  })
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return
+    const dx = e.clientX - startX, dy = e.clientY - startY
+    modal.style.left = Math.max(0, Math.min(origLeft + dx, window.innerWidth  - modal.offsetWidth))  + 'px'
+    modal.style.top  = Math.max(0, Math.min(origTop  + dy, window.innerHeight - modal.offsetHeight)) + 'px'
+  })
+
+  document.addEventListener('mouseup', () => { dragging = false })
+}
+
+function initPlanRegisterDraggable() {
+  const modal  = document.getElementById('planRegisterModal')
+  const header = modal.querySelector('.rmodal-header')
+  let dragging = false, startX, startY, origLeft, origTop
+
+  function snapRect() {
+    const rect = modal.getBoundingClientRect()
+    modal.style.left = rect.left + 'px'
+    modal.style.top  = rect.top  + 'px'
+  }
+
+  header.addEventListener('mousedown', e => {
+    if (e.target.closest('button, label, input, textarea, select')) return
+    snapRect()
+    dragging = true
+    startX = e.clientX; startY = e.clientY
+    origLeft = parseFloat(modal.style.left)
+    origTop  = parseFloat(modal.style.top)
+    e.preventDefault()
+  })
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return
+    const dx = e.clientX - startX, dy = e.clientY - startY
+    modal.style.left = Math.max(0, Math.min(origLeft + dx, window.innerWidth  - modal.offsetWidth))  + 'px'
+    modal.style.top  = Math.max(0, Math.min(origTop  + dy, window.innerHeight - modal.offsetHeight)) + 'px'
+  })
+
+  document.addEventListener('mouseup', () => { dragging = false })
+}
+
+function initPlanDetailDraggable() {
+  const modal  = document.getElementById('planDetailModal')
+  const header = modal.querySelector('.rmodal-header')
+  let dragging = false, startX, startY, origLeft, origTop
+
+  function snapRect() {
+    const rect = modal.getBoundingClientRect()
+    modal.style.left = rect.left + 'px'
+    modal.style.top  = rect.top  + 'px'
+  }
+
+  header.addEventListener('mousedown', e => {
+    if (e.target.closest('button')) return
+    snapRect()
+    dragging = true
+    startX = e.clientX; startY = e.clientY
+    origLeft = parseFloat(modal.style.left)
+    origTop  = parseFloat(modal.style.top)
+    e.preventDefault()
+  })
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return
+    const dx = e.clientX - startX, dy = e.clientY - startY
+    modal.style.left = Math.max(0, Math.min(origLeft + dx, window.innerWidth  - modal.offsetWidth))  + 'px'
+    modal.style.top  = Math.max(0, Math.min(origTop  + dy, window.innerHeight - modal.offsetHeight)) + 'px'
+  })
+
+  document.addEventListener('mouseup', () => { dragging = false })
+}
+
+// =============================================
+// ===== 범용 드래그 + 리사이즈 초기화 =====
+// =============================================
+function makeDraggableResizable(modal, minW = 420, minH = 300) {
+  const header = modal.querySelector('.srm-header, .rmodal-header, .dmodal-header')
+  if (!header) return
+
+  let action = null, startX, startY, origLeft, origTop, origW, origH
+
+  function snapRect() {
+    const r = modal.getBoundingClientRect()
+    modal.style.left   = r.left   + 'px'
+    modal.style.top    = r.top    + 'px'
+    modal.style.width  = r.width  + 'px'
+    modal.style.height = r.height + 'px'
+  }
+
+  // 드래그
+  header.addEventListener('mousedown', e => {
+    if (e.target.closest('button, input, label, select, textarea, a')) return
+    snapRect()
+    action = 'drag'
+    startX = e.clientX; startY = e.clientY
+    origLeft = parseFloat(modal.style.left)
+    origTop  = parseFloat(modal.style.top)
+    e.preventDefault()
+  })
+
+  // 리사이즈 핸들 주입 (이미 있으면 스킵)
+  const DIRS = ['t','b','l','r','lt','rt','lb','rb']
+  DIRS.forEach(dir => {
+    if (modal.querySelector(`.resize-handle.${dir}`)) return
+    const h = document.createElement('div')
+    h.className = `resize-handle ${dir}`
+    h.dataset.dir = dir
+    modal.appendChild(h)
+    h.addEventListener('mousedown', e => {
+      snapRect()
+      action = dir
+      startX = e.clientX; startY = e.clientY
+      origLeft = parseFloat(modal.style.left); origTop = parseFloat(modal.style.top)
+      origW = parseFloat(modal.style.width);   origH  = parseFloat(modal.style.height)
+      e.preventDefault(); e.stopPropagation()
+    })
+  })
+
+  document.addEventListener('mousemove', e => {
+    if (!action) return
+    const dx = e.clientX - startX, dy = e.clientY - startY
+    if (action === 'drag') {
+      modal.style.left = Math.max(0, Math.min(origLeft + dx, window.innerWidth  - modal.offsetWidth))  + 'px'
+      modal.style.top  = Math.max(0, Math.min(origTop  + dy, window.innerHeight - modal.offsetHeight)) + 'px'
+      return
+    }
+    let newL = origLeft, newT = origTop, newW = origW, newH = origH
+    if (action.includes('r'))  newW = Math.max(minW, origW + dx)
+    if (action.includes('l')) { newW = Math.max(minW, origW - dx); newL = origLeft + origW - newW }
+    if (action.includes('b'))  newH = Math.max(minH, origH + dy)
+    if (action.includes('t')) { newH = Math.max(minH, origH - dy); newT = origTop  + origH - newH }
+    newL = Math.max(0, Math.min(newL, window.innerWidth  - newW))
+    newT = Math.max(0, Math.min(newT, window.innerHeight - newH))
+    modal.style.left = newL + 'px'; modal.style.top  = newT  + 'px'
+    modal.style.width = newW + 'px'; modal.style.height = newH + 'px'
+  })
+
+  document.addEventListener('mouseup', () => { action = null })
+}
+
+function centerModal(modal) {
+  modal.style.left = ''
+  modal.style.top  = ''
+  requestAnimationFrame(() => {
+    modal.style.left = Math.max(0, (window.innerWidth  - modal.offsetWidth)  / 2) + 'px'
+    modal.style.top  = Math.max(0, (window.innerHeight - modal.offsetHeight) / 2) + 'px'
+  })
+}
+
 function initDraggable() {
   const modal  = document.getElementById('detailModal')
   const header = modal.querySelector('.dmodal-header')
@@ -1256,6 +2307,27 @@ function copyFieldUrl(key, btn) {
   }).catch(() => showToast('복사 실패', 'error'))
 }
 
+// 개별 URL 복사 (data-url 속성 또는 수정모드 textarea 기준)
+function copySingleUrlFromBtn(btn) {
+  const modal = document.getElementById('detailModal')
+  const isEdit = modal.classList.contains('edit-mode')
+  let url = ''
+  if (isEdit) {
+    const dfield = btn.closest('.dfield')
+    const textarea = dfield ? dfield.querySelector('textarea') : null
+    url = textarea ? textarea.value.trim() : (btn.dataset.url || '')
+  } else {
+    url = btn.dataset.url || ''
+  }
+  if (!url) { showToast('복사할 URL이 없습니다.', 'warning'); return }
+  navigator.clipboard.writeText(url).then(() => {
+    const orig = btn.textContent
+    btn.textContent = '복사됨!'
+    btn.style.background = 'var(--success)'
+    setTimeout(() => { btn.textContent = orig; btn.style.background = '' }, 1500)
+  }).catch(() => showToast('복사 실패', 'error'))
+}
+
 function openDetailModal(productCode) {
   const p = State.allProducts.find(x => x.productCode === productCode)
   if (!p) return
@@ -1314,7 +2386,7 @@ function dSwitchImg(el, url) {
 
 function buildDetailContent(p) {
   const sizes  = ['XS','S','M','L','XL']
-  const platforms = ['공홈','GS','29cm','W쇼핑','기타']
+  const platforms = _platforms
 
   const field = (label, key, val, type='text', opts='', spanClass='') =>
     `<div class="dfield ${spanClass}">
@@ -1328,42 +2400,64 @@ function buildDetailContent(p) {
       }
     </div>`
 
-  // URL 필드 (복사 버튼 포함)
-  const urlField = (label, key, val, type='text') =>
-    `<div class="dfield span3">
+  // URL 필드 (복사 버튼 포함) — textarea 타입은 URL별 개별 복사 버튼 표시
+  const urlField = (label, key, val, type='text') => {
+    if (type === 'textarea') {
+      const urls = val ? val.split(/[\n\r]+/).map(u => u.trim()).filter(Boolean) : []
+      const hasUrls = urls.length > 0
+      const urlItems = hasUrls
+        ? urls.map(u => {
+            const safeU = u.replace(/"/g, '&quot;')
+            return `<div class="url-item">
+              <span class="url-item-text" title="${safeU}">${safeU}</span>
+              <button type="button" class="btn-copy-url btn-copy-single" data-url="${safeU}" onclick="copySingleUrlFromBtn(this)">복사</button>
+            </div>`
+          }).join('')
+        : '<span class="url-empty-text">-</span>'
+      const allCopyBtn = urls.length > 1
+        ? `<button type="button" class="btn-copy-url" data-url="${(val||'').replace(/"/g,'&quot;')}" onclick="copySingleUrlFromBtn(this)" title="전체 URL 복사">전체복사</button>`
+        : ''
+      return `<div class="dfield span3">
+        <div class="dfield-label-row">
+          <span class="dfield-label">${label}</span>
+          ${allCopyBtn}
+        </div>
+        <div class="url-list${!hasUrls ? ' empty' : ''}" data-urlkey="${key}">${urlItems}</div>
+        <textarea data-key="${key}" rows="4">${val||''}</textarea>
+      </div>`
+    }
+    // text 타입 (영상 URL 등 단일값)
+    const safeVal = (val||'').replace(/"/g, '&quot;')
+    return `<div class="dfield span3">
       <div class="dfield-label-row">
         <span class="dfield-label">${label}</span>
-        ${val ? `<button type="button" class="btn-copy-url" onclick="copyFieldUrl('${key}',this)" title="클립보드 복사">복사</button>` : ''}
+        ${val ? `<button type="button" class="btn-copy-url" data-url="${safeVal}" onclick="copySingleUrlFromBtn(this)" title="클립보드 복사">복사</button>` : ''}
       </div>
-      <span class="dfield-value${!val ? ' empty' : ''}${type==='textarea' ? ' long' : ''}" data-urlkey="${key}">${val || '-'}</span>
-      ${type==='textarea'
-        ? `<textarea data-key="${key}" rows="4">${val||''}</textarea>`
-        : `<input type="${type}" data-key="${key}" value="${(val||'').toString().replace(/"/g,'&quot;')}" />`
-      }
+      <span class="dfield-value${!val ? ' empty' : ''}" data-urlkey="${key}">${val || '-'}</span>
+      <input type="${type}" data-key="${key}" value="${safeVal}" />
     </div>`
+  }
 
-  const typeOpts = ['onepiece','bikini','two piece'].map(v =>
-    `<option value="${v}"${p.type===v?' selected':''}>${v}</option>`).join('')
-  const legOpts = ['normal cut','middle cut','high cut','low cut'].map((v,i) =>
-    `<option value="${v}"${p.legCut===v?' selected':''}>${['노멀컷','미들컷','하이컷','로우컷'][i]}</option>`).join('')
-  const chestLineOpts = ['낮음','보통','높음'].map(v =>
-    `<option value="${v}"${p.chestLine===v?' selected':''}>${v}</option>`).join('')
-  const transparencyOpts = ['없음','약간있음'].map(v =>
-    `<option value="${v}"${p.transparency===v?' selected':''}>${v}</option>`).join('')
-  const liningOpts = ['없음','있음'].map(v =>
-    `<option value="${v}"${p.lining===v?' selected':''}>${v}</option>`).join('')
-  const capRingOpts = ['없음','있음'].map(v =>
-    `<option value="${v}"${p.capRing===v?' selected':''}>${v}</option>`).join('')
-  const fabricOpts = ['포일','일반'].map(v =>
-    `<option value="${v}"${p.fabricType===v?' selected':''}>${v}</option>`).join('')
-  const brandOpts = ['르망고','르망고 느와'].map(v =>
-    `<option value="${v}"${p.brand===v?' selected':''}>${v}</option>`).join('')
+  const mkOpts = (items, curVal) => items.map(item => {
+    const [val, label] = Array.isArray(item) ? item : [item, item]
+    return `<option value="${val}"${curVal===val?' selected':''}>${label}</option>`
+  }).join('')
+  const typeOpts        = mkOpts(_settings.types,          p.type)
+  const legOpts         = mkOpts(_settings.legCuts,        p.legCut)
+  const chestLineOpts   = mkOpts(_settings.chestLines,     p.chestLine||'')
+  const transparencyOpts= mkOpts(_settings.transparencies, p.transparency||'')
+  const liningOpts      = mkOpts(_settings.linings,        p.lining||'')
+  const capRingOpts     = mkOpts(_settings.capRings,       p.capRing||'')
+  const fabricOpts      = mkOpts(_settings.fabricTypes,    p.fabricType||'')
+  const brandOpts       = mkOpts(_settings.brands,         p.brand)
+  const saleStatusOpts  = mkOpts(_settings.saleStatuses,   p.saleStatus||'판매중')
 
   return `
     <div class="dsection">
       <div class="dsection-title">기본 정보</div>
       <div class="dsection-grid">
         ${field('브랜드',    'brand',       p.brand,    'select', brandOpts)}
+        ${field('판매상태',  'saleStatus',  p.saleStatus||'판매중', 'select', saleStatusOpts)}
         ${field('품번',      'productCode', p.productCode)}
         ${field('샘플번호',  'sampleNo',    p.sampleNo)}
         ${field('카페24 코드', 'cafe24Code', p.cafe24Code)}
@@ -1548,7 +2642,16 @@ function openRegisterModal() {
   form.reset()
   // 오늘 날짜를 등록일 기본값으로
   document.getElementById('rRegistDate').value = new Date().toISOString().slice(0,10)
-  document.getElementById('registerModal').showModal()
+  const modal = document.getElementById('registerModal')
+  // 위치 초기화 (매번 열릴 때 중앙으로)
+  modal.style.left = ''
+  modal.style.top  = ''
+  modal.showModal()
+  // position: fixed + margin: 0 상태에서 중앙 정렬
+  requestAnimationFrame(() => {
+    modal.style.left = Math.max(0, (window.innerWidth  - modal.offsetWidth)  / 2) + 'px'
+    modal.style.top  = Math.max(0, (window.innerHeight - modal.offsetHeight) / 2) + 'px'
+  })
   initPcodePanel()
 }
 
@@ -1862,8 +2965,123 @@ function confirmRegisterUpload() {
 
 // ===== 품번 자동생성 =====
 
+// ===== 백스타일 목록 관리 [코드4, 영문명, 한글명] =====
+const DEFAULT_BACK_STYLES = [
+  ['2001', 'Crossed X',           '크로스 X'],
+  ['2002', 'Crossed X Modified',  '크로스 X 모디파이드'],
+  ['2003', 'Ballet back',         '발레 백'],
+  ['2004', 'Double Cross',        '더블 크로스'],
+  ['2005', 'Fake Tie',            '페이크 타이'],
+  ['2006', 'V-Shoulder',          'V-숄더'],
+  ['2007', 'Perry Cross Strap',   '페리 크로스 스트랩'],
+]
+let _backStyles = (() => {
+  try {
+    const saved = localStorage.getItem('lemango_back_styles_v2')
+    return saved ? JSON.parse(saved) : DEFAULT_BACK_STYLES.map(r => [...r])
+  } catch { return DEFAULT_BACK_STYLES.map(r => [...r]) }
+})()
+
+function saveBackStyles() {
+  localStorage.setItem('lemango_back_styles_v2', JSON.stringify(_backStyles))
+}
+
+function renderBackStyleList(query) {
+  const q = query.toLowerCase().trim()
+  const list = q
+    ? _backStyles.filter(([code, en, kr]) =>
+        code.includes(q) || en.toLowerCase().includes(q) || kr.toLowerCase().includes(q))
+    : _backStyles
+  const current = document.getElementById('pcBackStyle')?.value
+  const dd = document.getElementById('bsDropdown')
+  if (!dd) return
+  if (list.length === 0) { dd.innerHTML = '<div class="design-no-result">검색 결과 없음</div>'; return }
+  dd.innerHTML = list.map(([code, en, kr]) =>
+    `<div class="design-option${code === current ? ' selected' : ''}" onclick="selectBackStyle('${code}')">
+      <span class="design-code">${code}</span>
+      <span class="design-names"><span class="design-en">${en}</span><span class="design-kr">${kr}</span></span>
+    </div>`
+  ).join('')
+  const sel = dd.querySelector('.design-option.selected')
+  if (sel) sel.scrollIntoView({ block: 'nearest' })
+}
+
+function filterBackStyleList() {
+  renderBackStyleList(document.getElementById('pcBsSearch')?.value || '')
+}
+
+function selectBackStyle(code) {
+  const found = _backStyles.find(([c]) => c === code)
+  if (!found) return
+  document.getElementById('pcBackStyle').value = code
+  document.getElementById('pcBsSearch').value = ''
+  document.getElementById('pcBsSearch').placeholder = `${code} - ${found[1]} (${found[2]})`
+  renderBackStyleList('')
+}
+
+let _bsFormMode = 'add'
+function showBsForm(mode) {
+  _bsFormMode = mode
+  const form = document.getElementById('bsForm')
+  document.getElementById('bsFormCode').value = ''
+  document.getElementById('bsFormEn').value   = ''
+  document.getElementById('bsFormKr').value   = ''
+  if (mode === 'edit') {
+    const cur = document.getElementById('pcBackStyle')?.value
+    if (!cur) { showToast('수정할 백스타일을 선택하세요.', 'warning'); return }
+    const found = _backStyles.find(([c]) => c === cur)
+    if (found) {
+      document.getElementById('bsFormCode').value = found[0]
+      document.getElementById('bsFormEn').value   = found[1]
+      document.getElementById('bsFormKr').value   = found[2]
+    }
+  }
+  form.style.display = 'flex'
+  document.getElementById('bsFormCode').focus()
+}
+
+function confirmBsForm() {
+  const code = document.getElementById('bsFormCode').value.trim()
+  const en   = document.getElementById('bsFormEn').value.trim()
+  const kr   = document.getElementById('bsFormKr').value.trim()
+  if (!code || !en || !kr) { showToast('코드, 영문명, 한글명을 모두 입력하세요.', 'warning'); return }
+  if (!/^\d{4}$/.test(code)) { showToast('코드는 4자리 숫자여야 합니다.', 'warning'); return }
+
+  if (_bsFormMode === 'add') {
+    if (_backStyles.some(([c]) => c === code)) { showToast('이미 존재하는 코드입니다.', 'warning'); return }
+    _backStyles.push([code, en, kr])
+    saveBackStyles()
+    renderBackStyleList('')
+    selectBackStyle(code)
+  } else {
+    const cur = document.getElementById('pcBackStyle').value
+    const idx = _backStyles.findIndex(([c]) => c === cur)
+    if (idx === -1) return
+    if (code !== cur && _backStyles.some(([c]) => c === code)) { showToast('이미 존재하는 코드입니다.', 'warning'); return }
+    _backStyles[idx] = [code, en, kr]
+    saveBackStyles()
+    renderBackStyleList('')
+    selectBackStyle(code)
+  }
+  document.getElementById('bsForm').style.display = 'none'
+}
+
+function deleteBackStyle() {
+  const cur = document.getElementById('pcBackStyle')?.value
+  if (!cur) { showToast('삭제할 백스타일을 선택하세요.', 'warning'); return }
+  const found = _backStyles.find(([c]) => c === cur)
+  if (!found) return
+  if (!confirm(`"${found[1]} (${found[2]})" 백스타일을 삭제하시겠습니까?`)) return
+  _backStyles = _backStyles.filter(([c]) => c !== cur)
+  saveBackStyles()
+  document.getElementById('pcBackStyle').value = ''
+  document.getElementById('pcBsSearch').placeholder = '코드 또는 스타일명 검색 (예: 2001 / Crossed / 크로스)'
+  document.getElementById('pcBsSearch').value = ''
+  renderBackStyleList('')
+}
+
 // [코드, 영문명, 한글명]
-const DESIGN_CODES = [
+const __designCodes_DEFAULT = [
   ['0001','Backless','백리스'],['0002','Tube','튜브'],['0006','Corset Dress','코르셋 드레스'],
   ['0007','Bikini top','비키니 탑'],['0008','Bikini bottom','비키니 바텀'],
   ['0009','Bikini top OEM','비키니 탑 OEM'],['0010','Bikini bottom OEM','비키니 바텀 OEM'],
@@ -1910,21 +3128,35 @@ const DESIGN_CODES = [
   ['9003','Goggle case','고글 케이스'],['9004','Goggle','고글'],
   ['9005','Silicone bra','실리콘 브라'],['9006','Shoes','신발'],['9007','Towel','타월']
 ]
+let _designCodes = (() => {
+  try {
+    const saved = localStorage.getItem('lemango_design_codes_v1')
+    return saved ? JSON.parse(saved) : __designCodes_DEFAULT.map(r => [...r])
+  } catch { return __designCodes_DEFAULT.map(r => [...r]) }
+})()
+function saveDesignCodes() {
+  localStorage.setItem('lemango_design_codes_v1', JSON.stringify(_designCodes))
+}
 
 function initPcodePanel() {
   if (!document.getElementById('pcDesign')) return
   renderDesignList('')
   selectDesign('1626')
-  updateProductCode()
+  renderBackStyleList('')
+  // 모달 열릴 때마다 미리보기 초기화 — "품번 생성" 버튼으로 직접 실행
+  document.getElementById('pcPreview').textContent = '-'
+  document.getElementById('pcSeqDisplay').textContent = '-'
+  const applyBtn = document.getElementById('pcApplyBtn')
+  if (applyBtn) applyBtn.disabled = true
 }
 
 function renderDesignList(query) {
   const q = query.toLowerCase().trim()
   const list = q
-    ? DESIGN_CODES.filter(([code, en, kr]) =>
+    ? _designCodes.filter(([code, en, kr]) =>
         code.includes(q) || en.toLowerCase().includes(q) || kr.toLowerCase().includes(q)
       )
-    : DESIGN_CODES
+    : _designCodes
   const current = document.getElementById('pcDesign').value
   const dd = document.getElementById('designDropdown')
   if (list.length === 0) {
@@ -1947,13 +3179,13 @@ function filterDesignList() {
 }
 
 function selectDesign(code) {
-  const found = DESIGN_CODES.find(([c]) => c === code)
+  const found = _designCodes.find(([c]) => c === code)
   if (!found) return
   document.getElementById('pcDesign').value = code
   document.getElementById('pcDesignSearch').value = ''
   document.getElementById('pcDesignSearch').placeholder = `${code} - ${found[1]} (${found[2]})`
   renderDesignList('')
-  updateProductCode()
+  // 자동 생성하지 않음 — "품번 생성" 버튼으로 직접 실행
 }
 
 function togglePcodePanel() {
@@ -1962,7 +3194,7 @@ function togglePcodePanel() {
   const open = panel.style.display === 'none' || panel.style.display === ''
   panel.style.display = open ? 'flex' : 'none'
   btn.textContent = open ? '자동생성 ▴' : '자동생성 ▾'
-  if (open) updateProductCode()
+  // 열려도 자동 생성하지 않음 — 기존 미리보기 유지
 }
 
 // 적용됐지만 아직 등록 전인 품번 임시 예약 Set
@@ -2000,12 +3232,15 @@ function updateProductCode() {
   }
 
   const seqDisplay = document.getElementById('pcSeqDisplay')
+  const applyBtn   = document.getElementById('pcApplyBtn')
   if (nextNum === null) {
     seqDisplay.textContent = '만료'
     document.getElementById('pcPreview').textContent = '사용 가능한 번호 없음'
+    if (applyBtn) applyBtn.disabled = true
   } else {
     seqDisplay.textContent = nextNum
     document.getElementById('pcPreview').textContent = prefix + nextNum
+    if (applyBtn) applyBtn.disabled = false
   }
 }
 
@@ -2026,7 +3261,426 @@ function applyGeneratedCode() {
   document.getElementById('rProductCode').value = code
   document.getElementById('pcodePanel').style.display = 'none'
   document.getElementById('pcodeToggleBtn').textContent = '자동생성 ▾'
+
+  // 품번 선택 정보로 연관 필드 자동 채우기
+  const cls = document.getElementById('pcClass')?.value || ''
+  const typ = document.getElementById('pcType')?.value || ''
+
+  // 브랜드 자동 채우기
+  const brandEl = document.getElementById('rBrand')
+  if (brandEl) {
+    brandEl.value = cls.startsWith('N') ? '르망고 느와' : '르망고'
+  }
+
+  // 타입 자동 채우기
+  const typeEl = document.getElementById('rType')
+  if (typeEl) {
+    const typeMap = { ON: 'onepiece', MO: 'onepiece', BK: 'bikini', BR: 'bikini' }
+    const mapped = typeMap[typ]
+    if (mapped) typeEl.value = mapped
+  }
+
+  // 백스타일 자동 채우기 (선택된 코드 → 영문명을 폼에 반영)
+  const bsCode  = document.getElementById('pcBackStyle')?.value
+  const bsEntry = _backStyles.find(([c]) => c === bsCode)
+  const backStyleEl = document.getElementById('rBackStyle')
+  if (backStyleEl && bsEntry) backStyleEl.value = bsEntry[1]
+
   showToast(`품번 ${code} 적용됨`, 'success')
+}
+
+// =============================================
+// ===== 설정 탭 =====
+// =============================================
+function _renderSetCard(def) {
+  const items = _settings[def.key] || []
+  const listHtml = items.map((item, idx) => {
+    const [val, label] = Array.isArray(item) ? item : [item, item]
+    const inner = Array.isArray(item)
+      ? `<span class="set-item-code">${val}</span><span class="set-item-label">${label}</span>`
+      : `<span class="set-item-label">${val}</span>`
+    return `<div class="set-item">${inner}
+      <button class="set-item-del" onclick="removeSettingItem('${def.key}',${idx})" title="삭제">✕</button>
+    </div>`
+  }).join('') || '<div class="set-empty">항목 없음</div>'
+
+  const addForm = def.type === 'pair'
+    ? `<div class="set-add-row">
+        <input type="text" id="setAdd_${def.key}_val"   placeholder="${def.ph1}" class="set-add-input" />
+        <input type="text" id="setAdd_${def.key}_label" placeholder="${def.ph2}" class="set-add-input" />
+        <button class="btn btn-new set-add-btn" onclick="addSettingItem('${def.key}')">+ 추가</button>
+      </div>`
+    : `<div class="set-add-row">
+        <input type="text" id="setAdd_${def.key}_val" placeholder="${def.ph}" class="set-add-input" style="flex:1" />
+        <button class="btn btn-new set-add-btn" onclick="addSettingItem('${def.key}')">+ 추가</button>
+      </div>`
+
+  return `<div class="set-card">
+    <div class="set-card-title">${def.title}</div>
+    <div class="set-list">${listHtml}</div>
+    ${addForm}
+  </div>`
+}
+
+function renderSettings() {
+  const container = document.getElementById('settingsPage')
+  if (!container) return
+
+  // 디자인 관련 카드들
+  const designCards = SETTING_DEFS.filter(d => d.group === 'design').map(_renderSetCard).join('')
+
+  // 백스타일 카드
+  const bsListHtml = _backStyles.map((bs, idx) => {
+    const [code, en, kr] = bs
+    return `<div class="set-item">
+      <span class="set-item-code">${code}</span>
+      <span class="set-item-label">${en}</span>
+      <span class="set-item-label" style="color:var(--text-sub);font-size:12px">${kr}</span>
+      <button class="set-item-del" onclick="removeBackStyleSetting(${idx})" title="삭제">✕</button>
+    </div>`
+  }).join('') || '<div class="set-empty">항목 없음</div>'
+  const bsCard = `<div class="set-card set-card-wide">
+    <div class="set-card-title">백스타일</div>
+    <div class="set-list">${bsListHtml}</div>
+    <div class="set-add-row">
+      <input type="text" id="setBsCode" placeholder="코드 (4자리)" class="set-add-input" maxlength="4" style="width:100px;flex:none" />
+      <input type="text" id="setBsEn"   placeholder="영문명" class="set-add-input" />
+      <input type="text" id="setBsKr"   placeholder="한글명" class="set-add-input" />
+      <button class="btn btn-new set-add-btn" onclick="addBackStyleSetting()">+ 추가</button>
+    </div>
+  </div>`
+
+  // 디자인 번호(패턴) 카드
+  const dcListHtml = _designCodes.map((dc, idx) => {
+    const [code, en, kr] = dc
+    return `<div class="set-item">
+      <span class="set-item-code">${code}</span>
+      <span class="set-item-label">${en}</span>
+      <span class="set-item-label" style="color:var(--text-sub);font-size:12px">${kr}</span>
+      <button class="set-item-del" onclick="removeDesignCodeSetting(${idx})" title="삭제">✕</button>
+    </div>`
+  }).join('') || '<div class="set-empty">항목 없음</div>'
+  const dcCard = `<div class="set-card set-card-wide">
+    <div class="set-card-title">디자인 번호 (패턴)</div>
+    <div class="set-list" style="max-height:260px;overflow-y:auto">${dcListHtml}</div>
+    <div class="set-add-row">
+      <input type="text" id="setDcCode" placeholder="코드 (4자리)" class="set-add-input" maxlength="4" style="width:100px;flex:none" />
+      <input type="text" id="setDcEn"   placeholder="영문명" class="set-add-input" />
+      <input type="text" id="setDcKr"   placeholder="한글명" class="set-add-input" />
+      <button class="btn btn-new set-add-btn" onclick="addDesignCodeSetting()">+ 추가</button>
+    </div>
+  </div>`
+
+  // 일반 상품 정보 카드들
+  const infoCards = SETTING_DEFS.filter(d => d.group === 'info').map(_renderSetCard).join('')
+
+  // 판매 채널 카드
+  const platListHtml = _platforms.map((pl, idx) => `
+    <div class="set-item" id="platItem_${idx}">
+      <span class="set-item-label" style="flex:1;font-weight:600">${pl}</span>
+      <button onclick="editPlatformSetting(${idx})" style="padding:2px 10px;background:var(--accent);color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px;margin-right:4px">수정</button>
+      <button class="set-item-del" onclick="removePlatformSetting(${idx})" title="삭제">✕</button>
+    </div>
+    <div class="set-item" id="platEdit_${idx}" style="display:none">
+      <input type="text" id="platEditInput_${idx}" value="${pl}" class="set-add-input" style="flex:1" onkeydown="if(event.key==='Enter')savePlatformEdit(${idx})" />
+      <button class="btn btn-new set-add-btn" onclick="savePlatformEdit(${idx})">저장</button>
+      <button class="btn set-add-btn" style="background:var(--bg-card,#f0ede8)" onclick="renderSettings()">취소</button>
+    </div>`).join('') || '<div class="set-empty">항목 없음</div>'
+  const platCard = `<div class="set-card set-card-wide">
+    <div class="set-card-title">온라인 쇼핑몰 (판매 채널)</div>
+    <div class="set-list">${platListHtml}</div>
+    <div class="set-add-row">
+      <input type="text" id="setPlatName" placeholder="쇼핑몰명 (예: 무신사)" class="set-add-input" onkeydown="if(event.key==='Enter')addPlatformSetting()" />
+      <button class="btn btn-new set-add-btn" onclick="addPlatformSetting()">+ 추가</button>
+    </div>
+  </div>`
+
+  container.innerHTML = `
+    <div class="settings-header">
+      <h2 class="settings-title">기본 옵션 관리</h2>
+      <p class="settings-desc">옵션을 추가·삭제하면 전체 시스템 선택 목록에 즉시 반영됩니다.</p>
+    </div>
+
+    <div class="set-section">
+      <button class="set-section-btn" onclick="toggleSetSection(this)">
+        <span>🎨 디자인 관련</span><span class="set-section-arrow">▼</span>
+      </button>
+      <div class="set-section-body">
+        <div class="set-grid">
+          ${designCards}
+          ${bsCard}
+          ${dcCard}
+        </div>
+      </div>
+    </div>
+
+    <div class="set-section">
+      <button class="set-section-btn" onclick="toggleSetSection(this)">
+        <span>📋 일반 상품 정보</span><span class="set-section-arrow">▼</span>
+      </button>
+      <div class="set-section-body">
+        <div class="set-grid">
+          ${infoCards}
+        </div>
+      </div>
+    </div>
+
+    <div class="set-section">
+      <button class="set-section-btn" onclick="toggleSetSection(this)">
+        <span>🛒 판매 채널</span><span class="set-section-arrow">▼</span>
+      </button>
+      <div class="set-section-body">
+        <div class="set-grid">
+          ${platCard}
+        </div>
+      </div>
+    </div>`
+}
+
+function toggleSetSection(btn) {
+  const body = btn.nextElementSibling
+  const arrow = btn.querySelector('.set-section-arrow')
+  const isOpen = body.style.display !== 'none'
+  body.style.display = isOpen ? 'none' : ''
+  arrow.textContent = isOpen ? '▶' : '▼'
+}
+
+function addDesignCodeSetting() {
+  const code = document.getElementById('setDcCode')?.value.trim()
+  const en   = document.getElementById('setDcEn')?.value.trim()
+  const kr   = document.getElementById('setDcKr')?.value.trim()
+  if (!code || !en || !kr) { showToast('코드, 영문명, 한글명을 모두 입력해주세요.', 'warning'); return }
+  if (_designCodes.some(([c]) => c === code)) { showToast('이미 존재하는 코드입니다.', 'error'); return }
+  _designCodes.push([code, en, kr])
+  saveDesignCodes()
+  document.getElementById('setDcCode').value = ''
+  document.getElementById('setDcEn').value   = ''
+  document.getElementById('setDcKr').value   = ''
+  renderSettings()
+  showToast('디자인 코드 추가됐습니다.', 'success')
+}
+
+function removeDesignCodeSetting(idx) {
+  const dc = _designCodes[idx]
+  if (!dc) return
+  if (!confirm(`"${dc[1]} (${dc[2]})" 디자인 코드를 삭제하시겠습니까?`)) return
+  _designCodes.splice(idx, 1)
+  saveDesignCodes()
+  renderSettings()
+  showToast('삭제됐습니다.', 'success')
+}
+
+function addSettingItem(key) {
+  const def = SETTING_DEFS.find(d => d.key === key)
+  if (!def) return
+
+  if (def.type === 'pair') {
+    const valEl   = document.getElementById(`setAdd_${key}_val`)
+    const labelEl = document.getElementById(`setAdd_${key}_label`)
+    const val   = valEl?.value.trim()
+    const label = labelEl?.value.trim()
+    if (!val || !label) { showToast('코드와 표시명을 모두 입력해주세요.', 'warning'); return }
+    if (_settings[key].some(item => item[0] === val)) { showToast('이미 존재하는 코드입니다.', 'error'); return }
+    _settings[key].push([val, label])
+    if (valEl) valEl.value = ''
+    if (labelEl) labelEl.value = ''
+  } else {
+    const valEl = document.getElementById(`setAdd_${key}_val`)
+    const val = valEl?.value.trim()
+    if (!val) { showToast('값을 입력해주세요.', 'warning'); return }
+    if (_settings[key].includes(val)) { showToast('이미 존재하는 항목입니다.', 'error'); return }
+    _settings[key].push(val)
+    if (valEl) valEl.value = ''
+  }
+
+  saveSettings()
+  populateAllSelects()
+  renderSettings()
+  showToast('추가됐습니다.', 'success')
+}
+
+function removeSettingItem(key, idx) {
+  const items = _settings[key]
+  if (!items) return
+  const item = items[idx]
+  const label = Array.isArray(item) ? item[1] : item
+  if (!confirm(`"${label}" 항목을 삭제하시겠습니까?\n기존 상품에 저장된 값은 유지됩니다.`)) return
+  _settings[key].splice(idx, 1)
+  saveSettings()
+  populateAllSelects()
+  renderSettings()
+  showToast('삭제됐습니다.', 'success')
+}
+
+function addBackStyleSetting() {
+  const code = document.getElementById('setBsCode')?.value.trim()
+  const en   = document.getElementById('setBsEn')?.value.trim()
+  const kr   = document.getElementById('setBsKr')?.value.trim()
+  if (!code || !en || !kr) { showToast('코드, 영문명, 한글명을 모두 입력해주세요.', 'warning'); return }
+  if (_backStyles.some(([c]) => c === code)) { showToast('이미 존재하는 코드입니다.', 'error'); return }
+  _backStyles.push([code, en, kr])
+  saveBackStyles()
+  document.getElementById('setBsCode').value = ''
+  document.getElementById('setBsEn').value   = ''
+  document.getElementById('setBsKr').value   = ''
+  renderSettings()
+  showToast('백스타일 추가됐습니다.', 'success')
+}
+
+function removeBackStyleSetting(idx) {
+  const bs = _backStyles[idx]
+  if (!bs) return
+  if (!confirm(`"${bs[1]} (${bs[2]})" 백스타일을 삭제하시겠습니까?`)) return
+  _backStyles.splice(idx, 1)
+  saveBackStyles()
+  renderSettings()
+  showToast('삭제됐습니다.', 'success')
+}
+
+// =============================================
+// ===== 공홈 주문 내역 업로드 =====
+// =============================================
+// 컬럼: A(0)카페24코드 B(1)자체상품코드 C(2)수량 H(7)상품옵션 L(11)바코드
+
+let _gonghomRows = []
+
+function parseGonghomSize(optStr) {
+  if (!optStr || !String(optStr).trim()) return 'F'
+  let s = String(optStr).trim().replace(/^SIZE=/i, '')
+  // "85(M)" 형태에서 괄호 안 추출
+  const m = s.match(/\(([^)]+)\)/)
+  if (m) return m[1].toUpperCase()
+  return s.toUpperCase()
+}
+
+function handleGonghomUpload(input) {
+  const file = input.files[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = e => {
+    const wb = XLSX.read(e.target.result, { type: 'array' })
+    const ws = wb.Sheets[wb.SheetNames[0]]
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+    const dataRows = raw.slice(1).filter(r => r[0] || r[1])
+    input.value = ''
+    showGonghomPreview(dataRows)
+  }
+  reader.readAsArrayBuffer(file)
+}
+
+function showGonghomPreview(rawRows) {
+  _gonghomRows = rawRows.map(row => {
+    const cafe24Code  = String(row[0]  || '').trim()
+    const productCode = String(row[1]  || '').trim()
+    const qty         = parseInt(row[2]) || 0
+    const optStr      = String(row[7]  || '').trim()
+    const barcode     = String(row[11] || '').trim()
+    const size        = parseGonghomSize(optStr)
+
+    let p = State.allProducts.find(pr => pr.productCode === productCode)
+    let matchBy = 'code'
+    if (!p && cafe24Code) {
+      p = State.allProducts.find(pr => pr.cafe24Code === cafe24Code)
+      matchBy = 'cafe24'
+    }
+
+    const status = !p ? 'error' : 'ok'
+    return { cafe24Code, productCode, qty, optStr, size, barcode, p, matchBy, status }
+  }).filter(r => r.qty > 0)
+
+  const okCnt  = _gonghomRows.filter(r => r.status === 'ok').length
+  const errCnt = _gonghomRows.filter(r => r.status === 'error').length
+
+  const tbody = _gonghomRows.map((r, i) => {
+    const statusBadge = r.status === 'error'
+      ? '<span class="badge-preview badge-preview-error">매칭 없음</span>'
+      : r.matchBy === 'cafe24'
+        ? '<span class="badge-preview badge-preview-warn">카페24</span>'
+        : '<span class="badge-preview badge-preview-ok">확인</span>'
+    const rowStyle = r.status === 'error' ? 'background:#fff3f3' : ''
+    return `<tr style="${rowStyle}">
+      <td style="text-align:center;color:var(--text-sub)">${i + 1}</td>
+      <td>${statusBadge}</td>
+      <td style="font-family:Inter;font-size:11px">${r.productCode || r.cafe24Code}</td>
+      <td>${r.p ? (r.p.nameKr || '') : '<span style="color:var(--danger)">미매칭</span>'}</td>
+      <td style="text-align:center;font-weight:700">${r.qty}</td>
+      <td style="text-align:center;font-family:Inter;font-weight:600;color:var(--accent)">${r.size}</td>
+      <td style="font-size:11px;color:var(--text-sub)">${r.barcode || '—'}</td>
+    </tr>`
+  }).join('')
+
+  document.getElementById('gonghomPreviewInfo').innerHTML =
+    `총 <b>${_gonghomRows.length}</b>건 &nbsp;—&nbsp; 반영 예정 <b style="color:var(--success)">${okCnt}</b>건 / 미매칭 <b style="color:var(--danger)">${errCnt}</b>건`
+  document.getElementById('gonghomPreviewBody').innerHTML = tbody || '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--text-sub)">데이터 없음</td></tr>'
+  document.getElementById('gonghomConfirmBtn').disabled = okCnt === 0
+
+  const modal = document.getElementById('gonghomPreviewModal')
+  modal.showModal()
+  centerModal(modal)
+}
+
+function confirmGonghomUpload() {
+  let cnt = 0
+  _gonghomRows.forEach(r => {
+    if (r.status !== 'ok') return
+    r.p.sales['공홈'] = (r.p.sales['공홈'] || 0) + r.qty
+    cnt++
+  })
+  document.getElementById('gonghomPreviewModal').close()
+  _gonghomRows = []
+  renderSalesTable()
+  renderDashboard()
+  showToast(`공홈 주문 ${cnt}건 판매 반영 완료`, 'success')
+}
+
+// ===== 판매 채널 CRUD =====
+function addPlatformSetting() {
+  const name = document.getElementById('setPlatName')?.value.trim()
+  if (!name) { showToast('쇼핑몰명을 입력해주세요.', 'warning'); return }
+  if (_platforms.includes(name)) { showToast('이미 존재하는 쇼핑몰입니다.', 'error'); return }
+  _platforms.push(name)
+  savePlatforms()
+  document.getElementById('setPlatName').value = ''
+  renderSettings()
+  showToast(`"${name}" 추가됐습니다.`, 'success')
+}
+
+function editPlatformSetting(idx) {
+  document.getElementById('platItem_' + idx).style.display = 'none'
+  document.getElementById('platEdit_' + idx).style.display = ''
+  document.getElementById('platEditInput_' + idx)?.focus()
+}
+
+function savePlatformEdit(idx) {
+  const newName = document.getElementById('platEditInput_' + idx)?.value.trim()
+  const oldName = _platforms[idx]
+  if (!newName) { showToast('쇼핑몰명을 입력해주세요.', 'warning'); return }
+  if (newName === oldName) { renderSettings(); return }
+  if (_platforms.includes(newName)) { showToast('이미 존재하는 쇼핑몰입니다.', 'error'); return }
+  // 기존 판매 데이터 키 이전
+  State.allProducts.forEach(p => {
+    if (p.sales && oldName in p.sales) {
+      p.sales[newName] = p.sales[oldName]
+      delete p.sales[oldName]
+    }
+  })
+  _platforms[idx] = newName
+  savePlatforms()
+  renderSalesTable()
+  renderDashboard()
+  renderSettings()
+  showToast(`"${oldName}" → "${newName}" 변경됐습니다.`, 'success')
+}
+
+function removePlatformSetting(idx) {
+  const name = _platforms[idx]
+  if (!confirm(`"${name}" 쇼핑몰을 목록에서 제거하시겠습니까?\n기존 판매 데이터는 유지됩니다.`)) return
+  _platforms.splice(idx, 1)
+  savePlatforms()
+  renderSalesTable()
+  renderDashboard()
+  renderSettings()
+  showToast('삭제됐습니다.', 'success')
 }
 
 // ===== 실행 =====
