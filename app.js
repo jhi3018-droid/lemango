@@ -1585,6 +1585,7 @@ function submitRegister(e) {
   const bust          = document.getElementById('rBust').value.trim()
   const waist         = document.getElementById('rWaist').value.trim()
   const hip           = document.getElementById('rHip').value.trim()
+  const modelSize     = document.getElementById('rModelSize').value.trim()
   const material      = document.getElementById('rMaterial').value.trim()
   const madeMonth   = document.getElementById('rMadeMonth').value.trim()
   const madeIn      = document.getElementById('rMadeIn').value.trim()
@@ -1637,13 +1638,9 @@ function submitRegister(e) {
       design: img1 || null,
       shoot:  img2 || null
     },
-    stock: {
-      XS: parseInt(document.getElementById('rStockXS').value) || 0,
-      S:  parseInt(document.getElementById('rStockS').value)  || 0,
-      M:  parseInt(document.getElementById('rStockM').value)  || 0,
-      L:  parseInt(document.getElementById('rStockL').value)  || 0,
-      XL: parseInt(document.getElementById('rStockXL').value) || 0
-    },
+    modelSize,
+    washMethod: '',
+    stock: { XS: 0, S: 0, M: 0, L: 0, XL: 0 },
     sales: { 공홈: 0, GS: 0, '29cm': 0, W쇼핑: 0, 기타: 0 },
     registDate: registDate || new Date().toISOString().slice(0,10),
     logisticsDate: null
