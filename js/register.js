@@ -52,8 +52,10 @@ function submitRegister(e) {
   const madeBy      = document.getElementById('rMadeBy').value.trim()
   const registDate  = document.getElementById('rRegistDate').value
   const comment     = document.getElementById('rComment').value.trim()
-  const img1        = document.getElementById('rImg1').value.trim()
-  const img2        = document.getElementById('rImg2').value.trim()
+  const imgJasa     = (document.getElementById('rImgJasa')?.value || '').split('\n').map(u => u.trim()).filter(Boolean)
+  const imgExternal = (document.getElementById('rImgExternal')?.value || '').split('\n').map(u => u.trim()).filter(Boolean)
+  const imgSum      = (document.getElementById('rImgSum')?.value || '').split('\n').map(u => u.trim()).filter(Boolean)
+  const videoUrl    = document.getElementById('rVideoUrl')?.value.trim() || null
 
   // 품번 중복 체크
   if (State.allProducts.some(p => p.productCode === productCode)) {
@@ -92,11 +94,14 @@ function submitRegister(e) {
     madeIn,
     madeBy,
     comment,
+    videoUrl,
     images: {
-      lemango: [img1, img2].filter(Boolean),
-      noir: [],
-      design: img1 || null,
-      shoot:  img2 || null
+      sum:      imgSum,
+      lemango:  imgJasa,
+      noir:     [],
+      external: imgExternal,
+      design:   null,
+      shoot:    null
     },
     modelSize,
     washMethod: '',
@@ -107,7 +112,7 @@ function submitRegister(e) {
     productionStatus: '지속생산',
     productCodeLocked: false,
     stock: { XS: 0, S: 0, M: 0, L: 0, XL: 0 },
-    sales: { 공홈: 0, GS: 0, '29cm': 0, W쇼핑: 0, 기타: 0 },
+    sales: Object.fromEntries(_platforms.map(pl => [pl, 0])),
     registDate: registDate || new Date().toISOString().slice(0,10),
     logisticsDate: null
   }

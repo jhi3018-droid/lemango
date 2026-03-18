@@ -461,6 +461,10 @@
           <label>색상 (영문)</label>
           <input type="text" id="rColorEn" placeholder="예: Navy" />
         </div>
+        <div class="rform-field" style="grid-column:span 4">
+          <label>디자이너 코멘트</label>
+          <textarea id="rComment" rows="2" placeholder="상품 소개 문구를 입력하세요"></textarea>
+        </div>
       </div>
     </div>
 
@@ -565,18 +569,22 @@
 
     <div class="rform-section">
       <div class="rform-section-title">이미지 URL</div>
-      <div class="rform-grid">
-        <div class="rform-field" style="grid-column:span 2">
-          <label>이미지 URL 1</label>
-          <input type="url" id="rImg1" placeholder="https://..." />
+      <div class="rform-img-grid">
+        <div class="rform-field">
+          <label>자사몰 URL</label>
+          <textarea id="rImgJasa" rows="4" placeholder="줄바꿈으로 여러 URL 입력&#10;https://lemango.cafe24.com/...&#10;https://lemangonoir.cafe24.com/..."></textarea>
         </div>
-        <div class="rform-field" style="grid-column:span 2">
-          <label>이미지 URL 2</label>
-          <input type="url" id="rImg2" placeholder="https://..." />
+        <div class="rform-field">
+          <label>외부몰 URL</label>
+          <textarea id="rImgExternal" rows="4" placeholder="줄바꿈으로 여러 URL 입력&#10;https://..."></textarea>
         </div>
-        <div class="rform-field" style="grid-column:span 4">
-          <label>디자이너 코멘트</label>
-          <textarea id="rComment" rows="3" placeholder="상품 소개 문구를 입력하세요"></textarea>
+        <div class="rform-field">
+          <label>SUM (대표 이미지)</label>
+          <textarea id="rImgSum" rows="4" placeholder="줄바꿈으로 여러 URL 입력&#10;목록·상세 이미지로 우선 사용됩니다"></textarea>
+        </div>
+        <div class="rform-field">
+          <label>영상 URL</label>
+          <input type="url" id="rVideoUrl" placeholder="https://youtube.com/..." />
         </div>
       </div>
     </div>
