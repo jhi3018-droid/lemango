@@ -169,7 +169,7 @@ async function init() {
         logistics:  { start: '2026-04-11', end: '2026-04-20' }
       }
     })
-    State.plan.filtered    = [...State.planItems]
+    State.plan.filtered    = State.planItems.filter(p => !p.confirmed)
     populateAllSelects()
     renderDashboard()
     renderProductTable()
@@ -730,8 +730,41 @@ function findSrmProduct() {
     area.innerHTML = `<div class="srm-empty srm-notfound">품번 <b>${keyword}</b>을(를) 찾을 수 없습니다.</div>`
     return
   }
+  area.innerHTML = buildSrmProductArea(p)
+}
+
+function buildSrmProductArea(p) {
   const sizes = ['XS','S','M','L','XL']
-  area.innerHTML = `
+
+  // 입고 이력 섹션 (날짜 역순)
+  const logs = (p.stockLog || []).slice().sort((a,b) => (b.date||'').localeCompare(a.date||''))
+  const logHtml = logs.length ? `
+    <div class="srm-log-section">
+      <div class="srm-log-title">입고 이력</div>
+      <table class="srm-log-table">
+        <thead>
+          <tr>
+            <th>입고일</th>
+            ${sizes.map(sz => `<th>${sz}</th>`).join('')}
+            <th>합계</th>
+            <th>메모</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${logs.map(log => {
+            const rowTotal = sizes.reduce((s, sz) => s + (log[sz]||0), 0)
+            return `<tr>
+              <td>${log.date||'-'}</td>
+              ${sizes.map(sz => `<td class="${(log[sz]||0)>0?'srm-log-qty':''}">${log[sz]||0}</td>`).join('')}
+              <td class="srm-log-total">${rowTotal}</td>
+              <td class="srm-log-memo">${log.memo||''}</td>
+            </tr>`
+          }).join('')}
+        </tbody>
+      </table>
+    </div>` : ''
+
+  return `
     <div class="sip-product-info" style="margin:12px 0 10px">
       <span class="sip-brand">${p.brand}</span>
       <span class="sip-code">${p.productCode}</span>
@@ -773,6 +806,7 @@ function findSrmProduct() {
     <div class="sip-actions">
       <button class="btn btn-primary" onclick="saveSrmStock('${p.productCode}')">입고 저장</button>
     </div>
+    ${logHtml}
   `
 }
 
@@ -808,8 +842,8 @@ function saveSrmStock(productCode) {
   State.stock.filtered = State.stock.filtered.map(x => x.productCode === productCode ? p : x)
   renderStockTable()
   showToast(`${p.nameKr} 입고 ${total}개 저장 완료`, 'success')
-  document.getElementById('srmProductArea').innerHTML = '<div class="srm-empty">저장됐습니다. 다른 품번을 입력하세요.</div>'
-  document.getElementById('srmKeyword').value = ''
+  // 저장 후 동일 상품 다시 렌더 (현재 재고 + 입고 이력 포함)
+  document.getElementById('srmProductArea').innerHTML = buildSrmProductArea(p)
 }
 
 // Excel 날짜 변환 (시리얼 숫자 또는 문자열 → YYYY-MM-DD)
@@ -1241,7 +1275,7 @@ function submitPlanRegister(e) {
   }
   if (item.productCode) _reservedCodes.delete(item.productCode)
   State.planItems.push(item)
-  State.plan.filtered = [...State.planItems]
+  State.plan.filtered = State.planItems.filter(p => !p.confirmed)
   _plLocalImgUrls = []
   renderPlanTable()
   closePlanRegisterModal()
@@ -1474,14 +1508,19 @@ function handlePlImgUpload(input) {
 function searchPlan() {
   const raw    = document.getElementById('npKeyword').value
   const keywords = parseKeywords(raw)
-  const field  = document.getElementById('npSearchField').value
-  const brand  = document.getElementById('npBrand').value
-  const type   = document.getElementById('npType').value
-  const year   = document.getElementById('npYear').value
-  const season = document.getElementById('npSeason').value
-  const gender = document.getElementById('npGenderFilter').value
+  const field     = document.getElementById('npSearchField').value
+  const brand     = document.getElementById('npBrand').value
+  const type      = document.getElementById('npType').value
+  const year      = document.getElementById('npYear').value
+  const season    = document.getElementById('npSeason').value
+  const gender    = document.getElementById('npGenderFilter').value
+  const confirmed = document.getElementById('npConfirmed')?.value || 'pending'
 
   let result = State.planItems.filter(p => {
+    // 이전 상태 필터 (기본: 미이전만 표시)
+    if (confirmed === 'pending'   &&  p.confirmed) return false
+    if (confirmed === 'confirmed' && !p.confirmed) return false
+
     if (keywords.length) {
       const getTargets = () => {
         if (field === 'nameKr')      return [p.nameKr, p.nameEn]
@@ -1510,7 +1549,9 @@ function resetPlan() {
   document.getElementById('npYear').value = 'all'
   document.getElementById('npSeason').value = 'all'
   document.getElementById('npGenderFilter').value = 'all'
-  State.plan.filtered = [...State.planItems]
+  const confirmedEl = document.getElementById('npConfirmed')
+  if (confirmedEl) confirmedEl.value = 'pending'
+  State.plan.filtered = State.planItems.filter(p => !p.confirmed)
   renderPlanTable()
 }
 
@@ -1552,8 +1593,8 @@ function renderPlanTable() {
           ${schedules.map(() => `<th class="schedule-sub-th">시작일</th><th class="schedule-sub-th">완료예정일</th>`).join('')}
         </tr>
       </thead>
-      <tbody>${data.map(p => `<tr>
-        <td style="text-align:center">${p.no}</td>
+      <tbody>${data.map(p => `<tr${p.confirmed ? ' style="opacity:0.6"' : ''}>
+        <td style="text-align:center">${p.no}${p.confirmed ? '<br><span style="font-size:9px;background:var(--success);color:#fff;padding:1px 5px;border-radius:8px">이전됨</span>' : ''}</td>
         <td>${renderThumb(p)}</td>
         <td><span class="code-link" onclick="openPlanDetailModal(${p.no})">${p.sampleNo}</span></td>
         <td>${p.productCode ? `<span class="code-link" onclick="openDetailModal('${p.productCode}')">${p.productCode}</span>` : `<span style="color:var(--text-muted);font-size:12px">-</span>`}</td>
@@ -1574,25 +1615,302 @@ function renderPlanTable() {
 }
 
 // ===== 신규기획 상세 모달 =====
+let _editingPlanNo = null
+
 function openPlanDetailModal(no) {
   const item = State.planItems.find(p => p.no === no)
   if (!item) return
+  _editingPlanNo = no
   buildPlanDetailContent(item)
+  // 뷰 모드로 초기화
   const modal = document.getElementById('planDetailModal')
+  modal.classList.remove('edit-mode')
+  document.getElementById('pdEditBtn').style.display = ''
+  document.getElementById('pdSaveBtn').style.display = 'none'
+  const confirmBtn = document.getElementById('pdConfirmBtn')
+  if (confirmBtn) confirmBtn.style.display = item.confirmed ? 'none' : ''
   modal.showModal()
-  requestAnimationFrame(() => {
-    modal.style.left = Math.max(0, (window.innerWidth  - modal.offsetWidth)  / 2) + 'px'
-    modal.style.top  = Math.max(0, (window.innerHeight - modal.offsetHeight) / 2) + 'px'
-  })
+  centerModal(modal)
 }
 
 function closePlanDetailModal() {
+  // 미확정 임시 예약 코드 해제
+  if (_pdPendingCode) {
+    const currentItem = State.planItems.find(p => p.no === _editingPlanNo)
+    if (!currentItem || currentItem.productCode !== _pdPendingCode) {
+      _reservedCodes.delete(_pdPendingCode)
+    }
+    _pdPendingCode = null
+  }
   document.getElementById('planDetailModal').close()
 }
 
+// ===== 기획 상세 모달 — 품번 인라인 생성 =====
+function togglePdCodeGenPanel() {
+  const panel = document.getElementById('pdCodeGenPanel')
+  const btn   = document.querySelector('.pdcg-toggle-btn')
+  if (!panel) return
+  const open = panel.style.display === 'none'
+  panel.style.display = open ? '' : 'none'
+  if (btn) btn.textContent = open ? '품번 생성 ▴' : '품번 생성 ▾'
+  if (open) {
+    filterPdDesignList()
+    updatePdProductCode()
+  }
+}
+
+function filterPdDesignList() {
+  const q = (document.getElementById('pdCgDesignSearch')?.value || '').toLowerCase().trim()
+  const list = q
+    ? _designCodes.filter(([c,e,k]) => c.includes(q) || e.toLowerCase().includes(q) || k.toLowerCase().includes(q))
+    : _designCodes
+  const current = document.getElementById('pdCgDesign')?.value
+  const dd = document.getElementById('pdCgDesignDropdown')
+  if (!dd) return
+  dd.innerHTML = list.map(([c,e,k]) =>
+    `<div class="design-option${current===c?' selected':''}" onclick="selectPdDesign('${c}')">
+      <span class="design-code">${c}</span>
+      <span class="design-names"><span class="design-en">${e}</span><span class="design-kr">${k}</span></span>
+    </div>`
+  ).join('') || '<div class="design-no-result">검색 결과 없음</div>'
+}
+
+function selectPdDesign(code) {
+  const found = _designCodes.find(([c]) => c === code)
+  if (!found) return
+  document.getElementById('pdCgDesign').value = code
+  document.getElementById('pdCgDesignSearch').value = ''
+  document.getElementById('pdCgDesignSearch').placeholder = `${code} - ${found[1]} (${found[2]})`
+  filterPdDesignList()
+  updatePdProductCode()
+}
+
+function updatePdProductCode() {
+  const cls    = document.getElementById('pdCgCls')?.value    || ''
+  const gen    = document.getElementById('pdCgGen')?.value    || ''
+  const typ    = document.getElementById('pdCgTyp')?.value    || ''
+  const des    = document.getElementById('pdCgDesign')?.value || ''
+  const year   = document.getElementById('pdCgYear')?.value   || ''
+  const season = document.getElementById('pdCgSeason')?.value || ''
+
+  const previewEl = document.getElementById('pdCgPreview')
+  const applyBtn  = document.getElementById('pdCgApplyBtn')
+  if (!des) {
+    if (previewEl) previewEl.textContent = '디자인 번호를 선택하세요'
+    if (applyBtn)  applyBtn.disabled = true
+    return
+  }
+
+  const prefix = cls + gen + typ + des + year + season
+  // 현재 편집 중인 아이템의 기존 품번은 제외 (재생성 허용)
+  const currentItem = State.planItems.find(p => p.no === _editingPlanNo)
+  const currentOwnCode = currentItem?.productCode || ''
+  const usedNums = new Set(
+    [...State.allProducts, ...State.planItems]
+      .map(p => p.productCode)
+      .filter(c => c && c !== currentOwnCode && c.slice(0, 12) === prefix)
+      .map(c => c.slice(12))
+  )
+  _reservedCodes.forEach(c => {
+    if (c !== currentOwnCode && c.slice(0, 12) === prefix) usedNums.add(c.slice(12))
+  })
+
+  let nextNum = null
+  for (let i = 0; i <= 99; i++) {
+    const n = String(i).padStart(2, '0')
+    if (!usedNums.has(n)) { nextNum = n; break }
+  }
+
+  if (nextNum === null) {
+    if (previewEl) previewEl.textContent = '사용 가능한 번호 없음'
+    if (applyBtn)  applyBtn.disabled = true
+  } else {
+    if (previewEl) previewEl.textContent = prefix + nextNum
+    if (applyBtn)  applyBtn.disabled = false
+  }
+}
+
+let _pdPendingCode = null  // 이번 편집 세션에서 예약된 임시 코드
+
+function applyPdGeneratedCode() {
+  const code = document.getElementById('pdCgPreview')?.textContent?.trim()
+  if (!code || code === '-' || code.includes('없음') || code.includes('선택')) return
+
+  const currentItem = State.planItems.find(p => p.no === _editingPlanNo)
+  const currentOwnCode = currentItem?.productCode || ''
+
+  // 최종 중복 검사 (자기 자신 기존 코드는 허용)
+  if ((State.allProducts.some(p => p.productCode === code) ||
+       State.planItems.some(p => p.productCode === code && p.no !== _editingPlanNo) ||
+       _reservedCodes.has(code)) && code !== currentOwnCode) {
+    showToast(`품번 "${code}"은 이미 사용 중입니다.`, 'error')
+    updatePdProductCode()
+    return
+  }
+
+  // 이전에 예약했던 임시 코드 해제
+  if (_pdPendingCode && _pdPendingCode !== currentOwnCode) {
+    _reservedCodes.delete(_pdPendingCode)
+  }
+
+  _pdPendingCode = code
+  if (code !== currentOwnCode) _reservedCodes.add(code)
+
+  const input = document.getElementById('pdProductCodeInput')
+  if (input) input.value = code
+  document.getElementById('pdCodeGenPanel').style.display = 'none'
+  const toggleBtn = document.querySelector('.pdcg-toggle-btn')
+  if (toggleBtn) toggleBtn.textContent = '품번 생성 ▾'
+  showToast(`품번 "${code}" 적용됐습니다.`, 'success')
+}
+
+function togglePlanDetailEdit() {
+  const modal = document.getElementById('planDetailModal')
+  const isEdit = modal.classList.toggle('edit-mode')
+  document.getElementById('pdEditBtn').style.display = isEdit ? 'none' : ''
+  document.getElementById('pdSaveBtn').style.display = isEdit ? '' : 'none'
+}
+
+function savePlanDetailEdit() {
+  const item = State.planItems.find(p => p.no === _editingPlanNo)
+  if (!item) return
+  const modal = document.getElementById('planDetailModal')
+
+  // 품번 빈 값 체크 → 생성 패널 열기
+  const pcInput = document.getElementById('pdProductCodeInput')
+  if (pcInput && !pcInput.value.trim()) {
+    showToast('품번이 비어있습니다. 품번을 입력하거나 생성해주세요.', 'warning')
+    const panel = document.getElementById('pdCodeGenPanel')
+    if (panel && panel.style.display === 'none') togglePdCodeGenPanel()
+    pcInput.focus()
+    return
+  }
+
+  // 일반 input/select/textarea
+  modal.querySelectorAll('[data-pkey]').forEach(el => {
+    const key = el.dataset.pkey
+    const val = el.tagName === 'INPUT' && el.type === 'number' ? (parseFloat(el.value) || 0) : el.value
+    item[key] = val
+  })
+  // 일정 date inputs
+  const scheduleKeys = ['design', 'production', 'image', 'register', 'logistics']
+  scheduleKeys.forEach(k => {
+    if (!item.schedule) item.schedule = {}
+    if (!item.schedule[k]) item.schedule[k] = {}
+    const startEl = modal.querySelector(`[data-sched="${k}-start"]`)
+    const endEl   = modal.querySelector(`[data-sched="${k}-end"]`)
+    if (startEl) item.schedule[k].start = startEl.value || null
+    if (endEl)   item.schedule[k].end   = endEl.value   || null
+  })
+
+  // 헤더 텍스트 즉시 반영
+  document.getElementById('pdBrand').textContent  = item.brand || ''
+  document.getElementById('pdNameKr').textContent = item.nameKr || '(상품명 없음)'
+  document.getElementById('pdSampleNo').textContent = item.sampleNo
+
+  buildPlanDetailContent(item)
+  modal.classList.remove('edit-mode')
+  document.getElementById('pdEditBtn').style.display = ''
+  document.getElementById('pdSaveBtn').style.display = 'none'
+  renderPlanTable()
+  showToast('저장됐습니다.', 'success')
+}
+
+function confirmPlanToProduct() {
+  const item = State.planItems.find(p => p.no === _editingPlanNo)
+  if (!item) return
+
+  if (!item.productCode || !item.productCode.trim()) {
+    showToast('품번이 없습니다. 먼저 품번을 생성/입력 후 저장해주세요.', 'warning')
+    return
+  }
+
+  if (State.allProducts.some(p => p.productCode === item.productCode)) {
+    showToast(`품번 "${item.productCode}"은 이미 상품조회에 존재합니다.`, 'warning')
+    return
+  }
+
+  if (!confirm(`신규기획 항목을 상품조회로 이전합니다.\n품번: ${item.productCode}\n상품명: ${item.nameKr || '(없음)'}\n\n계속하시겠습니까?`)) return
+
+  // 플랜 아이템 → 상품 객체 생성
+  const salesInit = {}
+  _platforms.forEach(pl => { salesInit[pl] = 0 })
+
+  const newProduct = {
+    no:          State.allProducts.length + 1,
+    brand:       item.brand       || '',
+    productCode: item.productCode,
+    sampleNo:    item.sampleNo    || '',
+    cafe24Code:  item.cafe24Code  || '',
+    barcode:     item.barcode     || '',
+    nameKr:      item.nameKr      || '',
+    nameEn:      item.nameEn      || '',
+    colorKr:     item.colorKr     || '',
+    colorEn:     item.colorEn     || '',
+    salePrice:   item.salePrice   || 0,
+    costPrice:   item.costPrice   || 0,
+    type:        item.type        || '',
+    backStyle:   item.backStyle   || '',
+    legCut:      item.legCut      || '',
+    guide:       item.guide       || '',
+    fabricType:  item.fabricType  || '',
+    chestLine:   item.chestLine   || '',
+    transparency:item.transparency|| '',
+    lining:      item.lining      || '',
+    capRing:     item.capRing     || '',
+    material:    item.material    || '',
+    comment:     item.comment     || '',
+    washMethod:  item.washMethod  || '',
+    bust:        item.bust        || '',
+    waist:       item.waist       || '',
+    hip:         item.hip         || '',
+    modelSize:   item.modelSize   || '',
+    madeMonth:   item.madeMonth   || '',
+    madeBy:      item.madeBy      || '',
+    madeIn:      item.madeIn      || '',
+    videoUrl:    item.videoUrl    || null,
+    saleStatus:  item.saleStatus  || '판매중',
+    images: {
+      sum:      item.images?.sum      || [],
+      lemango:  item.images?.lemango  || [],
+      noir:     item.images?.noir     || [],
+      external: item.images?.external || [],
+      design:   item.images?.design   || [],
+      shoot:    item.images?.shoot    || []
+    },
+    stock:       { XS: 0, S: 0, M: 0, L: 0, XL: 0 },
+    sales:       salesInit,
+    registDate:  new Date().toISOString().slice(0, 10),
+    logisticsDate: '',
+    // 기획 일정 이력 (상품조회 하단에 표시)
+    scheduleLog: item.schedule && Object.keys(item.schedule).length
+      ? [{ confirmedAt: new Date().toISOString().slice(0, 10), schedule: JSON.parse(JSON.stringify(item.schedule)) }]
+      : []
+  }
+
+  State.allProducts.push(newProduct)
+  item.confirmed = true
+
+  // 상품조회 필터 갱신
+  State.product.filtered = [...State.allProducts]
+  State.stock.filtered   = [...State.allProducts]
+  renderProductTable()
+  renderStockTable()
+  renderDashboard()
+  renderPlanTable()
+
+  closePlanDetailModal()
+  switchTab('product')
+
+  // 상세 모달 열기 (약간 지연: 탭 전환 후)
+  setTimeout(() => openDetailModal(newProduct.productCode), 100)
+
+  showToast(`"${newProduct.productCode}" 상품이 상품조회로 이전됐습니다.`, 'success')
+}
+
 function buildPlanDetailContent(item) {
-  document.getElementById('pdBrand').textContent   = item.brand || ''
-  document.getElementById('pdNameKr').textContent  = item.nameKr || '(상품명 없음)'
+  document.getElementById('pdBrand').textContent    = item.brand || ''
+  document.getElementById('pdNameKr').textContent   = item.nameKr || '(상품명 없음)'
   document.getElementById('pdSampleNo').textContent = item.sampleNo
 
   const schedules = [
@@ -1616,8 +1934,71 @@ function buildPlanDetailContent(item) {
     : '<span class="pd-no-img">이미지 없음</span>'
 
   const fmtDate = d => d || '-'
-  const typeLabel = { onepiece: '원피스', bikini: '비키니', 'two piece': '투피스' }
+  const typeLabel   = { onepiece: '원피스', bikini: '비키니', 'two piece': '투피스' }
   const genderLabel = { W: '여성', M: '남성', G: '걸즈', B: '보이즈', N: '공용', K: '키즈' }
+
+  // 뷰/편집 겸용 필드 헬퍼 (dispOverride: select일 때 표시용 한글 레이블)
+  const pf = (label, key, val, type = 'text', opts = '', spanClass = '', dispOverride = '') => {
+    const dispVal = dispOverride || (val !== null && val !== undefined && val !== '' ? String(val) : '-')
+    const inputEl = type === 'select'
+      ? `<select data-pkey="${key}">${opts}</select>`
+      : type === 'textarea'
+        ? `<textarea data-pkey="${key}" rows="3">${val || ''}</textarea>`
+        : `<input type="${type}" data-pkey="${key}" value="${String(val || '').replace(/"/g, '&quot;')}" />`
+    return `<div class="dfield ${spanClass}">
+      <span class="dfield-label">${label}</span>
+      <span class="dfield-value${dispVal === '-' ? ' empty' : ''}">${dispVal}</span>
+      ${inputEl}
+    </div>`
+  }
+
+  const brandOpts  = _settings.brands.map(b => `<option value="${b}"${item.brand===b?' selected':''}>${b}</option>`).join('')
+  const typeOpts   = _settings.types.map(([v,l]) => `<option value="${v}"${item.type===v?' selected':''}>${l}</option>`).join('')
+  const genderOpts = [['W','여성'],['M','남성'],['G','걸즈'],['B','보이즈'],['N','공용'],['K','키즈']]
+    .map(([v,l]) => `<option value="${v}"${item.gender===v?' selected':''}>${l}</option>`).join('')
+
+  // 품번 생성 패널용 옵션 (item 데이터로 기본값 추측)
+  const clsGuess    = item.brand?.includes('느와') ? 'NS' : 'LS'
+  const typGuess    = item.type === 'bikini' ? 'BK' : item.type === 'two piece' ? 'BK' : 'ON'
+  const yearGuess   = String(item.year  || '6')
+  const seasonGuess = String(item.season || '1')
+  const genGuess    = item.gender || 'W'
+  const CLS_OPT = [['LS','르망고 수영복'],['LW','르망고 의류'],['LG','르망고 굿즈'],['NS','느와 수영복'],['NW','느와 의류'],['NG','느와 굿즈']]
+  const TYP_OPT = [['ON','원피스'],['MO','모노키니'],['BK','비키니'],['BR','브리프'],['JM','재머'],['RG','래시가드'],['AL','애슬레저'],['GM','의류'],['SC','수영모'],['BG','가방'],['ET','기타']]
+  const GEN_OPT = [['W','여성'],['M','남성'],['G','걸즈'],['B','보이즈'],['N','공용'],['K','키즈']]
+  const YEAR_OPT = ['1','2','3','4','5','6','7','8','9','0']
+  const mkSel = (id, opts, guess, fn) =>
+    `<select id="${id}" onchange="${fn}()">${opts.map(([v,l]) => `<option value="${v}"${v===guess?' selected':''}>${v}${l?' - '+l:''}</option>`).join('')}</select>`
+
+  const pcVal = item.productCode || ''
+  const productCodeField = `<div class="dfield dfield-span2">
+    <span class="dfield-label">품번</span>
+    <span class="dfield-value${!pcVal ? ' empty' : ''}">${pcVal || '-'}</span>
+    <div class="pdcg-input-row">
+      <input type="text" data-pkey="productCode" id="pdProductCodeInput" value="${pcVal}" placeholder="품번 직접 입력" style="flex:1" />
+      <button class="btn btn-outline pdcg-toggle-btn" onclick="togglePdCodeGenPanel()" style="font-size:11px;padding:4px 12px;white-space:nowrap">품번 생성 ▾</button>
+    </div>
+    <div id="pdCodeGenPanel" class="pd-codegen-panel" style="display:none">
+      <div class="pdcg-selects">
+        <div class="pdcg-group"><label>분류</label>${mkSel('pdCgCls', CLS_OPT, clsGuess, 'updatePdProductCode')}</div>
+        <div class="pdcg-group"><label>성별</label>${mkSel('pdCgGen', GEN_OPT, genGuess, 'updatePdProductCode')}</div>
+        <div class="pdcg-group"><label>타입</label>${mkSel('pdCgTyp', TYP_OPT, typGuess, 'updatePdProductCode')}</div>
+        <div class="pdcg-group"><label>연도</label>${mkSel('pdCgYear', YEAR_OPT.map(v => [v, '']), yearGuess, 'updatePdProductCode')}</div>
+        <div class="pdcg-group"><label>시즌</label>${mkSel('pdCgSeason', ['1','2','3','4','5'].map(v => [v,'']), seasonGuess, 'updatePdProductCode')}</div>
+      </div>
+      <div class="pdcg-design-row">
+        <label>디자인 번호 (패턴)</label>
+        <input type="text" id="pdCgDesignSearch" placeholder="코드 또는 패턴명 검색" oninput="filterPdDesignList()" autocomplete="off" class="design-search-input" />
+        <div id="pdCgDesignDropdown" class="design-dropdown" style="max-height:160px;overflow-y:auto"></div>
+        <input type="hidden" id="pdCgDesign" />
+      </div>
+      <div class="pdcg-preview-row">
+        <span class="pdcg-label">미리보기</span>
+        <code id="pdCgPreview" class="pdcg-preview">-</code>
+        <button class="btn btn-primary" id="pdCgApplyBtn" onclick="applyPdGeneratedCode()" disabled style="font-size:12px;padding:4px 14px">적용</button>
+      </div>
+    </div>
+  </div>`
 
   document.getElementById('pdContent').innerHTML = `
     <div class="pd-section">
@@ -1626,32 +2007,31 @@ function buildPlanDetailContent(item) {
     </div>
     <div class="pd-section">
       <div class="pd-section-title">기본 정보</div>
-      <div class="pd-grid">
-        <div class="pd-field"><span class="pd-label">샘플번호</span><span class="pd-value">${item.sampleNo}</span></div>
-        <div class="pd-field"><span class="pd-label">품번</span><span class="pd-value">${item.productCode || '-'}</span></div>
-        <div class="pd-field"><span class="pd-label">브랜드</span><span class="pd-value">${item.brand || '-'}</span></div>
-        <div class="pd-field pd-span2"><span class="pd-label">상품명 (한글)</span><span class="pd-value">${item.nameKr || '-'}</span></div>
-        <div class="pd-field pd-span2"><span class="pd-label">상품명 (영문)</span><span class="pd-value">${item.nameEn || '-'}</span></div>
-        <div class="pd-field"><span class="pd-label">색상 (한글)</span><span class="pd-value">${item.colorKr || '-'}</span></div>
-        <div class="pd-field"><span class="pd-label">색상 (영문)</span><span class="pd-value">${item.colorEn || '-'}</span></div>
+      <div class="dfields-grid">
+        ${pf('샘플번호', 'sampleNo', item.sampleNo)}
+        ${productCodeField}
+        ${pf('브랜드',        'brand',      item.brand,   'select', brandOpts, '', item.brand)}
+        ${pf('상품명 (한글)', 'nameKr',     item.nameKr,  'text',   '', 'dfield-span2')}
+        ${pf('상품명 (영문)', 'nameEn',     item.nameEn,  'text',   '', 'dfield-span2')}
+        ${pf('색상 (한글)',   'colorKr',    item.colorKr)}
+        ${pf('색상 (영문)',   'colorEn',    item.colorEn)}
       </div>
     </div>
     <div class="pd-section">
       <div class="pd-section-title">가격 / 타입</div>
-      <div class="pd-grid">
-        <div class="pd-field"><span class="pd-label">판매가</span><span class="pd-value">${fmtPrice(item.salePrice)}</span></div>
-        <div class="pd-field"><span class="pd-label">원가</span><span class="pd-value">${fmtPrice(item.costPrice)}</span></div>
-        <div class="pd-field"><span class="pd-label">타입</span><span class="pd-value">${typeLabel[item.type] || item.type || '-'}</span></div>
-        <div class="pd-field"><span class="pd-label">연도</span><span class="pd-value">${item.year || '-'}</span></div>
-        <div class="pd-field"><span class="pd-label">시즌</span><span class="pd-value">${item.season || '-'}</span></div>
-        <div class="pd-field"><span class="pd-label">성별</span><span class="pd-value">${genderLabel[item.gender] || item.gender || '-'}</span></div>
+      <div class="dfields-grid">
+        ${pf('판매가', 'salePrice', item.salePrice, 'number')}
+        ${pf('원가',   'costPrice', item.costPrice, 'number')}
+        ${pf('타입',   'type',      item.type, 'select', typeOpts, '', typeLabel[item.type] || item.type)}
+        ${pf('연도',   'year',      item.year)}
+        ${pf('시즌',   'season',    item.season)}
+        ${pf('성별',   'gender',    item.gender, 'select', genderOpts, '', genderLabel[item.gender] || item.gender)}
       </div>
     </div>
-    ${item.memo ? `
     <div class="pd-section">
       <div class="pd-section-title">메모</div>
-      <div class="pd-memo">${item.memo}</div>
-    </div>` : ''}
+      ${pf('메모', 'memo', item.memo, 'textarea', '', 'dfield-span2')}
+    </div>
     <div class="pd-section">
       <div class="pd-section-title">일정 관리</div>
       <table class="plan-schedule-table">
@@ -1662,11 +2042,16 @@ function buildPlanDetailContent(item) {
         </tr></thead>
         <tbody>${schedules.map(s => {
           const sch = item.schedule?.[s.key] || {}
-          const hasStart = sch.start, hasEnd = sch.end
           return `<tr>
             <td class="pst-label">${s.label}</td>
-            <td class="pst-date-val${hasStart ? ' has-date' : ''}">${fmtDate(sch.start)}</td>
-            <td class="pst-date-val${hasEnd ? ' has-date' : ''}">${fmtDate(sch.end)}</td>
+            <td class="pst-date-val${sch.start ? ' has-date' : ''}">
+              <span class="pst-view">${fmtDate(sch.start)}</span>
+              <input type="date" class="pst-edit" data-sched="${s.key}-start" value="${sch.start || ''}" />
+            </td>
+            <td class="pst-date-val${sch.end ? ' has-date' : ''}">
+              <span class="pst-view">${fmtDate(sch.end)}</span>
+              <input type="date" class="pst-edit" data-sched="${s.key}-end" value="${sch.end || ''}" />
+            </td>
           </tr>`
         }).join('')}</tbody>
       </table>
@@ -2039,7 +2424,8 @@ function showToast(msg, type = '') {
 // =============================================
 // ===== 상품 상세 모달 =====
 // =============================================
-let _detailCode = null   // 현재 열린 상품 코드
+let _detailCode = null        // 현재 열린 상품 코드
+let _detailPendingCode = null  // 상세 모달 품번 생성 패널에서 임시 예약한 코드
 
 // 드래그 + 리사이즈 초기화 (최초 1회)
 function initRegisterDraggable() {
@@ -2336,6 +2722,12 @@ function openDetailModal(productCode) {
   const modal = document.getElementById('detailModal')
   modal.classList.remove('edit-mode')
   document.getElementById('dEditBtn').textContent = '✏️ 수정'
+  // 품번확정 버튼 상태
+  const lockBtn = document.getElementById('dLockCodeBtn')
+  if (lockBtn) {
+    lockBtn.style.display = p.productCodeLocked ? 'none' : ''
+    lockBtn.textContent = '🔒 품번 확정'
+  }
   // 위치 초기화 (매번 열릴 때 중앙으로)
   modal.style.left = ''
   modal.style.top  = ''
@@ -2345,18 +2737,18 @@ function openDetailModal(productCode) {
   document.getElementById('dNameKr').textContent  = p.nameKr || ''
   document.getElementById('dCode').textContent    = p.productCode
 
-  // 이미지
+  // 이미지 (SUM 첫 번째 우선, 없으면 다른 이미지, 없으면 로고)
+  const FALLBACK_LOGO = 'file:////lemangokorea/온라인/01.이미지/로고/Lemango/르망고_송부용_로고(WH).png'
   const allImgs = getAllImages(p)
+  const sumFirst = p.images?.sum?.[0] || null
   const mainImg = document.getElementById('dImgMain')
   const noneEl  = document.getElementById('dImgNone')
-  if (allImgs.length) {
-    mainImg.src = allImgs[0]
-    mainImg.style.display = ''
-    noneEl.style.display = 'none'
-  } else {
-    mainImg.style.display = 'none'
-    noneEl.style.display = ''
-  }
+  mainImg.src = sumFirst || allImgs[0] || FALLBACK_LOGO
+  mainImg.style.display = ''
+  noneEl.style.display = 'none'
+  mainImg.style.cursor = 'pointer'
+  mainImg.title = '클릭하면 새 탭에서 열립니다'
+  mainImg.onclick = () => { if (mainImg.src) window.open(mainImg.src) }
   // 썸네일
   document.getElementById('dImgThumbs').innerHTML = allImgs.map((url, i) =>
     `<img src="${url}" class="dimg-thumb${i===0?' active':''}" onclick="dSwitchImg(this,'${url}')" onerror="this.style.display='none'" />`
@@ -2375,6 +2767,7 @@ function openDetailModal(productCode) {
   document.getElementById('dDetailContent').innerHTML = buildDetailContent(p)
 
   modal.showModal()
+  centerModal(modal)
 }
 
 function dSwitchImg(el, url) {
@@ -2387,6 +2780,62 @@ function dSwitchImg(el, url) {
 function buildDetailContent(p) {
   const sizes  = ['XS','S','M','L','XL']
   const platforms = _platforms
+
+  // 품번 생성 패널 상수
+  const DCG_CLS_OPT  = [['LS','르망고 수영복'],['LW','르망고 의류'],['LG','르망고 굿즈'],['NS','느와 수영복'],['NW','느와 의류'],['NG','느와 굿즈']]
+  const DCG_TYP_OPT  = [['ON','원피스'],['MO','모노키니'],['BK','비키니'],['BR','브리프'],['JM','재머'],['RG','래시가드'],['AL','애슬레저'],['GM','의류'],['SC','수영모'],['BG','가방'],['ET','기타']]
+  const DCG_GEN_OPT  = [['W','여성'],['M','남성'],['G','걸즈'],['B','보이즈'],['N','공용'],['K','키즈']]
+  const DCG_YEAR_OPT = ['1','2','3','4','5','6','7','8','9','0']
+
+  // 기존 품번에서 기본값 추측
+  const existCode = p.productCode || ''
+  const dcgClsGuess  = existCode.length >= 2  ? existCode.slice(0,2)  : (p.brand?.includes('느와') ? 'NS' : 'LS')
+  const dcgGenGuess  = existCode.length >= 3  ? existCode.slice(2,3)  : 'W'
+  const dcgTypGuess  = existCode.length >= 5  ? existCode.slice(3,5)  : 'ON'
+  const dcgDesGuess  = existCode.length >= 9  ? existCode.slice(5,9)  : '1626'
+  const dcgYearGuess = existCode.length >= 10 ? existCode.slice(9,10) : '6'
+  const dcgSeaGuess  = existCode.length >= 11 ? existCode.slice(10,11): '1'
+
+  const dcgMkSel = (id, opts, guess) =>
+    `<select id="${id}" onchange="updateDetailProductCode()">${opts.map(([v,l]) => `<option value="${v}"${v===guess?' selected':''}>${v}${l?' - '+l:''}</option>`).join('')}</select>`
+
+  const productCodeField = p.productCodeLocked
+    ? `<div class="dfield">
+        <span class="dfield-label">품번</span>
+        <span class="dfield-value" style="display:flex;align-items:center;gap:6px">
+          ${p.productCode}
+          <span style="font-size:10px;background:var(--primary);color:#fff;padding:2px 7px;border-radius:10px;vertical-align:middle">확정됨</span>
+        </span>
+        <input type="text" data-key="productCode" value="${(p.productCode||'').replace(/"/g,'&quot;')}" readonly style="background:#f0f0f0;color:#888;cursor:not-allowed" />
+      </div>`
+    : `<div class="dfield span2">
+        <span class="dfield-label">품번</span>
+        <span class="dfield-value${!existCode ? ' empty' : ''}">${existCode || '-'}</span>
+        <div class="pdcg-input-row dcg-edit-only">
+          <input type="text" data-key="productCode" id="dCgProductCodeInput" value="${existCode.replace(/"/g,'&quot;')}" placeholder="품번 직접 입력" />
+          <button class="btn btn-outline pdcg-toggle-btn" onclick="toggleDetailCodeGenPanel()" style="font-size:11px;padding:4px 12px;white-space:nowrap">품번 생성 ▾</button>
+        </div>
+        <div id="dCgPanel" class="pd-codegen-panel" style="display:none">
+          <div class="pdcg-selects">
+            <div class="pdcg-group"><label>분류</label>${dcgMkSel('dCgCls', DCG_CLS_OPT, dcgClsGuess)}</div>
+            <div class="pdcg-group"><label>성별</label>${dcgMkSel('dCgGen', DCG_GEN_OPT, dcgGenGuess)}</div>
+            <div class="pdcg-group"><label>타입</label>${dcgMkSel('dCgTyp', DCG_TYP_OPT, dcgTypGuess)}</div>
+            <div class="pdcg-group"><label>연도</label>${dcgMkSel('dCgYear', DCG_YEAR_OPT.map(v=>[v,'']), dcgYearGuess)}</div>
+            <div class="pdcg-group"><label>시즌</label>${dcgMkSel('dCgSeason', ['1','2','3','4','5'].map(v=>[v,'']), dcgSeaGuess)}</div>
+          </div>
+          <div class="pdcg-design-row">
+            <label>디자인 번호 (패턴)</label>
+            <input type="text" id="dCgDesignSearch" placeholder="코드 또는 패턴명 검색" oninput="filterDetailDesignList()" autocomplete="off" class="design-search-input" />
+            <div id="dCgDesignDropdown" class="design-dropdown" style="max-height:160px;overflow-y:auto"></div>
+            <input type="hidden" id="dCgDesign" value="${dcgDesGuess}" />
+          </div>
+          <div class="pdcg-preview-row">
+            <span class="pdcg-label">미리보기</span>
+            <code id="dCgPreview" class="pdcg-preview">-</code>
+            <button class="btn btn-primary" id="dCgApplyBtn" onclick="applyDetailGeneratedCode()" disabled style="font-size:12px;padding:4px 14px">적용</button>
+          </div>
+        </div>
+      </div>`
 
   const field = (label, key, val, type='text', opts='', spanClass='') =>
     `<div class="dfield ${spanClass}">
@@ -2458,7 +2907,7 @@ function buildDetailContent(p) {
       <div class="dsection-grid">
         ${field('브랜드',    'brand',       p.brand,    'select', brandOpts)}
         ${field('판매상태',  'saleStatus',  p.saleStatus||'판매중', 'select', saleStatusOpts)}
-        ${field('품번',      'productCode', p.productCode)}
+        ${productCodeField}
         ${field('샘플번호',  'sampleNo',    p.sampleNo)}
         ${field('카페24 코드', 'cafe24Code', p.cafe24Code)}
         ${field('바코드',    'barcode',     p.barcode)}
@@ -2523,7 +2972,7 @@ function buildDetailContent(p) {
             const n = p.stock?.[sz] || 0
             return `<div class="dstock-badge">
               <span class="dstock-size">${sz}</span>
-              <span class="dstock-num${n===0?' zero':''}" id="dstock_${sz}">${n}</span>
+              <span class="dstock-num${n===0?' zero':''}">${n}</span>
             </div>`
           }).join('')}
           <div class="dstock-badge" style="background:var(--table-header)">
@@ -2531,13 +2980,16 @@ function buildDetailContent(p) {
             <span class="dstock-num">${getTotalStock(p)}</span>
           </div>
         </div>
-        <div class="dsection-grid" style="margin-top:10px;display:none" id="dStockEditGrid">
-          ${sizes.map(sz =>
-            `<div class="dfield">
-              <span class="dfield-label">${sz}</span>
-              <input type="number" data-stock="${sz}" value="${p.stock?.[sz]||0}" min="0" style="display:none" />
-            </div>`
-          ).join('')}
+        <div class="dprod-status-row">
+          <span class="dprod-status-label">생산 상태</span>
+          <button type="button"
+            class="dprod-btn${(p.productionStatus||'지속생산')==='지속생산' ? ' active' : ''}"
+            data-status="지속생산"
+            onclick="setProductionStatus(this, '지속생산')">지속생산</button>
+          <button type="button"
+            class="dprod-btn${(p.productionStatus||'지속생산')==='생산중단' ? ' active danger' : ''}"
+            data-status="생산중단"
+            onclick="setProductionStatus(this, '생산중단')">생산중단</button>
         </div>
       </div>
     </div>
@@ -2564,13 +3016,47 @@ function buildDetailContent(p) {
     <div class="dsection">
       <div class="dsection-title">이미지 URL</div>
       <div class="dsection-grid col1">
-        ${urlField('르망고 자사몰', 'urlLemango', (p.images?.lemango||[]).join('\n'), 'textarea')}
-        ${urlField('느와 자사몰',   'urlNoir',    (p.images?.noir||[]).join('\n'),    'textarea')}
+        ${urlField('자사몰', 'urlJasa', [...(p.images?.lemango||[]), ...(p.images?.noir||[])].join('\n'), 'textarea')}
         ${urlField('외부몰',        'urlExternal',(p.images?.external||[]).join('\n'),'textarea')}
         ${urlField('SUM',           'urlSum',     (p.images?.sum||[]).join('\n'),     'textarea')}
         ${urlField('영상 URL',      'videoUrl',   p.videoUrl || '',                  'text')}
       </div>
     </div>
+
+    ${p.scheduleLog?.length ? `
+    <div class="dsection">
+      <div class="dsection-title" style="color:var(--text-muted)">기획 일정 이력</div>
+      <div style="padding:8px 12px">
+        ${p.scheduleLog.map(entry => {
+          const schLabels = { design:'디자인', production:'생산', image:'이미지', register:'상품등록', logistics:'물류입고' }
+          const rows = Object.entries(entry.schedule||{}).map(([k, v]) => {
+            const label = schLabels[k] || k
+            const start = v?.start || '-'
+            const end   = v?.end   || '-'
+            if (start === '-' && end === '-') return ''
+            return `<tr>
+              <td style="padding:3px 8px;font-size:11px;color:var(--text-muted)">${label}</td>
+              <td style="padding:3px 8px;font-size:11px">${start}</td>
+              <td style="padding:3px 8px;font-size:11px">${end}</td>
+            </tr>`
+          }).filter(Boolean).join('')
+          return rows ? `
+            <div style="margin-bottom:10px">
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">확정일: ${entry.confirmedAt}</div>
+              <table style="width:100%;border-collapse:collapse;font-size:12px">
+                <thead>
+                  <tr style="background:var(--table-header)">
+                    <th style="padding:3px 8px;text-align:left;border:1px solid var(--border);font-size:11px">구분</th>
+                    <th style="padding:3px 8px;text-align:left;border:1px solid var(--border);font-size:11px">시작일</th>
+                    <th style="padding:3px 8px;text-align:left;border:1px solid var(--border);font-size:11px">완료예정일</th>
+                  </tr>
+                </thead>
+                <tbody style="border:1px solid var(--border)">${rows}</tbody>
+              </table>
+            </div>` : ''
+        }).join('')}
+      </div>
+    </div>` : ''}
 
     <div class="dmodal-edit-footer">
       <button type="button" class="btn btn-outline" onclick="toggleDetailEdit()">취소</button>
@@ -2579,16 +3065,30 @@ function buildDetailContent(p) {
   `
 }
 
+function closeDetailModal() {
+  // 미저장 임시 예약 품번 해제
+  if (_detailPendingCode) {
+    const currentProduct = State.allProducts.find(x => x.productCode === _detailCode)
+    if (!currentProduct || currentProduct.productCode !== _detailPendingCode) {
+      _reservedCodes.delete(_detailPendingCode)
+    }
+    _detailPendingCode = null
+  }
+  document.getElementById('detailModal').close()
+}
+
 function toggleDetailEdit() {
   const modal = document.getElementById('detailModal')
   const isEdit = modal.classList.toggle('edit-mode')
   document.getElementById('dEditBtn').textContent = isEdit ? '❌ 취소' : '✏️ 수정'
 
-  // 재고 수정 입력칸 토글
-  const stockGrid = document.getElementById('dStockEditGrid')
-  if (stockGrid) {
-    stockGrid.style.display = isEdit ? 'grid' : 'none'
-    stockGrid.querySelectorAll('input').forEach(inp => inp.style.display = isEdit ? 'block' : 'none')
+  // 취소 시 임시 예약 코드 해제
+  if (!isEdit && _detailPendingCode) {
+    const currentProduct = State.allProducts.find(x => x.productCode === _detailCode)
+    if (!currentProduct || currentProduct.productCode !== _detailPendingCode) {
+      _reservedCodes.delete(_detailPendingCode)
+    }
+    _detailPendingCode = null
   }
 }
 
@@ -2600,12 +3100,13 @@ function saveDetailEdit() {
   document.querySelectorAll('#dDetailContent .dfield [data-key]').forEach(inp => {
     const key = inp.dataset.key
     const val = inp.value.trim()
-    if (key === 'salePrice' || key === 'costPrice') {
+    if (key === 'productCode' && p.productCodeLocked) {
+      return // 품번 확정 후 변경 금지
+    } else if (key === 'salePrice' || key === 'costPrice') {
       p[key] = parseInt(val) || 0
-    } else if (['urlLemango','urlNoir','urlExternal','urlSum'].includes(key)) {
+    } else if (['urlJasa','urlExternal','urlSum'].includes(key)) {
       const arr = val.split(/[\n\r]+/).map(u=>u.trim()).filter(Boolean)
-      if (key === 'urlLemango') p.images.lemango  = arr
-      if (key === 'urlNoir')    p.images.noir     = arr
+      if (key === 'urlJasa')    { p.images.lemango = arr; p.images.noir = [] }
       if (key === 'urlExternal')p.images.external = arr
       if (key === 'urlSum')     p.images.sum      = arr
     } else if (key === 'videoUrl') {
@@ -2615,11 +3116,6 @@ function saveDetailEdit() {
     }
   })
 
-  // 재고 수집
-  document.querySelectorAll('#dDetailContent [data-stock]').forEach(inp => {
-    p.stock[inp.dataset.stock] = parseInt(inp.value) || 0
-  })
-
   // 테이블 갱신
   State.product.filtered = [...State.allProducts]
   State.stock.filtered   = [...State.allProducts]
@@ -2627,11 +3123,169 @@ function saveDetailEdit() {
   renderStockTable()
   renderDashboard()
 
+  // 임시 예약 코드 확정 처리
+  _detailPendingCode = null
+
   // 모달 뷰모드로 전환 후 재렌더
   document.getElementById('detailModal').classList.remove('edit-mode')
   document.getElementById('dEditBtn').textContent = '✏️ 수정'
   openDetailModal(_detailCode)
   showToast('상품 정보가 수정되었습니다.', 'success')
+}
+
+function lockProductCode() {
+  const p = State.allProducts.find(x => x.productCode === _detailCode)
+  if (!p) return
+  if (!confirm(`품번 "${p.productCode}"을 확정합니다.\n확정 후에는 품번을 수정할 수 없습니다.`)) return
+  p.productCodeLocked = true
+  const lockBtn = document.getElementById('dLockCodeBtn')
+  if (lockBtn) lockBtn.style.display = 'none'
+  // 재렌더 (품번 필드를 읽기전용으로 표시)
+  const content = document.getElementById('dDetailContent')
+  if (content) content.innerHTML = buildDetailContent(p)
+  showToast('품번이 확정되었습니다.', 'success')
+}
+
+function setProductionStatus(btn, status) {
+  // 수정 모드가 아니면 무시
+  const modal = document.getElementById('detailModal')
+  if (!modal.classList.contains('edit-mode')) return
+
+  const p = State.allProducts.find(x => x.productCode === _detailCode)
+  if (!p) return
+  p.productionStatus = status
+
+  // 버튼 active 상태 갱신
+  btn.closest('.dprod-status-row').querySelectorAll('.dprod-btn').forEach(b => {
+    b.classList.remove('active', 'danger')
+    if (b.dataset.status === status) {
+      b.classList.add('active')
+      if (status === '생산중단') b.classList.add('danger')
+    }
+  })
+}
+
+// =============================================
+// ===== 상세 모달 — 품번 인라인 생성 패널 =====
+// =============================================
+function toggleDetailCodeGenPanel() {
+  const panel = document.getElementById('dCgPanel')
+  const btn   = document.querySelector('#dDetailContent .pdcg-toggle-btn')
+  if (!panel) return
+  const open = panel.style.display === 'none'
+  panel.style.display = open ? '' : 'none'
+  if (btn) btn.textContent = open ? '품번 생성 ▴' : '품번 생성 ▾'
+  if (open) {
+    filterDetailDesignList()
+    updateDetailProductCode()
+  }
+}
+
+function filterDetailDesignList() {
+  const q = (document.getElementById('dCgDesignSearch')?.value || '').toLowerCase().trim()
+  const list = q
+    ? _designCodes.filter(([c,e,k]) => c.includes(q) || e.toLowerCase().includes(q) || k.toLowerCase().includes(q))
+    : _designCodes
+  const current = document.getElementById('dCgDesign')?.value
+  const dd = document.getElementById('dCgDesignDropdown')
+  if (!dd) return
+  dd.innerHTML = list.map(([c,e,k]) =>
+    `<div class="design-option${current===c?' selected':''}" onclick="selectDetailDesign('${c}')">
+      <span class="design-code">${c}</span>
+      <span class="design-names"><span class="design-en">${e}</span><span class="design-kr">${k}</span></span>
+    </div>`
+  ).join('')
+  const sel = dd.querySelector('.design-option.selected')
+  if (sel) sel.scrollIntoView({ block: 'nearest' })
+}
+
+function selectDetailDesign(code) {
+  const found = _designCodes.find(([c]) => c === code)
+  if (!found) return
+  document.getElementById('dCgDesign').value = code
+  const search = document.getElementById('dCgDesignSearch')
+  if (search) { search.value = ''; search.placeholder = `${code} - ${found[1]} (${found[2]})` }
+  filterDetailDesignList()
+  updateDetailProductCode()
+}
+
+function updateDetailProductCode() {
+  const cls    = document.getElementById('dCgCls')?.value
+  const gen    = document.getElementById('dCgGen')?.value
+  const typ    = document.getElementById('dCgTyp')?.value
+  const des    = document.getElementById('dCgDesign')?.value
+  const year   = document.getElementById('dCgYear')?.value
+  const season = document.getElementById('dCgSeason')?.value
+  if (!cls || !des) return
+
+  const prefix = cls + gen + typ + des + year + season  // 12자리
+
+  // 현재 상품 자신의 코드는 제외 (같은 prefix로 재생성 가능)
+  const currentOwnCode = _detailCode || ''
+
+  const used = new Set()
+  ;[...State.allProducts, ...State.planItems].forEach(p => {
+    const c = p.productCode || ''
+    if (c === currentOwnCode) return  // 자기 자신 제외
+    if (c.length === prefix.length + 2 && c.startsWith(prefix)) used.add(c.slice(-2))
+  })
+  _reservedCodes.forEach(c => {
+    if (c === currentOwnCode) return
+    if (c.length === prefix.length + 2 && c.startsWith(prefix)) used.add(c.slice(-2))
+  })
+
+  let nextNum = null
+  for (let i = 0; i <= 99; i++) {
+    const candidate = String(i).padStart(2, '0')
+    if (!used.has(candidate)) { nextNum = candidate; break }
+  }
+
+  const preview = document.getElementById('dCgPreview')
+  const applyBtn = document.getElementById('dCgApplyBtn')
+  if (nextNum === null) {
+    if (preview)  preview.textContent = '사용 가능한 번호 없음'
+    if (applyBtn) applyBtn.disabled = true
+  } else {
+    if (preview)  preview.textContent = prefix + nextNum
+    if (applyBtn) applyBtn.disabled = false
+  }
+}
+
+function applyDetailGeneratedCode() {
+  const code = document.getElementById('dCgPreview')?.textContent
+  if (!code || code === '-' || code === '사용 가능한 번호 없음') return
+
+  // 중복 최종 확인 (자기 자신 제외)
+  const currentOwnCode = _detailCode || ''
+  if (code !== currentOwnCode && (
+      State.allProducts.some(p => p.productCode === code) ||
+      State.planItems.some(p => p.productCode === code) ||
+      _reservedCodes.has(code))) {
+    showToast(`품번 "${code}"은 이미 사용 중입니다. 다시 생성해주세요.`, 'error')
+    updateDetailProductCode()
+    return
+  }
+
+  // 이전 임시 예약 해제 (자기 원래 코드가 아닌 경우만)
+  if (_detailPendingCode && _detailPendingCode !== currentOwnCode) {
+    _reservedCodes.delete(_detailPendingCode)
+  }
+  // 새 코드 예약 (원래 코드와 다를 때만)
+  if (code !== currentOwnCode) {
+    _reservedCodes.add(code)
+  }
+  _detailPendingCode = code
+
+  const input = document.getElementById('dCgProductCodeInput')
+  if (input) input.value = code
+
+  // 패널 닫기
+  const panel = document.getElementById('dCgPanel')
+  if (panel) panel.style.display = 'none'
+  const btn = document.querySelector('#dDetailContent .pdcg-toggle-btn')
+  if (btn) btn.textContent = '품번 생성 ▾'
+
+  showToast(`품번 "${code}" 적용됨. 저장 버튼을 눌러 확정하세요.`, 'success')
 }
 
 // =============================================
@@ -3211,9 +3865,9 @@ function updateProductCode() {
 
   const prefix = cls + gen + typ + des + year + seasonNum  // 앞 12자리
 
-  // 이미 등록된 품번 + 임시 예약된 품번 모두 체크
+  // 이미 등록된 품번 + 기획 품번 + 임시 예약된 품번 모두 체크
   const used = new Set()
-  State.allProducts.forEach(p => {
+  ;[...State.allProducts, ...State.planItems].forEach(p => {
     const c = p.productCode || ''
     if (c.length === prefix.length + 2 && c.startsWith(prefix)) {
       used.add(c.slice(-2))
@@ -3248,8 +3902,10 @@ function applyGeneratedCode() {
   const code = document.getElementById('pcPreview').textContent
   if (!code || code === '-' || code === '사용 가능한 번호 없음') return
 
-  // 이미 등록된 품번과 중복 최종 확인
-  if (State.allProducts.some(p => p.productCode === code) || _reservedCodes.has(code)) {
+  // 이미 등록된 품번 + 기획 품번과 중복 최종 확인
+  if (State.allProducts.some(p => p.productCode === code) ||
+      State.planItems.some(p => p.productCode === code) ||
+      _reservedCodes.has(code)) {
     showToast(`품번 "${code}"은 이미 사용 중입니다. 다시 생성해주세요.`, 'error')
     updateProductCode()
     return

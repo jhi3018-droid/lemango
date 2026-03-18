@@ -276,6 +276,14 @@
             <option value="N">공용</option>
           </select>
         </div>
+        <div class="search-group">
+          <label>이전상태</label>
+          <select id="npConfirmed" onchange="searchPlan()">
+            <option value="pending">미이전</option>
+            <option value="all">전체</option>
+            <option value="confirmed">이전됨</option>
+          </select>
+        </div>
       </div>
       <div class="search-actions">
         <button class="btn btn-primary" onclick="searchPlan()">검색</button>
@@ -597,14 +605,15 @@
     <div class="dmodal-header-actions">
       <button class="btn btn-new" id="dEditBtn" onclick="toggleDetailEdit()">✏️ 수정</button>
       <button class="btn btn-accent" id="dSaveBtn" onclick="saveDetailEdit()">💾 저장</button>
-      <button class="modal-close" onclick="document.getElementById('detailModal').close()">✕</button>
+      <button class="btn" id="dLockCodeBtn" onclick="lockProductCode()" style="background:var(--primary);color:white;font-size:12px;padding:4px 12px">🔒 품번 확정</button>
+      <button class="modal-close" onclick="closeDetailModal()">✕</button>
     </div>
   </div>
   <div class="dmodal-body">
     <!-- 왼쪽: 이미지 -->
     <div class="dmodal-left">
       <div class="dimg-main-wrap">
-        <img id="dImgMain" src="" alt="" class="dimg-main" onerror="this.style.display='none'" />
+        <img id="dImgMain" src="" alt="" class="dimg-main" onerror="this.src='file:////lemangokorea/온라인/01.이미지/로고/Lemango/르망고_송부용_로고(WH).png'" />
         <div id="dImgNone" class="dimg-none" style="display:none">이미지 없음</div>
       </div>
       <div class="dimg-thumbs" id="dImgThumbs"></div>
@@ -681,6 +690,9 @@
       <span class="dmodal-code" id="pdSampleNo"></span>
     </div>
     <div class="rmodal-header-actions">
+      <button class="btn btn-accent" id="pdEditBtn" onclick="togglePlanDetailEdit()" style="padding:4px 14px;font-size:12px">수정</button>
+      <button class="btn btn-primary" id="pdSaveBtn" onclick="savePlanDetailEdit()" style="padding:4px 14px;font-size:12px;display:none">저장</button>
+      <button class="btn btn-new" id="pdConfirmBtn" onclick="confirmPlanToProduct()" style="padding:4px 14px;font-size:12px">상품확정 →</button>
       <button class="modal-close" onclick="closePlanDetailModal()">✕</button>
     </div>
   </div>

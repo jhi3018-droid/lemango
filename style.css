@@ -718,12 +718,43 @@ table { border-collapse: collapse; width: 100%; }
 #dSaveBtn { display: none; }
 .detail-modal.edit-mode #dSaveBtn { display: inline-flex; }
 
+/* 품번 생성 패널 — 수정 모드일 때만 표시 */
+.dcg-edit-only { display: none; }
+.detail-modal.edit-mode .dcg-edit-only { display: flex; }
+
 /* 수정 모드 활성화 */
 .detail-modal.edit-mode .dfield-value { display: none !important; }
 .detail-modal.edit-mode .url-list { display: none !important; }
 .detail-modal.edit-mode .dfield input,
 .detail-modal.edit-mode .dfield select,
 .detail-modal.edit-mode .dfield textarea { display: block; }
+/* 생산 상태 버튼 */
+.dprod-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.dprod-status-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  min-width: 52px;
+}
+.dprod-btn {
+  padding: 4px 14px;
+  font-size: 12px;
+  border: 1.5px solid var(--border);
+  background: white;
+  border-radius: 20px;
+  cursor: default;
+  color: var(--text-muted);
+  transition: background 0.15s, color 0.15s;
+}
+.detail-modal.edit-mode .dprod-btn { cursor: pointer; }
+.dprod-btn.active { background: var(--success); border-color: var(--success); color: white; font-weight: 600; }
+.dprod-btn.active.danger { background: var(--danger); border-color: var(--danger); }
+
 /* 수정 모드 푸터 */
 .dmodal-edit-footer {
   display: none;
@@ -890,6 +921,43 @@ table { border-collapse: collapse; width: 100%; }
   text-align: center;
 }
 .sip-actions { display: flex; gap: 8px; }
+
+/* 재고 입고 이력 */
+.srm-log-section {
+  margin-top: 16px;
+  border-top: 1px solid var(--border-light);
+  padding-top: 12px;
+}
+.srm-log-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.srm-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.srm-log-table th {
+  padding: 4px 8px;
+  background: var(--table-header);
+  border: 1px solid var(--border);
+  text-align: center;
+  font-weight: 600;
+}
+.srm-log-table td {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  text-align: center;
+  color: var(--text-sub);
+}
+.srm-log-table tr:nth-child(even) { background: var(--bg); }
+.srm-log-qty { font-weight: 600; color: var(--primary) !important; }
+.srm-log-total { font-weight: 700; color: var(--accent) !important; }
+.srm-log-memo { text-align: left !important; color: var(--text-muted) !important; font-size: 11px; }
 
 /* 재고 뱃지 */
 .dstock-row {
@@ -1581,6 +1649,86 @@ table { border-collapse: collapse; width: 100%; }
   color: var(--text);
   font-weight: 500;
 }
+
+/* ===== 기획 상세 모달 — 품번 인라인 생성 패널 ===== */
+.pdcg-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.pdcg-input-row input { flex: 1; }
+.pd-codegen-panel {
+  margin-top: 8px;
+  background: #f8f7f4;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pdcg-selects {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pdcg-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 80px;
+}
+.pdcg-group label { font-size: 10px; color: var(--text-muted); font-weight: 500; }
+.pdcg-group select { font-size: 11px; padding: 3px 5px; }
+.pdcg-design-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pdcg-design-row label { font-size: 10px; color: var(--text-muted); font-weight: 500; }
+.pdcg-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: white;
+  border-radius: 4px;
+  padding: 6px 10px;
+}
+.pdcg-label { font-size: 11px; color: var(--text-muted); }
+.pdcg-preview {
+  flex: 1;
+  font-family: Inter, monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary);
+  letter-spacing: 0.04em;
+}
+
+/* ===== 신규기획 상세 모달 — 수정 모드 ===== */
+/* dfields-grid: pd-grid와 동일하되 dfield 패턴용 */
+.dfields-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.dfield-span2 { grid-column: span 2; }
+
+/* 기본: input/select/textarea 숨김 */
+.plan-detail-modal .dfield input,
+.plan-detail-modal .dfield select,
+.plan-detail-modal .dfield textarea { display: none; }
+
+/* 편집 모드: value 숨기고 input 보임 */
+.plan-detail-modal.edit-mode .dfield-value { display: none !important; }
+.plan-detail-modal.edit-mode .dfield input,
+.plan-detail-modal.edit-mode .dfield select,
+.plan-detail-modal.edit-mode .dfield textarea { display: block; }
+
+/* 일정표 뷰/편집 토글 */
+.pst-edit { display: none; width: 100%; font-size: 12px; border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px; }
+.plan-detail-modal.edit-mode .pst-view { display: none; }
+.plan-detail-modal.edit-mode .pst-edit { display: block; }
 
 /* ===== 설정 탭 ===== */
 .settings-page {
