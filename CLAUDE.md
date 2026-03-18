@@ -500,6 +500,24 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - 접혀있을 때 첫 번째 URL을 `.dimg-preview` 스팬으로 미리보기 표시
 - 펼치면 미리보기 숨김 (`toggleDImg()`)
 
+#### 설정 탭 UI 개선
+- 모든 설정 리스트에 `max-height: 240px` 스크롤 적용 (커스텀 스크롤바)
+- 디자인번호 목록: 실시간 검색 필터 + 항목 개수 뱃지
+- 모든 항목에 인라인 수정 기능 추가 (hover 시 연필/삭제 아이콘)
+- 자동완성 드롭다운: 입력 시 기존 항목 매칭, 중복 시 빨간 테두리 + "중복" 뱃지
+- 디자인번호 엑셀 다운로드/업로드 (전체 교체 또는 신규만 추가 모드)
+
+#### 한글 확인 다이얼로그
+- 브라우저 기본 `confirm()` (OK/Cancel 영문) → `korConfirm()` 커스텀 모달 (확인/취소 한글)
+- Promise 기반 비동기, 버튼 텍스트 커스터마이즈 가능
+- 전체 7곳 교체 (품번확정, 상품이전, 삭제, 업로드 등)
+
+#### 신규등록 모달 개선
+- 디자이너 코멘트: 이미지 URL 섹션 → 기본 정보 섹션 하단으로 이동
+- 이미지 URL: `URL 1/2` → 자사몰/외부몰/SUM textarea + 영상URL input (줄바꿈 다중 URL)
+- 이미지 섹션 3컬럼 그리드 (`rform-img-grid`)로 공간 확보
+- sales 초기화: 하드코딩 → `_platforms` 동적 참조
+
 #### 페이지네이션 (전 탭 공통)
 - 상품조회·재고관리·판매조회·신규기획 4개 탭 모두 10개씩 페이지 분리
 - `renderPagination(containerId, tabKey, renderFnName)` — `js/utils.js`
