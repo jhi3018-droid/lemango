@@ -1,19 +1,37 @@
 // =============================================
 // ===== 설정 탭 =====
 // =============================================
+
+// 일반 설정 카드 (simple/pair)
 function _renderSetCard(def) {
   const items = _settings[def.key] || []
+  const isPair = def.type === 'pair'
+
   const listHtml = items.map((item, idx) => {
     const [val, label] = Array.isArray(item) ? item : [item, item]
-    const inner = Array.isArray(item)
+    // 보기 모드
+    const viewInner = isPair
       ? `<span class="set-item-code">${val}</span><span class="set-item-label">${label}</span>`
       : `<span class="set-item-label">${val}</span>`
-    return `<div class="set-item">${inner}
-      <button class="set-item-del" onclick="removeSettingItem('${def.key}',${idx})" title="삭제">✕</button>
+    // 수정 모드
+    const editInner = isPair
+      ? `<input type="text" class="set-edit-input" value="${val}" data-field="val" style="width:80px;flex:none" />
+         <input type="text" class="set-edit-input" value="${label}" data-field="label" style="flex:1" />`
+      : `<input type="text" class="set-edit-input" value="${val}" data-field="val" style="flex:1" />`
+
+    return `<div class="set-item" id="setItem_${def.key}_${idx}">
+      <div class="set-item-view">${viewInner}
+        <button class="set-item-action set-item-edit" onclick="editSettingItem('${def.key}',${idx})" title="수정">&#9998;</button>
+        <button class="set-item-action set-item-del" onclick="removeSettingItem('${def.key}',${idx})" title="삭제">&#10005;</button>
+      </div>
+      <div class="set-item-editrow" style="display:none">${editInner}
+        <button class="set-edit-save" onclick="saveSettingItem('${def.key}',${idx})">저장</button>
+        <button class="set-edit-cancel" onclick="cancelEditSettingItem('${def.key}',${idx})">취소</button>
+      </div>
     </div>`
   }).join('') || '<div class="set-empty">항목 없음</div>'
 
-  const addForm = def.type === 'pair'
+  const addForm = isPair
     ? `<div class="set-add-row">
         <input type="text" id="setAdd_${def.key}_val"   placeholder="${def.ph1}" class="set-add-input" />
         <input type="text" id="setAdd_${def.key}_label" placeholder="${def.ph2}" class="set-add-input" />
@@ -25,8 +43,11 @@ function _renderSetCard(def) {
       </div>`
 
   return `<div class="set-card">
-    <div class="set-card-title">${def.title}</div>
-    <div class="set-list">${listHtml}</div>
+    <div class="set-card-header">
+      <span class="set-card-title">${def.title}</span>
+      <span class="set-card-count">${items.length}</span>
+    </div>
+    <div class="set-list set-list-scroll">${listHtml}</div>
     ${addForm}
   </div>`
 }
@@ -41,18 +62,35 @@ function renderSettings() {
   // 디자인번호/백스타일 카드 (_designCodes 단일 소스)
   const dcListHtml = _designCodes.map((dc, idx) => {
     const [code, en, kr] = dc
-    return `<div class="set-item">
-      <span class="set-item-code">${code}</span>
-      <span class="set-item-label">${en}</span>
-      <span class="set-item-label" style="color:var(--text-sub);font-size:12px">${kr}</span>
-      <button class="set-item-del" onclick="removeDesignCodeSetting(${idx})" title="삭제">✕</button>
+    return `<div class="set-item" id="setDcItem_${idx}">
+      <div class="set-item-view">
+        <span class="set-item-code">${code}</span>
+        <span class="set-item-label">${en}</span>
+        <span class="set-item-label set-item-sub">${kr}</span>
+        <button class="set-item-action set-item-edit" onclick="editDesignCodeSetting(${idx})" title="수정">&#9998;</button>
+        <button class="set-item-action set-item-del" onclick="removeDesignCodeSetting(${idx})" title="삭제">&#10005;</button>
+      </div>
+      <div class="set-item-editrow" style="display:none">
+        <input type="text" class="set-edit-input" value="${code}" data-field="code" maxlength="4" style="width:70px;flex:none" />
+        <input type="text" class="set-edit-input" value="${en}" data-field="en" style="flex:1" />
+        <input type="text" class="set-edit-input" value="${kr}" data-field="kr" style="flex:1" />
+        <button class="set-edit-save" onclick="saveDesignCodeEdit(${idx})">저장</button>
+        <button class="set-edit-cancel" onclick="cancelDesignCodeEdit(${idx})">취소</button>
+      </div>
     </div>`
   }).join('') || '<div class="set-empty">항목 없음</div>'
-  const bsCard = `<div class="set-card set-card-wide">
-    <div class="set-card-title">디자인번호 / 백스타일</div>
-    <div class="set-list">${dcListHtml}</div>
+
+  const dcCard = `<div class="set-card set-card-wide">
+    <div class="set-card-header">
+      <span class="set-card-title">디자인번호 / 백스타일</span>
+      <span class="set-card-count">${_designCodes.length}</span>
+    </div>
+    <div class="set-search-row">
+      <input type="text" id="setDcSearch" placeholder="코드, 영문, 한글 검색..." class="set-search-input" oninput="filterDesignCodeList()" />
+    </div>
+    <div class="set-list set-list-scroll" id="setDcList">${dcListHtml}</div>
     <div class="set-add-row">
-      <input type="text" id="setBsCode" placeholder="코드 (4자리)" class="set-add-input" maxlength="4" style="width:100px;flex:none" />
+      <input type="text" id="setBsCode" placeholder="코드 (4자리)" class="set-add-input" maxlength="4" style="width:90px;flex:none" />
       <input type="text" id="setBsEn"   placeholder="영문명" class="set-add-input" />
       <input type="text" id="setBsKr"   placeholder="한글명" class="set-add-input" />
       <button class="btn btn-new set-add-btn" onclick="addDesignCodeSetting()">+ 추가</button>
@@ -65,20 +103,26 @@ function renderSettings() {
   // 판매 채널 카드
   const platListHtml = _platforms.map((pl, idx) => `
     <div class="set-item" id="platItem_${idx}">
-      <span class="set-item-label" style="flex:1;font-weight:600">${pl}</span>
-      <button onclick="editPlatformSetting(${idx})" style="padding:2px 10px;background:var(--accent);color:white;border:none;border-radius:4px;cursor:pointer;font-size:11px;margin-right:4px">수정</button>
-      <button class="set-item-del" onclick="removePlatformSetting(${idx})" title="삭제">✕</button>
-    </div>
-    <div class="set-item" id="platEdit_${idx}" style="display:none">
-      <input type="text" id="platEditInput_${idx}" value="${pl}" class="set-add-input" style="flex:1" onkeydown="if(event.key==='Enter')savePlatformEdit(${idx})" />
-      <button class="btn btn-new set-add-btn" onclick="savePlatformEdit(${idx})">저장</button>
-      <button class="btn set-add-btn" style="background:var(--bg-card,#f0ede8)" onclick="renderSettings()">취소</button>
+      <div class="set-item-view">
+        <span class="set-item-label" style="font-weight:600">${pl}</span>
+        <button class="set-item-action set-item-edit" onclick="editPlatformSetting(${idx})" title="수정">&#9998;</button>
+        <button class="set-item-action set-item-del" onclick="removePlatformSetting(${idx})" title="삭제">&#10005;</button>
+      </div>
+      <div class="set-item-editrow" id="platEdit_${idx}" style="display:none">
+        <input type="text" class="set-edit-input" id="platEditInput_${idx}" value="${pl}" style="flex:1" onkeydown="if(event.key==='Enter')savePlatformEdit(${idx})" />
+        <button class="set-edit-save" onclick="savePlatformEdit(${idx})">저장</button>
+        <button class="set-edit-cancel" onclick="renderSettings()">취소</button>
+      </div>
     </div>`).join('') || '<div class="set-empty">항목 없음</div>'
+
   const platCard = `<div class="set-card set-card-wide">
-    <div class="set-card-title">온라인 쇼핑몰 (판매 채널)</div>
-    <div class="set-list">${platListHtml}</div>
+    <div class="set-card-header">
+      <span class="set-card-title">온라인 쇼핑몰 (판매 채널)</span>
+      <span class="set-card-count">${_platforms.length}</span>
+    </div>
+    <div class="set-list set-list-scroll">${platListHtml}</div>
     <div class="set-add-row">
-      <input type="text" id="setPlatName" placeholder="쇼핑몰명 (예: 무신사)" class="set-add-input" onkeydown="if(event.key==='Enter')addPlatformSetting()" />
+      <input type="text" id="setPlatName" placeholder="쇼핑몰명 (예: 무신사)" class="set-add-input" style="flex:1" onkeydown="if(event.key==='Enter')addPlatformSetting()" />
       <button class="btn btn-new set-add-btn" onclick="addPlatformSetting()">+ 추가</button>
     </div>
   </div>`
@@ -86,24 +130,24 @@ function renderSettings() {
   container.innerHTML = `
     <div class="settings-header">
       <h2 class="settings-title">기본 옵션 관리</h2>
-      <p class="settings-desc">옵션을 추가·삭제하면 전체 시스템 선택 목록에 즉시 반영됩니다.</p>
+      <p class="settings-desc">옵션을 추가·수정·삭제하면 전체 시스템 선택 목록에 즉시 반영됩니다.</p>
     </div>
 
     <div class="set-section">
       <button class="set-section-btn" onclick="toggleSetSection(this)">
-        <span>🎨 디자인 관련</span><span class="set-section-arrow">▼</span>
+        <span>디자인 관련</span><span class="set-section-arrow">▼</span>
       </button>
       <div class="set-section-body">
         <div class="set-grid">
           ${designCards}
-          ${bsCard}
+          ${dcCard}
         </div>
       </div>
     </div>
 
     <div class="set-section">
       <button class="set-section-btn" onclick="toggleSetSection(this)">
-        <span>📋 일반 상품 정보</span><span class="set-section-arrow">▼</span>
+        <span>일반 상품 정보</span><span class="set-section-arrow">▼</span>
       </button>
       <div class="set-section-body">
         <div class="set-grid">
@@ -114,7 +158,7 @@ function renderSettings() {
 
     <div class="set-section">
       <button class="set-section-btn" onclick="toggleSetSection(this)">
-        <span>🛒 판매 채널</span><span class="set-section-arrow">▼</span>
+        <span>판매 채널</span><span class="set-section-arrow">▼</span>
       </button>
       <div class="set-section-body">
         <div class="set-grid">
@@ -132,6 +176,20 @@ function toggleSetSection(btn) {
   arrow.textContent = isOpen ? '▶' : '▼'
 }
 
+// ===== 디자인번호 검색 필터 =====
+function filterDesignCodeList() {
+  const q = (document.getElementById('setDcSearch')?.value || '').toLowerCase().trim()
+  const items = document.querySelectorAll('#setDcList > .set-item')
+  items.forEach((el, idx) => {
+    if (!q) { el.style.display = ''; return }
+    const dc = _designCodes[idx]
+    if (!dc) { el.style.display = 'none'; return }
+    const match = dc[0].toLowerCase().includes(q) || dc[1].toLowerCase().includes(q) || dc[2].toLowerCase().includes(q)
+    el.style.display = match ? '' : 'none'
+  })
+}
+
+// ===== 디자인번호 CRUD =====
 function addDesignCodeSetting() {
   const code = document.getElementById('setBsCode')?.value.trim()
   const en   = document.getElementById('setBsEn')?.value.trim()
@@ -147,16 +205,49 @@ function addDesignCodeSetting() {
   showToast('디자인번호 추가됐습니다.', 'success')
 }
 
+function editDesignCodeSetting(idx) {
+  const el = document.getElementById('setDcItem_' + idx)
+  if (!el) return
+  el.querySelector('.set-item-view').style.display = 'none'
+  el.querySelector('.set-item-editrow').style.display = ''
+  el.querySelector('.set-edit-input')?.focus()
+}
+
+function cancelDesignCodeEdit(idx) {
+  const el = document.getElementById('setDcItem_' + idx)
+  if (!el) return
+  el.querySelector('.set-item-view').style.display = ''
+  el.querySelector('.set-item-editrow').style.display = 'none'
+}
+
+function saveDesignCodeEdit(idx) {
+  const el = document.getElementById('setDcItem_' + idx)
+  if (!el) return
+  const code = el.querySelector('[data-field="code"]')?.value.trim()
+  const en   = el.querySelector('[data-field="en"]')?.value.trim()
+  const kr   = el.querySelector('[data-field="kr"]')?.value.trim()
+  if (!code || !en || !kr) { showToast('코드, 영문명, 한글명을 모두 입력해주세요.', 'warning'); return }
+  // 코드 변경 시 중복 체크 (자기 자신 제외)
+  if (code !== _designCodes[idx][0] && _designCodes.some(([c]) => c === code)) {
+    showToast('이미 존재하는 코드입니다.', 'error'); return
+  }
+  _designCodes[idx] = [code, en, kr]
+  saveDesignCodes()
+  renderSettings()
+  showToast('수정됐습니다.', 'success')
+}
+
 function removeDesignCodeSetting(idx) {
   const dc = _designCodes[idx]
   if (!dc) return
-  if (!confirm(`"${dc[1]} (${dc[2]})" 디자인 코드를 삭제하시겠습니까?`)) return
+  if (!confirm(`"${dc[0]} - ${dc[1]} (${dc[2]})" 삭제하시겠습니까?`)) return
   _designCodes.splice(idx, 1)
   saveDesignCodes()
   renderSettings()
   showToast('삭제됐습니다.', 'success')
 }
 
+// ===== 일반 설정 항목 CRUD =====
 function addSettingItem(key) {
   const def = SETTING_DEFS.find(d => d.key === key)
   if (!def) return
@@ -186,6 +277,48 @@ function addSettingItem(key) {
   showToast('추가됐습니다.', 'success')
 }
 
+function editSettingItem(key, idx) {
+  const el = document.getElementById(`setItem_${key}_${idx}`)
+  if (!el) return
+  el.querySelector('.set-item-view').style.display = 'none'
+  el.querySelector('.set-item-editrow').style.display = ''
+  el.querySelector('.set-edit-input')?.focus()
+}
+
+function cancelEditSettingItem(key, idx) {
+  const el = document.getElementById(`setItem_${key}_${idx}`)
+  if (!el) return
+  el.querySelector('.set-item-view').style.display = ''
+  el.querySelector('.set-item-editrow').style.display = 'none'
+}
+
+function saveSettingItem(key, idx) {
+  const def = SETTING_DEFS.find(d => d.key === key)
+  if (!def) return
+  const el = document.getElementById(`setItem_${key}_${idx}`)
+  if (!el) return
+
+  if (def.type === 'pair') {
+    const val   = el.querySelector('[data-field="val"]')?.value.trim()
+    const label = el.querySelector('[data-field="label"]')?.value.trim()
+    if (!val || !label) { showToast('코드와 표시명을 모두 입력해주세요.', 'warning'); return }
+    const old = _settings[key][idx]
+    if (val !== old[0] && _settings[key].some(item => item[0] === val)) { showToast('이미 존재하는 코드입니다.', 'error'); return }
+    _settings[key][idx] = [val, label]
+  } else {
+    const val = el.querySelector('[data-field="val"]')?.value.trim()
+    if (!val) { showToast('값을 입력해주세요.', 'warning'); return }
+    const old = _settings[key][idx]
+    if (val !== old && _settings[key].includes(val)) { showToast('이미 존재하는 항목입니다.', 'error'); return }
+    _settings[key][idx] = val
+  }
+
+  saveSettings()
+  populateAllSelects()
+  renderSettings()
+  showToast('수정됐습니다.', 'success')
+}
+
 function removeSettingItem(key, idx) {
   const items = _settings[key]
   if (!items) return
@@ -198,8 +331,6 @@ function removeSettingItem(key, idx) {
   renderSettings()
   showToast('삭제됐습니다.', 'success')
 }
-
-// addBackStyleSetting / removeBackStyleSetting 제거됨 — addDesignCodeSetting / removeDesignCodeSetting 사용
 
 // ===== 판매 채널 CRUD =====
 function addPlatformSetting() {
@@ -214,8 +345,10 @@ function addPlatformSetting() {
 }
 
 function editPlatformSetting(idx) {
-  document.getElementById('platItem_' + idx).style.display = 'none'
-  document.getElementById('platEdit_' + idx).style.display = ''
+  const el = document.getElementById('platItem_' + idx)
+  if (!el) return
+  el.querySelector('.set-item-view').style.display = 'none'
+  el.querySelector('.set-item-editrow').style.display = ''
   document.getElementById('platEditInput_' + idx)?.focus()
 }
 
@@ -225,7 +358,6 @@ function savePlatformEdit(idx) {
   if (!newName) { showToast('쇼핑몰명을 입력해주세요.', 'warning'); return }
   if (newName === oldName) { renderSettings(); return }
   if (_platforms.includes(newName)) { showToast('이미 존재하는 쇼핑몰입니다.', 'error'); return }
-  // 기존 판매 데이터 키 이전
   State.allProducts.forEach(p => {
     if (p.sales && oldName in p.sales) {
       p.sales[newName] = p.sales[oldName]

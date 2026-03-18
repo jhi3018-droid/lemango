@@ -1791,67 +1791,157 @@ table { border-collapse: collapse; width: 100%; }
   gap: 10px;
 }
 .set-card-wide { grid-column: span 2; }
+.set-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--accent);
+}
 .set-card-title {
   font-size: 13px;
   font-weight: 700;
   color: var(--primary);
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--accent);
 }
-.set-sub-title {
+.set-card-count {
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--accent);
+  color: white;
+  padding: 1px 7px;
+  border-radius: 10px;
+  line-height: 1.5;
+}
+.set-search-row { display: flex; }
+.set-search-input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   font-size: 12px;
-  font-weight: 600;
-  color: var(--text-sub);
-  margin: 10px 0 6px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--border);
+  font-family: inherit;
+  background: var(--bg);
 }
+.set-search-input:focus { outline: none; border-color: var(--accent); }
 .set-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   min-height: 32px;
 }
+.set-list-scroll {
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.set-list-scroll::-webkit-scrollbar { width: 5px; }
+.set-list-scroll::-webkit-scrollbar-track { background: transparent; }
+.set-list-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.set-list-scroll::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 .set-item {
+  border-radius: 5px;
+  border: 1px solid transparent;
+  transition: border-color 0.15s;
+}
+.set-item:hover { border-color: var(--accent); }
+.set-item-view {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 5px 8px;
   background: var(--bg);
-  border-radius: 4px;
-  border: 1px solid var(--border-light);
+  border-radius: 5px;
+}
+.set-item-editrow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  background: #fff8ef;
+  border-radius: 5px;
 }
 .set-item-code {
   font-family: Inter, monospace;
   font-size: 11px;
+  font-weight: 600;
   background: var(--primary);
   color: white;
-  padding: 1px 6px;
+  padding: 2px 7px;
   border-radius: 3px;
   flex-shrink: 0;
+  letter-spacing: 0.3px;
 }
 .set-item-label {
   font-size: 13px;
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.set-item-del {
+.set-item-sub {
+  color: var(--text-sub);
+  font-size: 12px;
+}
+.set-item-action {
   background: none;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
   font-size: 12px;
-  padding: 2px 4px;
+  padding: 3px 5px;
   border-radius: 3px;
   flex-shrink: 0;
   line-height: 1;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
 }
-.set-item-del:hover { background: var(--danger); color: white; }
-.set-empty { font-size: 12px; color: var(--text-muted); padding: 8px 0; text-align: center; }
+.set-item:hover .set-item-action { opacity: 1; }
+.set-item-edit:hover { background: var(--accent); color: white; }
+.set-item-del:hover  { background: var(--danger); color: white; }
+.set-edit-input {
+  padding: 4px 7px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+  min-width: 0;
+}
+.set-edit-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(201,169,110,0.25); }
+.set-edit-save {
+  padding: 3px 10px;
+  font-size: 11px;
+  font-family: inherit;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.set-edit-save:hover { background: #b89555; }
+.set-edit-cancel {
+  padding: 3px 10px;
+  font-size: 11px;
+  font-family: inherit;
+  background: var(--bg);
+  color: var(--text-sub);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.set-edit-cancel:hover { background: #e8e4de; }
+.set-empty { font-size: 12px; color: var(--text-muted); padding: 12px 0; text-align: center; }
 .set-add-row {
   display: flex;
   gap: 6px;
   align-items: center;
   flex-wrap: wrap;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
 }
 .set-add-input {
   flex: 1;
