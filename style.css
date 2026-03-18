@@ -1812,6 +1812,23 @@ table { border-collapse: collapse; width: 100%; }
   border-radius: 10px;
   line-height: 1.5;
 }
+/* 엑셀 다운로드/업로드 버튼 */
+.set-excel-btn {
+  font-size: 11px;
+  font-family: inherit;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: white;
+  color: var(--text-sub);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.set-excel-btn:hover { background: var(--primary); color: white; border-color: var(--primary); }
+.set-excel-upload { display: inline-flex; align-items: center; }
+.set-excel-upload:hover { background: var(--success); color: white; border-color: var(--success); }
+
 .set-search-row { display: flex; }
 .set-search-input {
   width: 100%;

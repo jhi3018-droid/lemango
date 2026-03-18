@@ -219,6 +219,11 @@ function renderSettings() {
     <div class="set-card-header">
       <span class="set-card-title">디자인번호 / 백스타일</span>
       <span class="set-card-count">${_designCodes.length}</span>
+      <span style="flex:1"></span>
+      <button class="set-excel-btn" onclick="downloadDesignCodes()" title="엑셀 다운로드">&#11015; 다운로드</button>
+      <label class="set-excel-btn set-excel-upload" title="엑셀 업로드">&#11014; 업로드
+        <input type="file" accept=".xlsx,.xls,.csv" onchange="uploadDesignCodes(this)" hidden />
+      </label>
     </div>
     <div class="set-search-row">
       <input type="text" id="setDcSearch" placeholder="코드, 영문, 한글 검색..." class="set-search-input" oninput="filterDesignCodeList()" />
@@ -524,4 +529,100 @@ function removePlatformSetting(idx) {
   renderDashboard()
   renderSettings()
   showToast('삭제됐습니다.', 'success')
+}
+
+// ===== 디자인번호 엑셀 다운로드 =====
+function downloadDesignCodes() {
+  if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
+  const headers = ['코드', '영문명', '한글명']
+  const rows = _designCodes.map(([c, e, k]) => [c, e, k])
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
+  ws['!cols'] = [{ wch: 8 }, { wch: 30 }, { wch: 30 }]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '디자인번호')
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  XLSX.writeFile(wb, `르망고_디자인번호_${today}.xlsx`)
+  showToast(`디자인번호 ${_designCodes.length}건 다운로드 완료`, 'success')
+}
+
+// ===== 디자인번호 엑셀 업로드 =====
+function uploadDesignCodes(input) {
+  const file = input.files?.[0]
+  if (!file) return
+  input.value = ''
+
+  if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
+
+  const reader = new FileReader()
+  reader.onload = e => {
+    try {
+      const wb  = XLSX.read(e.target.result, { type: 'array' })
+      const ws  = wb.Sheets[wb.SheetNames[0]]
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+
+      // 첫 행이 헤더인지 판단 (코드/영문/한글 or 첫 셀이 4자리 이하면 데이터)
+      let startIdx = 0
+      if (raw.length > 0) {
+        const first = String(raw[0][0] || '').trim().toLowerCase()
+        if (['코드', 'code', '번호', '디자인'].some(h => first.includes(h))) startIdx = 1
+      }
+
+      const dataRows = raw.slice(startIdx).filter(r => r[0] && String(r[0]).trim())
+      if (!dataRows.length) { showToast('데이터가 없습니다.', 'error'); return }
+
+      // 파싱: [코드, 영문, 한글]
+      const parsed = []
+      const errors = []
+      dataRows.forEach((row, i) => {
+        const code = String(row[0]).trim()
+        const en   = String(row[1] || '').trim()
+        const kr   = String(row[2] || '').trim()
+        if (!code) return
+        if (!en && !kr) { errors.push(`${i + startIdx + 1}행: 영문/한글명 누락 (${code})`); return }
+        parsed.push([code, en || code, kr || en || code])
+      })
+
+      if (!parsed.length) {
+        showToast('유효한 데이터가 없습니다.' + (errors.length ? '\n' + errors[0] : ''), 'error')
+        return
+      }
+
+      // 중복 검사 + 병합 모드 선택
+      const existingCodes = new Set(_designCodes.map(([c]) => c))
+      const newItems   = parsed.filter(([c]) => !existingCodes.has(c))
+      const dupItems   = parsed.filter(([c]) => existingCodes.has(c))
+
+      let msg = `총 ${parsed.length}건 읽음`
+      if (newItems.length) msg += ` / 신규 ${newItems.length}건`
+      if (dupItems.length) msg += ` / 기존 중복 ${dupItems.length}건`
+      if (errors.length)   msg += ` / 오류 ${errors.length}건`
+
+      // 덮어쓰기 or 추가만 선택
+      const mode = dupItems.length
+        ? confirm(`${msg}\n\n[확인] 전체 교체 (기존 목록을 업로드 내용으로 교체)\n[취소] 신규만 추가 (중복 ${dupItems.length}건 건너뛰기)`)
+          ? 'replace' : 'append'
+        : 'append'
+
+      if (mode === 'replace') {
+        // 전체 교체: 업로드 데이터에서 코드 중복 제거 (마지막 우선)
+        const map = new Map()
+        parsed.forEach(([c, e, k]) => map.set(c, [c, e, k]))
+        _designCodes.length = 0
+        _designCodes.push(...map.values())
+      } else {
+        // 신규만 추가
+        newItems.forEach(item => _designCodes.push(item))
+      }
+
+      saveDesignCodes()
+      renderSettings()
+      const resultMsg = mode === 'replace'
+        ? `전체 교체 완료: ${_designCodes.length}건`
+        : `신규 ${newItems.length}건 추가 완료 (총 ${_designCodes.length}건)`
+      showToast(resultMsg, 'success')
+    } catch (err) {
+      showToast('파일 읽기 오류: ' + err.message, 'error')
+    }
+  }
+  reader.readAsArrayBuffer(file)
 }
