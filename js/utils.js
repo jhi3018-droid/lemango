@@ -94,6 +94,26 @@ function isInRange(dateStr, from, to) {
   return true
 }
 
+// ===== 상품 품번 검색 유틸 =====
+function findProductByKeyword(keyword) {
+  const kw = keyword.toLowerCase()
+  return State.allProducts.find(x =>
+    (x.productCode || '').toLowerCase() === kw ||
+    (x.productCode || '').toLowerCase().includes(kw)
+  )
+}
+
+// ===== 클립보드 복사 헬퍼 =====
+function copyToClipboard(text, btn) {
+  if (!text) { showToast('복사할 URL이 없습니다.', 'warning'); return }
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btn.textContent
+    btn.textContent = '복사됨!'
+    btn.style.background = 'var(--success)'
+    setTimeout(() => { btn.textContent = orig; btn.style.background = '' }, 1500)
+  }).catch(() => showToast('복사 실패', 'error'))
+}
+
 // ===== 정렬 =====
 function sortData(arr, key, dir) {
   return [...arr].sort((a, b) => {

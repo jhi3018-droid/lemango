@@ -7,15 +7,8 @@ function openRegisterModal() {
   // 오늘 날짜를 등록일 기본값으로
   document.getElementById('rRegistDate').value = new Date().toISOString().slice(0,10)
   const modal = document.getElementById('registerModal')
-  // 위치 초기화 (매번 열릴 때 중앙으로)
-  modal.style.left = ''
-  modal.style.top  = ''
   modal.showModal()
-  // position: fixed + margin: 0 상태에서 중앙 정렬
-  requestAnimationFrame(() => {
-    modal.style.left = Math.max(0, (window.innerWidth  - modal.offsetWidth)  / 2) + 'px'
-    modal.style.top  = Math.max(0, (window.innerHeight - modal.offsetHeight) / 2) + 'px'
-  })
+  centerModal(modal)
   initPcodePanel()
 }
 

@@ -34,8 +34,10 @@ document.addEventListener('keydown', e => {
 // ===== 범용 드래그 + 리사이즈 초기화 =====
 // =============================================
 function makeDraggableResizable(modal, minW = 420, minH = 300) {
+  if (!modal || modal._dragInit) return   // 중복 초기화 방지
   const header = modal.querySelector('.srm-header, .rmodal-header, .dmodal-header')
   if (!header) return
+  modal._dragInit = true
 
   let action = null, startX, startY, origLeft, origTop, origW, origH
 
@@ -107,174 +109,7 @@ function centerModal(modal) {
   })
 }
 
-function initDraggable() {
-  const modal  = document.getElementById('detailModal')
-  const header = modal.querySelector('.dmodal-header')
-  const MIN_W  = 480, MIN_H = 300
-
-  let action = null  // 'drag' | 리사이즈 방향 문자열
-  let startX, startY, origLeft, origTop, origW, origH
-
-  function snapRect() {
-    const rect = modal.getBoundingClientRect()
-    modal.style.left   = rect.left   + 'px'
-    modal.style.top    = rect.top    + 'px'
-    modal.style.width  = rect.width  + 'px'
-    modal.style.height = rect.height + 'px'
-  }
-
-  // 드래그
-  header.addEventListener('mousedown', e => {
-    if (e.target.closest('button')) return
-    snapRect()
-    action = 'drag'
-    startX = e.clientX; startY = e.clientY
-    origLeft = parseFloat(modal.style.left)
-    origTop  = parseFloat(modal.style.top)
-    e.preventDefault()
-  })
-
-  // 리사이즈 핸들
-  modal.querySelectorAll('.resize-handle').forEach(handle => {
-    handle.addEventListener('mousedown', e => {
-      snapRect()
-      action = handle.dataset.dir
-      startX = e.clientX; startY = e.clientY
-      origLeft = parseFloat(modal.style.left)
-      origTop  = parseFloat(modal.style.top)
-      origW    = parseFloat(modal.style.width)
-      origH    = parseFloat(modal.style.height)
-      e.preventDefault()
-      e.stopPropagation()
-    })
-  })
-
-  document.addEventListener('mousemove', e => {
-    if (!action) return
-    const dx = e.clientX - startX
-    const dy = e.clientY - startY
-
-    if (action === 'drag') {
-      modal.style.left = Math.max(0, Math.min(origLeft + dx, window.innerWidth  - modal.offsetWidth))  + 'px'
-      modal.style.top  = Math.max(0, Math.min(origTop  + dy, window.innerHeight - modal.offsetHeight)) + 'px'
-      return
-    }
-
-    let newL = origLeft, newT = origTop, newW = origW, newH = origH
-
-    if (action.includes('r'))  newW = Math.max(MIN_W, origW + dx)
-    if (action.includes('l')) { newW = Math.max(MIN_W, origW - dx); newL = origLeft + origW - newW }
-    if (action.includes('b'))  newH = Math.max(MIN_H, origH + dy)
-    if (action.includes('t')) { newH = Math.max(MIN_H, origH - dy); newT = origTop  + origH - newH }
-
-    // 화면 밖으로 나가지 않게
-    newL = Math.max(0, Math.min(newL, window.innerWidth  - newW))
-    newT = Math.max(0, Math.min(newT, window.innerHeight - newH))
-
-    modal.style.left   = newL + 'px'
-    modal.style.top    = newT + 'px'
-    modal.style.width  = newW + 'px'
-    modal.style.height = newH + 'px'
-  })
-
-  document.addEventListener('mouseup', () => { action = null })
-}
-
-function initRegisterDraggable() {
-  const modal  = document.getElementById('registerModal')
-  const header = modal.querySelector('.rmodal-header')
-  let dragging = false, startX, startY, origLeft, origTop
-
-  function snapRect() {
-    const rect = modal.getBoundingClientRect()
-    modal.style.left = rect.left + 'px'
-    modal.style.top  = rect.top  + 'px'
-  }
-
-  header.addEventListener('mousedown', e => {
-    if (e.target.closest('button, label, input')) return
-    snapRect()
-    dragging = true
-    startX = e.clientX; startY = e.clientY
-    origLeft = parseFloat(modal.style.left)
-    origTop  = parseFloat(modal.style.top)
-    e.preventDefault()
-  })
-
-  document.addEventListener('mousemove', e => {
-    if (!dragging) return
-    const dx = e.clientX - startX, dy = e.clientY - startY
-    modal.style.left = Math.max(0, Math.min(origLeft + dx, window.innerWidth  - modal.offsetWidth))  + 'px'
-    modal.style.top  = Math.max(0, Math.min(origTop  + dy, window.innerHeight - modal.offsetHeight)) + 'px'
-  })
-
-  document.addEventListener('mouseup', () => { dragging = false })
-}
-
-function initPlanRegisterDraggable() {
-  const modal  = document.getElementById('planRegisterModal')
-  const header = modal.querySelector('.rmodal-header')
-  let dragging = false, startX, startY, origLeft, origTop
-
-  function snapRect() {
-    const rect = modal.getBoundingClientRect()
-    modal.style.left = rect.left + 'px'
-    modal.style.top  = rect.top  + 'px'
-  }
-
-  header.addEventListener('mousedown', e => {
-    if (e.target.closest('button, label, input, textarea, select')) return
-    snapRect()
-    dragging = true
-    startX = e.clientX; startY = e.clientY
-    origLeft = parseFloat(modal.style.left)
-    origTop  = parseFloat(modal.style.top)
-    e.preventDefault()
-  })
-
-  document.addEventListener('mousemove', e => {
-    if (!dragging) return
-    const dx = e.clientX - startX, dy = e.clientY - startY
-    modal.style.left = Math.max(0, Math.min(origLeft + dx, window.innerWidth  - modal.offsetWidth))  + 'px'
-    modal.style.top  = Math.max(0, Math.min(origTop  + dy, window.innerHeight - modal.offsetHeight)) + 'px'
-  })
-
-  document.addEventListener('mouseup', () => { dragging = false })
-}
-
-function initPlanDetailDraggable() {
-  const modal  = document.getElementById('planDetailModal')
-  const header = modal.querySelector('.rmodal-header')
-  let dragging = false, startX, startY, origLeft, origTop
-
-  function snapRect() {
-    const rect = modal.getBoundingClientRect()
-    modal.style.left = rect.left + 'px'
-    modal.style.top  = rect.top  + 'px'
-  }
-
-  header.addEventListener('mousedown', e => {
-    if (e.target.closest('button')) return
-    snapRect()
-    dragging = true
-    startX = e.clientX; startY = e.clientY
-    origLeft = parseFloat(modal.style.left)
-    origTop  = parseFloat(modal.style.top)
-    e.preventDefault()
-  })
-
-  document.addEventListener('mousemove', e => {
-    if (!dragging) return
-    const dx = e.clientX - startX, dy = e.clientY - startY
-    modal.style.left = Math.max(0, Math.min(origLeft + dx, window.innerWidth  - modal.offsetWidth))  + 'px'
-    modal.style.top  = Math.max(0, Math.min(origTop  + dy, window.innerHeight - modal.offsetHeight)) + 'px'
-  })
-
-  document.addEventListener('mouseup', () => { dragging = false })
-}
-
 function copyFieldUrl(key, btn) {
-  // 뷰모드: dfield-value[data-urlkey], 수정모드: textarea/input[data-key]
   const modal = document.getElementById('detailModal')
   const isEdit = modal.classList.contains('edit-mode')
   let text = ''
@@ -286,16 +121,9 @@ function copyFieldUrl(key, btn) {
     text = el ? el.textContent.trim() : ''
     if (text === '-') text = ''
   }
-  if (!text) { showToast('복사할 URL이 없습니다.', 'warning'); return }
-  navigator.clipboard.writeText(text).then(() => {
-    const orig = btn.textContent
-    btn.textContent = '복사됨!'
-    btn.style.background = 'var(--success)'
-    setTimeout(() => { btn.textContent = orig; btn.style.background = '' }, 1500)
-  }).catch(() => showToast('복사 실패', 'error'))
+  copyToClipboard(text, btn)
 }
 
-// 개별 URL 복사 (data-url 속성 또는 수정모드 textarea 기준)
 function copySingleUrlFromBtn(btn) {
   const modal = document.getElementById('detailModal')
   const isEdit = modal.classList.contains('edit-mode')
@@ -307,13 +135,7 @@ function copySingleUrlFromBtn(btn) {
   } else {
     url = btn.dataset.url || ''
   }
-  if (!url) { showToast('복사할 URL이 없습니다.', 'warning'); return }
-  navigator.clipboard.writeText(url).then(() => {
-    const orig = btn.textContent
-    btn.textContent = '복사됨!'
-    btn.style.background = 'var(--success)'
-    setTimeout(() => { btn.textContent = orig; btn.style.background = '' }, 1500)
-  }).catch(() => showToast('복사 실패', 'error'))
+  copyToClipboard(url, btn)
 }
 
 // =============================================
@@ -386,7 +208,7 @@ function dSwitchImg(el, url) {
 }
 
 function buildDetailContent(p) {
-  const sizes  = ['XS','S','M','L','XL']
+  const sizes  = SIZES
   const platforms = _platforms
 
   // 품번 생성 패널 상수
@@ -661,7 +483,7 @@ function buildDetailContent(p) {
       <div class="dsection-title" style="color:var(--text-muted)">기획 일정 이력</div>
       <div style="padding:8px 12px">
         ${p.scheduleLog.map(entry => {
-          const schLabels = { design:'디자인', production:'생산', image:'이미지', register:'상품등록', logistics:'물류입고' }
+          const schLabels = Object.fromEntries(SCHEDULE_DEFS.map(s => [s.key, s.label]))
           const rows = Object.entries(entry.schedule||{}).map(([k, v]) => {
             const label = schLabels[k] || k
             const start = v?.start || '-'

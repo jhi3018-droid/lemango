@@ -29,18 +29,14 @@ function findStockProduct() {
   const keyword = document.getElementById('sipKeyword').value.trim()
   if (!keyword) { showToast('품번을 입력하세요.', 'warning'); return }
 
-  const p = State.allProducts.find(x =>
-    (x.productCode||'').toLowerCase() === keyword.toLowerCase() ||
-    (x.productCode||'').toLowerCase().includes(keyword.toLowerCase())
-  )
-
+  const p = findProductByKeyword(keyword)
   const body = document.getElementById('sipBody')
   if (!p) {
     body.innerHTML = `<div class="sip-empty sip-notfound">품번 <b>${keyword}</b>을(를) 찾을 수 없습니다.</div>`
     return
   }
 
-  const sizes = ['XS','S','M','L','XL']
+  const sizes = SIZES
   body.innerHTML = `
     <div class="sip-product-info">
       <span class="sip-brand">${p.brand}</span>
@@ -67,10 +63,11 @@ function findStockProduct() {
     </div>
   `
 
-  // 입력값 변경 시 합계 실시간 업데이트
-  sizes.forEach(sz => {
-    document.getElementById(`sipStock_${sz}`).addEventListener('input', () => {
-      const total = sizes.reduce((s, s2) => s + (parseInt(document.getElementById(`sipStock_${s2}`).value) || 0), 0)
+  // 입력값 변경 시 합계 실시간 업데이트 (DOM 참조 캐시)
+  const sipInputs = SIZES.map(sz => document.getElementById(`sipStock_${sz}`))
+  sipInputs.forEach(el => {
+    el.addEventListener('input', () => {
+      const total = sipInputs.reduce((s, inp) => s + (parseInt(inp.value) || 0), 0)
       document.getElementById('sipTotal').textContent = total
     })
   })
@@ -79,7 +76,7 @@ function findStockProduct() {
 function saveStockInput(productCode) {
   const p = State.allProducts.find(x => x.productCode === productCode)
   if (!p) return
-  const sizes = ['XS','S','M','L','XL']
+  const sizes = SIZES
   sizes.forEach(sz => {
     p.stock[sz] = parseInt(document.getElementById(`sipStock_${sz}`).value) || 0
   })
@@ -111,10 +108,7 @@ function openStockRegisterModal() {
 function findSrmProduct() {
   const keyword = document.getElementById('srmKeyword').value.trim()
   if (!keyword) return
-  const p = State.allProducts.find(x =>
-    (x.productCode||'').toLowerCase() === keyword.toLowerCase() ||
-    (x.productCode||'').toLowerCase().includes(keyword.toLowerCase())
-  )
+  const p = findProductByKeyword(keyword)
   const area = document.getElementById('srmProductArea')
   if (!p) {
     area.innerHTML = `<div class="srm-empty srm-notfound">품번 <b>${keyword}</b>을(를) 찾을 수 없습니다.</div>`
@@ -124,7 +118,7 @@ function findSrmProduct() {
 }
 
 function buildSrmProductArea(p) {
-  const sizes = ['XS','S','M','L','XL']
+  const sizes = SIZES
 
   // 입고 이력 섹션 (날짜 역순)
   const logs = (p.stockLog || []).slice().sort((a,b) => (b.date||'').localeCompare(a.date||''))
@@ -201,7 +195,7 @@ function buildSrmProductArea(p) {
 }
 
 function updateSrmTotal() {
-  const sizes = ['XS','S','M','L','XL']
+  const sizes = SIZES
   const total = sizes.reduce((s, sz) => s + (parseInt(document.getElementById(`srmStock_${sz}`)?.value)||0), 0)
   document.getElementById('srmTotal').textContent = total
 }
@@ -209,7 +203,7 @@ function updateSrmTotal() {
 function saveSrmStock(productCode) {
   const p = State.allProducts.find(x => x.productCode === productCode)
   if (!p) return
-  const sizes = ['XS','S','M','L','XL']
+  const sizes = SIZES
   const inQty = {}
   sizes.forEach(sz => { inQty[sz] = parseInt(document.getElementById(`srmStock_${sz}`)?.value)||0 })
   const total = Object.values(inQty).reduce((a,b) => a+b, 0)
@@ -307,7 +301,7 @@ function confirmStockUpload() {
     const key = `${r.code}||${r.date}||${r.memo}`
     if (!groups[key]) groups[key] = { code: r.code, date: r.date, memo: r.memo, sizes: {}, barcodes: {} }
     const sz = r.size
-    if (['XS','S','M','L','XL'].includes(sz)) {
+    if (SIZES.includes(sz)) {
       groups[key].sizes[sz] = (groups[key].sizes[sz] || 0) + r.qty
       if (r.barcode) groups[key].barcodes[sz] = r.barcode
     }
@@ -359,16 +353,13 @@ function closeOutgoingModal() {
 function findOutgoingProduct() {
   const keyword = document.getElementById('ougKeyword').value.trim()
   if (!keyword) { showToast('품번을 입력하세요.', 'warning'); return }
-  const p = State.allProducts.find(x =>
-    (x.productCode||'').toLowerCase() === keyword.toLowerCase() ||
-    (x.productCode||'').toLowerCase().includes(keyword.toLowerCase())
-  )
+  const p = findProductByKeyword(keyword)
   const area = document.getElementById('ougProductArea')
   if (!p) {
     area.innerHTML = `<div class="srm-empty srm-notfound">품번 <b>${keyword}</b>을(를) 찾을 수 없습니다.</div>`
     return
   }
-  const sizes = ['XS','S','M','L','XL']
+  const sizes = SIZES
   area.innerHTML = `
     <div class="sip-product-info" style="margin:12px 0 10px">
       <span class="sip-brand">${p.brand}</span>
@@ -409,7 +400,7 @@ function findOutgoingProduct() {
 }
 
 function updateOugTotal() {
-  const sizes = ['XS','S','M','L','XL']
+  const sizes = SIZES
   const total = sizes.reduce((s, sz) => s + (parseInt(document.getElementById(`ougStock_${sz}`)?.value)||0), 0)
   const el = document.getElementById('ougTotal')
   if (el) el.textContent = total
@@ -418,7 +409,7 @@ function updateOugTotal() {
 function submitOutgoing(productCode) {
   const p = State.allProducts.find(x => x.productCode === productCode)
   if (!p) return
-  const sizes = ['XS','S','M','L','XL']
+  const sizes = SIZES
   const outQty = {}
   sizes.forEach(sz => { outQty[sz] = parseInt(document.getElementById(`ougStock_${sz}`)?.value)||0 })
   const total = Object.values(outQty).reduce((a,b) => a+b, 0)
@@ -472,7 +463,7 @@ function renderStockTable() {
     return
   }
 
-  const sizes = ['XS','S','M','L','XL']
+  const sizes = SIZES
   const totals = {}
   sizes.forEach(sz => totals[sz] = data.reduce((s,p) => s + (p.stock?.[sz] || 0), 0))
   const grandTotal = Object.values(totals).reduce((a,b) => a+b, 0)

@@ -6,10 +6,7 @@ let _plLocalImgUrls = []
 function openPlanRegisterModal() {
   const modal = document.getElementById('planRegisterModal')
   modal.showModal()
-  requestAnimationFrame(() => {
-    modal.style.left = Math.max(0, (window.innerWidth  - modal.offsetWidth)  / 2) + 'px'
-    modal.style.top  = Math.max(0, (window.innerHeight - modal.offsetHeight) / 2) + 'px'
-  })
+  centerModal(modal)
   initPlPcodePanel()
 }
 
@@ -355,13 +352,7 @@ function renderPlanTable() {
     return
   }
 
-  const schedules = [
-    { key: 'design',     label: '디자인' },
-    { key: 'production', label: '생산' },
-    { key: 'image',      label: '이미지' },
-    { key: 'register',   label: '상품등록' },
-    { key: 'logistics',  label: '물류입고' }
-  ]
+  const schedules = SCHEDULE_DEFS
   const fmtD = d => d ? d.replace(/^\d{4}-(\d{2})-(\d{2})$/, '$1/$2') : '-'
 
   document.getElementById('npTableWrap').innerHTML = `
@@ -704,13 +695,7 @@ function buildPlanDetailContent(item) {
   document.getElementById('pdNameKr').textContent   = item.nameKr || '(상품명 없음)'
   document.getElementById('pdSampleNo').textContent = item.sampleNo
 
-  const schedules = [
-    { key: 'design',     label: '디자인' },
-    { key: 'production', label: '생산' },
-    { key: 'image',      label: '이미지' },
-    { key: 'register',   label: '상품등록' },
-    { key: 'logistics',  label: '물류입고' }
-  ]
+  const schedules = SCHEDULE_DEFS
 
   const allImgs = [
     ...(item.images?.sum    || []),
@@ -750,7 +735,7 @@ function buildPlanDetailContent(item) {
 
   // 품번 생성 패널용 옵션 (item 데이터로 기본값 추측)
   const clsGuess    = item.brand?.includes('느와') ? 'NS' : 'LS'
-  const typGuess    = item.type === 'bikini' ? 'BK' : item.type === 'two piece' ? 'BK' : 'ON'
+  const typGuess    = item.type === 'bikini' ? 'BK' : item.type === 'two piece' ? 'JM' : 'ON'
   const yearGuess   = String(item.year  || '6')
   const seasonGuess = String(item.season || '1')
   const genGuess    = item.gender || 'W'
