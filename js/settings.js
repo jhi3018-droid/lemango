@@ -2,22 +2,148 @@
 // ===== 설정 탭 =====
 // =============================================
 
-// 일반 설정 카드 (simple/pair)
+// ===== 자동완성 + 중복 검사 공통 =====
+// 현재 열려있는 자동완성 드롭다운 닫기
+function _closeAllAc() {
+  document.querySelectorAll('.set-ac-dropdown').forEach(d => d.remove())
+}
+
+// input 아래에 자동완성 드롭다운 표시
+function _showAc(input, matches, onSelect) {
+  _closeAcFor(input)
+  if (!matches.length) return
+  const rect = input.getBoundingClientRect()
+  const dd = document.createElement('div')
+  dd.className = 'set-ac-dropdown'
+  dd.style.width = input.offsetWidth + 'px'
+  matches.forEach(m => {
+    const row = document.createElement('div')
+    row.className = 'set-ac-item'
+    row.textContent = m.display
+    if (m.isDup) row.classList.add('set-ac-dup')
+    row.onmousedown = e => { e.preventDefault(); onSelect(m); dd.remove() }
+    dd.appendChild(row)
+  })
+  input._acDd = dd
+  // 드롭다운을 input의 부모 .set-add-row 또는 .set-item-editrow 안에 배치
+  const wrap = input.closest('.set-ac-wrap')
+  if (wrap) { wrap.appendChild(dd) }
+  else { input.parentElement.appendChild(dd) }
+}
+
+function _closeAcFor(input) {
+  if (input._acDd) { input._acDd.remove(); input._acDd = null }
+}
+
+// 중복 상태를 input에 표시
+function _markDup(input, isDup) {
+  const wrap = input.closest('.set-ac-wrap') || input.parentElement
+  let badge = wrap.querySelector('.set-dup-badge')
+  if (isDup) {
+    input.classList.add('set-input-dup')
+    if (!badge) {
+      badge = document.createElement('span')
+      badge.className = 'set-dup-badge'
+      badge.textContent = '중복'
+      wrap.appendChild(badge)
+    }
+  } else {
+    input.classList.remove('set-input-dup')
+    if (badge) badge.remove()
+  }
+}
+
+// 일반 설정(simple) 자동완성 핸들러
+function _acSimple(input, key) {
+  const q = input.value.trim().toLowerCase()
+  if (!q) { _closeAcFor(input); _markDup(input, false); return }
+  const items = _settings[key] || []
+  const vals = items.map(it => Array.isArray(it) ? it[0] : it)
+  const exactDup = vals.some(v => v.toLowerCase() === q)
+  _markDup(input, exactDup)
+  const matches = vals
+    .filter(v => v.toLowerCase().includes(q))
+    .slice(0, 8)
+    .map(v => ({ display: v, val: v, isDup: v.toLowerCase() === q }))
+  _showAc(input, matches, m => { input.value = m.val })
+}
+
+// pair 설정 (코드 필드) 자동완성 핸들러
+function _acPairVal(input, key) {
+  const q = input.value.trim().toLowerCase()
+  if (!q) { _closeAcFor(input); _markDup(input, false); return }
+  const items = _settings[key] || []
+  const exactDup = items.some(it => it[0].toLowerCase() === q)
+  _markDup(input, exactDup)
+  const matches = items
+    .filter(([v]) => v.toLowerCase().includes(q))
+    .slice(0, 8)
+    .map(([v, l]) => ({ display: `${v} — ${l}`, val: v, label: l, isDup: v.toLowerCase() === q }))
+  _showAc(input, matches, m => {
+    input.value = m.val
+    // 코드 선택 시 표시명도 자동 채움
+    const labelInput = input.closest('.set-add-row, .set-item-editrow')?.querySelector('[data-field="label"], [id$="_label"]')
+    if (labelInput && m.label) labelInput.value = m.label
+  })
+}
+
+// 디자인코드 자동완성 핸들러
+function _acDesignCode(input, field) {
+  const q = input.value.trim().toLowerCase()
+  if (!q) { _closeAcFor(input); _markDup(input, false); return }
+  if (field === 'code') {
+    const exactDup = _designCodes.some(([c]) => c.toLowerCase() === q)
+    _markDup(input, exactDup)
+    const matches = _designCodes
+      .filter(([c]) => c.toLowerCase().includes(q))
+      .slice(0, 8)
+      .map(([c, e, k]) => ({ display: `${c} — ${e} (${k})`, val: c, isDup: c.toLowerCase() === q }))
+    _showAc(input, matches, m => { input.value = m.val })
+  } else {
+    _markDup(input, false)
+    const matches = _designCodes
+      .filter(([c, e, k]) => e.toLowerCase().includes(q) || k.toLowerCase().includes(q))
+      .slice(0, 8)
+      .map(([c, e, k]) => ({ display: `${c} — ${e} (${k})`, val: field === 'en' ? e : k, isDup: false }))
+    _showAc(input, matches, m => { input.value = m.val })
+  }
+}
+
+// 플랫폼 자동완성 핸들러
+function _acPlatform(input) {
+  const q = input.value.trim().toLowerCase()
+  if (!q) { _closeAcFor(input); _markDup(input, false); return }
+  const exactDup = _platforms.some(p => p.toLowerCase() === q)
+  _markDup(input, exactDup)
+  const matches = _platforms
+    .filter(p => p.toLowerCase().includes(q))
+    .slice(0, 8)
+    .map(p => ({ display: p, val: p, isDup: p.toLowerCase() === q }))
+  _showAc(input, matches, m => { input.value = m.val })
+}
+
+// blur 시 드롭다운 닫기 (약간 지연으로 클릭 이벤트 보장)
+function _acBlur(input) { setTimeout(() => _closeAcFor(input), 150) }
+
+// ===== 카드 렌더 =====
 function _renderSetCard(def) {
   const items = _settings[def.key] || []
   const isPair = def.type === 'pair'
 
   const listHtml = items.map((item, idx) => {
     const [val, label] = Array.isArray(item) ? item : [item, item]
-    // 보기 모드
     const viewInner = isPair
       ? `<span class="set-item-code">${val}</span><span class="set-item-label">${label}</span>`
       : `<span class="set-item-label">${val}</span>`
-    // 수정 모드
+    const acKeyAttr = isPair ? `oninput="_acPairVal(this,'${def.key}')"` : `oninput="_acSimple(this,'${def.key}')"`
     const editInner = isPair
-      ? `<input type="text" class="set-edit-input" value="${val}" data-field="val" style="width:80px;flex:none" />
+      ? `<div class="set-ac-wrap" style="width:80px;flex:none;position:relative">
+           <input type="text" class="set-edit-input" value="${val}" data-field="val" ${acKeyAttr} onblur="_acBlur(this)" style="width:100%" />
+         </div>
          <input type="text" class="set-edit-input" value="${label}" data-field="label" style="flex:1" />`
-      : `<input type="text" class="set-edit-input" value="${val}" data-field="val" style="flex:1" />`
+      : `<div class="set-ac-wrap" style="flex:1;position:relative">
+           <input type="text" class="set-edit-input" value="${val}" data-field="val" ${acKeyAttr} onblur="_acBlur(this)" style="width:100%" />
+         </div>`
 
     return `<div class="set-item" id="setItem_${def.key}_${idx}">
       <div class="set-item-view">${viewInner}
@@ -31,14 +157,22 @@ function _renderSetCard(def) {
     </div>`
   }).join('') || '<div class="set-empty">항목 없음</div>'
 
+  const acAddAttr = isPair
+    ? `oninput="_acPairVal(this,'${def.key}')" onblur="_acBlur(this)"`
+    : `oninput="_acSimple(this,'${def.key}')" onblur="_acBlur(this)"`
+
   const addForm = isPair
     ? `<div class="set-add-row">
-        <input type="text" id="setAdd_${def.key}_val"   placeholder="${def.ph1}" class="set-add-input" />
+        <div class="set-ac-wrap" style="flex:1;position:relative">
+          <input type="text" id="setAdd_${def.key}_val" placeholder="${def.ph1}" class="set-add-input" ${acAddAttr} />
+        </div>
         <input type="text" id="setAdd_${def.key}_label" placeholder="${def.ph2}" class="set-add-input" />
         <button class="btn btn-new set-add-btn" onclick="addSettingItem('${def.key}')">+ 추가</button>
       </div>`
     : `<div class="set-add-row">
-        <input type="text" id="setAdd_${def.key}_val" placeholder="${def.ph}" class="set-add-input" style="flex:1" />
+        <div class="set-ac-wrap" style="flex:1;position:relative">
+          <input type="text" id="setAdd_${def.key}_val" placeholder="${def.ph}" class="set-add-input" style="width:100%" ${acAddAttr} />
+        </div>
         <button class="btn btn-new set-add-btn" onclick="addSettingItem('${def.key}')">+ 추가</button>
       </div>`
 
@@ -56,10 +190,9 @@ function renderSettings() {
   const container = document.getElementById('settingsPage')
   if (!container) return
 
-  // 디자인 관련 카드들
   const designCards = SETTING_DEFS.filter(d => d.group === 'design').map(_renderSetCard).join('')
 
-  // 디자인번호/백스타일 카드 (_designCodes 단일 소스)
+  // 디자인번호/백스타일 카드
   const dcListHtml = _designCodes.map((dc, idx) => {
     const [code, en, kr] = dc
     return `<div class="set-item" id="setDcItem_${idx}">
@@ -71,7 +204,9 @@ function renderSettings() {
         <button class="set-item-action set-item-del" onclick="removeDesignCodeSetting(${idx})" title="삭제">&#10005;</button>
       </div>
       <div class="set-item-editrow" style="display:none">
-        <input type="text" class="set-edit-input" value="${code}" data-field="code" maxlength="4" style="width:70px;flex:none" />
+        <div class="set-ac-wrap" style="width:70px;flex:none;position:relative">
+          <input type="text" class="set-edit-input" value="${code}" data-field="code" maxlength="4" oninput="_acDesignCode(this,'code')" onblur="_acBlur(this)" style="width:100%" />
+        </div>
         <input type="text" class="set-edit-input" value="${en}" data-field="en" style="flex:1" />
         <input type="text" class="set-edit-input" value="${kr}" data-field="kr" style="flex:1" />
         <button class="set-edit-save" onclick="saveDesignCodeEdit(${idx})">저장</button>
@@ -90,14 +225,19 @@ function renderSettings() {
     </div>
     <div class="set-list set-list-scroll" id="setDcList">${dcListHtml}</div>
     <div class="set-add-row">
-      <input type="text" id="setBsCode" placeholder="코드 (4자리)" class="set-add-input" maxlength="4" style="width:90px;flex:none" />
-      <input type="text" id="setBsEn"   placeholder="영문명" class="set-add-input" />
-      <input type="text" id="setBsKr"   placeholder="한글명" class="set-add-input" />
+      <div class="set-ac-wrap" style="width:90px;flex:none;position:relative">
+        <input type="text" id="setBsCode" placeholder="코드 (4자리)" class="set-add-input" maxlength="4" style="width:100%" oninput="_acDesignCode(this,'code')" onblur="_acBlur(this)" />
+      </div>
+      <div class="set-ac-wrap" style="flex:1;position:relative">
+        <input type="text" id="setBsEn" placeholder="영문명" class="set-add-input" style="width:100%" oninput="_acDesignCode(this,'en')" onblur="_acBlur(this)" />
+      </div>
+      <div class="set-ac-wrap" style="flex:1;position:relative">
+        <input type="text" id="setBsKr" placeholder="한글명" class="set-add-input" style="width:100%" oninput="_acDesignCode(this,'kr')" onblur="_acBlur(this)" />
+      </div>
       <button class="btn btn-new set-add-btn" onclick="addDesignCodeSetting()">+ 추가</button>
     </div>
   </div>`
 
-  // 일반 상품 정보 카드들
   const infoCards = SETTING_DEFS.filter(d => d.group === 'info').map(_renderSetCard).join('')
 
   // 판매 채널 카드
@@ -109,7 +249,11 @@ function renderSettings() {
         <button class="set-item-action set-item-del" onclick="removePlatformSetting(${idx})" title="삭제">&#10005;</button>
       </div>
       <div class="set-item-editrow" id="platEdit_${idx}" style="display:none">
-        <input type="text" class="set-edit-input" id="platEditInput_${idx}" value="${pl}" style="flex:1" onkeydown="if(event.key==='Enter')savePlatformEdit(${idx})" />
+        <div class="set-ac-wrap" style="flex:1;position:relative">
+          <input type="text" class="set-edit-input" id="platEditInput_${idx}" value="${pl}" style="width:100%"
+            oninput="_acPlatform(this)" onblur="_acBlur(this)"
+            onkeydown="if(event.key==='Enter')savePlatformEdit(${idx})" />
+        </div>
         <button class="set-edit-save" onclick="savePlatformEdit(${idx})">저장</button>
         <button class="set-edit-cancel" onclick="renderSettings()">취소</button>
       </div>
@@ -122,7 +266,11 @@ function renderSettings() {
     </div>
     <div class="set-list set-list-scroll">${platListHtml}</div>
     <div class="set-add-row">
-      <input type="text" id="setPlatName" placeholder="쇼핑몰명 (예: 무신사)" class="set-add-input" style="flex:1" onkeydown="if(event.key==='Enter')addPlatformSetting()" />
+      <div class="set-ac-wrap" style="flex:1;position:relative">
+        <input type="text" id="setPlatName" placeholder="쇼핑몰명 (예: 무신사)" class="set-add-input" style="width:100%"
+          oninput="_acPlatform(this)" onblur="_acBlur(this)"
+          onkeydown="if(event.key==='Enter')addPlatformSetting()" />
+      </div>
       <button class="btn btn-new set-add-btn" onclick="addPlatformSetting()">+ 추가</button>
     </div>
   </div>`
@@ -191,16 +339,16 @@ function filterDesignCodeList() {
 
 // ===== 디자인번호 CRUD =====
 function addDesignCodeSetting() {
-  const code = document.getElementById('setBsCode')?.value.trim()
-  const en   = document.getElementById('setBsEn')?.value.trim()
-  const kr   = document.getElementById('setBsKr')?.value.trim()
+  const codeEl = document.getElementById('setBsCode')
+  const enEl   = document.getElementById('setBsEn')
+  const krEl   = document.getElementById('setBsKr')
+  const code = codeEl?.value.trim()
+  const en   = enEl?.value.trim()
+  const kr   = krEl?.value.trim()
   if (!code || !en || !kr) { showToast('코드, 영문명, 한글명을 모두 입력해주세요.', 'warning'); return }
-  if (_designCodes.some(([c]) => c === code)) { showToast('이미 존재하는 코드입니다.', 'error'); return }
+  if (_designCodes.some(([c]) => c === code)) { showToast(`코드 "${code}"은 이미 존재합니다.`, 'error'); return }
   _designCodes.push([code, en, kr])
   saveDesignCodes()
-  document.getElementById('setBsCode').value = ''
-  document.getElementById('setBsEn').value   = ''
-  document.getElementById('setBsKr').value   = ''
   renderSettings()
   showToast('디자인번호 추가됐습니다.', 'success')
 }
@@ -227,9 +375,8 @@ function saveDesignCodeEdit(idx) {
   const en   = el.querySelector('[data-field="en"]')?.value.trim()
   const kr   = el.querySelector('[data-field="kr"]')?.value.trim()
   if (!code || !en || !kr) { showToast('코드, 영문명, 한글명을 모두 입력해주세요.', 'warning'); return }
-  // 코드 변경 시 중복 체크 (자기 자신 제외)
   if (code !== _designCodes[idx][0] && _designCodes.some(([c]) => c === code)) {
-    showToast('이미 존재하는 코드입니다.', 'error'); return
+    showToast(`코드 "${code}"은 이미 존재합니다.`, 'error'); return
   }
   _designCodes[idx] = [code, en, kr]
   saveDesignCodes()
@@ -240,7 +387,7 @@ function saveDesignCodeEdit(idx) {
 function removeDesignCodeSetting(idx) {
   const dc = _designCodes[idx]
   if (!dc) return
-  if (!confirm(`"${dc[0]} - ${dc[1]} (${dc[2]})" 삭제하시겠습니까?`)) return
+  if (!confirm(`"${dc[0]} — ${dc[1]} (${dc[2]})" 삭제하시겠습니까?`)) return
   _designCodes.splice(idx, 1)
   saveDesignCodes()
   renderSettings()
@@ -258,17 +405,14 @@ function addSettingItem(key) {
     const val   = valEl?.value.trim()
     const label = labelEl?.value.trim()
     if (!val || !label) { showToast('코드와 표시명을 모두 입력해주세요.', 'warning'); return }
-    if (_settings[key].some(item => item[0] === val)) { showToast('이미 존재하는 코드입니다.', 'error'); return }
+    if (_settings[key].some(item => item[0] === val)) { showToast(`"${val}"은 이미 존재하는 코드입니다.`, 'error'); return }
     _settings[key].push([val, label])
-    if (valEl) valEl.value = ''
-    if (labelEl) labelEl.value = ''
   } else {
     const valEl = document.getElementById(`setAdd_${key}_val`)
     const val = valEl?.value.trim()
     if (!val) { showToast('값을 입력해주세요.', 'warning'); return }
-    if (_settings[key].includes(val)) { showToast('이미 존재하는 항목입니다.', 'error'); return }
+    if (_settings[key].includes(val)) { showToast(`"${val}"은 이미 존재하는 항목입니다.`, 'error'); return }
     _settings[key].push(val)
-    if (valEl) valEl.value = ''
   }
 
   saveSettings()
@@ -303,13 +447,13 @@ function saveSettingItem(key, idx) {
     const label = el.querySelector('[data-field="label"]')?.value.trim()
     if (!val || !label) { showToast('코드와 표시명을 모두 입력해주세요.', 'warning'); return }
     const old = _settings[key][idx]
-    if (val !== old[0] && _settings[key].some(item => item[0] === val)) { showToast('이미 존재하는 코드입니다.', 'error'); return }
+    if (val !== old[0] && _settings[key].some(item => item[0] === val)) { showToast(`"${val}"은 이미 존재하는 코드입니다.`, 'error'); return }
     _settings[key][idx] = [val, label]
   } else {
     const val = el.querySelector('[data-field="val"]')?.value.trim()
     if (!val) { showToast('값을 입력해주세요.', 'warning'); return }
     const old = _settings[key][idx]
-    if (val !== old && _settings[key].includes(val)) { showToast('이미 존재하는 항목입니다.', 'error'); return }
+    if (val !== old && _settings[key].includes(val)) { showToast(`"${val}"은 이미 존재하는 항목입니다.`, 'error'); return }
     _settings[key][idx] = val
   }
 
@@ -336,10 +480,9 @@ function removeSettingItem(key, idx) {
 function addPlatformSetting() {
   const name = document.getElementById('setPlatName')?.value.trim()
   if (!name) { showToast('쇼핑몰명을 입력해주세요.', 'warning'); return }
-  if (_platforms.includes(name)) { showToast('이미 존재하는 쇼핑몰입니다.', 'error'); return }
+  if (_platforms.includes(name)) { showToast(`"${name}"은 이미 존재하는 쇼핑몰입니다.`, 'error'); return }
   _platforms.push(name)
   savePlatforms()
-  document.getElementById('setPlatName').value = ''
   renderSettings()
   showToast(`"${name}" 추가됐습니다.`, 'success')
 }
@@ -357,7 +500,7 @@ function savePlatformEdit(idx) {
   const oldName = _platforms[idx]
   if (!newName) { showToast('쇼핑몰명을 입력해주세요.', 'warning'); return }
   if (newName === oldName) { renderSettings(); return }
-  if (_platforms.includes(newName)) { showToast('이미 존재하는 쇼핑몰입니다.', 'error'); return }
+  if (_platforms.includes(newName)) { showToast(`"${newName}"은 이미 존재하는 쇼핑몰입니다.`, 'error'); return }
   State.allProducts.forEach(p => {
     if (p.sales && oldName in p.sales) {
       p.sales[newName] = p.sales[oldName]
