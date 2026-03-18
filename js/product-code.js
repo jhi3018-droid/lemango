@@ -139,12 +139,12 @@ function confirmBsForm() {
   document.getElementById('bsForm').style.display = 'none'
 }
 
-function deleteBackStyle() {
+async function deleteBackStyle() {
   const cur = document.getElementById('pcBackStyle')?.value
   if (!cur) { showToast('삭제할 디자인번호를 선택하세요.', 'warning'); return }
   const found = _designCodes.find(([c]) => c === cur)
   if (!found) return
-  if (!confirm(`"${found[1]} (${found[2]})" 디자인번호를 삭제하시겠습니까?`)) return
+  if (!await korConfirm(`"${found[1]} (${found[2]})" 디자인번호를 삭제하시겠습니까?`)) return
   _designCodes = _designCodes.filter(([c]) => c !== cur)
   saveDesignCodes()
   document.getElementById('pcBackStyle').value = ''

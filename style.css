@@ -418,6 +418,55 @@ table { border-collapse: collapse; width: 100%; }
   font-family: 'Inter';
 }
 
+/* ===== 한글 확인 다이얼로그 ===== */
+.kor-confirm-overlay {
+  position: fixed; inset: 0; z-index: 99999;
+  background: rgba(0,0,0,0.35);
+  display: flex; align-items: center; justify-content: center;
+}
+.kor-confirm-box {
+  background: white;
+  border-radius: 12px;
+  padding: 28px 32px 20px;
+  min-width: 320px;
+  max-width: 460px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+.kor-confirm-msg {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--primary);
+  white-space: pre-line;
+  margin-bottom: 20px;
+  word-break: keep-all;
+}
+.kor-confirm-btns {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.kor-confirm-ok, .kor-confirm-cancel {
+  padding: 8px 24px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: background 0.15s;
+}
+.kor-confirm-ok {
+  background: var(--primary);
+  color: white;
+}
+.kor-confirm-ok:hover { background: #2a2a4e; }
+.kor-confirm-cancel {
+  background: var(--bg);
+  color: var(--text-sub);
+  border: 1px solid var(--border);
+}
+.kor-confirm-cancel:hover { background: #e8e4de; }
+
 /* ===== 토스트 ===== */
 .toast {
   position: fixed;

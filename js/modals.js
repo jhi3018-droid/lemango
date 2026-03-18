@@ -602,10 +602,10 @@ function saveDetailEdit() {
   showToast('상품 정보가 수정되었습니다.', 'success')
 }
 
-function lockProductCode() {
+async function lockProductCode() {
   const p = State.allProducts.find(x => x.productCode === _detailCode)
   if (!p) return
-  if (!confirm(`품번 "${p.productCode}"을 확정합니다.\n확정 후에는 품번을 수정할 수 없습니다.`)) return
+  if (!await korConfirm(`품번 "${p.productCode}"을 확정합니다.\n확정 후에는 품번을 수정할 수 없습니다.`)) return
   p.productCodeLocked = true
   const lockBtn = document.getElementById('dLockCodeBtn')
   if (lockBtn) lockBtn.style.display = 'none'

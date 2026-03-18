@@ -389,10 +389,10 @@ function saveDesignCodeEdit(idx) {
   showToast('수정됐습니다.', 'success')
 }
 
-function removeDesignCodeSetting(idx) {
+async function removeDesignCodeSetting(idx) {
   const dc = _designCodes[idx]
   if (!dc) return
-  if (!confirm(`"${dc[0]} — ${dc[1]} (${dc[2]})" 삭제하시겠습니까?`)) return
+  if (!await korConfirm(`"${dc[0]} — ${dc[1]} (${dc[2]})" 삭제하시겠습니까?`)) return
   _designCodes.splice(idx, 1)
   saveDesignCodes()
   renderSettings()
@@ -468,12 +468,12 @@ function saveSettingItem(key, idx) {
   showToast('수정됐습니다.', 'success')
 }
 
-function removeSettingItem(key, idx) {
+async function removeSettingItem(key, idx) {
   const items = _settings[key]
   if (!items) return
   const item = items[idx]
   const label = Array.isArray(item) ? item[1] : item
-  if (!confirm(`"${label}" 항목을 삭제하시겠습니까?\n기존 상품에 저장된 값은 유지됩니다.`)) return
+  if (!await korConfirm(`"${label}" 항목을 삭제하시겠습니까?\n기존 상품에 저장된 값은 유지됩니다.`)) return
   _settings[key].splice(idx, 1)
   saveSettings()
   populateAllSelects()
@@ -520,9 +520,9 @@ function savePlatformEdit(idx) {
   showToast(`"${oldName}" → "${newName}" 변경됐습니다.`, 'success')
 }
 
-function removePlatformSetting(idx) {
+async function removePlatformSetting(idx) {
   const name = _platforms[idx]
-  if (!confirm(`"${name}" 쇼핑몰을 목록에서 제거하시겠습니까?\n기존 판매 데이터는 유지됩니다.`)) return
+  if (!await korConfirm(`"${name}" 쇼핑몰을 목록에서 제거하시겠습니까?\n기존 판매 데이터는 유지됩니다.`)) return
   _platforms.splice(idx, 1)
   savePlatforms()
   renderSalesTable()
@@ -554,7 +554,7 @@ function uploadDesignCodes(input) {
   if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
 
   const reader = new FileReader()
-  reader.onload = e => {
+  reader.onload = async e => {
     try {
       const wb  = XLSX.read(e.target.result, { type: 'array' })
       const ws  = wb.Sheets[wb.SheetNames[0]]
@@ -599,7 +599,7 @@ function uploadDesignCodes(input) {
 
       // 덮어쓰기 or 추가만 선택
       const mode = dupItems.length
-        ? confirm(`${msg}\n\n[확인] 전체 교체 (기존 목록을 업로드 내용으로 교체)\n[취소] 신규만 추가 (중복 ${dupItems.length}건 건너뛰기)`)
+        ? (await korConfirm(`${msg}\n\n전체 교체: 기존 목록을 업로드 내용으로 교체\n신규만 추가: 중복 ${dupItems.length}건 건너뛰기`, '전체 교체', '신규만 추가'))
           ? 'replace' : 'append'
         : 'append'
 

@@ -202,6 +202,36 @@ function updateSortIcons(tableId, sort) {
   })
 }
 
+// ===== 한글 확인 다이얼로그 =====
+function korConfirm(msg, okText = '확인', cancelText = '취소') {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div')
+    overlay.className = 'kor-confirm-overlay'
+    const box = document.createElement('div')
+    box.className = 'kor-confirm-box'
+    const msgEl = document.createElement('div')
+    msgEl.className = 'kor-confirm-msg'
+    msgEl.textContent = msg
+    const btnRow = document.createElement('div')
+    btnRow.className = 'kor-confirm-btns'
+    const okBtn = document.createElement('button')
+    okBtn.className = 'kor-confirm-ok'
+    okBtn.textContent = okText
+    const cancelBtn = document.createElement('button')
+    cancelBtn.className = 'kor-confirm-cancel'
+    cancelBtn.textContent = cancelText
+    const close = val => { overlay.remove(); resolve(val) }
+    okBtn.onclick = () => close(true)
+    cancelBtn.onclick = () => close(false)
+    overlay.onclick = e => { if (e.target === overlay) close(false) }
+    btnRow.append(cancelBtn, okBtn)
+    box.append(msgEl, btnRow)
+    overlay.appendChild(box)
+    document.body.appendChild(overlay)
+    okBtn.focus()
+  })
+}
+
 // ===== 토스트 =====
 function showToast(msg, type = '') {
   const el = document.getElementById('toast')

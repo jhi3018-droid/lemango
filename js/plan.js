@@ -598,7 +598,7 @@ function savePlanDetailEdit() {
   showToast('저장됐습니다.', 'success')
 }
 
-function confirmPlanToProduct() {
+async function confirmPlanToProduct() {
   const item = State.planItems.find(p => p.no === _editingPlanNo)
   if (!item) return
 
@@ -612,7 +612,7 @@ function confirmPlanToProduct() {
     return
   }
 
-  if (!confirm(`신규기획 항목을 상품조회로 이전합니다.\n품번: ${item.productCode}\n상품명: ${item.nameKr || '(없음)'}\n\n계속하시겠습니까?`)) return
+  if (!await korConfirm(`신규기획 항목을 상품조회로 이전합니다.\n품번: ${item.productCode}\n상품명: ${item.nameKr || '(없음)'}\n\n계속하시겠습니까?`)) return
 
   // 플랜 아이템 → 상품 객체 생성
   const salesInit = {}
