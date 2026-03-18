@@ -12,6 +12,53 @@ function parseKeywords(raw) {
     .slice(0, 200)
 }
 
+// ===== 유사 단어 검색 (초성 + 공백무시 + 부분일치) =====
+const CHOSUNG = [
+  'ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ',
+  'ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'
+]
+const CHOSUNG_SET = new Set(CHOSUNG)
+
+// 한글 문자열 → 초성 추출 (비한글은 그대로 유지)
+function extractChosung(str) {
+  return [...str].map(ch => {
+    const code = ch.charCodeAt(0) - 0xAC00
+    if (code < 0 || code > 11171) return ch
+    return CHOSUNG[Math.floor(code / 588)]
+  }).join('')
+}
+
+// 키워드에 초성 문자가 포함됐는지 확인
+function hasChosung(kw) {
+  return [...kw].some(ch => CHOSUNG_SET.has(ch))
+}
+
+// 단일 대상 문자열이 키워드와 매칭되는지 (초성·공백무시·부분일치)
+function matchKeyword(target, kw) {
+  if (!target) return false
+  const t = target.toLowerCase()
+  // 1) 일반 부분 일치
+  if (t.includes(kw)) return true
+  // 2) 공백 제거 후 비교
+  const tNoSpace = t.replace(/\s/g, '')
+  const kwNoSpace = kw.replace(/\s/g, '')
+  if (tNoSpace.includes(kwNoSpace)) return true
+  // 3) 초성 검색 (키워드에 초성 문자가 있을 때)
+  if (hasChosung(kw)) {
+    const chosung = extractChosung(t)
+    if (chosung.includes(kw)) return true
+    // 혼합 검색: "크X" 같은 한글+초성 혼합도 지원
+    const chosungNoSpace = extractChosung(tNoSpace)
+    if (chosungNoSpace.includes(kwNoSpace)) return true
+  }
+  return false
+}
+
+// 대상 배열 중 하나라도 키워드와 매칭되면 true
+function matchAnyTarget(targets, kw) {
+  return targets.some(t => matchKeyword(t, kw))
+}
+
 // 엑셀에서 세로로 복사한 내용 붙여넣기 처리
 function handleSearchPaste(e, inputId) {
   const text = (e.clipboardData || window.clipboardData).getData('text')
@@ -97,9 +144,12 @@ function isInRange(dateStr, from, to) {
 // ===== 상품 품번 검색 유틸 =====
 function findProductByKeyword(keyword) {
   const kw = keyword.toLowerCase()
+  // 정확 일치 우선
+  const exact = State.allProducts.find(x => (x.productCode || '').toLowerCase() === kw)
+  if (exact) return exact
+  // 부분일치 + 초성
   return State.allProducts.find(x =>
-    (x.productCode || '').toLowerCase() === kw ||
-    (x.productCode || '').toLowerCase().includes(kw)
+    matchKeyword(x.productCode, kw) || matchKeyword(x.nameKr, kw)
   )
 }
 

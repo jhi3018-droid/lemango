@@ -10,7 +10,7 @@ function searchSales() {
   let result = State.allProducts.filter(p => {
     if (keywords.length) {
       const targets = [p.productCode, p.nameKr]
-      if (!keywords.some(kw => targets.some(t => (t||'').toLowerCase().includes(kw)))) return false
+      if (!keywords.some(kw => matchAnyTarget(targets, kw))) return false
     }
     if (dateFrom || dateTo) {
       if (!isInRange(p.registDate, dateFrom, dateTo)) return false

@@ -310,7 +310,7 @@ function searchPlan() {
         return [p.nameKr, p.nameEn, p.productCode, p.sampleNo, p.colorKr, p.memo]
       }
       const targets = getTargets()
-      if (!keywords.some(kw => targets.some(t => (t||'').toLowerCase().includes(kw)))) return false
+      if (!keywords.some(kw => matchAnyTarget(targets, kw))) return false
     }
     if (brand  !== 'all' && p.brand  !== brand)       return false
     if (type   !== 'all' && p.type   !== type)         return false

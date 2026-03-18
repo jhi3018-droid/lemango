@@ -38,7 +38,7 @@ function searchProduct() {
         return [p.nameKr, p.nameEn, p.productCode, p.sampleNo, p.colorKr, p.backStyle, p.barcode]
       }
       const targets = getTargets()
-      if (!keywords.some(kw => targets.some(t => (t||'').toLowerCase().includes(kw)))) return false
+      if (!keywords.some(kw => matchAnyTarget(targets, kw))) return false
     }
     if (dateFrom || dateTo) {
       if (!isInRange(p[dateType], dateFrom, dateTo)) return false
