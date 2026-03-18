@@ -233,8 +233,7 @@ State.modal.images/idx     // 이미지 모달 상태
 |------|----------------|------|
 | `_settings` | `lemango_settings_v1` | 브랜드·타입·가슴선 등 SETTING_DEFS 기반 옵션 |
 | `_platforms` | `lemango_platforms_v1` | 판매 채널 목록 (공홈/GS/29cm/W쇼핑/기타) |
-| `_backStyles` | `lemango_back_styles_v2` | 백스타일 [code, en, kr] 배열 |
-| `_designCodes` | `lemango_design_codes_v1` | 디자인 번호 [code, en, kr] 배열 |
+| `_designCodes` | `lemango_design_codes_v1` | 디자인번호/백스타일 [code, en, kr] 배열 (단일 소스) |
 | `_reservedCodes` | (메모리) | 임시 예약 품번 Set |
 | `_detailCode` | (메모리) | 현재 열린 상세 모달 품번 |
 | `_detailPendingCode` | (메모리) | 상세 모달 품번 생성 패널 임시 예약 코드 |
@@ -249,8 +248,7 @@ State.modal.images/idx     // 이미지 모달 상태
 #settingsPage
 ├── 🎨 디자인 관련 (accordion)
 │   ├── 상품 타입, 다리파임, 원단타입, 가슴선, 비침, 안감, 캡고리
-│   ├── 백스타일 (code 4자리 + 영문 + 한글)
-│   └── 디자인 번호/패턴 (code 4자리 + 영문 + 한글)
+│   └── 디자인번호/백스타일 (code 4자리 + 영문 + 한글) — _designCodes 단일 소스
 ├── 📋 일반 상품 정보 (accordion)
 │   ├── 브랜드
 │   └── 판매상태
@@ -487,8 +485,14 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 #### UI 개선
 - 상품조회 테이블에서 바코드 컬럼 제거
-- 설정 탭: 백스타일과 디자인번호 카드 통합 (단일 카드, 동기화 저장)
 - 레그컷 항목명 "다리파임" → "레그컷", 값: Low Cut / Normal Cut / Middle Cut / High Cut
+
+#### 디자인번호/백스타일 통합 (단일 소스)
+- `_backStyles` 변수 완전 제거 → `_designCodes` 단일 소스로 통합
+- 설정 탭 "백스타일" 카드 → "디자인번호 / 백스타일" 카드로 변경, `_designCodes` 기반 CRUD
+- 품번 자동생성 패널(상품조회·기획·신규등록): 모두 `_designCodes` 참조
+- 설정에서 추가/삭제 시 품번 생성 패널에 즉시 반영
+- `saveBackStyles()` 제거 → `saveDesignCodes()` 단일 사용
 
 #### 이미지 URL 섹션 접기/펼치기
 - 상세 모달 "이미지 URL" 섹션 전체 + 하위 항목(자사몰·외부몰·SUM·영상URL) 각각 접기 가능

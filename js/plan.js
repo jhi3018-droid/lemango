@@ -88,8 +88,8 @@ function initPlPcodePanel() {
 function renderPlBackStyleList(query) {
   const q = (query || '').toLowerCase().trim()
   const list = q
-    ? _backStyles.filter(([c,e,k]) => c.includes(q) || e.toLowerCase().includes(q) || k.toLowerCase().includes(q))
-    : _backStyles
+    ? _designCodes.filter(([c,e,k]) => c.includes(q) || e.toLowerCase().includes(q) || k.toLowerCase().includes(q))
+    : _designCodes
   const current = document.getElementById('plPcBackStyle')?.value
   const dd = document.getElementById('plBsDropdown')
   if (!dd) return
@@ -103,7 +103,7 @@ function filterPlBackStyleList() {
 }
 
 function selectPlBackStyle(code) {
-  const found = _backStyles.find(([c]) => c === code)
+  const found = _designCodes.find(([c]) => c === code)
   if (!found) return
   document.getElementById('plPcBackStyle').value = code
   document.getElementById('plPcBsSearch').value = ''
@@ -117,7 +117,7 @@ function showPlBsForm(mode) {
   if (mode === 'edit') {
     const cur = document.getElementById('plPcBackStyle')?.value
     if (!cur) { showToast('수정할 백스타일을 선택하세요.', 'warning'); return }
-    const entry = _backStyles.find(([c]) => c === cur)
+    const entry = _designCodes.find(([c]) => c === cur)
     if (entry) {
       document.getElementById('plBsFormCode').value = entry[0]
       document.getElementById('plBsFormEn').value   = entry[1]
@@ -140,13 +140,13 @@ function confirmPlBsForm() {
   const kr   = document.getElementById('plBsFormKr')?.value.trim()
   if (!code || !en || !kr) { showToast('코드, 영문, 한글 모두 입력해주세요.', 'warning'); return }
   if (mode === 'add') {
-    if (_backStyles.find(([c]) => c === code)) { showToast('이미 존재하는 코드입니다.', 'error'); return }
-    _backStyles.push([code, en, kr])
+    if (_designCodes.find(([c]) => c === code)) { showToast('이미 존재하는 코드입니다.', 'error'); return }
+    _designCodes.push([code, en, kr])
   } else {
-    const idx = _backStyles.findIndex(([c]) => c === code)
-    if (idx !== -1) _backStyles[idx] = [code, en, kr]; else _backStyles.push([code, en, kr])
+    const idx = _designCodes.findIndex(([c]) => c === code)
+    if (idx !== -1) _designCodes[idx] = [code, en, kr]; else _designCodes.push([code, en, kr])
   }
-  saveBackStyles()
+  saveDesignCodes()
   renderPlBackStyleList('')
   document.getElementById('plPcBackStyle').value = code
   if (form) form.style.display = 'none'

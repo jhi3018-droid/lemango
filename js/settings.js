@@ -38,24 +38,24 @@ function renderSettings() {
   // 디자인 관련 카드들
   const designCards = SETTING_DEFS.filter(d => d.group === 'design').map(_renderSetCard).join('')
 
-  // 백스타일 카드 (디자인번호 통합)
-  const bsListHtml = _backStyles.map((bs, idx) => {
-    const [code, en, kr] = bs
+  // 디자인번호/백스타일 카드 (_designCodes 단일 소스)
+  const dcListHtml = _designCodes.map((dc, idx) => {
+    const [code, en, kr] = dc
     return `<div class="set-item">
       <span class="set-item-code">${code}</span>
       <span class="set-item-label">${en}</span>
       <span class="set-item-label" style="color:var(--text-sub);font-size:12px">${kr}</span>
-      <button class="set-item-del" onclick="removeBackStyleSetting(${idx})" title="삭제">✕</button>
+      <button class="set-item-del" onclick="removeDesignCodeSetting(${idx})" title="삭제">✕</button>
     </div>`
   }).join('') || '<div class="set-empty">항목 없음</div>'
   const bsCard = `<div class="set-card set-card-wide">
-    <div class="set-card-title">백스타일</div>
-    <div class="set-list">${bsListHtml}</div>
+    <div class="set-card-title">디자인번호 / 백스타일</div>
+    <div class="set-list">${dcListHtml}</div>
     <div class="set-add-row">
       <input type="text" id="setBsCode" placeholder="코드 (4자리)" class="set-add-input" maxlength="4" style="width:100px;flex:none" />
       <input type="text" id="setBsEn"   placeholder="영문명" class="set-add-input" />
       <input type="text" id="setBsKr"   placeholder="한글명" class="set-add-input" />
-      <button class="btn btn-new set-add-btn" onclick="addBackStyleSetting()">+ 추가</button>
+      <button class="btn btn-new set-add-btn" onclick="addDesignCodeSetting()">+ 추가</button>
     </div>
   </div>`
 
@@ -133,18 +133,18 @@ function toggleSetSection(btn) {
 }
 
 function addDesignCodeSetting() {
-  const code = document.getElementById('setDcCode')?.value.trim()
-  const en   = document.getElementById('setDcEn')?.value.trim()
-  const kr   = document.getElementById('setDcKr')?.value.trim()
+  const code = document.getElementById('setBsCode')?.value.trim()
+  const en   = document.getElementById('setBsEn')?.value.trim()
+  const kr   = document.getElementById('setBsKr')?.value.trim()
   if (!code || !en || !kr) { showToast('코드, 영문명, 한글명을 모두 입력해주세요.', 'warning'); return }
   if (_designCodes.some(([c]) => c === code)) { showToast('이미 존재하는 코드입니다.', 'error'); return }
   _designCodes.push([code, en, kr])
   saveDesignCodes()
-  document.getElementById('setDcCode').value = ''
-  document.getElementById('setDcEn').value   = ''
-  document.getElementById('setDcKr').value   = ''
+  document.getElementById('setBsCode').value = ''
+  document.getElementById('setBsEn').value   = ''
+  document.getElementById('setBsKr').value   = ''
   renderSettings()
-  showToast('디자인 코드 추가됐습니다.', 'success')
+  showToast('디자인번호 추가됐습니다.', 'success')
 }
 
 function removeDesignCodeSetting(idx) {
@@ -199,36 +199,7 @@ function removeSettingItem(key, idx) {
   showToast('삭제됐습니다.', 'success')
 }
 
-function addBackStyleSetting() {
-  const code = document.getElementById('setBsCode')?.value.trim()
-  const en   = document.getElementById('setBsEn')?.value.trim()
-  const kr   = document.getElementById('setBsKr')?.value.trim()
-  if (!code || !en || !kr) { showToast('코드, 영문명, 한글명을 모두 입력해주세요.', 'warning'); return }
-  if (_backStyles.some(([c]) => c === code)) { showToast('이미 존재하는 코드입니다.', 'error'); return }
-  _backStyles.push([code, en, kr])
-  if (!_designCodes.some(([c]) => c === code)) _designCodes.push([code, en, kr])
-  saveBackStyles()
-  saveDesignCodes()
-  document.getElementById('setBsCode').value = ''
-  document.getElementById('setBsEn').value   = ''
-  document.getElementById('setBsKr').value   = ''
-  renderSettings()
-  showToast('백스타일 추가됐습니다.', 'success')
-}
-
-function removeBackStyleSetting(idx) {
-  const bs = _backStyles[idx]
-  if (!bs) return
-  if (!confirm(`"${bs[1]} (${bs[2]})" 백스타일을 삭제하시겠습니까?`)) return
-  const code = bs[0]
-  _backStyles.splice(idx, 1)
-  const dcIdx = _designCodes.findIndex(([c]) => c === code)
-  if (dcIdx !== -1) _designCodes.splice(dcIdx, 1)
-  saveBackStyles()
-  saveDesignCodes()
-  renderSettings()
-  showToast('삭제됐습니다.', 'success')
-}
+// addBackStyleSetting / removeBackStyleSetting 제거됨 — addDesignCodeSetting / removeDesignCodeSetting 사용
 
 // ===== 판매 채널 CRUD =====
 function addPlatformSetting() {
