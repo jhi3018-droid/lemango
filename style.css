@@ -606,6 +606,41 @@ table { border-collapse: collapse; width: 100%; }
   background: var(--table-header);
   border-bottom: 1px solid var(--border-light);
 }
+.dimg-toggle {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.dimg-toggle:hover { background: var(--border-light); }
+.dimg-arrow { font-size: 10px; }
+.dimg-hidden { display: none !important; }
+.dimg-sub { border-bottom: 1px solid var(--border-light); }
+.dimg-sub-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-sub);
+  padding: 5px 12px;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg);
+}
+.dimg-sub-title:hover { background: var(--border-light); }
+.dimg-preview {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+  flex: 1;
+  margin: 0 6px;
+}
 .dsection-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1763,6 +1798,14 @@ table { border-collapse: collapse; width: 100%; }
   padding-bottom: 8px;
   border-bottom: 2px solid var(--accent);
 }
+.set-sub-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-sub);
+  margin: 10px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
 .set-list {
   display: flex;
   flex-direction: column;
@@ -1850,3 +1893,24 @@ table { border-collapse: collapse; width: 100%; }
 .set-section-btn:hover { background: #2a2a4e; }
 .set-section-arrow { font-size: 11px; transition: transform 0.2s; }
 .set-section-body { padding: 16px; background: var(--bg); }
+
+
+/* ===== 페이지네이션 ===== */
+.pagination-wrap { display: flex; justify-content: center; padding: 12px 0 4px; }
+.pagination { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; justify-content: center; }
+.pg-btn {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card, #fff);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  font-family: Inter, inherit;
+}
+.pg-btn:hover:not(:disabled) { background: var(--accent); color: #fff; border-color: var(--accent); }
+.pg-btn.pg-active { background: var(--primary); color: #fff; border-color: var(--primary); font-weight: 700; }
+.pg-btn.pg-disabled, .pg-btn:disabled { opacity: 0.35; cursor: default; }

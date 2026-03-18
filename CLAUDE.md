@@ -7,14 +7,31 @@
 ## 파일 구조
 ```
 르망고/
-├── index.html          # 전체 화면 (탭 6개 + 모달들)
-├── style.css           # 전체 스타일
-├── app.js              # 전체 로직
-├── CLAUDE.md           # 이 파일
-├── .claude/agents/     # 전문 에이전트
+├── index.html              # 전체 화면 (탭 6개 + 모달들)
+├── style.css               # 전체 스타일
+├── firebase.json           # Firebase Hosting 설정
+├── .firebaserc             # Firebase 프로젝트 (lemango-office)
+├── CLAUDE.md               # 이 파일
+├── .claude/agents/         # 전문 에이전트
+├── js/                     # JS 모듈 분리 (15개 파일)
+│   ├── core.js             # State, 설정, 플랫폼, populateAllSelects
+│   ├── router.js           # 해시 기반 라우팅 (navigateTo, switchTab)
+│   ├── utils.js            # 유틸 함수, 페이지네이션 (renderPagination, goPage)
+│   ├── products.js         # 상품조회 검색·렌더
+│   ├── stock.js            # 재고조회·입고·출고
+│   ├── sales.js            # 판매조회·공홈주문
+│   ├── plan.js             # 신규기획
+│   ├── dashboard.js        # 대시보드
+│   ├── modals.js           # 모달 (이미지·상세·등록 등)
+│   ├── register.js         # 신규등록 모달 로직
+│   ├── excel.js            # 엑셀 업로드/다운로드 (SheetJS)
+│   ├── settings.js         # 설정 탭 렌더·CRUD
+│   ├── design.js           # 디자인 코드·백스타일 관리
+│   ├── upload.js           # 업로드 미리보기·확정
+│   └── main.js             # init(), DOMContentLoaded
 └── data/
-    ├── products_lemango.json   # 르망고 26SS
-    ├── products_noir.json      # 르망고 느와
+    ├── products_lemango.json   # 르망고 26SS (실제 상품 데이터)
+    ├── products_noir.json      # 르망고 느와 (실제 상품 데이터)
     └── combined.json           # 통합
 ```
 
@@ -456,6 +473,42 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 ---
 
+### 2026-03-18
+
+#### JS 모듈 분리 + Firebase 호스팅
+- 단일 `app.js` → `js/` 디렉토리 하위 15개 파일로 분리 (core, router, utils, products, stock, sales, plan, dashboard, modals, register, excel, settings, design, upload, main)
+- 해시 기반 SPA 라우팅 도입: `navigateTo(tab)` → `history.pushState` + `popstate` 이벤트
+- Firebase Hosting 배포: `lemango-office` 프로젝트 → https://lemango-office.web.app
+- SheetJS: 로컬 파일 → CDN (`https://cdn.sheetjs.com/xlsx-0.20.0/`)
+
+#### 실제 상품 데이터 로드
+- `C:\Users\LEMANGO\Desktop\샘플.xlsx` → `data/products_lemango.json` (28개), `data/products_noir.json` (17개)
+- `parseSumUrls()`: `<center><img src="..."></center>` HTML 형식도 파싱 지원
+
+#### UI 개선
+- 상품조회 테이블에서 바코드 컬럼 제거
+- 설정 탭: 백스타일과 디자인번호 카드 통합 (단일 카드, 동기화 저장)
+- 레그컷 항목명 "다리파임" → "레그컷", 값: Low Cut / Normal Cut / Middle Cut / High Cut
+
+#### 이미지 URL 섹션 접기/펼치기
+- 상세 모달 "이미지 URL" 섹션 전체 + 하위 항목(자사몰·외부몰·SUM·영상URL) 각각 접기 가능
+- 기본 상태: 전부 접혀있음 (`dimg-hidden` CSS)
+- 접혀있을 때 첫 번째 URL을 `.dimg-preview` 스팬으로 미리보기 표시
+- 펼치면 미리보기 숨김 (`toggleDImg()`)
+
+#### 페이지네이션 (전 탭 공통)
+- 상품조회·재고관리·판매조회·신규기획 4개 탭 모두 10개씩 페이지 분리
+- `renderPagination(containerId, tabKey, renderFnName)` — `js/utils.js`
+- `goPage(tabKey, page, renderFnName)` — `window[renderFnName]()` 호출
+- 슬라이딩 윈도우: 최대 10개 페이지 번호 표시, 현재 > 5 이면 왼쪽 1개 감소·오른쪽 1개 증가
+- `◀◀` 첫 페이지, `◀` 이전, `▶` 다음, `▶▶` 마지막 페이지 버튼
+- 검색·초기화·정렬 시 `State[tab].page = 1` 자동 리셋
+- tfoot 합계는 전체 필터 결과 기준 (페이지 무관)
+- `PAGE_SIZE = 10` 상수 (`js/utils.js`)
+- 페이지네이션 컨테이너: `#pPagination`, `#sPagination`, `#slPagination`, `#npPagination`
+
+---
+
 ## 보류 중 작업
 
 ### 이미지합치기 웹 통합 (테스트 후 결정)
@@ -468,6 +521,5 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - [ ] 공홈 외 다른 쇼핑몰 주문 업로드 포맷
 - [ ] 상품 삭제 기능
 - [ ] 데이터 영속성 (localStorage 또는 서버 연동)
-- [ ] 페이지네이션 (50건 이상)
 - [ ] 인쇄/PDF 출력
 - [ ] 이미지합치기 웹 통합 (테스트 후)
