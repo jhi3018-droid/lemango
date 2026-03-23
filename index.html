@@ -24,6 +24,7 @@
       <button class="tab-btn" data-tab="stock">재고 관리</button>
       <button class="tab-btn" data-tab="sales">판매조회</button>
       <button class="tab-btn" data-tab="plan">신규기획</button>
+      <button class="tab-btn" data-tab="event">행사일정</button>
       <button class="tab-btn" data-tab="settings">⚙ 설정</button>
     </nav>
     <div class="header-date" id="headerDate"></div>
@@ -36,6 +37,24 @@
   <!-- ===== 대시보드 탭 ===== -->
   <section class="tab-content active" id="tab-dashboard">
     <div class="kpi-row" id="kpiRow"></div>
+    <!-- 대시보드 캘린더 (상단 전체폭) -->
+    <div class="card dash-cal-card">
+      <div class="card-header">
+        <h2 class="card-title">일정 캘린더</h2>
+        <div class="dash-cal-nav">
+          <button class="btn btn-outline btn-xs" onclick="dashCalPrev()">◀</button>
+          <span id="dashCalTitle" class="dash-cal-title"></span>
+          <button class="btn btn-outline btn-xs" onclick="dashCalNext()">▶</button>
+          <button class="btn btn-outline btn-xs" onclick="dashCalToday()" style="margin-left:6px">오늘</button>
+        </div>
+        <div class="dash-cal-legend">
+          <span class="dash-cal-leg-item"><span class="dash-cal-leg-dot" style="background:var(--danger)"></span>공휴일</span>
+          <span class="dash-cal-leg-item"><span class="dash-cal-leg-dot" style="background:var(--primary)"></span>행사</span>
+          <span class="dash-cal-leg-item"><span class="dash-cal-leg-dot" style="background:var(--accent)"></span>기획</span>
+        </div>
+      </div>
+      <div id="dashCalendar"></div>
+    </div>
     <div class="dashboard-grid">
       <div class="card best-card">
         <div class="card-header">
@@ -288,6 +307,27 @@
           </select>
         </div>
       </div>
+      <div class="search-row">
+        <div class="search-group">
+          <label>일정 단계</label>
+          <select id="npPhase">
+            <option value="all">전체</option>
+            <option value="design">디자인</option>
+            <option value="production">생산</option>
+            <option value="image">이미지</option>
+            <option value="register">상품등록</option>
+            <option value="logistics">물류입고</option>
+          </select>
+        </div>
+        <div class="search-group">
+          <label>시작일</label>
+          <input type="date" id="npDateFrom" />
+        </div>
+        <div class="search-group">
+          <label>종료일</label>
+          <input type="date" id="npDateTo" />
+        </div>
+      </div>
       <div class="search-actions">
         <button class="btn btn-primary" onclick="searchPlan()">검색</button>
         <button class="btn btn-outline" onclick="resetPlan()">초기화</button>
@@ -304,12 +344,89 @@
     <div id="npPagination" class="pagination-wrap"></div>
   </section>
 
+  <!-- ===== 행사일정 탭 ===== -->
+  <section class="tab-content" id="tab-event">
+    <div class="ev-toolbar card">
+      <div class="ev-toolbar-left">
+        <button class="btn btn-outline" onclick="evPrevMonth()">◀</button>
+        <h2 class="ev-month-title" id="evMonthTitle"></h2>
+        <button class="btn btn-outline" onclick="evNextMonth()">▶</button>
+        <button class="btn btn-outline btn-sm" onclick="evToday()" style="margin-left:8px">오늘</button>
+      </div>
+      <div class="ev-toolbar-right">
+        <button class="btn btn-new" onclick="openEventRegisterModal()">＋ 행사 등록</button>
+      </div>
+    </div>
+    <div class="ev-calendar card" id="evCalendar"></div>
+  </section>
+
   <!-- ===== 설정 탭 ===== -->
   <section class="tab-content" id="tab-settings">
     <div class="settings-page" id="settingsPage"></div>
   </section>
 
 </main>
+
+<!-- 기획일정 상세 모달 (대시보드 캘린더 클릭) -->
+<dialog id="planScheduleModal" class="srm-modal plan-schedule-modal">
+  <div class="rmodal-header">
+    <h2 class="rmodal-title" id="psModalTitle">기획 일정</h2>
+    <div class="rmodal-header-actions">
+      <button class="modal-close" onclick="closePlanScheduleModal()">✕</button>
+    </div>
+  </div>
+  <div class="rmodal-body" id="psModalBody"></div>
+</dialog>
+
+<!-- 행사 등록/수정 모달 -->
+<dialog id="eventRegisterModal" class="register-modal srm-modal">
+  <div class="rmodal-header">
+    <h2 class="rmodal-title">행사 등록</h2>
+    <div class="rmodal-header-actions">
+      <button class="modal-close" onclick="closeEventRegisterModal()">✕</button>
+    </div>
+  </div>
+  <form id="evRegForm" class="rmodal-body" onsubmit="submitEvent(event)">
+    <input type="hidden" id="evRegNo" />
+    <div class="rform-section">
+      <div class="rform-section-title">행사 정보</div>
+      <div class="rform-grid">
+        <div class="rform-field required">
+          <label>행사명</label>
+          <input type="text" id="evRegName" required placeholder="예: 26SS 여름 특가전" />
+        </div>
+        <div class="rform-field">
+          <label>채널</label>
+          <input type="text" id="evRegChannel" placeholder="예: 공홈, GS, 29cm" />
+        </div>
+        <div class="rform-field required">
+          <label>시작일</label>
+          <input type="date" id="evRegStart" required />
+        </div>
+        <div class="rform-field required">
+          <label>종료일</label>
+          <input type="date" id="evRegEnd" required />
+        </div>
+        <div class="rform-field">
+          <label>할인율 (%)</label>
+          <input type="number" id="evRegDiscount" min="0" max="100" placeholder="예: 20" />
+        </div>
+        <div class="rform-field">
+          <label>당사지원 (%)</label>
+          <input type="number" id="evRegSupport" min="0" max="100" placeholder="예: 10" />
+        </div>
+        <div class="rform-field" style="grid-column: 1 / -1">
+          <label>메모</label>
+          <textarea id="evRegMemo" rows="3" placeholder="행사 관련 메모"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="rform-actions">
+      <button type="submit" class="btn btn-primary">저장</button>
+      <button type="button" class="btn btn-outline" onclick="closeEventRegisterModal()">취소</button>
+    </div>
+  </form>
+</dialog>
 
 <!-- 신규등록 모달 -->
 <dialog id="registerModal" class="register-modal">
@@ -1107,6 +1224,7 @@
 <script src="js/stock.js"></script>
 <script src="js/sales.js"></script>
 <script src="js/plan.js"></script>
+<script src="js/event.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/excel.js"></script>
 <script src="js/product-code.js"></script>

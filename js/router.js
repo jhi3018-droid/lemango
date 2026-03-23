@@ -23,4 +23,5 @@ function switchTab(tab, pushHistory = true) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab))
   document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + tab))
   if (tab === 'settings') renderSettings()
+  if (tab === 'event') renderEventTable()
 }

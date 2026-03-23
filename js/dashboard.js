@@ -6,6 +6,7 @@ function renderDashboard() {
   renderBestList()
   renderSalesSummary()
   renderMiniChart()
+  renderDashCalendar()
 }
 
 function renderKPI() {
@@ -63,7 +64,6 @@ function renderSalesSummary() {
     { name: '르망고 느와', items: all.filter(p => p.brand === '르망고 느와') },
     { name: '전체',      items: all }
   ]
-  // 더미 전월 데이터 (당월의 80~120%)
   const rows = brands.map(b => {
     const curr = b.items.reduce((s,p) => s + getTotalSales(p) * (p.salePrice || 0), 0)
     const prev = Math.round(curr * (0.8 + Math.random() * 0.4))
@@ -98,7 +98,6 @@ function renderMiniChart() {
   const CHART_COLORS = ['#1a1a2e','#c9a96e','#4caf7d','#f0a500','#e05252','#7b68ee','#20b2aa','#ff7f50','#9370db','#3cb371']
   const colors = _platforms.map((_, i) => CHART_COLORS[i % CHART_COLORS.length])
   ctx.clearRect(0, 0, w, h)
-  // 배경 격자
   ctx.strokeStyle = '#eeebe5'; ctx.lineWidth = 1
   for (let i = 1; i <= 4; i++) {
     const y = h - 28 - (h - 40) * i / 4
@@ -112,12 +111,295 @@ function renderMiniChart() {
     ctx.beginPath()
     ctx.roundRect(x, y, barW, barH, [3,3,0,0])
     ctx.fill()
-    // 레이블
     ctx.fillStyle = '#6b6b6b'; ctx.font = '11px Inter'
     ctx.textAlign = 'center'
     ctx.fillText(pl, x + barW/2, h - 10)
-    // 값
     ctx.fillStyle = colors[i]; ctx.font = 'bold 11px Inter'
     ctx.fillText(totals[i], x + barW/2, y - 4)
   })
+}
+
+// =============================================
+// ===== 대시보드 캘린더 =====
+// =============================================
+let _dashCalYear  = new Date().getFullYear()
+let _dashCalMonth = new Date().getMonth()
+
+function dashCalPrev() {
+  _dashCalMonth--
+  if (_dashCalMonth < 0) { _dashCalMonth = 11; _dashCalYear-- }
+  renderDashCalendar()
+}
+function dashCalNext() {
+  _dashCalMonth++
+  if (_dashCalMonth > 11) { _dashCalMonth = 0; _dashCalYear++ }
+  renderDashCalendar()
+}
+function dashCalToday() {
+  _dashCalYear  = new Date().getFullYear()
+  _dashCalMonth = new Date().getMonth()
+  renderDashCalendar()
+}
+
+// 기획 일정 단계별 색상
+const PLAN_PHASE_COLORS = {
+  design:     { bar: '#c9a96e', text: '#fff' },  // 골드
+  production: { bar: '#4caf7d', text: '#fff' },  // 초록
+  image:      { bar: '#7b68ee', text: '#fff' },  // 보라
+  register:   { bar: '#f0a500', text: '#fff' },  // 노랑
+  logistics:  { bar: '#20b2aa', text: '#fff' },  // 청록
+}
+
+function renderDashCalendar() {
+  const container = document.getElementById('dashCalendar')
+  const title     = document.getElementById('dashCalTitle')
+  if (!container) return
+
+  title.textContent = `${_dashCalYear}년 ${_dashCalMonth + 1}월`
+
+  const firstDay = new Date(_dashCalYear, _dashCalMonth, 1)
+  const startDow = firstDay.getDay()
+  const totalCells = 42
+
+  const cells = []
+  for (let i = 0; i < totalCells; i++) {
+    const d = new Date(_dashCalYear, _dashCalMonth, i - startDow + 1)
+    cells.push({
+      date: fmtDate(d),
+      day: d.getDate(),
+      inMonth: d.getMonth() === _dashCalMonth,
+      isToday: fmtDate(d) === fmtDate(new Date()),
+      dow: i % 7
+    })
+  }
+
+  const gridStart = cells[0].date
+  const gridEnd   = cells[cells.length - 1].date
+
+  // 각 날짜에 해당하는 행사 + 기획 일정 수집
+  const dateItems = {} // { 'yyyy-mm-dd': { events: [], plans: [] } }
+
+  // 행사일정
+  _events.forEach(ev => {
+    if (ev.endDate < gridStart || ev.startDate > gridEnd) return
+    const s = ev.startDate < gridStart ? gridStart : ev.startDate
+    const e = ev.endDate > gridEnd ? gridEnd : ev.endDate
+    getDateRange(s, e).forEach(d => {
+      if (!dateItems[d]) dateItems[d] = { events: [], plans: [] }
+      // 중복 방지
+      if (!dateItems[d].events.find(x => x.no === ev.no)) dateItems[d].events.push(ev)
+    })
+  })
+
+  // 기획 일정 (planItems) — 시작일/완료일 당일만 표기
+  State.planItems.forEach(item => {
+    if (!item.schedule) return
+    SCHEDULE_DEFS.forEach(def => {
+      const phase = item.schedule[def.key]
+      if (!phase || !phase.start || !phase.end) return
+      const dates = [phase.start, phase.end]
+      dates.forEach(d => {
+        if (d < gridStart || d > gridEnd) return
+        if (!dateItems[d]) dateItems[d] = { events: [], plans: [] }
+        const isStart = (d === phase.start)
+        const tag = isStart ? '시작' : '완료'
+        if (!dateItems[d].plans.find(x => x.item.no === item.no && x.phaseKey === def.key && x.tag === tag)) {
+          dateItems[d].plans.push({ item, phaseKey: def.key, phaseLabel: def.label, phase, tag })
+        }
+      })
+    })
+  })
+
+  // HTML
+  let html = '<div class="dcal-grid">'
+  const DOW = ['일','월','화','수','목','금','토']
+  DOW.forEach((d, i) => {
+    const cls = i === 0 ? ' evcal-sun' : i === 6 ? ' evcal-sat' : ''
+    html += `<div class="evcal-dow dcal-dow${cls}">${d}</div>`
+  })
+
+  const todayStr = fmtDate(new Date())
+
+  cells.forEach(cell => {
+    const di = dateItems[cell.date] || { events: [], plans: [] }
+    const isPast   = cell.date < todayStr
+    const hasItems = di.events.length > 0 || di.plans.length > 0
+
+    const holiday = getHolidayName(cell.date)
+
+    const classes = ['dcal-cell']
+    if (!cell.inMonth) classes.push('evcal-other')
+    if (cell.isToday)  classes.push('evcal-today')
+    if (cell.dow === 0) classes.push('evcal-sun')
+    if (cell.dow === 6) classes.push('evcal-sat')
+    if (holiday) classes.push('dcal-holiday')
+    if (isPast) classes.push('evcal-past')
+
+    html += `<div class="${classes.join(' ')}">`
+    html += `<div class="evcal-day">${cell.day}${holiday ? `<span class="dcal-hol-name">${esc(holiday)}</span>` : ''}</div>`
+    html += '<div class="dcal-bars">'
+
+    // 행사 바 (최대 3개) — 클릭 시 조회 모달 (수정 불가)
+    const evSlice = di.events.slice(0, 3)
+    evSlice.forEach(ev => {
+      const color = EV_COLORS[ev.no % EV_COLORS.length]
+      const label = esc(`${ev.channel || ''} ${ev.name}`.trim())
+      if (isPast) {
+        html += `<div class="dcal-bar dcal-bar-mini" style="background:${color.bar};" title="${label}" onclick="openDashEventInfo(${ev.no})"></div>`
+      } else {
+        html += `<div class="dcal-bar dcal-bar-ev" style="background:${color.bar}; color:${color.text};" title="${label} (${ev.startDate}~${ev.endDate})" onclick="openDashEventInfo(${ev.no})">${label}</div>`
+      }
+    })
+
+    // 기획 바 — 품번별로 표시 (최대 3개)
+    const planSlice = di.plans.slice(0, 3)
+    planSlice.forEach(p => {
+      const phaseColor = PLAN_PHASE_COLORS[p.phaseKey] || { bar: '#999', text: '#fff' }
+      const code = p.item.productCode || p.item.sampleNo || ''
+      const label = `${code} ${p.phaseLabel} ${p.tag}`
+      if (isPast) {
+        html += `<div class="dcal-bar dcal-bar-mini" style="background:${phaseColor.bar};" title="${label}" onclick="openPlanScheduleForDate('${cell.date}')"></div>`
+      } else {
+        html += `<div class="dcal-bar dcal-bar-plan" style="background:${phaseColor.bar}; color:${phaseColor.text};" title="${label}" onclick="openPlanScheduleForDate('${cell.date}')">${esc(label)}</div>`
+      }
+    })
+
+    // +N more
+    const totalCount = di.events.length + di.plans.length
+    const shown = evSlice.length + planSlice.length
+    if (totalCount > shown) {
+      html += `<div class="evcal-more">+${totalCount - shown}건</div>`
+    }
+
+    html += '</div></div>'
+  })
+
+  html += '</div>'
+  container.innerHTML = html
+}
+
+// =============================================
+// ===== 기획일정 상세 모달 (날짜 클릭) =====
+// =============================================
+function openPlanScheduleForDate(dateStr) {
+  const modal = document.getElementById('planScheduleModal')
+  const title = document.getElementById('psModalTitle')
+  const body  = document.getElementById('psModalBody')
+
+  title.textContent = `기획 일정 — ${dateStr}`
+
+  // 해당 날짜가 시작일 또는 완료일인 planItems 찾기
+  const matched = []
+  State.planItems.forEach(item => {
+    if (!item.schedule) return
+    const phases = []
+    SCHEDULE_DEFS.forEach(def => {
+      const ph = item.schedule[def.key]
+      if (!ph || !ph.start || !ph.end) return
+      if (ph.start === dateStr || ph.end === dateStr) {
+        const tag = ph.start === dateStr ? '시작' : '완료'
+        phases.push({ key: def.key, label: def.label, start: ph.start, end: ph.end, tag })
+      }
+    })
+    if (phases.length > 0) matched.push({ item, phases })
+  })
+
+  if (!matched.length) {
+    body.innerHTML = '<p style="padding:20px;color:var(--text-sub);">해당 날짜에 기획 일정이 없습니다.</p>'
+  } else {
+    let html = '<div class="ps-list">'
+    matched.forEach(({ item, phases }) => {
+      const code  = item.productCode || item.sampleNo || '-'
+      const name  = item.nameKr || ''
+      const brand = item.brand || ''
+      html += `<div class="ps-item">
+        <div class="ps-item-header">
+          <span class="ps-code">${esc(code)}</span>
+          <span class="ps-name">${esc(brand)} ${esc(name)}</span>
+        </div>
+        <table class="ps-phase-table">
+          <thead><tr><th>단계</th><th>시작일</th><th>완료일</th></tr></thead>
+          <tbody>`
+      SCHEDULE_DEFS.forEach(def => {
+        const ph = item.schedule[def.key]
+        if (!ph || !ph.start) return
+        const active = phases.find(p => p.key === def.key)
+        const phColor = PLAN_PHASE_COLORS[def.key]
+        const cls = active ? ' class="ps-active"' : ''
+        const dot = `<span class="ps-dot" style="background:${phColor.bar}"></span>`
+        const tag = active ? `<span class="ps-tag">${active.tag}</span>` : ''
+        html += `<tr${cls}>
+          <td>${dot} ${def.label} ${tag}</td>
+          <td>${ph.start}</td>
+          <td>${ph.end}</td>
+        </tr>`
+      })
+      html += `</tbody></table></div>`
+    })
+    html += `<div class="ps-actions">
+      <button class="btn btn-primary btn-sm" onclick="goToPlanWithDate('${dateStr}')">신규기획에서 수정하기</button>
+    </div>`
+    html += '</div>'
+    body.innerHTML = html
+  }
+
+  modal.showModal()
+  centerModal(modal)
+}
+
+function closePlanScheduleModal() {
+  document.getElementById('planScheduleModal')?.close()
+}
+
+// =============================================
+// ===== 대시보드 → 행사 조회 모달 (읽기전용) =====
+// =============================================
+function openDashEventInfo(no) {
+  const ev = _events.find(x => x.no === no)
+  if (!ev) return
+  const modal = document.getElementById('planScheduleModal')
+  const title = document.getElementById('psModalTitle')
+  const body  = document.getElementById('psModalBody')
+
+  title.textContent = '행사 정보'
+
+  const status = getEventStatus(ev)
+  const statusBadge = { '예정': 'badge-warning', '진행중': 'badge-success', '종료': 'badge-muted' }
+  const color = EV_COLORS[ev.no % EV_COLORS.length]
+
+  body.innerHTML = `
+    <div class="ps-ev-info">
+      <div class="ps-ev-color" style="background:${color.bar}"></div>
+      <div class="ps-ev-detail">
+        <table class="ps-phase-table">
+          <tbody>
+            <tr><td class="ps-label">행사명</td><td><strong>${esc(ev.name)}</strong></td></tr>
+            <tr><td class="ps-label">채널</td><td>${esc(ev.channel || '-')}</td></tr>
+            <tr><td class="ps-label">기간</td><td>${ev.startDate} ~ ${ev.endDate}</td></tr>
+            <tr><td class="ps-label">상태</td><td><span class="badge ${statusBadge[status] || ''}">${status}</span></td></tr>
+            ${ev.discount ? `<tr><td class="ps-label">할인율</td><td>${ev.discount}%</td></tr>` : ''}
+            ${ev.support ? `<tr><td class="ps-label">당사지원</td><td>${ev.support}%</td></tr>` : ''}
+            ${ev.memo ? `<tr><td class="ps-label">메모</td><td>${esc(ev.memo)}</td></tr>` : ''}
+          </tbody>
+        </table>
+        <div class="ps-actions">
+          <button class="btn btn-primary btn-sm" onclick="closePlanScheduleModal(); navigateTo('event'); setTimeout(()=>editEvent(${ev.no}),200)">수정하러 가기</button>
+        </div>
+      </div>
+    </div>`
+
+  modal.showModal()
+  centerModal(modal)
+}
+
+// ===== 대시보드 → 기획일정 날짜 기준 검색으로 이동 =====
+function goToPlanWithDate(dateStr) {
+  closePlanScheduleModal()
+  navigateTo('plan')
+  // 날짜 필터 세팅
+  document.getElementById('npPhase').value = 'all'
+  document.getElementById('npDateFrom').value = dateStr
+  document.getElementById('npDateTo').value = dateStr
+  document.getElementById('npConfirmed').value = 'all'
+  searchPlan()
 }

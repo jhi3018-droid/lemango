@@ -11,6 +11,8 @@ async function init() {
   makeDraggableResizable(document.getElementById('stockRegisterModal'))
   makeDraggableResizable(document.getElementById('outgoingModal'))
   makeDraggableResizable(document.getElementById('gonghomPreviewModal'))
+  makeDraggableResizable(document.getElementById('eventRegisterModal'))
+  makeDraggableResizable(document.getElementById('planScheduleModal'))
 
   // 해시 기반 초기 탭
   const initTab = location.hash.replace('#', '') || 'dashboard'
@@ -62,6 +64,8 @@ async function init() {
     renderStockTable()
     renderSalesTable()
     renderPlanTable()
+    // 행사일정 초기화
+    renderEventCalendar()
   } catch (e) {
     showToast('데이터 로드 실패: ' + e.message, 'error')
     console.error(e)

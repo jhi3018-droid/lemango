@@ -7,13 +7,13 @@
 ## 파일 구조
 ```
 르망고/
-├── index.html              # 전체 화면 (탭 6개 + 모달들)
+├── index.html              # 전체 화면 (탭 7개 + 모달들)
 ├── style.css               # 전체 스타일
 ├── firebase.json           # Firebase Hosting 설정
 ├── .firebaserc             # Firebase 프로젝트 (lemango-office)
 ├── CLAUDE.md               # 이 파일
 ├── .claude/agents/         # 전문 에이전트
-├── js/                     # JS 모듈 분리 (15개 파일)
+├── js/                     # JS 모듈 분리 (16개 파일)
 │   ├── core.js             # State, 설정, 플랫폼, populateAllSelects
 │   ├── router.js           # 해시 기반 라우팅 (navigateTo, switchTab)
 │   ├── utils.js            # 유틸 함수, 페이지네이션 (renderPagination, goPage)
@@ -21,7 +21,8 @@
 │   ├── stock.js            # 재고조회·입고·출고
 │   ├── sales.js            # 판매조회·공홈주문
 │   ├── plan.js             # 신규기획
-│   ├── dashboard.js        # 대시보드
+│   ├── event.js            # 행사일정 캘린더·CRUD
+│   ├── dashboard.js        # 대시보드 + 대시보드 캘린더
 │   ├── modals.js           # 모달 (이미지·상세·등록 등)
 │   ├── register.js         # 신규등록 모달 로직
 │   ├── excel.js            # 엑셀 업로드/다운로드 (SheetJS)
@@ -35,14 +36,15 @@
     └── combined.json           # 통합
 ```
 
-## 화면 구성 (탭 6개)
+## 화면 구성 (탭 7개)
 | 탭 | ID | 설명 |
 |----|----|------|
-| 대시보드 | `tab-dashboard` | KPI 카드, BEST TOP10, 매출현황, 막대 차트 |
+| 대시보드 | `tab-dashboard` | 일정 캘린더(행사+기획+공휴일), KPI 카드, BEST TOP10, 매출현황 |
 | 상품조회 | `tab-product` | 검색+필터, 데이터 테이블, 품번 클릭→상세 모달 |
 | 재고 관리 | `tab-stock` | 사이즈별(XS~XL) 재고 테이블 + 신규입고/개별출고 모달 |
 | 판매조회 | `tab-sales` | 플랫폼별 판매 테이블 + 공홈 주문 업로드 |
-| 신규기획 | `tab-plan` | 기획 상품 관리, 일정, 상품조회 이전 |
+| 신규기획 | `tab-plan` | 기획 상품 관리, 일정(단계+날짜 필터), 상품조회 이전 |
+| 행사일정 | `tab-event` | 월간 캘린더 + 행사 등록/수정/삭제 (localStorage) |
 | 설정 | `tab-settings` | 브랜드·타입·판매채널 등 기본 옵션 관리 |
 
 ## 전역 상태 (`State` 객체)
@@ -127,6 +129,8 @@ State.modal.images/idx     // 이미지 모달 상태
 | 엑셀 업로드 미리보기 | `uploadPreviewModal` | `showRegisterPreview()` |
 | 공홈 주문 미리보기 | `gonghomPreviewModal` | `showGonghomPreview(rows)` |
 | 기획 상세 | `planDetailModal` | `openPlanDetailModal(no)` |
+| 행사 등록/수정 | `eventRegisterModal` | `openEventRegisterModal()` / `editEvent(no)` |
+| 기획일정 조회 | `planScheduleModal` | `openPlanScheduleForDate(dateStr)` / `openDashEventInfo(no)` |
 
 > 모든 `.srm-modal` 다이얼로그는 `makeDraggableResizable()` 적용 — 드래그+8방향 리사이즈
 
@@ -234,6 +238,7 @@ State.modal.images/idx     // 이미지 모달 상태
 | `_settings` | `lemango_settings_v1` | 브랜드·타입·가슴선 등 SETTING_DEFS 기반 옵션 |
 | `_platforms` | `lemango_platforms_v1` | 판매 채널 목록 (공홈/GS/29cm/W쇼핑/기타) |
 | `_designCodes` | `lemango_design_codes_v1` | 디자인번호/백스타일 [code, en, kr] 배열 (단일 소스) |
+| `_events` | `lemango_events_v1` | 행사일정 배열 [{no, name, channel, startDate, endDate, discount, support, memo}] |
 | `_reservedCodes` | (메모리) | 임시 예약 품번 Set |
 | `_detailCode` | (메모리) | 현재 열린 상세 모달 품번 |
 | `_detailPendingCode` | (메모리) | 상세 모달 품번 생성 패널 임시 예약 코드 |
@@ -528,6 +533,64 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - tfoot 합계는 전체 필터 결과 기준 (페이지 무관)
 - `PAGE_SIZE = 10` 상수 (`js/utils.js`)
 - 페이지네이션 컨테이너: `#pPagination`, `#sPagination`, `#slPagination`, `#npPagination`
+
+---
+
+### 2026-03-23
+
+#### 행사일정 탭 (`tab-event`) 신규 추가
+- 네비게이션에 "행사일정" 버튼 추가 (신규기획 ↔ 설정 사이)
+- `js/event.js` 신규 파일 생성
+- 월간 캘린더 뷰 (6주 고정 그리드, `◀ ▶ 오늘` 월 이동)
+- 행사 등록/수정/삭제 모달 (`eventRegisterModal`)
+- 행사 데이터 localStorage 영속화 (`lemango_events_v1`)
+- `State.event`, `_events`, `saveEvents()` — `core.js`에 추가
+
+#### 행사일정 캘린더 기능
+- 행사별 시작일~종료일 **연속 컬러 바** 표시 (모든 날짜 동일 라벨)
+- 10색 보색 팔레트 (진한 배경 + 흰 글자): 파랑, 빨강, 초록, 오렌지, 보라, 청록, 핑크, 남색, 갈색, 그레이블루
+- 캘린더 바 텍스트: `채널 행사명` (예: `공홈 26SS 여름 특가전`)
+- 최대 10줄, 초과 시 `+N건` 표시
+- 지난 날짜: 색상 띠만 (6px 얇은 바, 라벨 없음), hover 시 tooltip
+- 빈 셀/지난 셀: 최소 80px(3줄), 내용 있는 셀은 내용만큼 자동 확장
+
+#### 행사 등록 모달 필드
+- 행사명, 채널, 시작일, 종료일, 할인율(%), 당사지원(%), 메모
+- 할인율 / 당사지원 분리 (`discount`, `support` 필드)
+
+#### 대한민국 공휴일 표기
+- `getHolidayName(dateStr)` — `core.js`에 추가
+- 고정 공휴일: 신정, 삼일절, 어린이날, 현충일, 광복절, 개천절, 한글날, 크리스마스
+- 음력 공휴일 (2024~2027): 설날 연휴, 부처님오신날, 추석 연휴 + 대체공휴일
+- 공휴일 셀: 연분홍 배경 + 빨간 글자 + 공휴일명 표시
+- 행사일정 캘린더 + 대시보드 캘린더 모두 적용
+
+#### 대시보드 캘린더 추가
+- KPI 카드 바로 아래 전체 폭으로 **일정 캘린더** 배치
+- BEST TOP10 + 매출현황은 캘린더 아래로 이동
+- 행사일정: 색상 바로 표시, 클릭 → **읽기전용 조회 모달** + `수정하러 가기` 버튼 → 행사일정 탭 이동
+- 기획일정: 시작일/완료일 당일만 표기 (`품번 단계명 시작/완료`)
+- 클릭 → **기획일정 조회 모달** (해당 날짜 품번 목록 + 단계별 시작일/완료일 테이블, 해당 단계 하이라이트) + `신규기획에서 수정하기` 버튼
+- 범례: 공휴일(빨강) / 행사(네이비) / 기획(골드)
+- `PLAN_PHASE_COLORS`: 디자인(골드), 생산(초록), 이미지(보라), 상품등록(노랑), 물류입고(청록)
+
+#### 신규기획 검색 필터 강화
+- **일정 단계** 필터 추가: 전체 / 디자인 / 생산 / 이미지 / 상품등록 / 물류입고 (`npPhase`)
+- **시작일 / 종료일** 날짜 범위 필터 추가 (`npDateFrom`, `npDateTo`)
+- 단계 + 날짜 조합: 해당 단계의 일정이 날짜 범위에 겹치는 품번만 필터
+- 전체 단계 + 날짜 미입력: 모든 상품 표시 (기존 동작)
+
+#### 주요 신규 함수
+- `renderEventCalendar()` — 행사일정 캘린더 렌더
+- `placeEventBars()` — 이벤트 바 배치 알고리즘
+- `renderDashCalendar()` — 대시보드 캘린더 렌더
+- `openDashEventInfo(no)` — 대시보드 행사 조회 모달 (읽기전용)
+- `openPlanScheduleForDate(dateStr)` — 기획일정 날짜 조회 모달
+- `goToPlanWithDate(dateStr)` — 기획 탭으로 이동 + 날짜 필터 자동 세팅
+- `getHolidayName(dateStr)` — 공휴일 이름 조회
+- `calcDday(startDate, endDate)` — D-Day 계산
+- `fmtDate(d)` / `getDateRange(start, end)` — 날짜 유틸
+- `esc(s)` — HTML 이스케이프
 
 ---
 

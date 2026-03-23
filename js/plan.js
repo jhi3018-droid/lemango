@@ -297,6 +297,9 @@ function searchPlan() {
   const season    = document.getElementById('npSeason').value
   const gender    = document.getElementById('npGenderFilter').value
   const confirmed = document.getElementById('npConfirmed')?.value || 'pending'
+  const phase     = document.getElementById('npPhase')?.value || 'all'
+  const dateFrom  = document.getElementById('npDateFrom')?.value || ''
+  const dateTo    = document.getElementById('npDateTo')?.value || ''
 
   let result = State.planItems.filter(p => {
     // 이전 상태 필터 (기본: 미이전만 표시)
@@ -317,6 +320,21 @@ function searchPlan() {
     if (year   !== 'all' && p.year   !== year)         return false
     if (season !== 'all' && String(p.season) !== season) return false
     if (gender !== 'all' && p.gender !== gender)       return false
+
+    // 일정 단계 + 날짜 필터
+    if (phase !== 'all' || dateFrom || dateTo) {
+      if (!p.schedule) return false
+      const phases = phase === 'all' ? SCHEDULE_DEFS.map(d => d.key) : [phase]
+      const matched = phases.some(pk => {
+        const ph = p.schedule[pk]
+        if (!ph || !ph.start || !ph.end) return false
+        if (dateFrom && ph.end < dateFrom) return false
+        if (dateTo   && ph.start > dateTo) return false
+        return true
+      })
+      if (!matched) return false
+    }
+
     return true
   })
   State.plan.page = 1
@@ -334,6 +352,9 @@ function resetPlan() {
   document.getElementById('npGenderFilter').value = 'all'
   const confirmedEl = document.getElementById('npConfirmed')
   if (confirmedEl) confirmedEl.value = 'pending'
+  document.getElementById('npPhase').value = 'all'
+  document.getElementById('npDateFrom').value = ''
+  document.getElementById('npDateTo').value = ''
   State.plan.page = 1
   State.plan.filtered = State.planItems.filter(p => !p.confirmed)
   renderPlanTable()
