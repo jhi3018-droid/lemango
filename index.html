@@ -37,40 +37,42 @@
   <!-- ===== 대시보드 탭 ===== -->
   <section class="tab-content active" id="tab-dashboard">
     <div class="kpi-row" id="kpiRow"></div>
-    <!-- 대시보드 캘린더 (상단 전체폭) -->
-    <div class="card dash-cal-card">
-      <div class="card-header">
-        <h2 class="card-title">일정 캘린더</h2>
-        <div class="dash-cal-nav">
-          <button class="btn btn-outline btn-xs" onclick="dashCalPrev()">◀</button>
-          <span id="dashCalTitle" class="dash-cal-title"></span>
-          <button class="btn btn-outline btn-xs" onclick="dashCalNext()">▶</button>
-          <button class="btn btn-outline btn-xs" onclick="dashCalToday()" style="margin-left:6px">오늘</button>
-        </div>
-        <div class="dash-cal-legend">
-          <span class="dash-cal-leg-item"><span class="dash-cal-leg-dot" style="background:var(--danger)"></span>공휴일</span>
-          <span class="dash-cal-leg-item"><span class="dash-cal-leg-dot" style="background:var(--primary)"></span>행사</span>
-          <span class="dash-cal-leg-item"><span class="dash-cal-leg-dot" style="background:var(--accent)"></span>기획</span>
-        </div>
-      </div>
-      <div id="dashCalendar"></div>
-    </div>
-    <div class="dashboard-grid">
-      <div class="card best-card">
+    <!-- 캘린더(좌) + 매출현황(우) 2컬럼 -->
+    <div class="dashboard-main">
+      <div class="card dash-cal-card">
         <div class="card-header">
-          <h2 class="card-title">당월 BEST 상품 <span class="card-sub">TOP 10</span></h2>
-          <span class="card-hint">클릭하면 판매현황으로 이동</span>
+          <h2 class="card-title">일정 캘린더</h2>
+          <div class="dash-cal-nav">
+            <button class="btn btn-outline btn-xs" onclick="dashCalPrev()">◀</button>
+            <span id="dashCalTitle" class="dash-cal-title"></span>
+            <button class="btn btn-outline btn-xs" onclick="dashCalNext()">▶</button>
+            <button class="btn btn-outline btn-xs" onclick="dashCalToday()" style="margin-left:6px">오늘</button>
+          </div>
+          <div class="dash-cal-legend">
+            <span class="dash-cal-leg-item"><span class="dash-cal-leg-dot" style="background:var(--danger)"></span>공휴일</span>
+            <span class="dash-cal-leg-item"><span class="dash-cal-leg-dot" style="background:var(--primary)"></span>행사</span>
+            <span class="dash-cal-leg-item"><span class="dash-cal-leg-dot" style="background:var(--accent)"></span>기획</span>
+          </div>
         </div>
-        <div class="best-list" id="bestList"></div>
+        <div id="dashCalendar"></div>
       </div>
-      <div class="card summary-card">
-        <div class="card-header">
-          <h2 class="card-title">매출현황</h2>
-          <span class="card-sub">2026년 3월 기준</span>
+      <div class="dashboard-side">
+        <div class="card summary-card">
+          <div class="card-header">
+            <h2 class="card-title">매출현황</h2>
+            <span class="card-sub">2026년 3월 기준</span>
+          </div>
+          <div id="salesSummary"></div>
+          <div class="chart-wrap">
+            <canvas id="salesChart" width="320" height="180"></canvas>
+          </div>
         </div>
-        <div id="salesSummary"></div>
-        <div class="chart-wrap">
-          <canvas id="salesChart" width="320" height="180"></canvas>
+        <div class="card best-card">
+          <div class="card-header">
+            <h2 class="card-title">당월 BEST 상품 <span class="card-sub">TOP 10</span></h2>
+            <span class="card-hint">클릭하면 판매현황으로 이동</span>
+          </div>
+          <div class="best-list" id="bestList"></div>
         </div>
       </div>
     </div>

@@ -251,12 +251,16 @@ function renderDashCalendar() {
       }
     })
 
-    // 기획 바 — 품번별로 표시 (최대 3개)
-    const planSlice = di.plans.slice(0, 3)
+    // 기획 바 — 단계명만 표시 (같은 단계+태그 그룹핑)
+    const planLabels = {}
+    di.plans.forEach(p => {
+      const key = `${p.phaseKey}_${p.tag}`
+      if (!planLabels[key]) planLabels[key] = p
+    })
+    const planSlice = Object.values(planLabels).slice(0, 3)
     planSlice.forEach(p => {
       const phaseColor = PLAN_PHASE_COLORS[p.phaseKey] || { bar: '#999', text: '#fff' }
-      const code = p.item.productCode || p.item.sampleNo || ''
-      const label = `${code} ${p.phaseLabel} ${p.tag}`
+      const label = `${p.phaseLabel} ${p.tag}`
       if (isPast) {
         html += `<div class="dcal-bar dcal-bar-mini" style="background:${phaseColor.bar};" title="${label}" onclick="openPlanScheduleForDate('${cell.date}')"></div>`
       } else {
@@ -308,36 +312,23 @@ function openPlanScheduleForDate(dateStr) {
     body.innerHTML = '<p style="padding:20px;color:var(--text-sub);">해당 날짜에 기획 일정이 없습니다.</p>'
   } else {
     let html = '<div class="ps-list">'
+    html += '<table class="ps-phase-table"><thead><tr><th>샘플번호</th><th>품번</th><th>해당 단계</th></tr></thead><tbody>'
     matched.forEach(({ item, phases }) => {
-      const code  = item.productCode || item.sampleNo || '-'
-      const name  = item.nameKr || ''
-      const brand = item.brand || ''
-      html += `<div class="ps-item">
-        <div class="ps-item-header">
-          <span class="ps-code">${esc(code)}</span>
-          <span class="ps-name">${esc(brand)} ${esc(name)}</span>
-        </div>
-        <table class="ps-phase-table">
-          <thead><tr><th>단계</th><th>시작일</th><th>완료일</th></tr></thead>
-          <tbody>`
-      SCHEDULE_DEFS.forEach(def => {
-        const ph = item.schedule[def.key]
-        if (!ph || !ph.start) return
-        const active = phases.find(p => p.key === def.key)
-        const phColor = PLAN_PHASE_COLORS[def.key]
-        const cls = active ? ' class="ps-active"' : ''
-        const dot = `<span class="ps-dot" style="background:${phColor.bar}"></span>`
-        const tag = active ? `<span class="ps-tag">${active.tag}</span>` : ''
-        html += `<tr${cls}>
-          <td>${dot} ${def.label} ${tag}</td>
-          <td>${ph.start}</td>
-          <td>${ph.end}</td>
-        </tr>`
-      })
-      html += `</tbody></table></div>`
+      const sample = item.sampleNo || '-'
+      const code   = item.productCode || '-'
+      const tags   = phases.map(p => {
+        const phColor = PLAN_PHASE_COLORS[p.key]
+        return `<span class="ps-dot" style="background:${phColor.bar}"></span>${p.label} ${p.tag}`
+      }).join(', ')
+      html += `<tr>
+        <td>${esc(sample)}</td>
+        <td>${esc(code)}</td>
+        <td>${tags}</td>
+      </tr>`
     })
+    html += '</tbody></table>'
     html += `<div class="ps-actions">
-      <button class="btn btn-primary btn-sm" onclick="goToPlanWithDate('${dateStr}')">신규기획에서 수정하기</button>
+      <button class="btn btn-primary btn-sm" onclick="goToPlanWithDate('${dateStr}')">신규기획에서 보기</button>
     </div>`
     html += '</div>'
     body.innerHTML = html

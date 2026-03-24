@@ -117,10 +117,16 @@ table { border-collapse: collapse; width: 100%; }
 .kpi-label { font-size: 12px; color: var(--text-sub); }
 .kpi-value { font-size: 22px; font-weight: 700; color: var(--primary); font-family: 'Inter'; }
 
-/* ===== 대시보드 그리드 ===== */
-.dashboard-grid {
+/* ===== 대시보드 메인 (캘린더 좌 + 우측 사이드) ===== */
+.dashboard-main {
   display: grid;
   grid-template-columns: 1fr 380px;
+  gap: 16px;
+  align-items: start;
+}
+.dashboard-side {
+  display: flex;
+  flex-direction: column;
   gap: 16px;
 }
 .card-header {
@@ -136,6 +142,14 @@ table { border-collapse: collapse; width: 100%; }
 
 /* BEST 목록 */
 .best-list { padding: 8px 0; }
+.dashboard-side .best-list {
+  max-height: 355px;
+  overflow-y: auto;
+}
+.dashboard-side .best-list::-webkit-scrollbar { width: 5px; }
+.dashboard-side .best-list::-webkit-scrollbar-track { background: transparent; }
+.dashboard-side .best-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.dashboard-side .best-list::-webkit-scrollbar-thumb:hover { background: var(--text-light); }
 .best-item {
   display: flex;
   align-items: center;
@@ -2284,7 +2298,8 @@ table { border-collapse: collapse; width: 100%; }
 .badge-muted   { background: #f0f0f0; color: var(--text-light); }
 
 /* ===== 대시보드 캘린더 ===== */
-.dash-cal-card { margin-bottom: 16px; }
+.dash-cal-card { min-width: 0; }
+.dash-cal-card .card-header { flex-wrap: wrap; }
 .dash-cal-nav {
   display: flex;
   align-items: center;
@@ -2300,7 +2315,8 @@ table { border-collapse: collapse; width: 100%; }
 }
 .dash-cal-legend {
   display: flex;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   margin-left: auto;
   font-size: 11px;
   color: var(--text-sub);
@@ -2327,7 +2343,7 @@ table { border-collapse: collapse; width: 100%; }
   border-bottom: 1px solid var(--border);
 }
 .dcal-cell {
-  min-height: 64px;
+  min-height: 96px;
   border-right: 1px solid var(--border-light);
   border-bottom: 1px solid var(--border-light);
   padding: 2px;

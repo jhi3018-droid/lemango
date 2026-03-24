@@ -39,7 +39,7 @@
 ## 화면 구성 (탭 7개)
 | 탭 | ID | 설명 |
 |----|----|------|
-| 대시보드 | `tab-dashboard` | 일정 캘린더(행사+기획+공휴일), KPI 카드, BEST TOP10, 매출현황 |
+| 대시보드 | `tab-dashboard` | KPI 카드, 캘린더(좌)+매출현황·BEST TOP10(우) 2컬럼 |
 | 상품조회 | `tab-product` | 검색+필터, 데이터 테이블, 품번 클릭→상세 모달 |
 | 재고 관리 | `tab-stock` | 사이즈별(XS~XL) 재고 테이블 + 신규입고/개별출고 모달 |
 | 판매조회 | `tab-sales` | 플랫폼별 판매 테이블 + 공홈 주문 업로드 |
@@ -591,6 +591,26 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - `calcDday(startDate, endDate)` — D-Day 계산
 - `fmtDate(d)` / `getDateRange(start, end)` — 날짜 유틸
 - `esc(s)` — HTML 이스케이프
+
+---
+
+### 2026-03-24
+
+#### 대시보드 레이아웃 개편
+- 기존: KPI → 캘린더(전체폭) → BEST TOP10 + 매출현황(하단 2컬럼 `.dashboard-grid`)
+- 변경: KPI → `.dashboard-main`(grid `1fr 380px`) 2컬럼
+  - 좌측: 일정 캘린더 (`dash-cal-card`, flex:1)
+  - 우측: `.dashboard-side`(flex-column, gap 16px) 안에 매출현황 + BEST TOP10 세로 배치
+- `.dashboard-grid` 제거 → `.dashboard-main` + `.dashboard-side` 도입
+- 캘린더 헤더 `flex-wrap` 추가 (좁은 폭에서 범례 줄바꿈)
+- `js/dashboard.js` 수정 없음 (DOM ID 기반 렌더링이라 구조 변경 영향 없음)
+
+#### 캘린더 높이 50% 증가
+- `.dcal-cell` min-height: 64px → 96px (1.5배)
+
+#### BEST TOP10 스크롤 처리
+- `.dashboard-side .best-list`: `max-height: 355px` (5개 표시) + `overflow-y: auto`
+- 커스텀 스크롤바 적용 (프로젝트 공통 패턴: 5px, `var(--border)` thumb)
 
 ---
 
