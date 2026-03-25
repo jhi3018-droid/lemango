@@ -383,6 +383,10 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 | `table-renderer.md` | 테이블 컬럼 정의, 렌더링 패턴 |
 | `excel-handler.md` | 업로드/다운로드/샘플 (SheetJS) |
 | `dashboard.md` | 대시보드, BEST 목록, 차트 |
+| `layout-designer.md` | HTML/CSS 레이아웃 변경, 반응형 조정 |
+| `feature-builder.md` | 새 기능 구현 (다중 파일 일관성) |
+| `debugger.md` | 버그 진단·수정, 증상→파일 추적 |
+| `code-reviewer.md` | 코드 리뷰, 품질/일관성 체크리스트 |
 
 ---
 

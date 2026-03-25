@@ -1,0 +1,20 @@
+{
+  "project": {
+    "name": "lemango-office",
+    "description": "르망고 수영복 브랜드 내부 상품 관리 웹 시스템",
+    "tech": "Vanilla HTML + CSS + JavaScript (No Framework)",
+    "hosting": "Firebase Hosting (lemango-office)"
+  },
+  "agents": {
+    "layout-designer": ".claude/agents/layout-designer.md",
+    "feature-builder": ".claude/agents/feature-builder.md",
+    "debugger": ".claude/agents/debugger.md",
+    "code-reviewer": ".claude/agents/code-reviewer.md",
+    "data-engineer": ".claude/agents/data-engineer.md",
+    "ui-designer": ".claude/agents/ui-designer.md",
+    "search-filter": ".claude/agents/search-filter.md",
+    "table-renderer": ".claude/agents/table-renderer.md",
+    "excel-handler": ".claude/agents/excel-handler.md",
+    "dashboard": ".claude/agents/dashboard.md"
+  }
+}
