@@ -122,7 +122,7 @@ const State = {
   planItems:   [],
   product: { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1 },
   stock:   { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1 },
-  sales:   { filtered: [], sort: { key: 'totalSales', dir: 'desc' }, page: 1 },
+  sales:   { filtered: [], sort: { key: 'totalSales', dir: 'desc' }, page: 1, pageSize: 10, activePlatforms: [], inactivePlatforms: [] },
   plan:    { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1 },
   event:   { filtered: [], sort: { key: 'startDate', dir: 'asc' }, page: 1 },
   modal:   { images: [], idx: 0 }

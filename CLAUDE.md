@@ -618,6 +618,57 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 ---
 
+### 2026-03-26
+
+#### 판매조회 테이블 전면 개편 — 피벗테이블형 플랫폼 컬럼 관리
+- **2단 헤더 구조**: 1행 (이미지·품번·상품명·판매가 rowspan=2 + 합계 colspan=2 + 플랫폼별 colspan=2), 2행 (수량·매출액 쌍)
+- **매출액 컬럼 추가**: 각 플랫폼별 `수량 × p.salePrice`, 합계는 전체 `_platforms` 기준 (비활성 포함)
+- **이미지·품번 컬럼**: 상품조회 테이블과 동일 패턴 (썸네일 + code-link 클릭)
+- **tfoot 합계행**: 활성 플랫폼별 수량+매출액, 합계는 전체 플랫폼 기준
+- **정렬**: 2단 헤더 하위 행에서 수량·매출액 컬럼 정렬 지원
+
+#### 플랫폼 컬럼 드래그앤드롭 (HTML5 DnD API)
+- **`State.sales.activePlatforms`**: 테이블에 표시 중인 플랫폼 배열 (순서 포함)
+- **`State.sales.inactivePlatforms`**: 비활성 플랫폼 배열 (테이블 위 태그 영역에 표시)
+- **컬럼 제거**: 플랫폼 헤더 ✕ 클릭 → 비활성 영역으로 이동, 테이블 즉시 재렌더
+- **컬럼 복원**: 비활성 칩을 드래그 → 테이블 헤더 위 드롭 → 삽입 위치에 배치
+- **컬럼 순서 변경**: 활성 플랫폼 헤더 간 드래그 → 삽입 위치에 구분선(box-shadow) 표시
+- **비활성 영역으로 드롭**: 헤더에서 비활성 영역으로 드래그 → 컬럼 제거
+- 합계 컬럼은 항상 고정 (제거 불가)
+- `initSalesPlatforms()`: 설정 탭 플랫폼 추가/삭제 시 자동 동기화
+
+#### 비활성 플랫폼 영역 (`#slInactiveArea`)
+- 테이블 위, 검색바 아래 배치 — dashed 보더, 칩 태그 형태
+- 비활성 플랫폼이 없으면 영역 숨김
+- 드롭 대상: 헤더에서 드래그 시 `sl-drop-target` 하이라이트
+
+#### 페이지당 표시 개수 드롭다운
+- 판매조회 검색바에 `#slPageSize` select (10/20/50/100/전체)
+- `State.sales.pageSize` 도입, `changeSalesPageSize()` 함수
+- `getPageSize(tabKey)` 헬퍼 — 탭별 커스텀 pageSize 지원
+
+#### 판매조회 주요 함수
+- `initSalesPlatforms()` — 플랫폼 active/inactive 초기화 + 설정 동기화
+- `renderSalesTable()` — 메인 렌더 (비활성 영역 + 테이블 + 드래그 바인딩)
+- `renderInactiveArea()` — 비활성 칩 렌더 + 드래그 이벤트 바인딩
+- `removeSalesPlatform(pl)` / `activateSalesPlatform(pl, idx)` / `reorderSalesPlatform(from, toIdx)` — 플랫폼 상태 변경
+- `bindSalesDragDrop()` — 테이블 헤더 드래그앤드롭 이벤트 바인딩
+- `clearDropIndicators()` — 드래그 구분선 CSS 클래스 정리
+
+#### 판매조회 CSS
+- `.sales-table` 2단 sticky 헤더: 1행 `top:0 z-index:4`, 2행 `top:38px z-index:3`
+- `.sl-plat-th`: 드래그 가능 (`cursor:grab`), ✕ 제거 버튼, `sl-drag-over-left/right` 구분선
+- `.sl-inactive-area`: dashed 보더, flex-wrap, 드롭 하이라이트
+- `.sl-inactive-chip`: 둥근 칩, grab 커서, 드래그 고스트
+- `.sl-qty`, `.sl-rev`, `.sl-total-col` — 수량/매출액 셀 스타일
+
+#### 기존 유지
+- `resolveValue()` (`js/utils.js`): `totalSales`, `totalRevenue`, `rev.<플랫폼>` 계산 키 지원
+- `getPageSize()`, `renderPagination()`, `goPage()` — pageSize 대응
+- 공홈 주문 업로드(gonghom.js) — `renderSalesTable()` 호출, 데이터 구조 변경 없음
+
+---
+
 ## 보류 중 작업
 
 ### 이미지합치기 웹 통합 (테스트 후 결정)

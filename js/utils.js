@@ -165,10 +165,19 @@ function copyToClipboard(text, btn) {
 }
 
 // ===== 정렬 =====
+function resolveValue(p, key) {
+  if (key === 'totalSales')   return getTotalSales(p)
+  if (key === 'totalStock')   return getTotalStock(p)
+  if (key === 'totalRevenue') return getTotalSales(p) * (p.salePrice || 0)
+  if (key.startsWith('rev.')) return (p.sales?.[key.slice(4)] || 0) * (p.salePrice || 0)
+  if (key.includes('.'))      return key.split('.').reduce((o,k) => o?.[k], p)
+  return p[key]
+}
+
 function sortData(arr, key, dir) {
   return [...arr].sort((a, b) => {
-    let va = key.includes('.') ? key.split('.').reduce((o,k) => o?.[k], a) : a[key]
-    let vb = key.includes('.') ? key.split('.').reduce((o,k) => o?.[k], b) : b[key]
+    let va = resolveValue(a, key)
+    let vb = resolveValue(b, key)
     if (va === null || va === undefined) return 1
     if (vb === null || vb === undefined) return -1
     const cmp = typeof va === 'number' ? va - vb : String(va).localeCompare(String(vb), 'ko')
@@ -243,12 +252,15 @@ function showToast(msg, type = '') {
 
 // ===== 페이지네이션 =====
 const PAGE_SIZE = 10
+function getPageSize(tabKey) { return State[tabKey]?.pageSize || PAGE_SIZE }
 
 function renderPagination(containerId, tabKey, renderFnName) {
   const container = document.getElementById(containerId)
   if (!container) return
+  const ps = getPageSize(tabKey)
+  if (ps <= 0) { container.innerHTML = ''; return }
   const total = State[tabKey].filtered.length
-  const totalPages = Math.ceil(total / PAGE_SIZE)
+  const totalPages = Math.ceil(total / ps)
   if (totalPages <= 1) { container.innerHTML = ''; return }
 
   const current = State[tabKey].page || 1
@@ -273,7 +285,9 @@ function renderPagination(containerId, tabKey, renderFnName) {
 }
 
 function goPage(tabKey, page, renderFnName) {
-  const totalPages = Math.ceil(State[tabKey].filtered.length / PAGE_SIZE)
+  const ps = getPageSize(tabKey)
+  if (ps <= 0) return
+  const totalPages = Math.ceil(State[tabKey].filtered.length / ps)
   State[tabKey].page = Math.max(1, Math.min(page, totalPages))
   window[renderFnName]()
 }
