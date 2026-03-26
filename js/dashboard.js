@@ -177,7 +177,7 @@ function renderDashCalendar() {
   const gridEnd   = cells[cells.length - 1].date
 
   // 각 날짜에 해당하는 행사 + 기획 일정 수집
-  const dateItems = {} // { 'yyyy-mm-dd': { events: [], plans: [] } }
+  const dateItems = {} // { 'yyyy-mm-dd': { events: [], plans: [], works: [] } }
 
   // 행사일정
   _events.forEach(ev => {
@@ -185,7 +185,7 @@ function renderDashCalendar() {
     const s = ev.startDate < gridStart ? gridStart : ev.startDate
     const e = ev.endDate > gridEnd ? gridEnd : ev.endDate
     getDateRange(s, e).forEach(d => {
-      if (!dateItems[d]) dateItems[d] = { events: [], plans: [] }
+      if (!dateItems[d]) dateItems[d] = { events: [], plans: [], works: [] }
       // 중복 방지
       if (!dateItems[d].events.find(x => x.no === ev.no)) dateItems[d].events.push(ev)
     })
@@ -200,13 +200,27 @@ function renderDashCalendar() {
       const dates = [phase.start, phase.end]
       dates.forEach(d => {
         if (d < gridStart || d > gridEnd) return
-        if (!dateItems[d]) dateItems[d] = { events: [], plans: [] }
+        if (!dateItems[d]) dateItems[d] = { events: [], plans: [], works: [] }
         const isStart = (d === phase.start)
         const tag = isStart ? '시작' : '완료'
         if (!dateItems[d].plans.find(x => x.item.no === item.no && x.phaseKey === def.key && x.tag === tag)) {
           dateItems[d].plans.push({ item, phaseKey: def.key, phaseLabel: def.label, phase, tag })
         }
       })
+    })
+  })
+
+  // 업무일정
+  State.workItems.forEach(w => {
+    if (!w.startDate) return
+    const ws = w.startDate
+    const we = w.endDate || ws
+    if (we < gridStart || ws > gridEnd) return
+    const s = ws < gridStart ? gridStart : ws
+    const e = we > gridEnd ? gridEnd : we
+    getDateRange(s, e).forEach(d => {
+      if (!dateItems[d]) dateItems[d] = { events: [], plans: [], works: [] }
+      if (!dateItems[d].works.find(x => x.no === w.no)) dateItems[d].works.push(w)
     })
   })
 
@@ -221,9 +235,9 @@ function renderDashCalendar() {
   const todayStr = fmtDate(new Date())
 
   cells.forEach(cell => {
-    const di = dateItems[cell.date] || { events: [], plans: [] }
+    const di = dateItems[cell.date] || { events: [], plans: [], works: [] }
     const isPast   = cell.date < todayStr
-    const hasItems = di.events.length > 0 || di.plans.length > 0
+    const hasItems = di.events.length > 0 || di.plans.length > 0 || di.works.length > 0
 
     const holiday = getHolidayName(cell.date)
 
@@ -268,9 +282,21 @@ function renderDashCalendar() {
       }
     })
 
+    // 업무일정 바
+    const workSlice = di.works.slice(0, 2)
+    workSlice.forEach(w => {
+      const wColor = getWorkCatColor(w.category)
+      const label = `${w.category} ${w.title}`.trim()
+      if (isPast) {
+        html += `<div class="dcal-bar dcal-bar-mini" style="background:${wColor.bg};" title="${esc(label)}" onclick="openTab('work')"></div>`
+      } else {
+        html += `<div class="dcal-bar dcal-bar-work" style="background:${wColor.bg}; color:${wColor.text};" title="${esc(label)}" onclick="openTab('work')">${esc(label)}</div>`
+      }
+    })
+
     // +N more
-    const totalCount = di.events.length + di.plans.length
-    const shown = evSlice.length + planSlice.length
+    const totalCount = di.events.length + di.plans.length + di.works.length
+    const shown = evSlice.length + planSlice.length + workSlice.length
     if (totalCount > shown) {
       html += `<div class="evcal-more">+${totalCount - shown}건</div>`
     }

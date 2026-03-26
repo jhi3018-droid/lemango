@@ -169,6 +169,11 @@ function resolveValue(p, key) {
   if (key === 'totalSales')   return getTotalSales(p)
   if (key === 'totalStock')   return getTotalStock(p)
   if (key === 'totalRevenue') return getTotalSales(p) * (p.salePrice || 0)
+  if (key === 'exhaustion')   return getExhaustion(p)
+  if (key === 'lastInDate') {
+    const ins = (p.stockLog || []).filter(l => l.type === 'in')
+    return ins.length ? ins.reduce((m, l) => l.date > m ? l.date : m, '') : ''
+  }
   if (key.startsWith('rev.')) return (p.sales?.[key.slice(4)] || 0) * (p.salePrice || 0)
   if (key.includes('.'))      return key.split('.').reduce((o,k) => o?.[k], p)
   return p[key]
@@ -208,6 +213,50 @@ function updateSortIcons(tableId, sort) {
       th.classList.add(sort.dir === 'asc' ? 'sort-asc' : 'sort-desc')
       if (icon) icon.textContent = sort.dir === 'asc' ? '↑' : '↓'
     }
+  })
+}
+
+// ===== 컬럼 리사이즈 =====
+function initColumnResize(tableId) {
+  const table = document.getElementById(tableId)
+  if (!table) return
+
+  // 모든 thead th 대상 (2단 헤더의 rowspan>1 포함)
+  const ths = table.querySelectorAll('thead th')
+  ths.forEach(th => {
+    // colspan > 1 인 그룹 헤더에는 핸들 안 붙임 (플랫폼 colspan=2 등)
+    if (th.colSpan > 1) return
+    // 기존 핸들 제거
+    th.querySelectorAll('.col-resize-handle').forEach(h => h.remove())
+
+    const handle = document.createElement('div')
+    handle.className = 'col-resize-handle'
+    th.appendChild(handle)
+
+    let startX, startW
+
+    handle.addEventListener('mousedown', e => {
+      e.preventDefault()
+      e.stopPropagation()
+      startX = e.clientX
+      startW = th.offsetWidth
+      handle.classList.add('col-resizing')
+      document.body.classList.add('col-resize-active')
+
+      const onMove = ev => {
+        const diff = ev.clientX - startX
+        const newW = Math.max(40, startW + diff)
+        th.style.width = newW + 'px'
+      }
+      const onUp = () => {
+        handle.classList.remove('col-resizing')
+        document.body.classList.remove('col-resize-active')
+        document.removeEventListener('mousemove', onMove)
+        document.removeEventListener('mouseup', onUp)
+      }
+      document.addEventListener('mousemove', onMove)
+      document.addEventListener('mouseup', onUp)
+    })
   })
 }
 
@@ -252,14 +301,18 @@ function showToast(msg, type = '') {
 
 // ===== 페이지네이션 =====
 const PAGE_SIZE = 10
-function getPageSize(tabKey) { return State[tabKey]?.pageSize || PAGE_SIZE }
+function getPageSize(tabKey) { const v = State[tabKey]?.pageSize; return v != null ? v : PAGE_SIZE }
+
+function _getFilteredCount(tabKey) {
+  return applyColFilters(State[tabKey].filtered, State[tabKey].columnFilters).length
+}
 
 function renderPagination(containerId, tabKey, renderFnName) {
   const container = document.getElementById(containerId)
   if (!container) return
   const ps = getPageSize(tabKey)
   if (ps <= 0) { container.innerHTML = ''; return }
-  const total = State[tabKey].filtered.length
+  const total = _getFilteredCount(tabKey)
   const totalPages = Math.ceil(total / ps)
   if (totalPages <= 1) { container.innerHTML = ''; return }
 
@@ -287,9 +340,198 @@ function renderPagination(containerId, tabKey, renderFnName) {
 function goPage(tabKey, page, renderFnName) {
   const ps = getPageSize(tabKey)
   if (ps <= 0) return
-  const totalPages = Math.ceil(State[tabKey].filtered.length / ps)
+  const totalPages = Math.ceil(_getFilteredCount(tabKey) / ps)
   State[tabKey].page = Math.max(1, Math.min(page, totalPages))
   window[renderFnName]()
+}
+
+// ===== 컬럼 필터 =====
+function applyColFilters(data, columnFilters) {
+  if (!columnFilters) return data
+  const keys = Object.keys(columnFilters)
+  if (!keys.length) return data
+  return data.filter(item => {
+    for (const key of keys) {
+      const allowed = columnFilters[key]
+      if (!allowed || !allowed.size) continue
+      const val = String(resolveValue(item, key) ?? '')
+      if (!allowed.has(val)) return false
+    }
+    return true
+  })
+}
+
+function getColUniqueValues(data, key) {
+  const vals = new Set()
+  data.forEach(item => vals.add(String(resolveValue(item, key) ?? '')))
+  return [...vals].sort((a, b) => a.localeCompare(b, 'ko'))
+}
+
+let _colFilterDD = null
+function openColumnFilter(th, tabKey, key, renderFnName) {
+  closeColumnFilter()
+
+  const data = State[tabKey].filtered
+  const uniqueVals = getColUniqueValues(data, key)
+  const curFilter = State[tabKey].columnFilters[key]
+
+  const dd = document.createElement('div')
+  dd.className = 'col-filter-dd'
+  dd.id = 'colFilterDD'
+
+  let html = '<input type="text" class="cfd-search" placeholder="검색...">'
+  html += '<div class="cfd-actions"><a href="#" class="cfd-sel-all">전체 선택</a> <a href="#" class="cfd-desel-all">전체 해제</a></div>'
+  html += '<div class="cfd-list">'
+  uniqueVals.forEach(val => {
+    const checked = !curFilter || curFilter.has(val) ? 'checked' : ''
+    const display = val || '(빈값)'
+    html += `<label class="cfd-item"><input type="checkbox" value="${esc(val)}" ${checked}><span>${esc(display)}</span></label>`
+  })
+  html += '</div>'
+  html += '<div class="cfd-btns"><button class="btn btn-primary btn-sm cfd-apply">적용</button><button class="btn btn-outline btn-sm cfd-reset">초기화</button></div>'
+  dd.innerHTML = html
+  document.body.appendChild(dd)
+
+  // Position below th
+  const rect = th.getBoundingClientRect()
+  dd.style.top = (rect.bottom + window.scrollY) + 'px'
+  dd.style.left = (rect.left + window.scrollX) + 'px'
+  requestAnimationFrame(() => {
+    const r = dd.getBoundingClientRect()
+    if (r.right > window.innerWidth - 8) dd.style.left = Math.max(0, window.innerWidth - r.width - 8) + 'px'
+    if (r.bottom > window.innerHeight - 8) dd.style.top = (rect.top + window.scrollY - r.height) + 'px'
+  })
+
+  // Search within list
+  dd.querySelector('.cfd-search').addEventListener('input', e => {
+    const q = e.target.value.toLowerCase()
+    dd.querySelectorAll('.cfd-item').forEach(item => {
+      item.style.display = item.querySelector('span').textContent.toLowerCase().includes(q) ? '' : 'none'
+    })
+  })
+  dd.querySelector('.cfd-sel-all').addEventListener('click', e => {
+    e.preventDefault()
+    dd.querySelectorAll('.cfd-item').forEach(item => { if (item.style.display !== 'none') item.querySelector('input').checked = true })
+  })
+  dd.querySelector('.cfd-desel-all').addEventListener('click', e => {
+    e.preventDefault()
+    dd.querySelectorAll('.cfd-item').forEach(item => { if (item.style.display !== 'none') item.querySelector('input').checked = false })
+  })
+  dd.querySelector('.cfd-apply').addEventListener('click', () => {
+    const sel = new Set()
+    dd.querySelectorAll('.cfd-item input:checked').forEach(cb => sel.add(cb.value))
+    if (sel.size === uniqueVals.length || sel.size === 0) {
+      delete State[tabKey].columnFilters[key]
+    } else {
+      State[tabKey].columnFilters[key] = sel
+    }
+    State[tabKey].page = 1
+    closeColumnFilter()
+    window[renderFnName]()
+  })
+  dd.querySelector('.cfd-reset').addEventListener('click', () => {
+    delete State[tabKey].columnFilters[key]
+    State[tabKey].page = 1
+    closeColumnFilter()
+    window[renderFnName]()
+  })
+
+  _colFilterDD = dd
+  setTimeout(() => document.addEventListener('mousedown', _closeFilterOutside), 0)
+}
+
+function _closeFilterOutside(e) {
+  const dd = document.getElementById('colFilterDD')
+  if (dd && !dd.contains(e.target) && !e.target.classList.contains('th-filter')) closeColumnFilter()
+}
+
+function closeColumnFilter() {
+  const dd = document.getElementById('colFilterDD')
+  if (dd) dd.remove()
+  _colFilterDD = null
+  document.removeEventListener('mousedown', _closeFilterOutside)
+}
+
+function clearAllColumnFilters(tabKey) {
+  State[tabKey].columnFilters = {}
+}
+
+// ===== initTableFeatures (sort + filter + resize 통합) =====
+function initTableFeatures(tableId, tabKey, renderFnName) {
+  const table = document.getElementById(tableId)
+  if (!table) return
+
+  const sort = State[tabKey].sort
+  const filters = State[tabKey].columnFilters || {}
+
+  table.querySelectorAll('thead th').forEach(th => {
+    if (th.colSpan > 1) return  // skip group headers
+
+    const key = th.dataset.key
+    const noSort = th.dataset.noSort != null
+    const noFilter = th.dataset.noFilter != null
+
+    // Wrap content: replace innerHTML with th-content structure
+    const label = th.textContent.trim()
+    let inner = '<div class="th-content">'
+    inner += `<span class="th-label">${label}</span>`
+    if (key && !noSort) {
+      const isActive = sort.key === key
+      const icon = isActive ? (sort.dir === 'asc' ? '↑' : '↓') : '⇅'
+      inner += `<span class="th-sort${isActive ? ' active' : ''}">${icon}</span>`
+    }
+    if (key && !noFilter) {
+      const isFiltered = !!filters[key]
+      inner += `<span class="th-filter${isFiltered ? ' active' : ''}">▼</span>`
+    }
+    inner += '</div>'
+    th.innerHTML = inner
+
+    // Sort binding
+    if (key && !noSort) {
+      const sortHandler = (e) => {
+        e.stopPropagation()
+        const cur = State[tabKey].sort
+        const dir = cur.key === key && cur.dir === 'asc' ? 'desc' : 'asc'
+        State[tabKey].sort = { key, dir }
+        State[tabKey].page = 1
+        State[tabKey].filtered = sortData(State[tabKey].filtered, key, dir)
+        window[renderFnName]()
+      }
+      th.querySelector('.th-label').addEventListener('click', sortHandler)
+      th.querySelector('.th-sort').addEventListener('click', sortHandler)
+    }
+
+    // Filter binding
+    if (key && !noFilter) {
+      th.querySelector('.th-filter').addEventListener('click', (e) => {
+        e.stopPropagation()
+        openColumnFilter(th, tabKey, key, renderFnName)
+      })
+    }
+
+    // Resize handle
+    th.style.position = 'relative'
+    const handle = document.createElement('div')
+    handle.className = 'col-resize-handle'
+    th.appendChild(handle)
+    let startX, startW
+    handle.addEventListener('mousedown', e => {
+      e.preventDefault(); e.stopPropagation()
+      startX = e.clientX; startW = th.offsetWidth
+      handle.classList.add('col-resizing')
+      document.body.classList.add('col-resize-active')
+      const onMove = ev => { th.style.width = Math.max(40, startW + (ev.clientX - startX)) + 'px' }
+      const onUp = () => {
+        handle.classList.remove('col-resizing')
+        document.body.classList.remove('col-resize-active')
+        document.removeEventListener('mousemove', onMove)
+        document.removeEventListener('mouseup', onUp)
+      }
+      document.addEventListener('mousemove', onMove)
+      document.addEventListener('mouseup', onUp)
+    })
+  })
 }
 
 // Excel 날짜 변환 (시리얼 숫자 또는 문자열 → YYYY-MM-DD)

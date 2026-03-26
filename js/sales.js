@@ -48,6 +48,7 @@ function resetSales() {
   State.sales.pageSize = 10
   State.sales.activePlatforms = [..._platforms]
   State.sales.inactivePlatforms = []
+  State.sales.columnFilters = {}
   State.sales.filtered = [...State.allProducts]
   State.sales.sort = { key: 'totalSales', dir: 'desc' }
   renderSalesTable()
@@ -91,11 +92,16 @@ function renderInactiveArea() {
   const area = document.getElementById('slInactiveArea')
   const tags = document.getElementById('slInactiveTags')
   const inactive = State.sales.inactivePlatforms
-  if (!inactive.length) { area.style.display = 'none'; return }
+
+  // 항상 표시 — 비활성 칩이 없어도 드롭 대상으로 유지
   area.style.display = 'flex'
-  tags.innerHTML = inactive.map(pl =>
-    `<span class="sl-inactive-chip" draggable="true" data-platform="${pl}">${pl}</span>`
-  ).join('')
+  if (inactive.length) {
+    tags.innerHTML = inactive.map(pl =>
+      `<span class="sl-inactive-chip" draggable="true" data-platform="${pl}">${pl}</span>`
+    ).join('')
+  } else {
+    tags.innerHTML = ''
+  }
 
   // 비활성 칩 drag 이벤트
   tags.querySelectorAll('.sl-inactive-chip').forEach(chip => {
@@ -111,9 +117,12 @@ function renderInactiveArea() {
     })
   })
 
-  // 비활성 영역 자체가 드롭 대상 (플랫폼 헤더에서 여기로 드래그하면 제거)
+  // 비활성 영역 = 드롭 대상 (헤더에서 여기로 드래그하면 컬럼 제거)
   area.ondragover = e => { e.preventDefault(); area.classList.add('sl-drop-target') }
-  area.ondragleave = () => area.classList.remove('sl-drop-target')
+  area.ondragleave = e => {
+    // 자식 요소로 이동할 때 오발동 방지
+    if (!area.contains(e.relatedTarget)) area.classList.remove('sl-drop-target')
+  }
   area.ondrop = e => {
     e.preventDefault()
     area.classList.remove('sl-drop-target')
@@ -128,8 +137,7 @@ function renderSalesTable() {
   initSalesPlatforms()
   renderInactiveArea()
 
-  const data = State.sales.filtered
-  const sort = State.sales.sort
+  const data = applyColFilters(State.sales.filtered, State.sales.columnFilters)
   const page = State.sales.page || 1
   const ps   = getPageSize('sales')
   const pageData = ps > 0 ? data.slice((page - 1) * ps, page * ps) : data
@@ -152,25 +160,24 @@ function renderSalesTable() {
   const grandQty = _platforms.reduce((s, pl) => s + allPlatTotals[pl], 0)
   const grandRev = _platforms.reduce((s, pl) => s + allPlatRevTotals[pl], 0)
 
-  // 2단 헤더 — 1행
+  // 2단 헤더 — 1행 (rowspan=2 columns get sort+filter via initTableFeatures, colspan=2 groups are skipped)
   let h1 = `
-    <th rowspan="2">이미지</th>
-    <th rowspan="2" class="sortable" data-key="productCode">품번<span class="sort-icon">⇅</span></th>
-    <th rowspan="2" class="sortable" data-key="nameKr">상품명<span class="sort-icon">⇅</span></th>
-    <th rowspan="2" class="sortable" data-key="salePrice" style="text-align:right">판매가<span class="sort-icon">⇅</span></th>
+    <th rowspan="2" data-no-sort data-no-filter style="width:60px">이미지</th>
+    <th rowspan="2" data-key="productCode" style="width:145px">품번</th>
+    <th rowspan="2" data-key="nameKr">상품명</th>
+    <th rowspan="2" data-key="salePrice" style="text-align:right">판매가</th>
     <th colspan="2" class="sales-group-th">합계</th>`
   active.forEach((pl, i) => {
-    h1 += `<th colspan="2" class="sales-group-th sl-plat-th" draggable="true" data-platform="${pl}" data-pidx="${i}">` +
-      `${pl}<span class="sl-plat-remove" onclick="event.stopPropagation();removeSalesPlatform('${pl}')">✕</span></th>`
+    h1 += `<th colspan="2" class="sales-group-th sl-plat-th" draggable="true" data-platform="${pl}" data-pidx="${i}">${pl}</th>`
   })
 
-  // 2단 헤더 — 2행
+  // 2단 헤더 — 2행 (sort via initTableFeatures, no filter on numeric sub-columns)
   let h2 = `
-    <th class="sortable sales-sub-th" data-key="totalSales" style="text-align:right">수량<span class="sort-icon">⇅</span></th>
-    <th class="sortable sales-sub-th" data-key="totalRevenue" style="text-align:right">매출액<span class="sort-icon">⇅</span></th>`
+    <th class="sales-sub-th" data-key="totalSales" data-no-filter style="text-align:right">수량</th>
+    <th class="sales-sub-th" data-key="totalRevenue" data-no-filter style="text-align:right">매출액</th>`
   active.forEach(pl => {
-    h2 += `<th class="sortable sales-sub-th" data-key="sales.${pl}" style="text-align:right">수량<span class="sort-icon">⇅</span></th>` +
-      `<th class="sortable sales-sub-th" data-key="rev.${pl}" style="text-align:right">매출액<span class="sort-icon">⇅</span></th>`
+    h2 += `<th class="sales-sub-th" data-key="sales.${pl}" data-no-filter style="text-align:right">수량</th>` +
+      `<th class="sales-sub-th" data-key="rev.${pl}" data-no-filter style="text-align:right">매출액</th>`
   })
 
   // tbody
@@ -211,8 +218,7 @@ function renderSalesTable() {
       <tfoot>${tf}</tfoot>
     </table>`
 
-  bindSortHeader('salesTable', 'sales', renderSalesTable)
-  updateSortIcons('salesTable', sort)
+  initTableFeatures('salesTable', 'sales', 'renderSalesTable')
   if (ps > 0) {
     renderPagination('slPagination', 'sales', 'renderSalesTable')
   } else {

@@ -75,6 +75,12 @@ function searchProduct() {
   renderProductTable()
 }
 
+function changeProductPageSize(val) {
+  State.product.pageSize = parseInt(val) || 0
+  State.product.page = 1
+  renderProductTable()
+}
+
 function resetProduct() {
   ['pKeyword','pDateFrom','pDateTo'].forEach(id => document.getElementById(id).value = '')
   document.getElementById('pSearchField').value = 'all'
@@ -84,16 +90,19 @@ function resetProduct() {
   document.getElementById('pType').value = 'all'
   document.getElementById('pLegCut').value = 'all'
   document.getElementById('pSaleStatus').value = 'all'
+  document.getElementById('pPageSize').value = '10'
+  State.product.pageSize = 10
   State.product.page = 1
+  State.product.columnFilters = {}
   State.product.filtered = [...State.allProducts]
   renderProductTable()
 }
 
 function renderProductTable() {
-  const data = State.product.filtered
-  const sort = State.product.sort
+  const data = applyColFilters(State.product.filtered, State.product.columnFilters)
   const page = State.product.page || 1
-  const pageData = data.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const ps = getPageSize('product')
+  const pageData = ps === 0 ? data : data.slice((page - 1) * ps, page * ps)
   document.getElementById('pTableMeta').textContent = `검색결과 ${data.length}건`
 
   if (!data.length) {
@@ -108,22 +117,23 @@ function renderProductTable() {
   document.getElementById('pTableWrap').innerHTML = `
     <table class="data-table" id="productTable">
       <thead><tr>
-        <th class="sortable" data-key="no">No.<span class="sort-icon">⇅</span></th>
-        <th>이미지</th>
-        <th class="sortable" data-key="brand">브랜드<span class="sort-icon">⇅</span></th>
-        <th class="sortable" data-key="productCode">품번<span class="sort-icon">⇅</span></th>
-        <th class="sortable" data-key="nameKr">상품명<span class="sort-icon">⇅</span></th>
-        <th>색상</th>
-        <th class="sortable" data-key="salePrice" style="text-align:right">판매가<span class="sort-icon">⇅</span></th>
-        <th class="sortable" data-key="costPrice" style="text-align:right">원가<span class="sort-icon">⇅</span></th>
-        <th>타입</th>
-        <th>백스타일</th>
-        <th>레그컷</th>
-        <th>제조년월</th>
-        <th>제조국</th>
-        <th class="sortable" data-key="totalStock" style="text-align:right">입고수량<span class="sort-icon">⇅</span></th>
-        <th class="sortable" data-key="totalSales" style="text-align:right">판매수량<span class="sort-icon">⇅</span></th>
-        <th>소진율</th>
+        <th data-key="no" data-no-filter style="width:45px;text-align:center">No.</th>
+        <th data-no-sort data-no-filter style="width:60px">이미지</th>
+        <th data-key="brand">브랜드</th>
+        <th data-key="productCode" style="width:145px">품번</th>
+        <th data-key="nameKr">상품명</th>
+        <th data-key="colorKr">색상</th>
+        <th data-key="salePrice" style="text-align:right">판매가</th>
+        <th data-key="costPrice" style="text-align:right">원가</th>
+        <th data-key="type">타입</th>
+        <th data-key="backStyle">백스타일</th>
+        <th data-key="legCut">레그컷</th>
+        <th data-key="madeMonth">제조년월</th>
+        <th data-key="lastInDate">최종입고일</th>
+        <th data-key="madeIn">제조국</th>
+        <th data-key="totalStock" data-no-filter style="text-align:right">입고수량</th>
+        <th data-key="totalSales" data-no-filter style="text-align:right">판매수량</th>
+        <th data-key="exhaustion" data-no-filter style="width:120px">소진율</th>
       </tr></thead>
       <tbody>${pageData.map(p => {
         const st = getTotalStock(p), sl = getTotalSales(p), ex = getExhaustion(p)
@@ -140,6 +150,7 @@ function renderProductTable() {
           <td style="font-size:12px;max-width:120px;overflow:hidden;text-overflow:ellipsis">${p.backStyle || '-'}</td>
           <td style="font-size:12px">${p.legCut || '-'}</td>
           <td style="font-size:12px">${p.madeMonth || '-'}</td>
+          <td style="font-size:12px">${((p.stockLog||[]).filter(l=>l.type==='in').reduce((m,l)=>l.date>m?l.date:m,'')) || '—'}</td>
           <td>${p.madeIn || '-'}</td>
           <td style="text-align:right;font-family:Inter">${fmtNum(st)}</td>
           <td style="text-align:right;font-family:Inter">${fmtNum(sl)}</td>
@@ -154,7 +165,6 @@ function renderProductTable() {
       </tr></tfoot>
     </table>`
 
-  bindSortHeader('productTable', 'product', renderProductTable)
-  updateSortIcons('productTable', sort)
+  initTableFeatures('productTable', 'product', 'renderProductTable')
   renderPagination('pPagination', 'product', 'renderProductTable')
 }

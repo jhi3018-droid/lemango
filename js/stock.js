@@ -442,19 +442,28 @@ function submitOutgoing(productCode) {
   closeOutgoingModal()
 }
 
+function changeStockPageSize(val) {
+  State.stock.pageSize = parseInt(val) || 0
+  State.stock.page = 1
+  renderStockTable()
+}
+
 function resetStock() {
   ['sKeyword','sDateFrom','sDateTo'].forEach(id => document.getElementById(id).value = '')
   document.getElementById('sStockStatus').value = 'all'
+  document.getElementById('sPageSize').value = '10'
+  State.stock.pageSize = 10
   State.stock.page = 1
+  State.stock.columnFilters = {}
   State.stock.filtered = [...State.allProducts]
   renderStockTable()
 }
 
 function renderStockTable() {
-  const data = State.stock.filtered
-  const sort = State.stock.sort
+  const data = applyColFilters(State.stock.filtered, State.stock.columnFilters)
   const page = State.stock.page || 1
-  const pageData = data.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const ps = getPageSize('stock')
+  const pageData = ps === 0 ? data : data.slice((page - 1) * ps, page * ps)
   document.getElementById('sTableMeta').textContent = `검색결과 ${data.length}건`
 
   if (!data.length) {
@@ -471,13 +480,13 @@ function renderStockTable() {
   document.getElementById('sTableWrap').innerHTML = `
     <table class="data-table" id="stockTable">
       <thead><tr>
-        <th>이미지</th>
-        <th class="sortable" data-key="productCode">품번<span class="sort-icon">⇅</span></th>
-        <th class="sortable" data-key="nameKr">상품명<span class="sort-icon">⇅</span></th>
-        <th>브랜드</th>
-        <th style="text-align:right">판매가</th>
-        ${sizes.map(sz => `<th style="text-align:center">${sz}</th>`).join('')}
-        <th class="sortable" data-key="totalStock" style="text-align:right">합계<span class="sort-icon">⇅</span></th>
+        <th data-no-sort data-no-filter style="width:60px">이미지</th>
+        <th data-key="productCode" style="width:145px">품번</th>
+        <th data-key="nameKr">상품명</th>
+        <th data-key="brand">브랜드</th>
+        <th data-key="salePrice" style="text-align:right">판매가</th>
+        ${sizes.map(sz => `<th data-key="stock.${sz}" data-no-filter style="text-align:center">${sz}</th>`).join('')}
+        <th data-key="totalStock" data-no-filter style="text-align:right">합계</th>
       </tr></thead>
       <tbody>${pageData.map(p => {
         const total = getTotalStock(p)
@@ -499,7 +508,6 @@ function renderStockTable() {
       </tr></tfoot>
     </table>`
 
-  bindSortHeader('stockTable', 'stock', renderStockTable)
-  updateSortIcons('stockTable', sort)
+  initTableFeatures('stockTable', 'stock', 'renderStockTable')
   renderPagination('sPagination', 'stock', 'renderStockTable')
 }

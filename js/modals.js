@@ -391,6 +391,10 @@ function buildDetailContent(p) {
         ${field('제조년월', 'madeMonth', p.madeMonth)}
         ${field('제조사',   'madeBy',    p.madeBy)}
         ${field('제조국',   'madeIn',    p.madeIn)}
+        <div class="dfield">
+          <label class="dfield-label">최종입고일</label>
+          <span class="dfield-value">${((p.stockLog||[]).filter(l=>l.type==='in').reduce((m,l)=>l.date>m?l.date:m,'')) || '—'}</span>
+        </div>
       </div>
     </div>
 

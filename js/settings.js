@@ -280,6 +280,37 @@ function renderSettings() {
     </div>
   </div>`
 
+  // 업무일정 카테고리 카드
+  const wkCatListHtml = _workCategories.map((cat, idx) => {
+    const color = getWorkCatColor(cat)
+    return `<div class="set-item" id="wkCatItem_${idx}">
+      <div class="set-item-view">
+        <span class="wk-cat-badge" style="background:${color.bg};color:${color.text}">${cat}</span>
+        <span style="flex:1"></span>
+        <button class="set-item-action set-item-edit" onclick="editWorkCategorySetting(${idx})" title="수정">&#9998;</button>
+        <button class="set-item-action set-item-del" onclick="removeWorkCategorySetting(${idx})" title="삭제">&#10005;</button>
+      </div>
+      <div class="set-item-editrow" style="display:none">
+        <input type="text" class="set-edit-input" value="${cat}" data-field="val" style="flex:1" />
+        <button class="set-edit-save" onclick="saveWorkCategoryEdit(${idx})">저장</button>
+        <button class="set-edit-cancel" onclick="renderSettings()">취소</button>
+      </div>
+    </div>`
+  }).join('') || '<div class="set-empty">항목 없음</div>'
+
+  const wkCatCard = `<div class="set-card set-card-wide">
+    <div class="set-card-header">
+      <span class="set-card-title">업무일정 카테고리</span>
+      <span class="set-card-count">${_workCategories.length}</span>
+    </div>
+    <div class="set-list set-list-scroll">${wkCatListHtml}</div>
+    <div class="set-add-row">
+      <input type="text" id="setWkCatName" placeholder="카테고리명 (예: 출장)" class="set-add-input" style="flex:1"
+        onkeydown="if(event.key==='Enter')addWorkCategorySetting()" />
+      <button class="btn btn-new set-add-btn" onclick="addWorkCategorySetting()">+ 추가</button>
+    </div>
+  </div>`
+
   container.innerHTML = `
     <div class="settings-header">
       <h2 class="settings-title">기본 옵션 관리</h2>
@@ -316,6 +347,17 @@ function renderSettings() {
       <div class="set-section-body">
         <div class="set-grid">
           ${platCard}
+        </div>
+      </div>
+    </div>
+
+    <div class="set-section">
+      <button class="set-section-btn" onclick="toggleSetSection(this)">
+        <span>업무일정</span><span class="set-section-arrow">▼</span>
+      </button>
+      <div class="set-section-body">
+        <div class="set-grid">
+          ${wkCatCard}
         </div>
       </div>
     </div>`
@@ -625,4 +667,66 @@ function uploadDesignCodes(input) {
     }
   }
   reader.readAsArrayBuffer(file)
+}
+
+// =============================================
+// ===== 업무일정 카테고리 CRUD =====
+// =============================================
+function addWorkCategorySetting() {
+  const name = document.getElementById('setWkCatName')?.value.trim()
+  if (!name) { showToast('카테고리명을 입력해주세요.', 'warning'); return }
+  if (_workCategories.includes(name)) { showToast(`"${name}"은 이미 존재합니다.`, 'error'); return }
+  _workCategories.push(name)
+  saveWorkCategories()
+  populateAllSelects()
+  renderSettings()
+  showToast(`"${name}" 추가됐습니다.`, 'success')
+}
+
+function editWorkCategorySetting(idx) {
+  const el = document.getElementById('wkCatItem_' + idx)
+  if (!el) return
+  el.querySelector('.set-item-view').style.display = 'none'
+  el.querySelector('.set-item-editrow').style.display = ''
+  el.querySelector('.set-edit-input')?.focus()
+}
+
+function saveWorkCategoryEdit(idx) {
+  const el = document.getElementById('wkCatItem_' + idx)
+  if (!el) return
+  const newName = el.querySelector('[data-field="val"]')?.value.trim()
+  const oldName = _workCategories[idx]
+  if (!newName) { showToast('카테고리명을 입력해주세요.', 'warning'); return }
+  if (newName === oldName) { renderSettings(); return }
+  if (_workCategories.includes(newName)) { showToast(`"${newName}"은 이미 존재합니다.`, 'error'); return }
+  // 기존 업무일정 카테고리 이전
+  State.workItems.forEach(w => {
+    if (w.category === oldName) w.category = newName
+  })
+  _workItems = State.workItems
+  saveWorkItems()
+  _workCategories[idx] = newName
+  saveWorkCategories()
+  populateAllSelects()
+  renderSettings()
+  showToast(`"${oldName}" → "${newName}" 변경됐습니다.`, 'success')
+}
+
+async function removeWorkCategorySetting(idx) {
+  const name = _workCategories[idx]
+  if (!await korConfirm(`"${name}" 카테고리를 삭제하시겠습니까?\n해당 카테고리의 기존 일정은 "기타"로 이전됩니다.`)) return
+  // 기존 일정 → '기타'로 이전
+  const fallback = _workCategories.includes('기타') ? '기타' : (_workCategories.find(c => c !== name) || '기타')
+  State.workItems.forEach(w => {
+    if (w.category === name) w.category = fallback
+  })
+  _workItems = State.workItems
+  saveWorkItems()
+  _workCategories.splice(idx, 1)
+  // '기타'가 없으면 추가
+  if (!_workCategories.includes('기타')) _workCategories.push('기타')
+  saveWorkCategories()
+  populateAllSelects()
+  renderSettings()
+  showToast('삭제됐습니다.', 'success')
 }

@@ -114,18 +114,37 @@ function populateAllSelects() {
   populateSelect('plType',       s.types,           false, true)
   // 판매조회 플랫폼 필터
   populateSelect('slPlatform',   _platforms,        true)
+  // 업무일정 카테고리
+  populateSelect('wkCategory',   _workCategories,   true)
+  populateSelect('wkRegCategory', _workCategories)
 }
 
 // ===== 전역 상태 =====
 const State = {
   allProducts: [],
   planItems:   [],
-  product: { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1 },
-  stock:   { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1 },
-  sales:   { filtered: [], sort: { key: 'totalSales', dir: 'desc' }, page: 1, pageSize: 10, activePlatforms: [], inactivePlatforms: [] },
-  plan:    { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1 },
+  product: { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {} },
+  stock:   { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {} },
+  sales:   { filtered: [], sort: { key: 'totalSales', dir: 'desc' }, page: 1, pageSize: 10, activePlatforms: [], inactivePlatforms: [], columnFilters: {} },
+  plan:    { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {} },
   event:   { filtered: [], sort: { key: 'startDate', dir: 'asc' }, page: 1 },
-  modal:   { images: [], idx: 0 }
+  work:    { filtered: [], sort: { key: 'startDate', dir: 'desc' }, page: 1 },
+  workItems: [],
+  modal:   { images: [], idx: 0 },
+  openTabs:  ['dashboard'],
+  activeTab: 'dashboard'
+}
+
+// 탭 ID → 표시 라벨 매핑
+const TAB_LABELS = {
+  dashboard: '대시보드',
+  product:   '상품조회',
+  stock:     '재고 관리',
+  sales:     '판매조회',
+  plan:      '신규기획',
+  event:     '행사일정',
+  work:      '업무일정',
+  settings:  '설정'
 }
 
 // =============================================
@@ -174,3 +193,48 @@ let _events = (() => {
   catch { return [] }
 })()
 function saveEvents() { localStorage.setItem('lemango_events_v1', JSON.stringify(_events)) }
+
+// =============================================
+// ===== 업무일정 카테고리 + 데이터 =====
+// =============================================
+const DEFAULT_WORK_CATEGORIES = ['연차', '차량사용', '미팅일정', '기타']
+
+let _workCategories = (() => {
+  try {
+    const saved = localStorage.getItem('lemango_work_categories_v1')
+    return saved ? JSON.parse(saved) : [...DEFAULT_WORK_CATEGORIES]
+  } catch { return [...DEFAULT_WORK_CATEGORIES] }
+})()
+function saveWorkCategories() {
+  localStorage.setItem('lemango_work_categories_v1', JSON.stringify(_workCategories))
+}
+
+let _workItems = (() => {
+  try { return JSON.parse(localStorage.getItem('lemango_work_items_v1')) || [] }
+  catch { return [] }
+})()
+function saveWorkItems() { localStorage.setItem('lemango_work_items_v1', JSON.stringify(_workItems)) }
+
+// 업무일정 카테고리별 색상
+const WORK_CAT_COLORS = {
+  '연차':     { bg: '#1565c0', text: '#fff' },
+  '차량사용': { bg: '#2e7d32', text: '#fff' },
+  '미팅일정': { bg: '#6a1b9a', text: '#fff' },
+  '기타':     { bg: '#78909c', text: '#fff' },
+}
+const WORK_CAT_PALETTE = [
+  { bg: '#1565c0', text: '#fff' },
+  { bg: '#2e7d32', text: '#fff' },
+  { bg: '#6a1b9a', text: '#fff' },
+  { bg: '#78909c', text: '#fff' },
+  { bg: '#e65100', text: '#fff' },
+  { bg: '#00838f', text: '#fff' },
+  { bg: '#c62828', text: '#fff' },
+  { bg: '#f0a500', text: '#fff' },
+]
+function getWorkCatColor(cat) {
+  if (WORK_CAT_COLORS[cat]) return WORK_CAT_COLORS[cat]
+  const idx = _workCategories.indexOf(cat)
+  if (idx >= 0) return WORK_CAT_PALETTE[idx % WORK_CAT_PALETTE.length]
+  return { bg: '#78909c', text: '#fff' }
+}

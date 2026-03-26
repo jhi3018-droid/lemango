@@ -25,11 +25,16 @@
       <button class="tab-btn" data-tab="stock">재고 관리</button>
       <button class="tab-btn" data-tab="sales">판매조회</button>
       <button class="tab-btn" data-tab="plan">신규기획</button>
+      <button class="tab-btn" data-tab="event">행사일정</button>
+      <button class="tab-btn" data-tab="work">업무일정</button>
       <button class="tab-btn" data-tab="settings">⚙ 설정</button>
     </nav>
     <div class="header-date" id="headerDate"></div>
   </div>
 </header>
+
+<!-- 탭 바 -->
+<div class="tab-bar" id="tabBar"></div>
 
 <!-- 메인 콘텐츠 -->
 <main class="main">
@@ -51,6 +56,7 @@
             <span class="dash-cal-leg-item"><span class="dash-cal-leg-dot" style="background:var(--danger)"></span>공휴일</span>
             <span class="dash-cal-leg-item"><span class="dash-cal-leg-dot" style="background:var(--primary)"></span>행사</span>
             <span class="dash-cal-leg-item"><span class="dash-cal-leg-dot" style="background:var(--accent)"></span>기획</span>
+            <span class="dash-cal-leg-item"><span class="dash-cal-leg-dot" style="background:#6a1b9a"></span>업무</span>
           </div>
         </div>
         <div id="dashCalendar"></div>
@@ -155,7 +161,19 @@
         </div>
       </div>
     </div>
-    <div class="table-meta" id="pTableMeta"></div>
+    <div class="page-size-row">
+      <div class="table-meta" id="pTableMeta"></div>
+      <div class="page-size-select">
+        <label>표시개수</label>
+        <select id="pPageSize" onchange="changeProductPageSize(this.value)">
+          <option value="10">10개</option>
+          <option value="30">30개</option>
+          <option value="50">50개</option>
+          <option value="100">100개</option>
+          <option value="0">전체</option>
+        </select>
+      </div>
+    </div>
     <div class="table-wrap card" id="pTableWrap">
       <div class="loading">데이터를 불러오는 중...</div>
     </div>
@@ -196,7 +214,19 @@
         </div>
       </div>
     </div>
-    <div class="table-meta" id="sTableMeta"></div>
+    <div class="page-size-row">
+      <div class="table-meta" id="sTableMeta"></div>
+      <div class="page-size-select">
+        <label>표시개수</label>
+        <select id="sPageSize" onchange="changeStockPageSize(this.value)">
+          <option value="10">10개</option>
+          <option value="30">30개</option>
+          <option value="50">50개</option>
+          <option value="100">100개</option>
+          <option value="0">전체</option>
+        </select>
+      </div>
+    </div>
     <div class="table-wrap card" id="sTableWrap">
       <div class="loading">데이터를 불러오는 중...</div>
     </div>
@@ -221,16 +251,6 @@
           <label>플랫폼</label>
           <select id="slPlatform"></select>
         </div>
-        <div class="search-group">
-          <label>표시개수</label>
-          <select id="slPageSize" onchange="changeSalesPageSize(this.value)">
-            <option value="10">10개</option>
-            <option value="20">20개</option>
-            <option value="50">50개</option>
-            <option value="100">100개</option>
-            <option value="0">전체</option>
-          </select>
-        </div>
       </div>
       <div class="search-actions">
         <button class="btn btn-primary" onclick="searchSales()">조회</button>
@@ -245,11 +265,23 @@
         </div>
       </div>
     </div>
-    <div class="sl-inactive-area" id="slInactiveArea" style="display:none">
-      <span class="sl-inactive-label">비활성 채널 — 테이블 헤더로 드래그하여 추가</span>
+    <div class="sl-inactive-area" id="slInactiveArea">
+      <span class="sl-inactive-label">채널을 여기로 드래그하여 숨기기</span>
       <div class="sl-inactive-tags" id="slInactiveTags"></div>
     </div>
-    <div class="table-meta" id="slTableMeta"></div>
+    <div class="page-size-row">
+      <div class="table-meta" id="slTableMeta"></div>
+      <div class="page-size-select">
+        <label>표시개수</label>
+        <select id="slPageSize" onchange="changeSalesPageSize(this.value)">
+          <option value="10">10개</option>
+          <option value="30">30개</option>
+          <option value="50">50개</option>
+          <option value="100">100개</option>
+          <option value="0">전체</option>
+        </select>
+      </div>
+    </div>
     <div class="table-wrap card" id="slTableWrap">
       <div class="loading">데이터를 불러오는 중...</div>
     </div>
@@ -331,11 +363,63 @@
         </div>
       </div>
     </div>
-    <div class="table-meta" id="npTableMeta"></div>
+    <div class="page-size-row">
+      <div class="table-meta" id="npTableMeta"></div>
+      <div class="page-size-select">
+        <label>표시개수</label>
+        <select id="npPageSize" onchange="changePlanPageSize(this.value)">
+          <option value="10">10개</option>
+          <option value="30">30개</option>
+          <option value="50">50개</option>
+          <option value="100">100개</option>
+          <option value="0">전체</option>
+        </select>
+      </div>
+    </div>
     <div class="table-wrap card" id="npTableWrap">
       <div class="loading">데이터를 불러오는 중...</div>
     </div>
     <div id="npPagination"></div>
+  </section>
+
+  <!-- ===== 행사일정 탭 ===== -->
+  <section class="tab-content" id="tab-event">
+    <div class="search-bar card" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <h2 style="margin:0;font-size:16px;font-weight:700">행사일정 캘린더</h2>
+      <span style="flex:1"></span>
+      <button class="btn btn-new" onclick="openEventRegisterModal()">＋ 행사 등록</button>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <div class="evcal-header">
+        <button class="btn btn-ghost btn-sm" onclick="evPrevMonth()">◀</button>
+        <h3 id="evMonthTitle" style="margin:0;min-width:120px;text-align:center"></h3>
+        <button class="btn btn-ghost btn-sm" onclick="evNextMonth()">▶</button>
+        <button class="btn btn-outline btn-sm" onclick="evToday()" style="margin-left:8px">오늘</button>
+      </div>
+      <div id="evCalendar"></div>
+    </div>
+  </section>
+
+  <!-- ===== 업무일정 탭 ===== -->
+  <section class="tab-content" id="tab-work">
+    <div class="search-bar card" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <h2 style="margin:0;font-size:16px;font-weight:700">업무일정 캘린더</h2>
+      <div class="search-group" style="margin:0">
+        <label style="font-size:12px">카테고리</label>
+        <select id="wkCategory" onchange="wkFilterCategory(this.value)"><option value="all">전체</option></select>
+      </div>
+      <span style="flex:1"></span>
+      <button class="btn btn-new" onclick="openWorkRegisterModal()">＋ 업무일정 등록</button>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <div class="evcal-header">
+        <button class="btn btn-ghost btn-sm" onclick="wkPrevMonth()">◀</button>
+        <h3 id="wkMonthTitle" style="margin:0;min-width:120px;text-align:center"></h3>
+        <button class="btn btn-ghost btn-sm" onclick="wkNextMonth()">▶</button>
+        <button class="btn btn-outline btn-sm" onclick="wkToday()" style="margin-left:8px">오늘</button>
+      </div>
+      <div id="wkCalendar"></div>
+    </div>
   </section>
 
   <!-- ===== 설정 탭 ===== -->
@@ -1119,6 +1203,72 @@
   </div>
 </dialog>
 
+<!-- 행사일정 등록/수정 모달 -->
+<dialog id="eventRegisterModal" class="srm-modal">
+  <div class="srm-header">
+    <span class="rmodal-title">행사 등록</span>
+    <button class="modal-close" onclick="closeEventRegisterModal()">✕</button>
+  </div>
+  <form id="evRegForm" class="srm-body" onsubmit="submitEvent(event)" style="display:flex;flex-direction:column;gap:12px">
+    <input type="hidden" id="evRegNo" />
+    <div class="rform-field"><label>행사명</label><input type="text" id="evRegName" required /></div>
+    <div class="rform-field"><label>채널</label><input type="text" id="evRegChannel" /></div>
+    <div style="display:flex;gap:12px">
+      <div class="rform-field" style="flex:1"><label>시작일</label><input type="date" id="evRegStart" required /></div>
+      <div class="rform-field" style="flex:1"><label>종료일</label><input type="date" id="evRegEnd" required /></div>
+    </div>
+    <div style="display:flex;gap:12px">
+      <div class="rform-field" style="flex:1"><label>할인율(%)</label><input type="number" id="evRegDiscount" min="0" max="100" /></div>
+      <div class="rform-field" style="flex:1"><label>당사지원(%)</label><input type="number" id="evRegSupport" min="0" max="100" /></div>
+    </div>
+    <div class="rform-field"><label>메모</label><textarea id="evRegMemo" rows="3"></textarea></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button type="submit" class="btn btn-primary">저장</button>
+      <button type="button" class="btn btn-outline" onclick="closeEventRegisterModal()">취소</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- 기획일정 조회 모달 -->
+<dialog id="planScheduleModal" class="srm-modal" style="width:640px;max-width:96vw">
+  <div class="srm-header">
+    <span id="psModalTitle">기획 일정</span>
+    <button class="modal-close" onclick="closePlanScheduleModal()">✕</button>
+  </div>
+  <div class="srm-body" id="psModalBody"></div>
+</dialog>
+
+<!-- 업무일정 등록/수정 모달 -->
+<dialog id="workRegisterModal" class="srm-modal">
+  <div class="srm-header">
+    <span class="rmodal-title">업무일정 등록</span>
+    <button class="modal-close" onclick="closeWorkRegisterModal()">✕</button>
+  </div>
+  <form id="wkRegForm" class="srm-body" onsubmit="submitWork(event)" style="display:flex;flex-direction:column;gap:12px">
+    <input type="hidden" id="wkRegNo" />
+    <div class="rform-field"><label>카테고리</label><select id="wkRegCategory"></select></div>
+    <div class="rform-field"><label>제목</label><input type="text" id="wkRegTitle" required placeholder="예: 하계휴가, 거래처 미팅" /></div>
+    <div style="display:flex;gap:12px">
+      <div class="rform-field" style="flex:1"><label>시작일</label><input type="date" id="wkRegStart" required /></div>
+      <div class="rform-field" style="flex:1"><label>종료일</label><input type="date" id="wkRegEnd" /></div>
+    </div>
+    <div class="rform-field"><label>메모</label><textarea id="wkRegMemo" rows="3" placeholder="상세 내용"></textarea></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button type="submit" class="btn btn-primary">저장</button>
+      <button type="button" class="btn btn-outline" onclick="closeWorkRegisterModal()">취소</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- 업무일정 상세 모달 -->
+<dialog id="workDetailModal" class="srm-modal" style="width:500px;max-width:96vw">
+  <div class="srm-header">
+    <span class="rmodal-title">업무일정 상세</span>
+    <button class="modal-close" onclick="closeWorkDetailModal()">✕</button>
+  </div>
+  <div class="srm-body" id="wkDetailBody"></div>
+</dialog>
+
 <!-- 토스트 알림 -->
 <div id="toast" class="toast"></div>
 
@@ -1134,6 +1284,7 @@
 <script src="js/gonghom.js"></script>
 <script src="js/plan.js"></script>
 <script src="js/event.js"></script>
+<script src="js/work.js"></script>
 <script src="js/dashboard.js"></script>
 <script src="js/register.js"></script>
 <script src="js/product-code.js"></script>

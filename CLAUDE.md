@@ -29,6 +29,7 @@
 │   ├── settings.js         # 설정 탭 렌더·CRUD
 │   ├── design.js           # 디자인 코드·백스타일 관리
 │   ├── upload.js           # 업로드 미리보기·확정
+│   ├── work.js             # 업무일정 CRUD·검색·렌더
 │   └── main.js             # init(), DOMContentLoaded
 └── data/
     ├── products_lemango.json   # 르망고 26SS (실제 상품 데이터)
@@ -36,7 +37,7 @@
     └── combined.json           # 통합
 ```
 
-## 화면 구성 (탭 7개)
+## 화면 구성 (탭 8개)
 | 탭 | ID | 설명 |
 |----|----|------|
 | 대시보드 | `tab-dashboard` | KPI 카드, 캘린더(좌)+매출현황·BEST TOP10(우) 2컬럼 |
@@ -45,7 +46,8 @@
 | 판매조회 | `tab-sales` | 플랫폼별 판매 테이블 + 공홈 주문 업로드 |
 | 신규기획 | `tab-plan` | 기획 상품 관리, 일정(단계+날짜 필터), 상품조회 이전 |
 | 행사일정 | `tab-event` | 월간 캘린더 + 행사 등록/수정/삭제 (localStorage) |
-| 설정 | `tab-settings` | 브랜드·타입·판매채널 등 기본 옵션 관리 |
+| 업무일정 | `tab-work` | 업무 일정 등록/조회/수정/삭제 (localStorage) |
+| 설정 | `tab-settings` | 브랜드·타입·판매채널·업무카테고리 등 기본 옵션 관리 |
 
 ## 전역 상태 (`State` 객체)
 ```js
@@ -55,6 +57,8 @@ State.product.filtered     // 상품조회 필터 결과
 State.stock.filtered       // 재고조회 필터 결과
 State.sales.filtered       // 판매조회 필터 결과
 State.plan.filtered        // 기획조회 필터 결과
+State.workItems            // 업무일정 아이템 배열
+State.work.filtered        // 업무일정 필터 결과
 State.modal.images/idx     // 이미지 모달 상태
 ```
 
@@ -112,6 +116,19 @@ State.modal.images/idx     // 이미지 모달 상태
 }
 ```
 
+## 업무일정 아이템 스키마 (`State.workItems` 아이템)
+```js
+{
+  no,              // 자동 번호
+  category,        // '연차' | '차량사용' | '미팅일정' | '기타' (동적, _workCategories 기반)
+  title,           // 제목
+  startDate,       // 시작일 YYYY-MM-DD
+  endDate,         // 종료일 YYYY-MM-DD
+  memo,            // 상세 메모
+  registeredAt     // 등록 시각 ISO
+}
+```
+
 ## 이미지 우선순위
 - `getThumbUrl()`: sum → lemango → noir → design → shoot 순
 - 상세 모달 메인 이미지: `p.images.sum[0]` 우선, 없으면 전체 이미지 첫번째
@@ -131,6 +148,8 @@ State.modal.images/idx     // 이미지 모달 상태
 | 기획 상세 | `planDetailModal` | `openPlanDetailModal(no)` |
 | 행사 등록/수정 | `eventRegisterModal` | `openEventRegisterModal()` / `editEvent(no)` |
 | 기획일정 조회 | `planScheduleModal` | `openPlanScheduleForDate(dateStr)` / `openDashEventInfo(no)` |
+| 업무일정 등록 | `workRegisterModal` | `openWorkRegisterModal()` |
+| 업무일정 상세 | `workDetailModal` | `openWorkDetailModal(no)` |
 
 > 모든 `.srm-modal` 다이얼로그는 `makeDraggableResizable()` 적용 — 드래그+8방향 리사이즈
 
@@ -239,6 +258,8 @@ State.modal.images/idx     // 이미지 모달 상태
 | `_platforms` | `lemango_platforms_v1` | 판매 채널 목록 (공홈/GS/29cm/W쇼핑/기타) |
 | `_designCodes` | `lemango_design_codes_v1` | 디자인번호/백스타일 [code, en, kr] 배열 (단일 소스) |
 | `_events` | `lemango_events_v1` | 행사일정 배열 [{no, name, channel, startDate, endDate, discount, support, memo}] |
+| `_workCategories` | `lemango_work_categories_v1` | 업무일정 카테고리 목록 (연차/차량사용/미팅일정/기타) |
+| `_workItems` | `lemango_work_items_v1` | 업무일정 배열 [{no, category, title, startDate, endDate, memo, registeredAt}] |
 | `_reservedCodes` | (메모리) | 임시 예약 품번 Set |
 | `_detailCode` | (메모리) | 현재 열린 상세 모달 품번 |
 | `_detailPendingCode` | (메모리) | 상세 모달 품번 생성 패널 임시 예약 코드 |
@@ -305,7 +326,12 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 ### 초기화 / 탭 전환
 - `init()` — 앱 초기화, 데이터 로드
-- `switchTab(tab)` — 탭 전환
+- `openTab(tab)` — 탭 열기 (탭 바 추가 + 활성화)
+- `closeTab(tab)` — 탭 닫기 (인접 탭 전환)
+- `resetTabs()` — 로고 클릭 전체 리셋 (대시보드만 복원)
+- `renderTabBar()` — 탭 바 렌더
+- `applyTabState()` — 해시/nav/콘텐츠/탭 바 동기화
+- `switchTab(tab)` — 레거시 호환 (→ `openTab` 위임)
 
 ### 검색 / 렌더
 - `searchProduct/Stock/Sales/Plan()` — 각 탭 검색 (다중 키워드 OR)
@@ -360,9 +386,21 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - `confirmGonghomUpload()` — 공홈 주문 판매 반영
 - `parseGonghomSize(optStr)` — 상품옵션 문자열 → 사이즈 파싱
 
+### 업무일정
+- `renderWorkCalendar()` — 업무일정 캘린더 렌더
+- `placeWorkBars(gridStart, gridEnd, items, maxRows)` — 바 배치 알고리즘
+- `wkPrevMonth()` / `wkNextMonth()` / `wkToday()` — 월 이동
+- `wkFilterCategory(val)` — 카테고리 필터
+- `openWorkRegisterModal()` / `submitWork(e)` / `closeWorkRegisterModal()` — 등록 모달
+- `openWorkDetailModal(no)` / `closeWorkDetailModal()` — 상세 모달
+- `editWorkFromDetail(no)` — 상세에서 수정 모달 열기
+- `deleteWork(no)` — 삭제 (korConfirm)
+- `renderWorkTable()` — 호환 래퍼 (→ `renderWorkCalendar()`)
+
 ### 설정
 - `renderSettings()` — 설정 탭 전체 렌더
 - `addPlatformSetting()` / `editPlatformSetting(idx)` / `savePlatformEdit(idx)` / `removePlatformSetting(idx)` — 판매 채널 CRUD
+- `addWorkCategorySetting()` / `editWorkCategorySetting(idx)` / `saveWorkCategoryEdit(idx)` / `removeWorkCategorySetting(idx)` — 업무 카테고리 CRUD
 
 ### 유틸
 - `makeDraggableResizable(modal, minW, minH)` — 드래그+리사이즈 초기화
@@ -669,6 +707,145 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 ---
 
+### 2026-03-26 (추가)
+
+#### 테이블 컬럼 너비 고정
+- 이미지 컬럼: `width:60px` (4개 테이블)
+- NO. 컬럼: `width:45px; text-align:center` (상품조회, 신규기획)
+- 품번 컬럼: `width:145px` (4개 테이블 — `table-layout:fixed`에서 `min-width` 무시 → `width` 사용)
+- 텍스트 오버플로우: `overflow:hidden; text-overflow:ellipsis` 전체 th/td 적용
+
+#### initColumnResize() 버그 수정
+- 기존: 2단 헤더에서 마지막 `thead tr`만 처리 → `rowspan>1` 컬럼(품번 등) 누락
+- 수정: `table.querySelectorAll('thead th')` 전체 처리 (`colspan>1`만 스킵)
+
+#### 탭 바 시스템 도입 (브라우저 탭 스타일)
+- 네비게이션 바 아래 탭 바 영역 (`#tabBar`) 추가
+- 열린 탭마다 `[탭이름 ×]` 형태 버튼, 활성 탭 하이라이트 (골드 하단 보더)
+- 네비게이션 메뉴 클릭 → 미열림 시 탭 바에 추가, 이미 열림 시 포커스 이동
+- × 버튼으로 개별 탭 닫기 (활성 탭 닫기 → 인접 탭 전환, 전부 닫기 → 대시보드 복원)
+- 탭 전환 시 DOM 유지 (`display:none` 토글) — 검색/필터/스크롤/페이지네이션 상태 보존
+- LEMANGO 로고 클릭 → `resetTabs()` — 열린 탭 전부 닫고 대시보드만 복원
+- 초기 상태: 대시보드 탭만 열림 (해시 URL 있으면 해당 탭으로 시작)
+- `State.openTabs`, `State.activeTab`, `TAB_LABELS` 도입
+- `_renderedTabs` Set: 첫 열림 시만 렌더 함수 호출, 이후 전환은 DOM 유지
+- 탭 바 sticky (`top:56px`), 가로 스크롤 지원
+
+#### 탭 바 주요 함수
+- `renderTabBar()` — 탭 바 HTML 생성 + 클릭/닫기 이벤트 바인딩
+- `openTab(tab)` — 탭 열기 (미열림 시 추가 + 첫 렌더, 이미 열림 시 포커스만)
+- `closeTab(tab)` — 탭 닫기 (인접 탭 전환 로직)
+- `resetTabs()` — 로고 클릭 시 전체 리셋
+- `applyTabState()` — 해시/nav/콘텐츠/탭바 일괄 갱신
+- `triggerTabRender(tab)` — 첫 열림 시만 렌더 호출
+
+#### 탭 바 CSS
+- `.tab-bar`: sticky, `#232340` 배경 (header보다 약간 밝은 네이비)
+- `.tab-bar-btn`: 투명 배경 + 하단 보더 하이라이트
+- `.tab-bar-btn-active`: `var(--accent)` 골드 텍스트 + 하단 보더
+- `.tab-bar-close`: hover 시만 표시 (opacity 0→1 전환)
+
+#### 업무일정 탭 (`tab-work`) 신규 추가
+- `js/work.js` 신규 파일 생성 — 업무일정 CRUD + 캘린더 렌더
+- 데이터 스키마: `{ no, category, title, startDate, endDate, memo, registeredAt }`
+- localStorage 영속화: `lemango_work_items_v1`, `lemango_work_categories_v1`
+- `State.workItems` — 상태 관리
+- **월간 캘린더 뷰** (행사일정 패턴 동일): 6주 고정 그리드, 공휴일 표기, 오늘 하이라이트
+- 시작일~종료일 연속 컬러 바 표시: `placeWorkBars()` 바 배치 알고리즘
+- 카테고리별 색상: `WORK_CAT_COLORS` + `WORK_CAT_PALETTE`, `getWorkCatColor(cat)`
+- 바 텍스트: "카테고리 제목", 지난 날짜: 얇은 바(6px), 최대 10줄 + `+N건`
+- 바 클릭 → `openWorkDetailModal()` → 수정/삭제 가능
+- 캘린더 상단: 카테고리 필터 select + 등록 버튼 + 월 이동(◀ ▶ 오늘)
+- 등록 모달 (`workRegisterModal`): 카테고리/제목/시작일/종료일/메모
+- 상세 모달 (`workDetailModal`): 뷰 모드 + 수정/삭제 버튼
+
+#### 설정 탭 — 업무일정 카테고리 관리
+- 설정 탭에 "업무일정" 아코디언 섹션 추가
+- `_workCategories` 기반 CRUD (추가/수정/삭제)
+- 기본 항목: 연차, 차량사용, 미팅일정, 기타
+- 카테고리 수정 시 기존 workItems.category 값 자동 이전
+- 카테고리 삭제 시 해당 일정 → '기타'로 이전
+- `DEFAULT_WORK_CATEGORIES` 상수
+
+#### 대시보드 캘린더 업무일정 연동
+- 업무일정 시작일~종료일 기간 바 표시 (카테고리 색상)
+- 범례에 "업무" 항목 추가
+- 클릭 시 업무일정 탭으로 이동
+
+#### 행사일정 탭 HTML 복원
+- `tab-event` 섹션 + `eventRegisterModal` + `planScheduleModal` — index.html에 추가 (이전 누락)
+
+---
+
+### 2026-03-26 (추가2)
+
+#### 전체 테이블 컬럼 정렬 + 필터 기능 추가
+- 4개 데이터 테이블(상품조회, 재고관리, 판매조회, 신규기획) 모든 컬럼에 정렬 + 필터 적용
+- `initTableFeatures(tableId, tabKey, renderFnName)` — sort/filter/resize 통합 초기화
+  - `bindSortHeader` + `updateSortIcons` + `initColumnResize` 3개 함수 대체
+  - 모든 `data-key` 있는 th에 자동으로 정렬 아이콘(⇅/↑/↓) + 필터 아이콘(▼) 추가
+  - `data-no-sort` / `data-no-filter` 속성으로 개별 컬럼 제외 가능
+  - `colspan > 1` 그룹 헤더는 자동 스킵
+- **th 내부 구조**: `<div class="th-content"><span class="th-label">라벨</span><span class="th-sort">⇅</span><span class="th-filter">▼</span></div>`
+- **정렬**: th-label/th-sort 클릭 → asc/desc 토글, 모든 컬럼 data-key 기반
+- **컬럼 필터 (엑셀 스타일 드롭다운)**:
+  - th-filter 아이콘 클릭 → 해당 컬럼 고유값 체크박스 드롭다운 표시
+  - 검색 input + 전체 선택/해제 + 고유값 체크박스 + 적용/초기화 버튼
+  - 여러 컬럼 동시 필터 (AND 조건), 검색바 필터와도 AND 결합
+  - 활성 필터 아이콘은 골드(`var(--accent)`) 색상으로 강조
+  - 바깥 클릭 시 드롭다운 닫힘
+- **상태 관리**: `State[탭].columnFilters = { colKey: Set(선택된값들) }`
+  - 검색 초기화 시 columnFilters도 함께 초기화
+  - 필터 적용 시 page = 1 리셋
+- `applyColFilters(data, columnFilters)` — 컬럼 필터 적용 (render 함수 내에서 호출)
+- `resolveValue`에 `exhaustion` 키 추가 (소진율 정렬 지원)
+- 페이지네이션: `_getFilteredCount()` 헬퍼로 컬럼 필터 반영된 총 개수 계산
+
+#### 주요 함수
+- `initTableFeatures(tableId, tabKey, renderFnName)` — 통합 초기화 (`js/utils.js`)
+- `openColumnFilter(th, tabKey, key, renderFnName)` — 필터 드롭다운 열기
+- `closeColumnFilter()` — 필터 드롭다운 닫기
+- `applyColFilters(data, columnFilters)` — 데이터에 컬럼 필터 적용
+- `getColUniqueValues(data, key)` — 컬럼 고유값 추출
+- `clearAllColumnFilters(tabKey)` — 전체 컬럼 필터 초기화
+
+#### CSS
+- `.th-content` — flex 컨테이너 (label + sort + filter)
+- `.th-sort` / `.th-sort.active` — 정렬 아이콘 (활성 시 골드)
+- `.th-filter` / `.th-filter.active` — 필터 아이콘 (활성 시 골드)
+- `.col-filter-dd` — 필터 드롭다운 패널 (position: absolute, z-index: 1000)
+- `.cfd-search`, `.cfd-list`, `.cfd-item`, `.cfd-btns` — 드롭다운 내부 요소
+
+---
+
+### 2026-03-27
+
+#### 전체 탭 표시개수(페이지 사이즈) 드롭다운 추가
+- 상품조회·재고관리·신규기획 탭에도 `표시개수` select 추가 (기존 판매조회만 존재)
+- `.page-size-row` 래퍼: `table-meta` + `page-size-select` 좌우 배치 (4개 탭 공통)
+- 옵션: 10개 / 30개 / 50개 / 100개 / 전체
+- `State.*.pageSize` 도입 (product, stock, plan에 각각 `pageSize: 10`)
+- `changeProductPageSize()`, `changeStockPageSize()`, `changePlanPageSize()` 함수 추가
+- 검색 초기화 시 `pageSize = 10`, `columnFilters = {}` 자동 리셋
+- `getPageSize(tabKey)` 헬퍼: 모든 탭 pageSize 지원 (0 = 전체)
+- 판매조회 `#slPageSize`: 검색바 → `page-size-row`로 이동, 옵션 `20개 → 30개`로 변경
+- `#pPageSize`, `#sPageSize`, `#npPageSize`, `#slPageSize` — 4개 탭 ID
+
+#### 상세 모달 최종입고일 필드 추가
+- 제조 정보 섹션에 `최종입고일` 읽기전용 필드 추가
+- `p.stockLog` 중 `type === 'in'` 내 최신 날짜 자동 계산 (없으면 `—`)
+
+#### 비활성 플랫폼 영역 UX 개선
+- `#slInactiveArea`: `display:none` 조건부 → **항상 표시**로 변경
+- 라벨: `"비활성 채널 — 테이블 헤더로 드래그하여 추가"` → `"채널을 여기로 드래그하여 숨기기"`
+- 비활성 칩이 없어도 드롭 대상으로 활용 가능
+
+#### CSS 추가
+- `.page-size-row`: `display:flex; justify-content:space-between; align-items:center`
+- `.page-size-select`: 라벨 + select 인라인 배치 (font-size: 12px)
+
+---
+
 ## 보류 중 작업
 
 ### 이미지합치기 웹 통합 (테스트 후 결정)
@@ -683,3 +860,4 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - [ ] 데이터 영속성 (localStorage 또는 서버 연동)
 - [ ] 인쇄/PDF 출력
 - [ ] 이미지합치기 웹 통합 (테스트 후)
+- [ ] 업무일정 수정 권한 관리 (작성자/관리자/인사담당자만 수정 가능)

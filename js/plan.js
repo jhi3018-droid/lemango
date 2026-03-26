@@ -342,6 +342,12 @@ function searchPlan() {
   renderPlanTable()
 }
 
+function changePlanPageSize(val) {
+  State.plan.pageSize = parseInt(val) || 0
+  State.plan.page = 1
+  renderPlanTable()
+}
+
 function resetPlan() {
   document.getElementById('npKeyword').value = ''
   document.getElementById('npSearchField').value = 'all'
@@ -355,16 +361,19 @@ function resetPlan() {
   document.getElementById('npPhase').value = 'all'
   document.getElementById('npDateFrom').value = ''
   document.getElementById('npDateTo').value = ''
+  document.getElementById('npPageSize').value = '10'
+  State.plan.pageSize = 10
   State.plan.page = 1
+  State.plan.columnFilters = {}
   State.plan.filtered = State.planItems.filter(p => !p.confirmed)
   renderPlanTable()
 }
 
 function renderPlanTable() {
-  const data = State.plan.filtered
-  const sort = State.plan.sort
+  const data = applyColFilters(State.plan.filtered, State.plan.columnFilters)
   const page = State.plan.page || 1
-  const pageData = data.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const ps = getPageSize('plan')
+  const pageData = ps === 0 ? data : data.slice((page - 1) * ps, page * ps)
   document.getElementById('npTableMeta').textContent = `검색결과 ${data.length}건`
 
   if (!data.length) {
@@ -380,19 +389,19 @@ function renderPlanTable() {
     <table class="data-table plan-table" id="planTable">
       <thead>
         <tr>
-          <th rowspan="2" style="text-align:center">No.</th>
-          <th rowspan="2">이미지</th>
-          <th rowspan="2">샘플번호</th>
-          <th rowspan="2">품번</th>
-          <th rowspan="2">브랜드</th>
-          <th rowspan="2">상품명</th>
-          <th rowspan="2">색상</th>
-          <th rowspan="2">타입</th>
-          <th rowspan="2" style="text-align:right">판매가</th>
+          <th rowspan="2" data-key="no" data-no-filter style="width:45px;text-align:center">No.</th>
+          <th rowspan="2" data-no-sort data-no-filter style="width:60px">이미지</th>
+          <th rowspan="2" data-key="sampleNo">샘플번호</th>
+          <th rowspan="2" data-key="productCode" style="width:145px">품번</th>
+          <th rowspan="2" data-key="brand">브랜드</th>
+          <th rowspan="2" data-key="nameKr">상품명</th>
+          <th rowspan="2" data-key="colorKr">색상</th>
+          <th rowspan="2" data-key="type">타입</th>
+          <th rowspan="2" data-key="salePrice" style="text-align:right">판매가</th>
           ${schedules.map(s => `<th colspan="2" class="schedule-group-th">${s.label}</th>`).join('')}
         </tr>
         <tr>
-          ${schedules.map(() => `<th class="schedule-sub-th">시작일</th><th class="schedule-sub-th">완료예정일</th>`).join('')}
+          ${schedules.map(s => `<th class="schedule-sub-th" data-key="schedule.${s.key}.start" data-no-filter>시작일</th><th class="schedule-sub-th" data-key="schedule.${s.key}.end" data-no-filter>완료예정일</th>`).join('')}
         </tr>
       </thead>
       <tbody>${pageData.map(p => `<tr${p.confirmed ? ' style="opacity:0.6"' : ''}>
@@ -412,8 +421,7 @@ function renderPlanTable() {
       </tr>`).join('')}</tbody>
     </table>`
 
-  bindSortHeader('planTable', 'plan', renderPlanTable)
-  updateSortIcons('planTable', sort)
+  initTableFeatures('planTable', 'plan', 'renderPlanTable')
   renderPagination('npPagination', 'plan', 'renderPlanTable')
 }
 

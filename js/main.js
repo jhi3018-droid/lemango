@@ -13,10 +13,17 @@ async function init() {
   makeDraggableResizable(document.getElementById('gonghomPreviewModal'))
   makeDraggableResizable(document.getElementById('eventRegisterModal'))
   makeDraggableResizable(document.getElementById('planScheduleModal'))
+  makeDraggableResizable(document.getElementById('workRegisterModal'))
+  makeDraggableResizable(document.getElementById('workDetailModal'))
 
   // 해시 기반 초기 탭
   const initTab = location.hash.replace('#', '') || 'dashboard'
-  switchTab(initTab, false)
+  State.openTabs = [initTab]
+  if (initTab !== 'dashboard' && !State.openTabs.includes('dashboard')) {
+    // 대시보드도 같이 열어둠 (선택)
+  }
+  State.activeTab = initTab
+  applyTabState()
 
   try {
     const [lem, noir] = await Promise.all([
@@ -58,14 +65,15 @@ async function init() {
       }
     })
     State.plan.filtered    = State.planItems.filter(p => !p.confirmed)
+    // 업무일정 초기화
+    State.workItems = [..._workItems]
+    State.work.filtered = [...State.workItems]
+
     populateAllSelects()
-    renderDashboard()
-    renderProductTable()
-    renderStockTable()
-    renderSalesTable()
-    renderPlanTable()
-    // 행사일정 초기화
-    renderEventCalendar()
+
+    // 열린 탭들만 렌더 (첫 렌더 마킹)
+    _renderedTabs.clear()
+    State.openTabs.forEach(tab => triggerTabRender(tab))
   } catch (e) {
     showToast('데이터 로드 실패: ' + e.message, 'error')
     console.error(e)
