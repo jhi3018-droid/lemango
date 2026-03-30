@@ -132,6 +132,10 @@ async function init() {
   makeDraggableResizable(document.getElementById('planScheduleModal'))
   makeDraggableResizable(document.getElementById('workRegisterModal'))
   makeDraggableResizable(document.getElementById('workDetailModal'))
+  makeDraggableResizable(document.getElementById('dashDayModal'), 360, 200)
+  document.getElementById('dashDayModal')?.addEventListener('click', e => {
+    if (e.target === e.currentTarget) e.currentTarget.close()
+  })
 
   // 해시 기반 초기 탭
   const initTab = location.hash.replace('#', '') || 'dashboard'

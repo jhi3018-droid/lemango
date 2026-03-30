@@ -257,9 +257,13 @@ function renderDashCalendar() {
     html += `<div class="evcal-day">${cell.day}${holiday ? `<span class="dcal-hol-name">${esc(holiday)}</span>` : ''}</div>`
     html += '<div class="dcal-bars">'
 
-    // 행사 바 (최대 3개) — 클릭 시 조회 모달 (수정 불가)
-    const evSlice = di.events.slice(0, 3)
-    evSlice.forEach(ev => {
+    const MAX_VISIBLE = 6
+    let visibleCount = 0
+
+    // 행사 바
+    di.events.forEach(ev => {
+      if (visibleCount >= MAX_VISIBLE) return
+      visibleCount++
       const color = EV_COLORS[ev.no % EV_COLORS.length]
       const label = esc(`${ev.channel || ''} ${ev.name}`.trim())
       if (isPast) {
@@ -275,8 +279,9 @@ function renderDashCalendar() {
       const key = `${p.phaseKey}_${p.tag}`
       if (!planLabels[key]) planLabels[key] = p
     })
-    const planSlice = Object.values(planLabels).slice(0, 3)
-    planSlice.forEach(p => {
+    Object.values(planLabels).forEach(p => {
+      if (visibleCount >= MAX_VISIBLE) return
+      visibleCount++
       const phaseColor = PLAN_PHASE_COLORS[p.phaseKey] || { bar: '#999', text: '#fff' }
       const label = `${p.phaseLabel} ${p.tag}`
       if (isPast) {
@@ -287,22 +292,22 @@ function renderDashCalendar() {
     })
 
     // 업무일정 바
-    const workSlice = di.works.slice(0, 2)
-    workSlice.forEach(w => {
+    di.works.forEach(w => {
+      if (visibleCount >= MAX_VISIBLE) return
+      visibleCount++
       const wColor = getWorkCatColor(w.category)
       const label = `${w.category} ${w.title}`.trim()
       if (isPast) {
-        html += `<div class="dcal-bar dcal-bar-mini" style="background:${wColor.bg};" title="${esc(label)}" onclick="openTab('work')"></div>`
+        html += `<div class="dcal-bar dcal-bar-mini" style="background:${wColor.bg};" title="${esc(label)}" onclick="openWorkDetailModal(${w.no})"></div>`
       } else {
-        html += `<div class="dcal-bar dcal-bar-work" style="background:${wColor.bg}; color:${wColor.text};" title="${esc(label)}" onclick="openTab('work')">${esc(label)}</div>`
+        html += `<div class="dcal-bar dcal-bar-work" style="background:${wColor.bg}; color:${wColor.text};" title="${esc(label)}" onclick="openWorkDetailModal(${w.no})">${esc(label)}</div>`
       }
     })
 
     // +N more
-    const totalCount = di.events.length + di.plans.length + di.works.length
-    const shown = evSlice.length + planSlice.length + workSlice.length
-    if (totalCount > shown) {
-      html += `<div class="evcal-more">+${totalCount - shown}건</div>`
+    const totalCount = di.events.length + Object.keys(planLabels).length + di.works.length
+    if (totalCount > visibleCount) {
+      html += `<div class="evcal-more" onclick="openDashDayModal('${cell.date}')">+${totalCount - visibleCount}건</div>`
     }
 
     html += '</div></div>'
@@ -310,6 +315,70 @@ function renderDashCalendar() {
 
   html += '</div>'
   container.innerHTML = html
+}
+
+// =============================================
+// ===== 대시보드 날짜 클릭 → 일정 상세 모달 =====
+// =============================================
+function openDashDayModal(dateStr) {
+  const events = _events.filter(e => e.startDate <= dateStr && e.endDate >= dateStr)
+
+  const planHits = []
+  State.planItems.forEach(item => {
+    if (!item.schedule) return
+    SCHEDULE_DEFS.forEach(s => {
+      const sch = item.schedule?.[s.key] || {}
+      const end = sch.end || sch.start || ''
+      if (sch.start && sch.start <= dateStr && end >= dateStr) {
+        planHits.push({ item, phase: s })
+      }
+    })
+  })
+
+  const works = (State.workItems || []).filter(w => {
+    const we = w.endDate || w.startDate
+    return w.startDate && w.startDate <= dateStr && we >= dateStr
+  })
+
+  const modal = document.getElementById('dashDayModal')
+  const fmtKo = d => d ? d.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1년 $2월 $3일') : ''
+  const sections = []
+
+  if (events.length) {
+    sections.push(`<div class="ddm-section">
+      <div class="ddm-section-title">행사일정</div>
+      ${events.map(e => `<div class="ddm-row" onclick="openDashEventInfo(${e.no});document.getElementById('dashDayModal').close()">
+        <span class="ddm-badge" style="background:var(--primary);color:#fff">${esc(e.channel || '')}</span>
+        <span class="ddm-item-name">${esc(e.name)}</span>
+        <span class="ddm-item-period">${e.startDate} ~ ${e.endDate}</span>
+      </div>`).join('')}
+    </div>`)
+  }
+  if (planHits.length) {
+    sections.push(`<div class="ddm-section">
+      <div class="ddm-section-title">기획일정</div>
+      ${planHits.map(({item, phase}) => `<div class="ddm-row" onclick="openPlanScheduleForDate('${dateStr}');document.getElementById('dashDayModal').close()">
+        <span class="ddm-badge" style="background:var(--accent);color:#1a1a2e">${esc(phase.label)}</span>
+        <span class="ddm-item-name">${esc(item.productCode || item.sampleNo || '-')}</span>
+        <span class="ddm-item-period">${item.schedule?.[phase.key]?.start||''} ~ ${item.schedule?.[phase.key]?.end||''}</span>
+      </div>`).join('')}
+    </div>`)
+  }
+  if (works.length) {
+    sections.push(`<div class="ddm-section">
+      <div class="ddm-section-title">업무일정</div>
+      ${works.map(w => `<div class="ddm-row" onclick="openWorkDetailModal(${w.no});document.getElementById('dashDayModal').close()">
+        <span class="ddm-badge" style="background:${getWorkCatColor(w.category).bg};color:${getWorkCatColor(w.category).text}">${esc(w.category || '')}</span>
+        <span class="ddm-item-name">${esc(w.title)}</span>
+        <span class="ddm-item-period">${w.startDate} ~ ${w.endDate || w.startDate}</span>
+      </div>`).join('')}
+    </div>`)
+  }
+
+  modal.querySelector('.ddm-date').textContent = fmtKo(dateStr)
+  modal.querySelector('.ddm-body').innerHTML = sections.join('') || '<p style="color:var(--text-light);font-size:13px">일정 없음</p>'
+  centerModal(modal)
+  modal.showModal()
 }
 
 // =============================================
@@ -342,10 +411,11 @@ function openPlanScheduleForDate(dateStr) {
     body.innerHTML = '<p style="padding:20px;color:var(--text-sub);">해당 날짜에 기획 일정이 없습니다.</p>'
   } else {
     let html = '<div class="ps-list">'
-    html += '<table class="ps-phase-table"><thead><tr><th>샘플번호</th><th>품번</th><th>해당 단계</th></tr></thead><tbody>'
+    html += '<table class="ps-phase-table"><thead><tr><th>샘플번호</th><th>품번</th><th>해당 단계</th><th></th></tr></thead><tbody>'
     matched.forEach(({ item, phases }) => {
       const sample = item.sampleNo || '-'
       const code   = item.productCode || '-'
+      const identifier = item.productCode || item.sampleNo || ''
       const tags   = phases.map(p => {
         const phColor = PLAN_PHASE_COLORS[p.key]
         return `<span class="ps-dot" style="background:${phColor.bar}"></span>${p.label} ${p.tag}`
@@ -354,11 +424,12 @@ function openPlanScheduleForDate(dateStr) {
         <td>${esc(sample)}</td>
         <td>${esc(code)}</td>
         <td>${tags}</td>
+        <td><button class="btn btn-outline btn-sm" onclick="goToPlanWithItem('${esc(identifier)}');document.getElementById('planScheduleModal').close()">보기</button></td>
       </tr>`
     })
     html += '</tbody></table>'
     html += `<div class="ps-actions">
-      <button class="btn btn-primary btn-sm" onclick="goToPlanWithDate('${dateStr}')">신규기획에서 보기</button>
+      <button class="btn btn-primary btn-sm" onclick="goToPlanWithDate('${dateStr}')">날짜로 보기</button>
     </div>`
     html += '</div>'
     body.innerHTML = html
@@ -416,7 +487,7 @@ function openDashEventInfo(no) {
 // ===== 대시보드 → 기획일정 날짜 기준 검색으로 이동 =====
 function goToPlanWithDate(dateStr) {
   closePlanScheduleModal()
-  navigateTo('plan')
+  openTab('plan')
   // 날짜 필터 세팅
   document.getElementById('npPhase').value = 'all'
   document.getElementById('npDateFrom').value = dateStr
@@ -424,3 +495,23 @@ function goToPlanWithDate(dateStr) {
   document.getElementById('npConfirmed').value = 'all'
   searchPlan()
 }
+
+// ===== 대시보드 → 기획일정 특정 아이템 기준 검색으로 이동 =====
+function goToPlanWithItem(identifier) {
+  closePlanScheduleModal()
+  openTab('plan')
+  document.getElementById('npKeyword').value = identifier
+  const typeEl = document.getElementById('npSearchType')
+  if (typeEl) {
+    for (const opt of typeEl.options) {
+      if (opt.value === 'code' || opt.text.includes('품번')) {
+        typeEl.value = opt.value
+        break
+      }
+    }
+  }
+  document.getElementById('npConfirmed').value = 'all'
+  searchPlan()
+}
+window.goToPlanWithItem = goToPlanWithItem
+window.openDashDayModal = openDashDayModal

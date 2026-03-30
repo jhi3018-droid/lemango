@@ -2549,7 +2549,7 @@ body.col-resize-active * { cursor: col-resize !important; }
   border-bottom: 1px solid var(--border);
 }
 .dcal-cell {
-  min-height: 96px;
+  min-height: 130px;
   border-right: 1px solid var(--border-light);
   border-bottom: 1px solid var(--border-light);
   padding: 2px;
@@ -2682,6 +2682,29 @@ body.col-resize-active * { cursor: col-resize !important; }
 /* 행사 캘린더 공휴일 */
 .evcal-cell.dcal-holiday { background: #fff5f5 !important; }
 .evcal-cell.dcal-holiday .evcal-day { color: var(--danger) !important; }
+
+/* ===== 대시보드 날짜 일정 상세 모달 (dashDayModal) ===== */
+.ddm-section { margin-bottom: 16px; }
+.ddm-section:last-child { margin-bottom: 0; }
+.ddm-section-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  color: var(--text-light); letter-spacing: 0.5px;
+  margin-bottom: 6px; padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.ddm-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: 6px; cursor: pointer;
+  transition: background 0.15s;
+  font-size: 13px;
+}
+.ddm-row:hover { background: var(--bg); }
+.ddm-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 10px;
+  font-size: 11px; font-weight: 600; white-space: nowrap; flex-shrink: 0;
+}
+.ddm-item-name { flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ddm-item-period { font-size: 11px; color: var(--text-light); white-space: nowrap; flex-shrink: 0; }
 
 /* ===== 미니 달력 (연월 선택 팝업) ===== */
 .cal-month-clickable { cursor: pointer; user-select: none; border-radius: 4px; padding: 2px 8px; transition: background 0.15s; }
