@@ -72,6 +72,28 @@ function closeTab(tab) {
 function resetTabs() {
   State.openTabs = ['dashboard']
   State.activeTab = 'dashboard'
+
+  // 컬럼 드래그 상태 초기화 (상품조회, 재고관리, 신규기획)
+  ;['product', 'stock', 'plan'].forEach(tab => {
+    State[tab].activeColumns   = null
+    State[tab].inactiveColumns = []
+    State[tab].columnFilters   = {}
+    State[tab].sort            = { key: '', dir: '' }
+    State[tab].page            = 1
+    State[tab].pageSize        = 10
+  })
+
+  // 판매조회 플랫폼 + 필터 + 정렬 + 페이지 초기화
+  State.sales.activePlatforms   = [..._platforms]
+  State.sales.inactivePlatforms = []
+  State.sales.columnFilters     = {}
+  State.sales.sort              = { key: '', dir: '' }
+  State.sales.page              = 1
+  State.sales.pageSize          = 10
+
+  // 렌더 캐시 비우기 (non-dashboard 탭은 재열 시 새로 렌더)
+  ;[..._renderedTabs].forEach(tab => { if (tab !== 'dashboard') _renderedTabs.delete(tab) })
+
   triggerTabRender('dashboard')
   applyTabState()
 }

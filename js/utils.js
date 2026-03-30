@@ -559,6 +559,167 @@ function initTableFeatures(tableId, tabKey, renderFnName) {
   })
 }
 
+// =============================================
+// ===== 공통 컬럼 드래그 관리 =====
+// =============================================
+
+// 컬럼 상태 초기화 (activeColumns가 null이면 allCols로 초기화)
+function initColumnState(tabKey, allColKeys) {
+  const st = State[tabKey]
+  if (!st.activeColumns) {
+    st.activeColumns = [...allColKeys]
+    st.inactiveColumns = []
+  }
+  // 새로 추가된 컬럼 동기화
+  allColKeys.forEach(k => {
+    if (!st.activeColumns.includes(k) && !st.inactiveColumns.includes(k)) {
+      st.activeColumns.push(k)
+    }
+  })
+  // 삭제된 컬럼 제거
+  st.activeColumns = st.activeColumns.filter(k => allColKeys.includes(k))
+  st.inactiveColumns = st.inactiveColumns.filter(k => allColKeys.includes(k))
+}
+
+// 비활성 영역 렌더 + 드래그 이벤트
+function renderColInactiveArea(areaId, tagsId, tabKey, colDefs, fixedKeys, renderFnName) {
+  const area = document.getElementById(areaId)
+  const tags = document.getElementById(tagsId)
+  if (!area || !tags) return
+  const inactive = State[tabKey].inactiveColumns
+  area.style.display = 'flex'
+  if (inactive.length) {
+    tags.innerHTML = inactive.map(k => {
+      const def = colDefs.find(c => c.key === k)
+      const label = def ? def.label : k
+      return `<span class="col-inactive-chip" draggable="true" data-col-key="${k}">${label}</span>`
+    }).join('')
+  } else {
+    tags.innerHTML = ''
+  }
+
+  // 칩 drag 이벤트
+  tags.querySelectorAll('.col-inactive-chip').forEach(chip => {
+    chip.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', chip.dataset.colKey)
+      e.dataTransfer.setData('application/x-col-source', 'inactive')
+      chip.classList.add('col-dragging')
+      setTimeout(() => chip.style.opacity = '0.4', 0)
+    })
+    chip.addEventListener('dragend', () => {
+      chip.classList.remove('col-dragging')
+      chip.style.opacity = ''
+    })
+  })
+
+  // 비활성 영역 = 드롭 대상
+  area.ondragover = e => { e.preventDefault(); area.classList.add('col-drop-target') }
+  area.ondragleave = e => {
+    if (!area.contains(e.relatedTarget)) area.classList.remove('col-drop-target')
+  }
+  area.ondrop = e => {
+    e.preventDefault()
+    area.classList.remove('col-drop-target')
+    const src = e.dataTransfer.getData('application/x-col-source')
+    const key = e.dataTransfer.getData('text/plain')
+    if (src === 'header' && key && !fixedKeys.includes(key)) {
+      removeColumn(tabKey, key, renderFnName)
+    }
+  }
+}
+
+function removeColumn(tabKey, colKey, renderFnName) {
+  const st = State[tabKey]
+  st.activeColumns = st.activeColumns.filter(k => k !== colKey)
+  if (!st.inactiveColumns.includes(colKey)) st.inactiveColumns.push(colKey)
+  window[renderFnName]()
+}
+
+function restoreColumn(tabKey, colKey, insertIdx, renderFnName) {
+  const st = State[tabKey]
+  st.inactiveColumns = st.inactiveColumns.filter(k => k !== colKey)
+  if (insertIdx === undefined || insertIdx < 0) {
+    st.activeColumns.push(colKey)
+  } else {
+    st.activeColumns.splice(insertIdx, 0, colKey)
+  }
+  window[renderFnName]()
+}
+
+function reorderColumn(tabKey, fromKey, toIdx, renderFnName) {
+  const arr = State[tabKey].activeColumns
+  const fromIdx = arr.indexOf(fromKey)
+  if (fromIdx < 0) return
+  arr.splice(fromIdx, 1)
+  const insertAt = toIdx > fromIdx ? toIdx - 1 : toIdx
+  arr.splice(insertAt < 0 ? 0 : insertAt, 0, fromKey)
+  window[renderFnName]()
+}
+
+// 테이블 헤더에 드래그 이벤트 바인딩 (initTableFeatures 후 호출)
+function bindColumnDragDrop(tableId, tabKey, fixedKeys, renderFnName) {
+  const table = document.getElementById(tableId)
+  if (!table) return
+  const ths = table.querySelectorAll('thead tr:first-child th')
+  ths.forEach((th, idx) => {
+    const key = th.dataset.colKey || (th.colSpan === 1 ? th.dataset.key : null)
+    if (!key || fixedKeys.includes(key)) return
+    th.draggable = true
+    th.classList.add('col-drag-th')
+    th.dataset.colKey = key
+
+    th.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', key)
+      e.dataTransfer.setData('application/x-col-source', 'header')
+      th.classList.add('col-dragging')
+    })
+    th.addEventListener('dragend', () => {
+      th.classList.remove('col-dragging')
+      clearColDropIndicators()
+    })
+    th.addEventListener('dragover', e => {
+      e.preventDefault()
+      clearColDropIndicators()
+      const rect = th.getBoundingClientRect()
+      const mid = rect.left + rect.width / 2
+      if (e.clientX < mid) {
+        th.classList.add('col-drag-over-left')
+      } else {
+        th.classList.add('col-drag-over-right')
+      }
+    })
+    th.addEventListener('dragleave', () => {
+      th.classList.remove('col-drag-over-left', 'col-drag-over-right')
+    })
+    th.addEventListener('drop', e => {
+      e.preventDefault()
+      clearColDropIndicators()
+      const colKey = e.dataTransfer.getData('text/plain')
+      const src = e.dataTransfer.getData('application/x-col-source')
+      if (!colKey) return
+      const rect = th.getBoundingClientRect()
+      const mid = rect.left + rect.width / 2
+      const activeArr = State[tabKey].activeColumns
+      const targetIdx = activeArr.indexOf(key)
+      const insertIdx = e.clientX < mid ? targetIdx : targetIdx + 1
+      if (src === 'inactive') {
+        restoreColumn(tabKey, colKey, insertIdx, renderFnName)
+      } else if (src === 'header') {
+        reorderColumn(tabKey, colKey, insertIdx, renderFnName)
+      }
+    })
+  })
+}
+
+function clearColDropIndicators() {
+  document.querySelectorAll('.col-drag-over-left, .col-drag-over-right').forEach(el => {
+    el.classList.remove('col-drag-over-left', 'col-drag-over-right')
+  })
+}
+
+// fixStickySubRow — deprecated: thead-level sticky CSS handles 2-row headers
+function fixStickySubRow(_tableId) {}
+
 // ===== 미니 달력 (연월 선택 팝업) =====
 let _monthPickerEl = null
 

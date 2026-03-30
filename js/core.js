@@ -123,10 +123,10 @@ function populateAllSelects() {
 const State = {
   allProducts: [],
   planItems:   [],
-  product: { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {} },
-  stock:   { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {} },
+  product: { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [] },
+  stock:   { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [] },
   sales:   { filtered: [], sort: { key: 'totalSales', dir: 'desc' }, page: 1, pageSize: 10, activePlatforms: [], inactivePlatforms: [], columnFilters: {} },
-  plan:    { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {} },
+  plan:    { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [] },
   event:   { filtered: [], sort: { key: 'startDate', dir: 'asc' }, page: 1 },
   work:    { filtered: [], sort: { key: 'startDate', dir: 'desc' }, page: 1 },
   workItems: [],

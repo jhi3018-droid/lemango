@@ -922,6 +922,61 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 ---
 
+### 2026-03-30
+
+#### 2단 헤더 sticky top 버그 수정
+- **원인**: 판매조회/신규기획 2단 헤더의 2행 `top: 38px` 하드코딩 — `initTableFeatures()`가 정렬/필터 아이콘을 삽입하면서 1행 높이가 증가하여 2행이 데이터 행과 겹침
+- **수정**: `fixStickySubRow(tableId)` 함수 추가 (`js/utils.js`) — 렌더 후 1행 실제 높이를 측정(`getBoundingClientRect`)하여 2행 `th.style.top`에 동적 적용
+- CSS `top: 38px` 하드코딩 제거 (`.sales-table thead .sales-sub-row th`, `.plan-table thead tr:nth-child(2) th`)
+- `renderSalesTable()`, `renderPlanTable()` 양쪽에서 `initTableFeatures()` 직후 호출
+
+#### 샘플 데이터 주입 (5개 탭)
+- `js/main.js` — `injectSampleData()` 함수 추가, `init()` 내에서 호출
+- 신규기획 15개 (르망고 10 + 느와 5, SS/FW 혼합, confirmed 4개)
+- 재고관리 15개 상품 stock + stockLog 1~3건
+- 판매조회 동일 15개 상품 sales (플랫폼별 배분, 소진율 현실적)
+- 행사일정 15개 (공홈/GS/29cm/W쇼핑/기타, 3~8월, 중복 방지 로직)
+- 업무일정 15개 (연차/차량사용/미팅일정/기타, 3~6월)
+
+#### 전체 테이블 탭 컬럼 드래그 관리 기능
+- 상품조회, 재고관리, 신규기획 3개 탭에 컬럼 표시/숨김/순서변경 드래그 기능 추가
+- 판매조회는 기존 플랫폼 드래그 유지
+
+**공통 인프라 (`js/utils.js`)**
+- `initColumnState(tabKey, allColKeys)` — activeColumns 초기화 + 신규/삭제 컬럼 동기화
+- `renderColInactiveArea(areaId, tagsId, tabKey, colDefs, fixedKeys, renderFnName)` — 비활성 영역 렌더 + 드롭 이벤트
+- `removeColumn(tabKey, colKey, renderFnName)` — 컬럼 숨김
+- `restoreColumn(tabKey, colKey, insertIdx, renderFnName)` — 컬럼 복원
+- `reorderColumn(tabKey, fromKey, toIdx, renderFnName)` — 순서 변경
+- `bindColumnDragDrop(tableId, tabKey, fixedKeys, renderFnName)` — 헤더 드래그 이벤트 바인딩 (colspan th 포함)
+- `clearColDropIndicators()` — 드래그 구분선 정리
+
+**State 변경 (`js/core.js`)**
+- `State.product/stock/plan` 에 `activeColumns: null`, `inactiveColumns: []` 추가
+
+**HTML (`index.html`)**
+- 3개 탭에 비활성 영역 div 추가: `#pInactiveArea`, `#sInactiveArea`, `#npInactiveArea`
+
+**CSS (`style.css`)**
+- `sl-inactive-*` 스타일 → `col-inactive-*` 공통 클래스로 일반화 (기존 sl- 도 유지)
+- `.col-drag-th`, `.col-dragging`, `.col-drag-over-left/right` 신규 추가
+
+**각 탭 렌더 함수 재작성**
+- `PRODUCT_COLUMNS` / `STOCK_COLUMNS` / `PLAN_ALL_COLS` 컬럼 정의 배열 도입
+- 각 컬럼 정의: `{ key, label, fixed, thAttr, td(p), tf?(totals) }`
+- 렌더 시 `activeColumns` 기준으로 th/td 동적 생성
+- 신규기획 2단 헤더: regular(rowspan=2) + schedule group(colspan=2) 분리 처리
+- tfoot도 activeColumns 기반 동적 생성
+
+**탭별 고정 컬럼 (제거 불가)**
+- 상품조회: `_image`, `productCode`
+- 재고관리: `_image`, `productCode`
+- 신규기획: `productCode`
+
+**초기화 시 컬럼 상태 리셋**: `resetProduct/Stock/Plan()`에 `activeColumns=null, inactiveColumns=[]` 추가
+
+---
+
 ## 보류 중 작업
 
 ### 이미지합치기 웹 통합 (테스트 후 결정)

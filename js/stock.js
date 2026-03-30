@@ -455,11 +455,33 @@ function resetStock() {
   State.stock.pageSize = 10
   State.stock.page = 1
   State.stock.columnFilters = {}
+  State.stock.activeColumns = null
+  State.stock.inactiveColumns = []
   State.stock.filtered = [...State.allProducts]
   renderStockTable()
 }
 
+// 재고관리 컬럼 정의
+const STOCK_COLUMNS = [
+  { key:'_image',     label:'이미지', fixed:true,  thAttr:'data-no-sort data-no-filter style="width:60px"',   td:p=>`<td>${renderThumb(p)}</td>`,   tf:()=>`<td></td>` },
+  { key:'productCode',label:'품번',   fixed:true,  thAttr:'data-key="productCode" style="width:145px"',        td:p=>`<td><span class="code-link" onclick="openDetailModal('${p.productCode}')">${p.productCode}</span></td>`, tf:()=>`<td></td>` },
+  { key:'nameKr',     label:'상품명', fixed:false, thAttr:'data-key="nameKr"',    td:p=>`<td style="max-width:160px;overflow:hidden;text-overflow:ellipsis" title="${p.nameKr}">${p.nameKr}</td>`, tf:()=>`<td></td>` },
+  { key:'brand',      label:'브랜드', fixed:false, thAttr:'data-key="brand"',     td:p=>`<td style="font-size:12px">${p.brand}</td>`,  tf:()=>`<td></td>` },
+  { key:'salePrice',  label:'판매가', fixed:false, thAttr:'data-key="salePrice" style="text-align:right"', td:p=>`<td style="text-align:right"><span class="price">${fmtPrice(p.salePrice)}</span></td>`, tf:()=>`<td></td>` },
+  ...SIZES.map(sz => ({
+    key: `stock_${sz}`, label: sz, fixed:false,
+    thAttr: `data-key="stock.${sz}" style="text-align:center"`,
+    td: p => `<td style="text-align:center">${stockCell(p.stock?.[sz]||0)}</td>`,
+    tf: (totals) => `<td style="text-align:center">${totals[sz]||0}</td>`
+  })),
+  { key:'totalStock', label:'합계',   fixed:false, thAttr:'data-key="totalStock" style="text-align:right"', td:p=>`<td style="text-align:right;font-family:Inter;font-weight:600">${getTotalStock(p)}</td>`, tf:(totals,grand)=>`<td style="text-align:right;font-weight:700">${grand}</td>` },
+]
+const STOCK_FIXED_KEYS = STOCK_COLUMNS.filter(c=>c.fixed).map(c=>c.key)
+
 function renderStockTable() {
+  initColumnState('stock', STOCK_COLUMNS.map(c=>c.key))
+  renderColInactiveArea('sInactiveArea','sInactiveTags','stock',STOCK_COLUMNS,STOCK_FIXED_KEYS,'renderStockTable')
+
   const data = applyColFilters(State.stock.filtered, State.stock.columnFilters)
   const page = State.stock.page || 1
   const ps = getPageSize('stock')
@@ -472,42 +494,28 @@ function renderStockTable() {
     return
   }
 
-  const sizes = SIZES
   const totals = {}
-  sizes.forEach(sz => totals[sz] = data.reduce((s,p) => s + (p.stock?.[sz] || 0), 0))
-  const grandTotal = Object.values(totals).reduce((a,b) => a+b, 0)
+  SIZES.forEach(sz => totals[sz] = data.reduce((s,p) => s + (p.stock?.[sz]||0), 0))
+  const grandTotal = Object.values(totals).reduce((a,b)=>a+b, 0)
+
+  const activeCols = State.stock.activeColumns.map(k => STOCK_COLUMNS.find(c=>c.key===k)).filter(Boolean)
+  const thHtml = activeCols.map(c => `<th ${c.thAttr} data-col-key="${c.key}">${c.label}</th>`).join('')
+  const tbodyHtml = pageData.map(p => `<tr>${activeCols.map(c=>c.td(p)).join('')}</tr>`).join('')
+
+  // tfoot: 합계 행 — 비어있지 않은 tf가 하나라도 있을 때만
+  const hasTfData = activeCols.some(c => c.key.startsWith('stock_') || c.key === 'totalStock')
+  const tfHtml = hasTfData
+    ? `<tfoot><tr>${activeCols.map(c => c.tf(totals, grandTotal)).join('')}</tr></tfoot>`
+    : ''
 
   document.getElementById('sTableWrap').innerHTML = `
     <table class="data-table" id="stockTable">
-      <thead><tr>
-        <th data-no-sort data-no-filter style="width:60px">이미지</th>
-        <th data-key="productCode" style="width:145px">품번</th>
-        <th data-key="nameKr">상품명</th>
-        <th data-key="brand">브랜드</th>
-        <th data-key="salePrice" style="text-align:right">판매가</th>
-        ${sizes.map(sz => `<th data-key="stock.${sz}" style="text-align:center">${sz}</th>`).join('')}
-        <th data-key="totalStock" style="text-align:right">합계</th>
-      </tr></thead>
-      <tbody>${pageData.map(p => {
-        const total = getTotalStock(p)
-        return `<tr>
-          <td>${renderThumb(p)}</td>
-          <td><span class="code-link" onclick="openDetailModal('${p.productCode}')">${p.productCode}</span></td>
-          <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis" title="${p.nameKr}">${p.nameKr}</td>
-          <td style="font-size:12px">${p.brand}</td>
-          <td style="text-align:right"><span class="price">${fmtPrice(p.salePrice)}</span></td>
-          ${sizes.map(sz => `<td style="text-align:center">${stockCell(p.stock?.[sz] || 0)}</td>`).join('')}
-          <td style="text-align:right;font-family:Inter;font-weight:600">${total}</td>
-        </tr>`
-      }).join('')}</tbody>
-      <tfoot><tr>
-        <td colspan="4" style="text-align:right">합계</td>
-        <td></td>
-        ${sizes.map(sz => `<td style="text-align:center">${totals[sz]}</td>`).join('')}
-        <td style="text-align:right">${grandTotal}</td>
-      </tr></tfoot>
+      <thead><tr>${thHtml}</tr></thead>
+      <tbody>${tbodyHtml}</tbody>
+      ${tfHtml}
     </table>`
 
   initTableFeatures('stockTable', 'stock', 'renderStockTable')
+  bindColumnDragDrop('stockTable', 'stock', STOCK_FIXED_KEYS, 'renderStockTable')
   renderPagination('sPagination', 'stock', 'renderStockTable')
 }

@@ -365,15 +365,48 @@ function resetPlan() {
   State.plan.pageSize = 10
   State.plan.page = 1
   State.plan.columnFilters = {}
+  State.plan.activeColumns = null
+  State.plan.inactiveColumns = []
   State.plan.filtered = State.planItems.filter(p => !p.confirmed)
   renderPlanTable()
 }
 
+// 신규기획 컬럼 정의 — regular(rowspan=2) + schedule group(colspan=2)
+const PLAN_REGULAR_COLS = [
+  { key:'no',         label:'No.',    fixed:false, thAttr:'data-key="no" data-no-filter style="width:45px;text-align:center"',
+    td: p=>`<td style="text-align:center">${p.no}${p.confirmed?'<br><span style="font-size:9px;background:var(--success);color:#fff;padding:1px 5px;border-radius:8px">이전됨</span>':''}</td>` },
+  { key:'_image',     label:'이미지', fixed:false, thAttr:'data-no-sort data-no-filter style="width:60px"',
+    td: p=>`<td>${renderThumb(p)}</td>` },
+  { key:'sampleNo',   label:'샘플번호',fixed:false, thAttr:'data-key="sampleNo"',
+    td: p=>`<td><span class="code-link" onclick="openPlanDetailModal(${p.no})">${p.sampleNo}</span></td>` },
+  { key:'productCode',label:'품번',   fixed:true,  thAttr:'data-key="productCode" style="width:145px"',
+    td: p=>`<td>${p.productCode?`<span class="code-link" onclick="openDetailModal('${p.productCode}')">${p.productCode}</span>`:`<span style="color:var(--text-muted);font-size:12px">-</span>`}</td>` },
+  { key:'brand',      label:'브랜드', fixed:false, thAttr:'data-key="brand"',
+    td: p=>`<td style="font-size:12px">${p.brand||'-'}</td>` },
+  { key:'nameKr',     label:'상품명', fixed:false, thAttr:'data-key="nameKr"',
+    td: p=>`<td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${p.nameKr||''}">${p.nameKr||'-'}</td>` },
+  { key:'colorKr',    label:'색상',   fixed:false, thAttr:'data-key="colorKr"',
+    td: p=>`<td style="font-size:12px">${p.colorKr||'-'}</td>` },
+  { key:'type',       label:'타입',   fixed:false, thAttr:'data-key="type"',
+    td: p=>`<td>${typeBadge(p.type)}</td>` },
+  { key:'salePrice',  label:'판매가', fixed:false, thAttr:'data-key="salePrice" style="text-align:right"',
+    td: p=>`<td style="text-align:right"><span class="price">${fmtPrice(p.salePrice)}</span></td>` },
+]
+const PLAN_SCHEDULE_COLS = SCHEDULE_DEFS.map(s => ({
+  key: `schedule_${s.key}`, label: s.label, fixed:false, isSchedule:true, scheduleKey: s.key,
+  thAttr: `class="schedule-group-th"`,
+}))
+const PLAN_ALL_COLS = [...PLAN_REGULAR_COLS, ...PLAN_SCHEDULE_COLS]
+const PLAN_FIXED_KEYS = PLAN_ALL_COLS.filter(c=>c.fixed).map(c=>c.key)
+
 function renderPlanTable() {
+  initColumnState('plan', PLAN_ALL_COLS.map(c=>c.key))
+  renderColInactiveArea('npInactiveArea','npInactiveTags','plan',PLAN_ALL_COLS,PLAN_FIXED_KEYS,'renderPlanTable')
+
   const data = applyColFilters(State.plan.filtered, State.plan.columnFilters)
   const page = State.plan.page || 1
   const ps = getPageSize('plan')
-  const pageData = ps === 0 ? data : data.slice((page - 1) * ps, page * ps)
+  const pageData = ps === 0 ? data : data.slice((page-1)*ps, page*ps)
   document.getElementById('npTableMeta').textContent = `검색결과 ${data.length}건`
 
   if (!data.length) {
@@ -382,46 +415,45 @@ function renderPlanTable() {
     return
   }
 
-  const schedules = SCHEDULE_DEFS
   const fmtD = d => d ? d.replace(/^\d{4}-(\d{2})-(\d{2})$/, '$1/$2') : '-'
+  const activeKeys = State.plan.activeColumns
+  const activeRegular  = PLAN_REGULAR_COLS.filter(c => activeKeys.includes(c.key))
+  const activeSchedule = PLAN_SCHEDULE_COLS.filter(c => activeKeys.includes(c.key))
+
+  // 1행: regular cols (rowspan=2) + active schedule groups (colspan=2)
+  const row1 = [
+    ...activeRegular.map(c => `<th rowspan="2" ${c.thAttr} data-col-key="${c.key}">${c.label}</th>`),
+    ...activeSchedule.map(c => `<th colspan="2" ${c.thAttr} data-col-key="${c.key}">${c.label}</th>`)
+  ].join('')
+
+  // 2행: schedule sub-headers only
+  const row2 = activeSchedule.map(c =>
+    `<th class="schedule-sub-th" data-key="schedule.${c.scheduleKey}.start">시작일</th>` +
+    `<th class="schedule-sub-th" data-key="schedule.${c.scheduleKey}.end">완료예정일</th>`
+  ).join('')
+
+  const tbodyHtml = pageData.map(p => {
+    const regTds = activeRegular.map(c => c.td(p)).join('')
+    const schTds = activeSchedule.map(c => {
+      const sch = p.schedule?.[c.scheduleKey] || {}
+      return `<td class="schedule-date-cell${sch.start?' has-date':''}">${fmtD(sch.start)}</td>` +
+             `<td class="schedule-date-cell${sch.end?' has-date':''}">${fmtD(sch.end)}</td>`
+    }).join('')
+    return `<tr${p.confirmed?' style="opacity:0.6"':''}>${regTds}${schTds}</tr>`
+  }).join('')
 
   document.getElementById('npTableWrap').innerHTML = `
     <table class="data-table plan-table" id="planTable">
       <thead>
-        <tr>
-          <th rowspan="2" data-key="no" data-no-filter style="width:45px;text-align:center">No.</th>
-          <th rowspan="2" data-no-sort data-no-filter style="width:60px">이미지</th>
-          <th rowspan="2" data-key="sampleNo">샘플번호</th>
-          <th rowspan="2" data-key="productCode" style="width:145px">품번</th>
-          <th rowspan="2" data-key="brand">브랜드</th>
-          <th rowspan="2" data-key="nameKr">상품명</th>
-          <th rowspan="2" data-key="colorKr">색상</th>
-          <th rowspan="2" data-key="type">타입</th>
-          <th rowspan="2" data-key="salePrice" style="text-align:right">판매가</th>
-          ${schedules.map(s => `<th colspan="2" class="schedule-group-th">${s.label}</th>`).join('')}
-        </tr>
-        <tr>
-          ${schedules.map(s => `<th class="schedule-sub-th" data-key="schedule.${s.key}.start">시작일</th><th class="schedule-sub-th" data-key="schedule.${s.key}.end">완료예정일</th>`).join('')}
-        </tr>
+        <tr>${row1}</tr>
+        ${row2 ? `<tr>${row2}</tr>` : ''}
       </thead>
-      <tbody>${pageData.map(p => `<tr${p.confirmed ? ' style="opacity:0.6"' : ''}>
-        <td style="text-align:center">${p.no}${p.confirmed ? '<br><span style="font-size:9px;background:var(--success);color:#fff;padding:1px 5px;border-radius:8px">이전됨</span>' : ''}</td>
-        <td>${renderThumb(p)}</td>
-        <td><span class="code-link" onclick="openPlanDetailModal(${p.no})">${p.sampleNo}</span></td>
-        <td>${p.productCode ? `<span class="code-link" onclick="openDetailModal('${p.productCode}')">${p.productCode}</span>` : `<span style="color:var(--text-muted);font-size:12px">-</span>`}</td>
-        <td style="font-size:12px">${p.brand || '-'}</td>
-        <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${p.nameKr || ''}">${p.nameKr || '-'}</td>
-        <td style="font-size:12px">${p.colorKr || '-'}</td>
-        <td>${typeBadge(p.type)}</td>
-        <td style="text-align:right"><span class="price">${fmtPrice(p.salePrice)}</span></td>
-        ${schedules.map(s => {
-          const sch = p.schedule?.[s.key] || {}
-          return `<td class="schedule-date-cell${sch.start?' has-date':''}">${fmtD(sch.start)}</td><td class="schedule-date-cell${sch.end?' has-date':''}">${fmtD(sch.end)}</td>`
-        }).join('')}
-      </tr>`).join('')}</tbody>
+      <tbody>${tbodyHtml}</tbody>
     </table>`
 
   initTableFeatures('planTable', 'plan', 'renderPlanTable')
+  // fixStickySubRow 불필요 — .plan-table thead { position: sticky } CSS로 처리
+  bindColumnDragDrop('planTable', 'plan', PLAN_FIXED_KEYS, 'renderPlanTable')
   renderPagination('npPagination', 'plan', 'renderPlanTable')
 }
 

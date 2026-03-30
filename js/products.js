@@ -94,11 +94,39 @@ function resetProduct() {
   State.product.pageSize = 10
   State.product.page = 1
   State.product.columnFilters = {}
+  State.product.activeColumns = null
+  State.product.inactiveColumns = []
   State.product.filtered = [...State.allProducts]
   renderProductTable()
 }
 
+// 상품조회 컬럼 정의
+const PRODUCT_COLUMNS = [
+  { key:'no',         label:'No.',       fixed:false, thAttr:'data-key="no" data-no-filter style="width:45px;text-align:center"', td:p=>`<td style="text-align:center">${p.no}</td>` },
+  { key:'_image',     label:'이미지',    fixed:true,  thAttr:'data-no-sort data-no-filter style="width:60px"', td:p=>`<td>${renderThumb(p)}</td>` },
+  { key:'brand',      label:'브랜드',    fixed:false, thAttr:'data-key="brand"', td:p=>`<td><span style="font-size:12px">${p.brand}</span></td>` },
+  { key:'productCode',label:'품번',      fixed:true,  thAttr:'data-key="productCode" style="width:145px"', td:p=>`<td><span class="code-link" onclick="openDetailModal('${p.productCode}')">${p.productCode}</span></td>` },
+  { key:'nameKr',     label:'상품명',    fixed:false, thAttr:'data-key="nameKr"', td:p=>`<td style="max-width:160px;overflow:hidden;text-overflow:ellipsis" title="${p.nameKr}">${p.nameKr}</td>` },
+  { key:'colorKr',    label:'색상',      fixed:false, thAttr:'data-key="colorKr"', td:p=>`<td>${p.colorKr||'-'}</td>` },
+  { key:'salePrice',  label:'판매가',    fixed:false, thAttr:'data-key="salePrice" style="text-align:right"', td:p=>`<td style="text-align:right"><span class="price">${fmtPrice(p.salePrice)}</span></td>` },
+  { key:'costPrice',  label:'원가',      fixed:false, thAttr:'data-key="costPrice" style="text-align:right"', td:p=>`<td style="text-align:right"><span class="price">${fmtPrice(p.costPrice)}</span></td>` },
+  { key:'type',       label:'타입',      fixed:false, thAttr:'data-key="type"', td:p=>`<td>${typeBadge(p.type)}</td>` },
+  { key:'backStyle',  label:'백스타일',  fixed:false, thAttr:'data-key="backStyle"', td:p=>`<td style="font-size:12px;max-width:120px;overflow:hidden;text-overflow:ellipsis">${p.backStyle||'-'}</td>` },
+  { key:'legCut',     label:'레그컷',    fixed:false, thAttr:'data-key="legCut"', td:p=>`<td style="font-size:12px">${p.legCut||'-'}</td>` },
+  { key:'madeMonth',  label:'제조년월',  fixed:false, thAttr:'data-key="madeMonth"', td:p=>`<td style="font-size:12px">${p.madeMonth||'-'}</td>` },
+  { key:'lastInDate', label:'최종입고일',fixed:false, thAttr:'data-key="lastInDate"', td:p=>`<td style="font-size:12px">${((p.stockLog||[]).filter(l=>l.type==='in').reduce((m,l)=>l.date>m?l.date:m,''))||'—'}</td>` },
+  { key:'madeIn',     label:'제조국',    fixed:false, thAttr:'data-key="madeIn"', td:p=>`<td>${p.madeIn||'-'}</td>` },
+  { key:'totalStock', label:'입고수량',  fixed:false, thAttr:'data-key="totalStock" style="text-align:right"', td:p=>`<td style="text-align:right;font-family:Inter">${fmtNum(getTotalStock(p))}</td>`, tfoot:true },
+  { key:'totalSales', label:'판매수량',  fixed:false, thAttr:'data-key="totalSales" style="text-align:right"', td:p=>`<td style="text-align:right;font-family:Inter">${fmtNum(getTotalSales(p))}</td>`, tfoot:true },
+  { key:'exhaustion', label:'소진율',    fixed:false, thAttr:'data-key="exhaustion" style="width:120px"', td:p=>`<td>${progressBar(getExhaustion(p))}</td>` },
+]
+const PRODUCT_FIXED_KEYS = PRODUCT_COLUMNS.filter(c=>c.fixed).map(c=>c.key)
+
 function renderProductTable() {
+  const allKeys = PRODUCT_COLUMNS.map(c=>c.key)
+  initColumnState('product', allKeys)
+  renderColInactiveArea('pInactiveArea','pInactiveTags','product',PRODUCT_COLUMNS,PRODUCT_FIXED_KEYS,'renderProductTable')
+
   const data = applyColFilters(State.product.filtered, State.product.columnFilters)
   const page = State.product.page || 1
   const ps = getPageSize('product')
@@ -111,60 +139,41 @@ function renderProductTable() {
     return
   }
 
+  const activeCols = State.product.activeColumns.map(k => PRODUCT_COLUMNS.find(c=>c.key===k)).filter(Boolean)
   const totStock = data.reduce((s,p) => s + getTotalStock(p), 0)
   const totSales = data.reduce((s,p) => s + getTotalSales(p), 0)
 
+  const thHtml = activeCols.map(c => `<th ${c.thAttr} data-col-key="${c.key}">${c.label}</th>`).join('')
+  const tbodyHtml = pageData.map(p => `<tr>${activeCols.map(c => c.td(p)).join('')}</tr>`).join('')
+
+  // tfoot: 합계 행
+  const tfootCols = activeCols.map(c => {
+    if (c.key === 'totalStock') return `<td style="text-align:right;font-family:Inter">${totStock.toLocaleString()}</td>`
+    if (c.key === 'totalSales') return `<td style="text-align:right;font-family:Inter">${totSales.toLocaleString()}</td>`
+    return null
+  })
+  const lastSumIdx = tfootCols.reduce((last, v, i) => v !== null ? i : last, -1)
+  let tfHtml = ''
+  if (lastSumIdx >= 0) {
+    const beforeCount = lastSumIdx - (tfootCols.slice(0, lastSumIdx).filter(v=>v!==null).length - (tfootCols[lastSumIdx]!==null?0:0))
+    // simple approach: colspan up to first tfoot col, then individual
+    const firstSumIdx = tfootCols.findIndex(v=>v!==null)
+    tfHtml = `<tr>`
+    if (firstSumIdx > 0) tfHtml += `<td colspan="${firstSumIdx}" style="text-align:right">합계</td>`
+    for (let i = firstSumIdx; i < activeCols.length; i++) {
+      tfHtml += tfootCols[i] || '<td></td>'
+    }
+    tfHtml += '</tr>'
+  }
+
   document.getElementById('pTableWrap').innerHTML = `
     <table class="data-table" id="productTable">
-      <thead><tr>
-        <th data-key="no" data-no-filter style="width:45px;text-align:center">No.</th>
-        <th data-no-sort data-no-filter style="width:60px">이미지</th>
-        <th data-key="brand">브랜드</th>
-        <th data-key="productCode" style="width:145px">품번</th>
-        <th data-key="nameKr">상품명</th>
-        <th data-key="colorKr">색상</th>
-        <th data-key="salePrice" style="text-align:right">판매가</th>
-        <th data-key="costPrice" style="text-align:right">원가</th>
-        <th data-key="type">타입</th>
-        <th data-key="backStyle">백스타일</th>
-        <th data-key="legCut">레그컷</th>
-        <th data-key="madeMonth">제조년월</th>
-        <th data-key="lastInDate">최종입고일</th>
-        <th data-key="madeIn">제조국</th>
-        <th data-key="totalStock" style="text-align:right">입고수량</th>
-        <th data-key="totalSales" style="text-align:right">판매수량</th>
-        <th data-key="exhaustion" style="width:120px">소진율</th>
-      </tr></thead>
-      <tbody>${pageData.map(p => {
-        const st = getTotalStock(p), sl = getTotalSales(p), ex = getExhaustion(p)
-        return `<tr>
-          <td style="text-align:center">${p.no}</td>
-          <td>${renderThumb(p)}</td>
-          <td><span style="font-size:12px">${p.brand}</span></td>
-          <td><span class="code-link" onclick="openDetailModal('${p.productCode}')">${p.productCode}</span></td>
-          <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis" title="${p.nameKr}">${p.nameKr}</td>
-          <td>${p.colorKr || '-'}</td>
-          <td style="text-align:right"><span class="price">${fmtPrice(p.salePrice)}</span></td>
-          <td style="text-align:right"><span class="price">${fmtPrice(p.costPrice)}</span></td>
-          <td>${typeBadge(p.type)}</td>
-          <td style="font-size:12px;max-width:120px;overflow:hidden;text-overflow:ellipsis">${p.backStyle || '-'}</td>
-          <td style="font-size:12px">${p.legCut || '-'}</td>
-          <td style="font-size:12px">${p.madeMonth || '-'}</td>
-          <td style="font-size:12px">${((p.stockLog||[]).filter(l=>l.type==='in').reduce((m,l)=>l.date>m?l.date:m,'')) || '—'}</td>
-          <td>${p.madeIn || '-'}</td>
-          <td style="text-align:right;font-family:Inter">${fmtNum(st)}</td>
-          <td style="text-align:right;font-family:Inter">${fmtNum(sl)}</td>
-          <td>${progressBar(ex)}</td>
-        </tr>`
-      }).join('')}</tbody>
-      <tfoot><tr>
-        <td colspan="14" style="text-align:right">합계</td>
-        <td style="text-align:right;font-family:Inter">${totStock.toLocaleString()}</td>
-        <td style="text-align:right;font-family:Inter">${totSales.toLocaleString()}</td>
-        <td></td>
-      </tr></tfoot>
+      <thead><tr>${thHtml}</tr></thead>
+      <tbody>${tbodyHtml}</tbody>
+      ${tfHtml ? `<tfoot>${tfHtml}</tfoot>` : ''}
     </table>`
 
   initTableFeatures('productTable', 'product', 'renderProductTable')
+  bindColumnDragDrop('productTable', 'product', PRODUCT_FIXED_KEYS, 'renderProductTable')
   renderPagination('pPagination', 'product', 'renderProductTable')
 }

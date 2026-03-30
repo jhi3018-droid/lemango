@@ -373,9 +373,9 @@ table { border-collapse: collapse; width: 100%; }
   max-height: calc(100vh - 260px);
 }
 .data-table { table-layout: fixed; width: 100%; min-width: max-content; }
+/* thead 전체를 sticky로 고정 — 단일/다중 헤더 모두 동일하게 적용 */
+.data-table thead { position: sticky; top: 0; z-index: 12; }
 .data-table thead th {
-  position: sticky;
-  top: 0;
   background: var(--table-header);
   padding: 10px 12px;
   font-size: 12px;
@@ -388,7 +388,6 @@ table { border-collapse: collapse; width: 100%; }
   border-bottom: 2px solid var(--border);
   border-right: 0.5px solid var(--border-light);
   user-select: none;
-  z-index: 10;
 }
 .data-table thead th:last-child { border-right: none; }
 .data-table thead th[data-key]:hover { background: var(--border-light); color: var(--text-main); }
@@ -469,9 +468,7 @@ body.col-resize-active { cursor: col-resize !important; user-select: none !impor
 body.col-resize-active * { cursor: col-resize !important; }
 
 /* ===== 판매조회 테이블 (2단 헤더) ===== */
-/* ===== 판매조회 2단 헤더 ===== */
-.sales-table thead tr:first-child th { top: 0; z-index: 12; }
-.sales-table thead .sales-sub-row th { top: 38px; z-index: 11; background: var(--table-header); border-bottom: 2px solid var(--border); }
+.sales-table thead .sales-sub-row th { background: var(--table-header); border-bottom: 2px solid var(--border); }
 .sales-group-th { text-align: center !important; border-bottom: 1px solid var(--border) !important; white-space: nowrap; }
 .sales-sub-th { font-size: 11px !important; font-weight: 500 !important; padding: 6px 10px !important; }
 .sl-qty { text-align: right; font-family: 'Inter', sans-serif; font-size: 12px; }
@@ -485,25 +482,31 @@ body.col-resize-active * { cursor: col-resize !important; }
 .sl-plat-th.sl-drag-over-right { box-shadow: inset -3px 0 0 var(--accent); }
 .sl-plat-th.sl-dragging { opacity: 0.4; }
 
-/* 비활성 플랫폼 영역 */
-.sl-inactive-area {
+/* 공통 비활성 컬럼 영역 */
+.col-inactive-area, .sl-inactive-area {
   background: var(--bg); border: 1px dashed var(--border); border-radius: 8px;
   padding: 10px 16px; margin-bottom: 8px; min-height: 40px;
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
 }
-.sl-inactive-area.sl-drop-target { border-color: var(--accent); background: var(--accent-light, #f5f0e4); }
-.sl-inactive-label { font-size: 11px; color: var(--text-light); white-space: nowrap; }
-.sl-inactive-tags { display: flex; flex-wrap: wrap; gap: 6px; }
-.sl-inactive-chip {
+.col-inactive-area.col-drop-target, .sl-inactive-area.sl-drop-target { border-color: var(--accent); background: var(--accent-light, #f5f0e4); }
+.col-inactive-label, .sl-inactive-label { font-size: 11px; color: var(--text-light); white-space: nowrap; }
+.col-inactive-tags, .sl-inactive-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.col-inactive-chip, .sl-inactive-chip {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 4px 12px; border-radius: 14px; font-size: 12px; font-weight: 500;
   background: var(--surface, #fff); border: 1px solid var(--border);
   color: var(--text-main, var(--primary)); cursor: grab; user-select: none;
   transition: box-shadow 0.15s, border-color 0.15s;
 }
-.sl-inactive-chip:hover { border-color: var(--accent); box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
-.sl-inactive-chip:active { cursor: grabbing; }
-.sl-inactive-chip.sl-dragging { opacity: 0.4; }
+.col-inactive-chip:hover, .sl-inactive-chip:hover { border-color: var(--accent); box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.col-inactive-chip:active, .sl-inactive-chip:active { cursor: grabbing; }
+.col-inactive-chip.col-dragging, .sl-inactive-chip.sl-dragging { opacity: 0.4; }
+/* 드래그 가능 헤더 */
+.col-drag-th { cursor: grab; }
+.col-drag-th:active { cursor: grabbing; }
+.col-drag-th.col-dragging { opacity: 0.4; }
+.col-drag-th.col-drag-over-left  { box-shadow: inset 3px 0 0 var(--accent); }
+.col-drag-th.col-drag-over-right { box-shadow: inset -3px 0 0 var(--accent); }
 
 /* 테이블 특수 셀 */
 .thumb {
@@ -1764,8 +1767,6 @@ body.col-resize-active * { cursor: col-resize !important; }
 }
 
 /* 신규기획 테이블 스케줄 헤더 */
-.plan-table thead tr:first-child th { top: 0; z-index: 12; }
-.plan-table thead tr:nth-child(2) th { top: 38px; z-index: 11; }
 .plan-table .schedule-group-th {
   background: #2d2d4e;
   color: var(--accent-light, #e8d5b0);
