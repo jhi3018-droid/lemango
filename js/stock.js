@@ -485,8 +485,8 @@ function renderStockTable() {
         <th data-key="nameKr">상품명</th>
         <th data-key="brand">브랜드</th>
         <th data-key="salePrice" style="text-align:right">판매가</th>
-        ${sizes.map(sz => `<th data-key="stock.${sz}" data-no-filter style="text-align:center">${sz}</th>`).join('')}
-        <th data-key="totalStock" data-no-filter style="text-align:right">합계</th>
+        ${sizes.map(sz => `<th data-key="stock.${sz}" style="text-align:center">${sz}</th>`).join('')}
+        <th data-key="totalStock" style="text-align:right">합계</th>
       </tr></thead>
       <tbody>${pageData.map(p => {
         const total = getTotalStock(p)

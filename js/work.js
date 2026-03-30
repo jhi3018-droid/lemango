@@ -34,6 +34,10 @@ function renderWorkCalendar() {
   if (!container) return
 
   title.textContent = `${_wkYear}년 ${_wkMonth + 1}월`
+  title.classList.add('cal-month-clickable')
+  title.onclick = () => openMonthPicker(title, _wkYear, _wkMonth, (y, m) => {
+    _wkYear = y; _wkMonth = m; renderWorkCalendar()
+  })
 
   const firstDay = new Date(_wkYear, _wkMonth, 1)
   const startDow = firstDay.getDay()

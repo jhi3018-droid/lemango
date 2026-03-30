@@ -156,6 +156,10 @@ function renderDashCalendar() {
   if (!container) return
 
   title.textContent = `${_dashCalYear}년 ${_dashCalMonth + 1}월`
+  title.classList.add('cal-month-clickable')
+  title.onclick = () => openMonthPicker(title, _dashCalYear, _dashCalMonth, (y, m) => {
+    _dashCalYear = y; _dashCalMonth = m; renderDashCalendar()
+  })
 
   const firstDay = new Date(_dashCalYear, _dashCalMonth, 1)
   const startDow = firstDay.getDay()

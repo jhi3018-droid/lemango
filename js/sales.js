@@ -171,13 +171,13 @@ function renderSalesTable() {
     h1 += `<th colspan="2" class="sales-group-th sl-plat-th" draggable="true" data-platform="${pl}" data-pidx="${i}">${pl}</th>`
   })
 
-  // 2단 헤더 — 2행 (sort via initTableFeatures, no filter on numeric sub-columns)
+  // 2단 헤더 — 2행
   let h2 = `
-    <th class="sales-sub-th" data-key="totalSales" data-no-filter style="text-align:right">수량</th>
-    <th class="sales-sub-th" data-key="totalRevenue" data-no-filter style="text-align:right">매출액</th>`
+    <th class="sales-sub-th" data-key="totalSales" style="text-align:right">수량</th>
+    <th class="sales-sub-th" data-key="totalRevenue" style="text-align:right">매출액</th>`
   active.forEach(pl => {
-    h2 += `<th class="sales-sub-th" data-key="sales.${pl}" data-no-filter style="text-align:right">수량</th>` +
-      `<th class="sales-sub-th" data-key="rev.${pl}" data-no-filter style="text-align:right">매출액</th>`
+    h2 += `<th class="sales-sub-th" data-key="sales.${pl}" style="text-align:right">수량</th>` +
+      `<th class="sales-sub-th" data-key="rev.${pl}" style="text-align:right">매출액</th>`
   })
 
   // tbody

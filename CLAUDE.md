@@ -15,8 +15,8 @@
 ├── .claude/agents/         # 전문 에이전트
 ├── js/                     # JS 모듈 분리 (16개 파일)
 │   ├── core.js             # State, 설정, 플랫폼, populateAllSelects
-│   ├── router.js           # 해시 기반 라우팅 (navigateTo, switchTab)
-│   ├── utils.js            # 유틸 함수, 페이지네이션 (renderPagination, goPage)
+│   ├── router.js           # 탭 바 시스템 (openTab, closeTab, resetTabs, applyTabState)
+│   ├── utils.js            # 유틸, 페이지네이션, 정렬/필터(initTableFeatures), 미니달력(openMonthPicker)
 │   ├── products.js         # 상품조회 검색·렌더
 │   ├── stock.js            # 재고조회·입고·출고
 │   ├── sales.js            # 판매조회·공홈주문
@@ -402,6 +402,21 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - `addPlatformSetting()` / `editPlatformSetting(idx)` / `savePlatformEdit(idx)` / `removePlatformSetting(idx)` — 판매 채널 CRUD
 - `addWorkCategorySetting()` / `editWorkCategorySetting(idx)` / `saveWorkCategoryEdit(idx)` / `removeWorkCategorySetting(idx)` — 업무 카테고리 CRUD
 
+### 판매조회 플랫폼 관리
+- `initSalesPlatforms()` — 플랫폼 active/inactive 초기화 + 설정 동기화
+- `renderInactiveArea()` — 비활성 칩 렌더 + 드래그 이벤트 바인딩
+- `removeSalesPlatform(pl)` / `activateSalesPlatform(pl, idx)` / `reorderSalesPlatform(from, toIdx)` — 플랫폼 상태 변경
+- `bindSalesDragDrop()` — 테이블 헤더 드래그앤드롭 이벤트 바인딩
+- `clearDropIndicators()` — 드래그 구분선 CSS 클래스 정리
+
+### 테이블 공통 (정렬/필터/리사이즈)
+- `initTableFeatures(tableId, tabKey, renderFnName)` — sort/filter/resize 통합 초기화
+- `openColumnFilter(th, tabKey, key, renderFnName)` — 필터 드롭다운 열기 (교차 필터 지원)
+- `closeColumnFilter()` — 필터 드롭다운 닫기
+- `applyColFilters(data, columnFilters)` — 데이터에 컬럼 필터 적용 (AND 조건)
+- `getColUniqueValues(data, key)` — 컬럼 고유값 추출 (숫자 컬럼은 숫자순 정렬)
+- `clearAllColumnFilters(tabKey)` — 전체 컬럼 필터 초기화
+
 ### 유틸
 - `makeDraggableResizable(modal, minW, minH)` — 드래그+리사이즈 초기화
 - `centerModal(modal)` — 모달 화면 중앙 배치
@@ -411,6 +426,8 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - `parseExcelDate(val)` — Excel 시리얼/문자열 → YYYY-MM-DD
 - `copyFieldUrl(key, btn)` / `copySingleUrlFromBtn(btn)` — URL 클립보드 복사
 - `showToast(msg, type)` — 토스트 알림
+- `openMonthPicker(triggerEl, year, month, callback)` — 미니 달력 팝업 열기
+- `closeMonthPicker()` — 미니 달력 팝업 닫기
 
 ## 에이전트 목록 (`.claude/agents/`)
 | 파일 | 역할 |
@@ -820,29 +837,88 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 ### 2026-03-27
 
-#### 전체 탭 표시개수(페이지 사이즈) 드롭다운 추가
-- 상품조회·재고관리·신규기획 탭에도 `표시개수` select 추가 (기존 판매조회만 존재)
-- `.page-size-row` 래퍼: `table-meta` + `page-size-select` 좌우 배치 (4개 탭 공통)
-- 옵션: 10개 / 30개 / 50개 / 100개 / 전체
-- `State.*.pageSize` 도입 (product, stock, plan에 각각 `pageSize: 10`)
-- `changeProductPageSize()`, `changeStockPageSize()`, `changePlanPageSize()` 함수 추가
-- 검색 초기화 시 `pageSize = 10`, `columnFilters = {}` 자동 리셋
-- `getPageSize(tabKey)` 헬퍼: 모든 탭 pageSize 지원 (0 = 전체)
-- 판매조회 `#slPageSize`: 검색바 → `page-size-row`로 이동, 옵션 `20개 → 30개`로 변경
-- `#pPageSize`, `#sPageSize`, `#npPageSize`, `#slPageSize` — 4개 탭 ID
+#### 버그 수정
+- `app.js` 레거시 script 참조 제거 (index.html에서 삭제된 파일 참조 → 전체 JS 먹통 원인)
+- 페이지네이션 컨테이너 4개 복원 (`#pPagination`, `#sPagination`, `#slPagination`, `#npPagination`)
+- 소진율 컬럼 깨짐 수정 (tfoot colspan 계수 오류 15→14)
+- 품번 너비 미적용 수정 (`table-layout:fixed`에서 `min-width` → `width` 변경)
+- 판매조회 품번 리사이즈 불가 수정 (`initColumnResize`에서 rowspan th 누락)
 
-#### 상세 모달 최종입고일 필드 추가
-- 제조 정보 섹션에 `최종입고일` 읽기전용 필드 추가
-- `p.stockLog` 중 `type === 'in'` 내 최신 날짜 자동 계산 (없으면 `—`)
+#### 판매조회 테이블 전면 개편
+- **피벗테이블형 플랫폼 컬럼 관리**: 드래그로 컬럼 제거/복원/순서변경
+- `State.sales.activePlatforms` / `State.sales.inactivePlatforms` 도입
+- 비활성 플랫폼 영역 (`#slInactiveArea`) — 항상 표시, 드래그앤드롭 UI
+- 2단 헤더: 플랫폼명(colspan=2) + 수량/매출액 서브행
+- 매출액 계산: 수량 × 판매가, 합계는 전체 `_platforms` 기준
 
-#### 비활성 플랫폼 영역 UX 개선
-- `#slInactiveArea`: `display:none` 조건부 → **항상 표시**로 변경
-- 라벨: `"비활성 채널 — 테이블 헤더로 드래그하여 추가"` → `"채널을 여기로 드래그하여 숨기기"`
-- 비활성 칩이 없어도 드롭 대상으로 활용 가능
+#### 테이블 공통 개선 (4개 탭)
+- 가로/세로 구분선 추가 (`.data-table`)
+- `initTableFeatures(tableId, tabKey, renderFnName)` — sort/filter/resize 통합 초기화
+  - `bindSortHeader` + `updateSortIcons` + `initColumnResize` 3개 함수 대체
+  - 모든 `data-key` th에 자동으로 정렬/필터 아이콘 추가
+  - `data-no-sort` / `data-no-filter` 속성으로 개별 컬럼 제외 (이미지/NO만 제외)
+- 컬럼 리사이즈 드래그 (2단 헤더 rowspan 호환)
+- 이미지 `width:60px`, NO `width:45px`, 품번 `width:145px` 기본값
+- 텍스트 오버플로우: `overflow:hidden; text-overflow:ellipsis` 전체 th/td
+- 페이지 사이즈 드롭다운 (10/30/50/100/전체) — `.page-size-row`로 테이블 위 우측 배치
+  - `changeProductPageSize()`, `changeStockPageSize()`, `changePlanPageSize()`, `changeSalesPageSize()`
+  - `getPageSize(tabKey)` — 탭별 커스텀 pageSize 지원
 
-#### CSS 추가
-- `.page-size-row`: `display:flex; justify-content:space-between; align-items:center`
-- `.page-size-select`: 라벨 + select 인라인 배치 (font-size: 12px)
+#### 정렬 기능 (버튼 방식)
+- `.th-sort` 버튼 클릭으로만 정렬 (헤더 텍스트 클릭은 트리거 아님)
+- 3단계 토글: 없음(⇅) → 오름차순(▲) → 내림차순(▼) → 없음(⇅)
+- hover 효과 + `cursor:pointer` + `border-radius` + 배경 전환
+
+#### 엑셀 스타일 컬럼 필터
+- `.th-filter` 아이콘 클릭 → 고유값 체크박스 드롭다운 (`.col-filter-dd`)
+- 검색 input + 전체선택/해제 + 적용/초기화 버튼
+- 여러 컬럼 동시 필터 (AND 조건)
+- **교차 필터**: 필터 열 때 다른 활성 필터가 적용된 데이터 기준으로 고유값 추출
+- 숫자 컬럼: 숫자순 정렬하여 드롭다운 표시
+- 활성 필터 아이콘: 골드(`var(--accent)`) 강조
+- `State[탭].columnFilters = { colKey: Set(선택된값들) }`
+
+#### 테이블 헤더 틀고정 (sticky)
+- `.data-table thead th`: `position:sticky; top:0; z-index:10`
+- 판매조회 2단 헤더: 1행 `z-index:12`, 2행 `top:38px; z-index:11`
+- 신규기획 2단 헤더: 1행 `z-index:12`, 2행 `top:38px; z-index:11`
+- `.table-wrap` max-height: `calc(100vh - 260px)`
+- 필터 드롭다운 `z-index:1000` > 헤더 `z-index:12` — 정상 표시
+
+#### 멀티탭 시스템 도입
+- 네비게이션 클릭 → 탭 바(`#tabBar`)에 탭 추가 (DOM 유지 전환)
+- 이미 열린 메뉴 클릭 → 해당 탭으로 포커스 이동
+- × 버튼으로 탭 닫기 (인접 탭 전환), LEMANGO 로고 → 전체 리셋
+- `State.openTabs`, `State.activeTab`, `TAB_LABELS` 도입
+- `_renderedTabs` Set: 첫 열림 시만 렌더, 이후 DOM 유지
+- 탭 바 sticky (`top:56px`), `#232340` 배경, 골드 하이라이트
+
+#### 업무일정 탭 신규 추가 (`tab-work`)
+- `js/work.js` 신규 파일 — 업무일정 CRUD + 월간 캘린더
+- 카테고리별 컬러 바: `WORK_CAT_COLORS` + `WORK_CAT_PALETTE`, `getWorkCatColor(cat)`
+- 시작일~종료일 연속 바 표시, `placeWorkBars()` 배치 알고리즘
+- 등록 모달 (`workRegisterModal`), 상세 모달 (`workDetailModal`)
+- 카테고리 필터, 월 이동 (`wkPrevMonth/wkNextMonth/wkToday`)
+- 설정 탭: 업무일정 카테고리 CRUD (`_workCategories`, `DEFAULT_WORK_CATEGORIES`)
+- 대시보드 캘린더: 업무일정 바 표시 + 범례 "업무" 추가
+- localStorage: `lemango_work_items_v1`, `lemango_work_categories_v1`
+
+#### 상품조회 컬럼 추가
+- `lastInDate` 컬럼: 제조년월 옆, `p.stockLog`에서 `type==='in'` 최신 날짜 추출
+- 상세 모달 제조 정보 섹션에 `최종입고일` 읽기전용 필드 추가
+
+#### 레이아웃 확장
+- `.main`: `max-width:1600px` → `max-width:none`, `padding: 20px 20px 40px`, `margin:0`
+- 전체 콘텐츠가 브라우저 전체 폭 활용
+
+#### 캘린더 연월 미니 달력 팝업
+- `openMonthPicker(triggerEl, year, month, callback)` — 공통 함수 (`js/utils.js`)
+- 상단: `◀ [연도] ▶` 연도 이동, 본문: 4열×3행 월 버튼 그리드
+- 선택 월: `var(--accent)` 배경, 오늘 월: `var(--accent)` 테두리
+- 바깥 클릭 / ESC 닫기, 화면 밖 넘침 방지
+- 3개 캘린더 적용: 대시보드, 행사일정, 업무일정
+- `.cal-month-clickable` — 연월 텍스트 hover 효과 (cursor:pointer + 밑줄)
+- `.month-picker` — z-index:500, border-radius:8px, box-shadow
 
 ---
 

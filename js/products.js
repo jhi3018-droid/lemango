@@ -131,9 +131,9 @@ function renderProductTable() {
         <th data-key="madeMonth">제조년월</th>
         <th data-key="lastInDate">최종입고일</th>
         <th data-key="madeIn">제조국</th>
-        <th data-key="totalStock" data-no-filter style="text-align:right">입고수량</th>
-        <th data-key="totalSales" data-no-filter style="text-align:right">판매수량</th>
-        <th data-key="exhaustion" data-no-filter style="width:120px">소진율</th>
+        <th data-key="totalStock" style="text-align:right">입고수량</th>
+        <th data-key="totalSales" style="text-align:right">판매수량</th>
+        <th data-key="exhaustion" style="width:120px">소진율</th>
       </tr></thead>
       <tbody>${pageData.map(p => {
         const st = getTotalStock(p), sl = getTotalSales(p), ex = getExhaustion(p)

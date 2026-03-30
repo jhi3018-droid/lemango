@@ -141,7 +141,7 @@ table { border-collapse: collapse; width: 100%; }
 }
 
 /* ===== 메인 ===== */
-.main { padding: 20px 28px 40px; max-width: 1600px; margin: 0 auto; }
+.main { padding: 20px 20px 40px; max-width: none; margin: 0; }
 
 /* ===== 업무일정 카테고리 뱃지 ===== */
 .wk-cat-badge {
@@ -370,7 +370,7 @@ table { border-collapse: collapse; width: 100%; }
 /* ===== 테이블 래퍼 ===== */
 .table-wrap {
   overflow: auto;
-  max-height: calc(100vh - 290px);
+  max-height: calc(100vh - 260px);
 }
 .data-table { table-layout: fixed; width: 100%; min-width: max-content; }
 .data-table thead th {
@@ -388,20 +388,20 @@ table { border-collapse: collapse; width: 100%; }
   border-bottom: 2px solid var(--border);
   border-right: 0.5px solid var(--border-light);
   user-select: none;
-  z-index: 2;
+  z-index: 10;
 }
 .data-table thead th:last-child { border-right: none; }
-.data-table thead th[data-key] { cursor: pointer; }
 .data-table thead th[data-key]:hover { background: var(--border-light); color: var(--text-main); }
 
 /* th-content: sort + filter icons */
 .th-content { display: flex; align-items: center; gap: 2px; justify-content: inherit; }
 .th-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.th-sort { font-size: 10px; opacity: 0.35; cursor: pointer; flex-shrink: 0; }
-.th-sort.active { opacity: 1; color: var(--accent); }
-.th-filter { font-size: 9px; opacity: 0.3; cursor: pointer; flex-shrink: 0; padding: 0 1px; }
-.th-filter:hover { opacity: 0.8; }
-.th-filter.active { opacity: 1; color: var(--accent); }
+.th-sort { font-size: 10px; opacity: 0.35; cursor: pointer; flex-shrink: 0; padding: 1px 3px; border-radius: 3px; transition: opacity 0.15s, background 0.15s; user-select: none; }
+.th-sort:hover { opacity: 0.7; background: rgba(0,0,0,0.06); }
+.th-sort.active { opacity: 1; color: var(--accent); background: rgba(201,169,110,0.1); }
+.th-filter { font-size: 9px; opacity: 0.3; cursor: pointer; flex-shrink: 0; padding: 1px 3px; border-radius: 3px; transition: opacity 0.15s, background 0.15s; user-select: none; }
+.th-filter:hover { opacity: 0.7; background: rgba(0,0,0,0.06); }
+.th-filter.active { opacity: 1; color: var(--accent); background: rgba(201,169,110,0.1); }
 
 /* legacy compat */
 .data-table thead th .sort-icon { font-size: 10px; margin-left: 3px; opacity: 0.4; }
@@ -470,8 +470,8 @@ body.col-resize-active * { cursor: col-resize !important; }
 
 /* ===== 판매조회 테이블 (2단 헤더) ===== */
 /* ===== 판매조회 2단 헤더 ===== */
-.sales-table thead tr:first-child th { top: 0; z-index: 4; }
-.sales-table thead .sales-sub-row th { top: 38px; z-index: 3; background: var(--table-header); border-bottom: 2px solid var(--border); }
+.sales-table thead tr:first-child th { top: 0; z-index: 12; }
+.sales-table thead .sales-sub-row th { top: 38px; z-index: 11; background: var(--table-header); border-bottom: 2px solid var(--border); }
 .sales-group-th { text-align: center !important; border-bottom: 1px solid var(--border) !important; white-space: nowrap; }
 .sales-sub-th { font-size: 11px !important; font-weight: 500 !important; padding: 6px 10px !important; }
 .sl-qty { text-align: right; font-family: 'Inter', sans-serif; font-size: 12px; }
@@ -1764,6 +1764,8 @@ body.col-resize-active * { cursor: col-resize !important; }
 }
 
 /* 신규기획 테이블 스케줄 헤더 */
+.plan-table thead tr:first-child th { top: 0; z-index: 12; }
+.plan-table thead tr:nth-child(2) th { top: 38px; z-index: 11; }
 .plan-table .schedule-group-th {
   background: #2d2d4e;
   color: var(--accent-light, #e8d5b0);
@@ -2679,3 +2681,36 @@ body.col-resize-active * { cursor: col-resize !important; }
 /* 행사 캘린더 공휴일 */
 .evcal-cell.dcal-holiday { background: #fff5f5 !important; }
 .evcal-cell.dcal-holiday .evcal-day { color: var(--danger) !important; }
+
+/* ===== 미니 달력 (연월 선택 팝업) ===== */
+.cal-month-clickable { cursor: pointer; user-select: none; border-radius: 4px; padding: 2px 8px; transition: background 0.15s; }
+.cal-month-clickable:hover { background: rgba(0,0,0,0.05); text-decoration: underline; }
+
+.month-picker {
+  position: absolute; z-index: 500;
+  background: #fff; border: 0.5px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.12);
+  padding: 12px; width: 220px;
+}
+.mp-year-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.mp-year-label { font-size: 14px; font-weight: 700; }
+.mp-year-btn {
+  background: none; border: none; cursor: pointer; font-size: 13px;
+  padding: 4px 8px; border-radius: 4px; color: var(--text-main);
+  transition: background 0.15s;
+}
+.mp-year-btn:hover { background: var(--border-light); }
+.mp-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.mp-btn {
+  background: none; border: 1px solid transparent; border-radius: 6px;
+  padding: 7px 4px; font-size: 13px; cursor: pointer;
+  text-align: center; transition: background 0.12s, border-color 0.12s;
+  color: var(--text-main);
+}
+.mp-btn:hover { background: var(--border-light); }
+.mp-btn-active { background: var(--accent) !important; color: #fff !important; border-color: var(--accent); font-weight: 700; }
+.mp-btn-today { border-color: var(--accent); color: var(--accent); font-weight: 600; }

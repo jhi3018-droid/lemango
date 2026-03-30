@@ -364,14 +364,29 @@ function applyColFilters(data, columnFilters) {
 function getColUniqueValues(data, key) {
   const vals = new Set()
   data.forEach(item => vals.add(String(resolveValue(item, key) ?? '')))
-  return [...vals].sort((a, b) => a.localeCompare(b, 'ko'))
+  const arr = [...vals]
+  // 숫자로만 이루어진 목록이면 숫자 순서로 정렬
+  const allNumeric = arr.every(v => v === '' || !isNaN(Number(v)))
+  if (allNumeric) {
+    return arr.sort((a, b) => {
+      if (a === '') return -1
+      if (b === '') return 1
+      return Number(a) - Number(b)
+    })
+  }
+  return arr.sort((a, b) => a.localeCompare(b, 'ko'))
 }
 
 let _colFilterDD = null
 function openColumnFilter(th, tabKey, key, renderFnName) {
   closeColumnFilter()
 
-  const data = State[tabKey].filtered
+  // 교차 필터: 현재 컬럼을 제외한 다른 필터가 적용된 데이터 기준으로 고유값 추출
+  const otherFilters = {}
+  Object.entries(State[tabKey].columnFilters || {}).forEach(([k, v]) => {
+    if (k !== key && v && v.size) otherFilters[k] = v
+  })
+  const data = applyColFilters(State[tabKey].filtered, otherFilters)
   const uniqueVals = getColUniqueValues(data, key)
   const curFilter = State[tabKey].columnFilters[key]
 
@@ -477,29 +492,39 @@ function initTableFeatures(tableId, tabKey, renderFnName) {
     inner += `<span class="th-label">${label}</span>`
     if (key && !noSort) {
       const isActive = sort.key === key
-      const icon = isActive ? (sort.dir === 'asc' ? '↑' : '↓') : '⇅'
-      inner += `<span class="th-sort${isActive ? ' active' : ''}">${icon}</span>`
+      const icon = isActive ? (sort.dir === 'asc' ? '▲' : '▼') : '⇅'
+      inner += `<span class="th-sort${isActive ? ' active' : ''}" title="정렬">${icon}</span>`
     }
     if (key && !noFilter) {
       const isFiltered = !!filters[key]
-      inner += `<span class="th-filter${isFiltered ? ' active' : ''}">▼</span>`
+      inner += `<span class="th-filter${isFiltered ? ' active' : ''}" title="필터">▼</span>`
     }
     inner += '</div>'
     th.innerHTML = inner
 
-    // Sort binding
+    // Sort binding — 정렬 버튼(.th-sort)만 클릭 시 동작, 3단계: 없음→오름→내림→없음
     if (key && !noSort) {
-      const sortHandler = (e) => {
+      th.querySelector('.th-sort').addEventListener('click', (e) => {
         e.stopPropagation()
         const cur = State[tabKey].sort
-        const dir = cur.key === key && cur.dir === 'asc' ? 'desc' : 'asc'
-        State[tabKey].sort = { key, dir }
+        let newSort
+        if (cur.key !== key) {
+          // 다른 컬럼 → 오름차순
+          newSort = { key, dir: 'asc' }
+        } else if (cur.dir === 'asc') {
+          // 오름 → 내림
+          newSort = { key, dir: 'desc' }
+        } else {
+          // 내림 → 없음 (기본 정렬 해제)
+          newSort = { key: '', dir: 'asc' }
+        }
+        State[tabKey].sort = newSort
         State[tabKey].page = 1
-        State[tabKey].filtered = sortData(State[tabKey].filtered, key, dir)
+        if (newSort.key) {
+          State[tabKey].filtered = sortData(State[tabKey].filtered, newSort.key, newSort.dir)
+        }
         window[renderFnName]()
-      }
-      th.querySelector('.th-label').addEventListener('click', sortHandler)
-      th.querySelector('.th-sort').addEventListener('click', sortHandler)
+      })
     }
 
     // Filter binding
@@ -532,6 +557,105 @@ function initTableFeatures(tableId, tabKey, renderFnName) {
       document.addEventListener('mouseup', onUp)
     })
   })
+}
+
+// ===== 미니 달력 (연월 선택 팝업) =====
+let _monthPickerEl = null
+
+function openMonthPicker(triggerEl, currentYear, currentMonth, callback) {
+  closeMonthPicker()
+
+  const picker = document.createElement('div')
+  picker.className = 'month-picker'
+  picker.id = 'monthPickerPopup'
+
+  let displayYear = currentYear
+  const todayYear = new Date().getFullYear()
+  const todayMonth = new Date().getMonth()
+  const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월']
+
+  function render() {
+    let html = '<div class="mp-year-nav">'
+    html += `<button class="mp-year-btn" data-dir="-1">◀</button>`
+    html += `<span class="mp-year-label">${displayYear}년</span>`
+    html += `<button class="mp-year-btn" data-dir="1">▶</button>`
+    html += '</div><div class="mp-grid">'
+    for (let m = 0; m < 12; m++) {
+      const isActive = displayYear === currentYear && m === currentMonth
+      const isToday  = displayYear === todayYear && m === todayMonth
+      let cls = 'mp-btn'
+      if (isActive) cls += ' mp-btn-active'
+      else if (isToday) cls += ' mp-btn-today'
+      html += `<button class="${cls}" data-month="${m}">${MONTHS[m]}</button>`
+    }
+    html += '</div>'
+    picker.innerHTML = html
+
+    // 연도 이동
+    picker.querySelectorAll('.mp-year-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
+        displayYear += parseInt(btn.dataset.dir)
+        render()
+      })
+    })
+    // 월 선택
+    picker.querySelectorAll('.mp-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
+        const m = parseInt(btn.dataset.month)
+        closeMonthPicker()
+        callback(displayYear, m)
+      })
+    })
+  }
+
+  render()
+  document.body.appendChild(picker)
+  _monthPickerEl = picker
+
+  // 위치 계산
+  const rect = triggerEl.getBoundingClientRect()
+  picker.style.top = (rect.bottom + window.scrollY + 4) + 'px'
+  picker.style.left = (rect.left + window.scrollX + rect.width / 2) + 'px'
+  picker.style.transform = 'translateX(-50%)'
+
+  requestAnimationFrame(() => {
+    const pr = picker.getBoundingClientRect()
+    if (pr.right > window.innerWidth - 8) {
+      picker.style.left = (window.innerWidth - pr.width - 8) + 'px'
+      picker.style.transform = 'none'
+    }
+    if (pr.left < 8) {
+      picker.style.left = '8px'
+      picker.style.transform = 'none'
+    }
+    if (pr.bottom > window.innerHeight - 8) {
+      picker.style.top = (rect.top + window.scrollY - pr.height - 4) + 'px'
+    }
+  })
+
+  // 바깥 클릭 / ESC 닫기
+  setTimeout(() => {
+    document.addEventListener('mousedown', _mpOutsideClick)
+    document.addEventListener('keydown', _mpEscKey)
+  }, 0)
+}
+
+function _mpOutsideClick(e) {
+  const el = document.getElementById('monthPickerPopup')
+  if (el && !el.contains(e.target)) closeMonthPicker()
+}
+function _mpEscKey(e) {
+  if (e.key === 'Escape') closeMonthPicker()
+}
+
+function closeMonthPicker() {
+  const el = document.getElementById('monthPickerPopup')
+  if (el) el.remove()
+  _monthPickerEl = null
+  document.removeEventListener('mousedown', _mpOutsideClick)
+  document.removeEventListener('keydown', _mpEscKey)
 }
 
 // Excel 날짜 변환 (시리얼 숫자 또는 문자열 → YYYY-MM-DD)

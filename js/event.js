@@ -43,6 +43,10 @@ function renderEventCalendar() {
   if (!container) return
 
   title.textContent = `${_evYear}년 ${_evMonth + 1}월`
+  title.classList.add('cal-month-clickable')
+  title.onclick = () => openMonthPicker(title, _evYear, _evMonth, (y, m) => {
+    _evYear = y; _evMonth = m; renderEventCalendar()
+  })
 
   const firstDay   = new Date(_evYear, _evMonth, 1)
   const startDow   = firstDay.getDay()

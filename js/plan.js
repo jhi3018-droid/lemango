@@ -401,7 +401,7 @@ function renderPlanTable() {
           ${schedules.map(s => `<th colspan="2" class="schedule-group-th">${s.label}</th>`).join('')}
         </tr>
         <tr>
-          ${schedules.map(s => `<th class="schedule-sub-th" data-key="schedule.${s.key}.start" data-no-filter>시작일</th><th class="schedule-sub-th" data-key="schedule.${s.key}.end" data-no-filter>완료예정일</th>`).join('')}
+          ${schedules.map(s => `<th class="schedule-sub-th" data-key="schedule.${s.key}.start">시작일</th><th class="schedule-sub-th" data-key="schedule.${s.key}.end">완료예정일</th>`).join('')}
         </tr>
       </thead>
       <tbody>${pageData.map(p => `<tr${p.confirmed ? ' style="opacity:0.6"' : ''}>
