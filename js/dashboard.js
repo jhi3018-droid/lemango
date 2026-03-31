@@ -253,7 +253,7 @@ function renderDashCalendar() {
     if (holiday) classes.push('dcal-holiday')
     if (isPast) classes.push('evcal-past')
 
-    html += `<div class="${classes.join(' ')}">`
+    html += `<div class="${classes.join(' ')}" data-date="${cell.date}">`
     html += `<div class="evcal-day">${cell.day}${holiday ? `<span class="dcal-hol-name">${esc(holiday)}</span>` : ''}</div>`
     html += '<div class="dcal-bars">'
 
@@ -315,6 +315,14 @@ function renderDashCalendar() {
 
   html += '</div>'
   container.innerHTML = html
+
+  // Bind cell background clicks → openDashDayModal (bar/more clicks are already handled)
+  container.querySelectorAll('.dcal-cell[data-date]').forEach(td => {
+    td.addEventListener('click', e => {
+      if (e.target.closest('.dcal-bar') || e.target.closest('.evcal-more')) return
+      openDashDayModal(td.dataset.date)
+    })
+  })
 }
 
 // =============================================
@@ -347,7 +355,7 @@ function openDashDayModal(dateStr) {
   if (events.length) {
     sections.push(`<div class="ddm-section">
       <div class="ddm-section-title">행사일정</div>
-      ${events.map(e => `<div class="ddm-row" onclick="openDashEventInfo(${e.no});document.getElementById('dashDayModal').close()">
+      ${events.map(e => `<div class="ddm-row" onclick="openDashEventInfo(${e.no})">
         <span class="ddm-badge" style="background:var(--primary);color:#fff">${esc(e.channel || '')}</span>
         <span class="ddm-item-name">${esc(e.name)}</span>
         <span class="ddm-item-period">${e.startDate} ~ ${e.endDate}</span>
@@ -357,7 +365,7 @@ function openDashDayModal(dateStr) {
   if (planHits.length) {
     sections.push(`<div class="ddm-section">
       <div class="ddm-section-title">기획일정</div>
-      ${planHits.map(({item, phase}) => `<div class="ddm-row" onclick="openPlanScheduleForDate('${dateStr}');document.getElementById('dashDayModal').close()">
+      ${planHits.map(({item, phase}) => `<div class="ddm-row" onclick="openPlanScheduleForDate('${dateStr}')">
         <span class="ddm-badge" style="background:var(--accent);color:#1a1a2e">${esc(phase.label)}</span>
         <span class="ddm-item-name">${esc(item.productCode || item.sampleNo || '-')}</span>
         <span class="ddm-item-period">${item.schedule?.[phase.key]?.start||''} ~ ${item.schedule?.[phase.key]?.end||''}</span>
@@ -367,7 +375,7 @@ function openDashDayModal(dateStr) {
   if (works.length) {
     sections.push(`<div class="ddm-section">
       <div class="ddm-section-title">업무일정</div>
-      ${works.map(w => `<div class="ddm-row" onclick="openWorkDetailModal(${w.no});document.getElementById('dashDayModal').close()">
+      ${works.map(w => `<div class="ddm-row" onclick="openWorkDetailModal(${w.no})">
         <span class="ddm-badge" style="background:${getWorkCatColor(w.category).bg};color:${getWorkCatColor(w.category).text}">${esc(w.category || '')}</span>
         <span class="ddm-item-name">${esc(w.title)}</span>
         <span class="ddm-item-period">${w.startDate} ~ ${w.endDate || w.startDate}</span>

@@ -2554,7 +2554,9 @@ body.col-resize-active * { cursor: col-resize !important; }
   border-bottom: 1px solid var(--border-light);
   padding: 2px;
   overflow: hidden;
+  cursor: pointer;
 }
+.dcal-cell:hover { background: rgba(0,0,0,0.03); }
 .dcal-cell.evcal-other { background: #fafaf8; }
 .dcal-cell.evcal-other .evcal-day { color: var(--text-light); }
 .dcal-cell.evcal-today { background: #fffde7; }
