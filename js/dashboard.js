@@ -298,9 +298,9 @@ function renderDashCalendar() {
       const wColor = getWorkCatColor(w.category)
       const label = `${w.category} ${w.title}`.trim()
       if (isPast) {
-        html += `<div class="dcal-bar dcal-bar-mini" style="background:${wColor.bg};" title="${esc(label)}" onclick="openWorkDetailModal(${w.no})"></div>`
+        html += `<div class="dcal-bar dcal-bar-mini" style="background:${wColor.bg};" title="${esc(label)}" onclick="openWorkDetailModal(${w.no}, true)"></div>`
       } else {
-        html += `<div class="dcal-bar dcal-bar-work" style="background:${wColor.bg}; color:${wColor.text};" title="${esc(label)}" onclick="openWorkDetailModal(${w.no})">${esc(label)}</div>`
+        html += `<div class="dcal-bar dcal-bar-work" style="background:${wColor.bg}; color:${wColor.text};" title="${esc(label)}" onclick="openWorkDetailModal(${w.no}, true)">${esc(label)}</div>`
       }
     })
 
@@ -375,7 +375,7 @@ function openDashDayModal(dateStr) {
   if (works.length) {
     sections.push(`<div class="ddm-section">
       <div class="ddm-section-title">업무일정</div>
-      ${works.map(w => `<div class="ddm-row" onclick="openWorkDetailModal(${w.no})">
+      ${works.map(w => `<div class="ddm-row" onclick="openWorkDetailModal(${w.no}, true)">
         <span class="ddm-badge" style="background:${getWorkCatColor(w.category).bg};color:${getWorkCatColor(w.category).text}">${esc(w.category || '')}</span>
         <span class="ddm-item-name">${esc(w.title)}</span>
         <span class="ddm-item-period">${w.startDate} ~ ${w.endDate || w.startDate}</span>
@@ -485,7 +485,7 @@ function openDashEventInfo(no) {
           </tbody>
         </table>
         <div class="ps-actions">
-          <button class="btn btn-primary btn-sm" onclick="closePlanScheduleModal(); navigateTo('event'); setTimeout(()=>editEvent(${ev.no}),200)">수정하러 가기</button>
+          <button class="btn btn-primary btn-sm" onclick="closePlanScheduleModal(); openTab('event'); setTimeout(()=>editEvent(${ev.no}),200)">수정하러 가기</button>
         </div>
       </div>
     </div>`

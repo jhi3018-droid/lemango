@@ -252,20 +252,24 @@ function submitWork(e) {
 }
 
 // ===== 상세 모달 =====
-function openWorkDetailModal(no) {
+function openWorkDetailModal(no, fromDash = false) {
   const w = State.workItems.find(x => x.no === no)
   if (!w) return
   const modal = document.getElementById('workDetailModal')
   if (!modal) return
 
   const body = document.getElementById('wkDetailBody')
-  body.innerHTML = buildWorkDetailContent(w)
+  body.innerHTML = buildWorkDetailContent(w, fromDash)
   modal.querySelector('.rmodal-title').textContent = '업무일정 상세'
   modal.showModal()
   centerModal(modal)
 }
 
-function buildWorkDetailContent(w) {
+function buildWorkDetailContent(w, fromDash = false) {
+  const actionBtns = fromDash
+    ? `<button class="btn btn-primary btn-sm" onclick="openTab('work');document.getElementById('workDetailModal').close()">업무일정에서 수정</button>`
+    : `<button class="btn btn-primary btn-sm" onclick="editWorkFromDetail(${w.no})">수정</button>
+       <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="deleteWork(${w.no})">삭제</button>`
   return `
     <div class="wkd-view">
       <table class="ps-phase-table">
@@ -279,8 +283,7 @@ function buildWorkDetailContent(w) {
         </tbody>
       </table>
       <div class="ps-actions" style="margin-top:16px">
-        <button class="btn btn-primary btn-sm" onclick="editWorkFromDetail(${w.no})">수정</button>
-        <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="deleteWork(${w.no})">삭제</button>
+        ${actionBtns}
       </div>
     </div>`
 }
