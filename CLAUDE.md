@@ -394,7 +394,7 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - `wkPrevMonth()` / `wkNextMonth()` / `wkToday()` — 월 이동
 - `wkFilterCategory(val)` — 카테고리 필터
 - `openWorkRegisterModal()` / `submitWork(e)` / `closeWorkRegisterModal()` — 등록 모달
-- `openWorkDetailModal(no)` / `closeWorkDetailModal()` — 상세 모달
+- `openWorkDetailModal(no, fromDash)` / `closeWorkDetailModal()` — 상세 모달 (`fromDash=true` 시 수정 버튼 → "업무일정에서 수정" 탭 이동 버튼으로 교체)
 - `editWorkFromDetail(no)` — 상세에서 수정 모달 열기
 - `deleteWork(no)` — 삭제 (korConfirm)
 - `renderWorkTable()` — 호환 래퍼 (→ `renderWorkCalendar()`)
@@ -434,6 +434,7 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - `openDashEventInfo(no)` — 대시보드 행사 조회 모달 (읽기전용)
 - `openPlanScheduleForDate(dateStr)` — 기획일정 날짜 조회 모달
 - `openDashDayModal(dateStr)` — overflow 날짜 상세 모달 (행사/기획/업무 3섹션)
+- `closeDashDayModal()` — dashDayModal 닫기 핸들러
 
 ### 기획
 - `searchPlan()` — 신규기획 검색
@@ -1035,6 +1036,44 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
   - `openTab('plan')` → `#npKeyword` = identifier → 검색타입 '품번+샘플번호' → `searchPlan()`
   - 결과: 기획 탭에서 해당 품번/샘플번호 즉시 필터
 - 기존 "신규기획에서 수정하기" 버튼 → `goToPlanWithDate` 유지 (날짜 전체 보기)
+
+#### dashDayModal 버그 수정 3종
+
+- **`centerModal()` 순서 교체**: `showModal()` 호출 전에 `centerModal()` 먼저 호출 — 이전에는 모달이 top-left에 렌더된 뒤 중앙 이동하여 순간 깜빡임 발생
+- **`<dialog>` inline `style="display:flex"` 제거**: 브라우저가 dialog를 `display:none`으로 닫을 때 인라인 스타일이 우선되어 `dialog.close()`가 작동하지 않던 원인 → CSS 클래스로 flex 처리
+- **`applyTabState()`에 모달 자동 닫힘 추가**: `querySelectorAll('dialog.srm-modal[open]').forEach(d => d.close())` — 탭 전환 시 열려있는 모든 srm-modal 다이얼로그 자동 닫힘
+
+#### 대시보드 캘린더 날짜 셀 클릭 → dashDayModal
+
+- `.dcal-cell`에 `data-date` 속성 추가 (기존에는 `+N건` 버튼만 트리거)
+- 각 셀에 click 이벤트 바인딩: bar/`+N건` 클릭 이벤트는 `stopPropagation()`, 셀 배경 클릭 시 `openDashDayModal(dateStr)` 호출
+- CSS: `.dcal-cell { cursor: pointer }`, hover 배경 `rgba(0,0,0,0.03)`
+
+#### 스택 모달 — dashDayModal 위에 상세 모달
+
+- dashDayModal 행 onclick에서 `.close()` 호출 제거 — dashDayModal은 열린 채 유지
+- `showModal()` 네이티브 top-layer 스택: 상세 모달이 dashDayModal 위에 렌더됨
+- 상세 모달 닫기 후 dashDayModal로 자연스럽게 복귀
+
+#### 탭 이동 함수 수정 (dashboard context)
+
+- `openDashEventInfo()`: 내부 `navigateTo('event')` → `openTab('event')` 수정 (탭 바 시스템 연동)
+- `openWorkDetailModal(no, fromDash)`: `fromDash=true`이면 수정 버튼 대신 "업무일정에서 수정" 버튼 표시 → `openTab('work')` 후 해당 상세 모달 재오픈
+- 대시보드 캘린더에서 업무일정 바 클릭 시 `openWorkDetailModal(no, true)` 호출
+- `goToPlanWithDate(dateStr)`: `openTab('plan')` → `#npDateFrom/To` 날짜 필터 세팅 → `searchPlan()` 호출 순서 확인
+
+#### 기획 바 텍스트 약어 + 툴팁
+
+- 대시보드 캘린더 기획 바 텍스트: 기존 `"품번 단계명 시작/완료"` → 단계명만 표시 (디자인/생산/이미지/상품등록/물류입고)
+- hover `title` 속성: `"품번 단계명 start~end"` 전체 정보
+
+#### dashDayModal 그룹 정렬 + 섹션 헤더
+
+- **행사일정**: `startDate` ASC 정렬
+- **기획일정**: `productCode` ASC → 단계 순서(design → production → image → register → logistics)
+- **업무일정**: `category` ASC → `startDate` ASC
+- 섹션 헤더: `font-weight:500` + `.ddm-count` 뱃지 (항목 수)
+- 빈 섹션 숨김 (해당 날짜에 일정이 없는 섹션은 렌더 안 함)
 
 ---
 
