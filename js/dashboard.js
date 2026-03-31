@@ -283,11 +283,13 @@ function renderDashCalendar() {
       if (visibleCount >= MAX_VISIBLE) return
       visibleCount++
       const phaseColor = PLAN_PHASE_COLORS[p.phaseKey] || { bar: '#999', text: '#fff' }
-      const label = `${p.phaseLabel} ${p.tag}`
+      const barLabel = p.phaseLabel
+      const identifier = p.item.productCode || p.item.sampleNo || ''
+      const tooltip = `${identifier} ${p.phaseLabel} ${p.phase.start || ''}~${p.phase.end || ''}`
       if (isPast) {
-        html += `<div class="dcal-bar dcal-bar-mini" style="background:${phaseColor.bar};" title="${label}" onclick="openPlanScheduleForDate('${cell.date}')"></div>`
+        html += `<div class="dcal-bar dcal-bar-mini" style="background:${phaseColor.bar};" title="${esc(tooltip)}" onclick="openPlanScheduleForDate('${cell.date}')"></div>`
       } else {
-        html += `<div class="dcal-bar dcal-bar-plan" style="background:${phaseColor.bar}; color:${phaseColor.text};" title="${label}" onclick="openPlanScheduleForDate('${cell.date}')">${esc(label)}</div>`
+        html += `<div class="dcal-bar dcal-bar-plan" style="background:${phaseColor.bar}; color:${phaseColor.text};" title="${esc(tooltip)}" onclick="openPlanScheduleForDate('${cell.date}')">${esc(barLabel)}</div>`
       }
     })
 
@@ -347,6 +349,20 @@ function openDashDayModal(dateStr) {
     const we = w.endDate || w.startDate
     return w.startDate && w.startDate <= dateStr && we >= dateStr
   })
+
+  // Sort: events by startDate asc
+  events.sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''))
+  // Sort: planHits by phase start asc, then productCode/sampleNo alphabetically
+  planHits.sort((a, b) => {
+    const aStart = a.item.schedule?.[a.phase.key]?.start || ''
+    const bStart = b.item.schedule?.[b.phase.key]?.start || ''
+    if (aStart !== bStart) return aStart.localeCompare(bStart)
+    const aId = a.item.productCode || a.item.sampleNo || ''
+    const bId = b.item.productCode || b.item.sampleNo || ''
+    return aId.localeCompare(bId)
+  })
+  // Sort: works by startDate asc
+  works.sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''))
 
   const modal = document.getElementById('dashDayModal')
   const fmtKo = d => d ? d.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1년 $2월 $3일') : ''
