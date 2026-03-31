@@ -150,6 +150,7 @@ State.modal.images/idx     // 이미지 모달 상태
 | 기획일정 조회 | `planScheduleModal` | `openPlanScheduleForDate(dateStr)` / `openDashEventInfo(no)` |
 | 업무일정 등록 | `workRegisterModal` | `openWorkRegisterModal()` |
 | 업무일정 상세 | `workDetailModal` | `openWorkDetailModal(no)` |
+| 일정 상세 (Overflow) | `dashDayModal` | `openDashDayModal(dateStr)` |
 
 > 모든 `.srm-modal` 다이얼로그는 `makeDraggableResizable()` 적용 — 드래그+8방향 리사이즈
 
@@ -326,6 +327,7 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 ### 초기화 / 탭 전환
 - `init()` — 앱 초기화, 데이터 로드
+- `injectSampleData()` — 샘플 데이터 주입 (5개 탭, `init()` 내에서 호출)
 - `openTab(tab)` — 탭 열기 (탭 바 추가 + 활성화)
 - `closeTab(tab)` — 탭 닫기 (인접 탭 전환)
 - `resetTabs()` — 로고 클릭 전체 리셋 (대시보드만 복원)
@@ -417,6 +419,29 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - `getColUniqueValues(data, key)` — 컬럼 고유값 추출 (숫자 컬럼은 숫자순 정렬)
 - `clearAllColumnFilters(tabKey)` — 전체 컬럼 필터 초기화
 
+### 공통 컬럼 드래그 관리
+- `initColumnState(tabKey, allColKeys)` — activeColumns 초기화 + 신규/삭제 컬럼 동기화
+- `renderColInactiveArea(areaId, tagsId, tabKey, colDefs, fixedKeys, renderFnName)` — 비활성 영역 렌더 + 드롭 이벤트
+- `removeColumn(tabKey, colKey, renderFnName)` — 컬럼 숨김
+- `restoreColumn(tabKey, colKey, insertIdx, renderFnName)` — 컬럼 복원
+- `reorderColumn(tabKey, fromKey, toIdx, renderFnName)` — 순서 변경
+- `bindColumnDragDrop(tableId, tabKey, fixedKeys, renderFnName)` — 헤더 드래그 이벤트 바인딩 (colspan th 포함)
+- `clearColDropIndicators()` — 드래그 구분선 정리
+
+### 대시보드
+- `renderDashboard()` — 대시보드 전체 렌더
+- `renderDashCalendar()` — 대시보드 캘린더 렌더
+- `openDashEventInfo(no)` — 대시보드 행사 조회 모달 (읽기전용)
+- `openPlanScheduleForDate(dateStr)` — 기획일정 날짜 조회 모달
+- `openDashDayModal(dateStr)` — overflow 날짜 상세 모달 (행사/기획/업무 3섹션)
+
+### 기획
+- `searchPlan()` — 신규기획 검색
+- `renderPlanTable()` — 신규기획 테이블 렌더
+- `openPlanRegisterModal()` — 기획 등록 모달 열기
+- `goToPlanWithDate(dateStr)` — 기획 탭으로 이동 + 날짜 필터 자동 세팅
+- `goToPlanWithItem(identifier)` — 기획 탭으로 이동 + 품번 필터 (`#npKeyword` 세팅 + `searchPlan()`)
+
 ### 유틸
 - `makeDraggableResizable(modal, minW, minH)` — 드래그+리사이즈 초기화
 - `centerModal(modal)` — 모달 화면 중앙 배치
@@ -428,6 +453,12 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - `showToast(msg, type)` — 토스트 알림
 - `openMonthPicker(triggerEl, year, month, callback)` — 미니 달력 팝업 열기
 - `closeMonthPicker()` — 미니 달력 팝업 닫기
+- `getPageSize(tabKey)` — 탭별 커스텀 pageSize 반환
+- `changeProductPageSize()` — 상품조회 페이지 사이즈 변경
+- `changeStockPageSize()` — 재고관리 페이지 사이즈 변경
+- `changePlanPageSize()` — 신규기획 페이지 사이즈 변경
+- `changeSalesPageSize()` — 판매조회 페이지 사이즈 변경
+- `fixStickySubRow(tableId)` — 2단 헤더 2행 `top` 동적 계산 적용
 
 ## 에이전트 목록 (`.claude/agents/`)
 | 파일 | 역할 |
