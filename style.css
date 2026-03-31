@@ -2686,13 +2686,35 @@ body.col-resize-active * { cursor: col-resize !important; }
 .evcal-cell.dcal-holiday .evcal-day { color: var(--danger) !important; }
 
 /* ===== 대시보드 날짜 일정 상세 모달 (dashDayModal) ===== */
-.ddm-section { margin-bottom: 16px; }
+.ddm-section { margin-bottom: 0; }
 .ddm-section:last-child { margin-bottom: 0; }
+.ddm-section + .ddm-section { margin-top: 14px; }
 .ddm-section-title {
-  font-size: 11px; font-weight: 700; text-transform: uppercase;
-  color: var(--text-light); letter-spacing: 0.5px;
-  margin-bottom: 6px; padding-bottom: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  color: var(--text-light);
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  padding-bottom: 4px;
   border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ddm-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 .ddm-row {
   display: flex; align-items: center; gap: 8px;

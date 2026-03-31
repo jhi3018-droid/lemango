@@ -352,17 +352,19 @@ function openDashDayModal(dateStr) {
 
   // Sort: events by startDate asc
   events.sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''))
-  // Sort: planHits by phase start asc, then productCode/sampleNo alphabetically
+  // Sort: planHits — primary: productCode/sampleNo asc, secondary: phase order
+  const PHASE_ORDER = ['design','production','image','register','logistics']
   planHits.sort((a, b) => {
-    const aStart = a.item.schedule?.[a.phase.key]?.start || ''
-    const bStart = b.item.schedule?.[b.phase.key]?.start || ''
-    if (aStart !== bStart) return aStart.localeCompare(bStart)
-    const aId = a.item.productCode || a.item.sampleNo || ''
-    const bId = b.item.productCode || b.item.sampleNo || ''
-    return aId.localeCompare(bId)
+    const codeA = a.item.productCode || a.item.sampleNo || ''
+    const codeB = b.item.productCode || b.item.sampleNo || ''
+    if (codeA !== codeB) return codeA.localeCompare(codeB)
+    return PHASE_ORDER.indexOf(a.phase.key) - PHASE_ORDER.indexOf(b.phase.key)
   })
-  // Sort: works by startDate asc
-  works.sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''))
+  // Sort: works — primary: category asc, secondary: startDate asc
+  works.sort((a, b) => {
+    if (a.category !== b.category) return (a.category || '').localeCompare(b.category || '')
+    return (a.startDate || '').localeCompare(b.startDate || '')
+  })
 
   const modal = document.getElementById('dashDayModal')
   const fmtKo = d => d ? d.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1년 $2월 $3일') : ''
@@ -370,7 +372,7 @@ function openDashDayModal(dateStr) {
 
   if (events.length) {
     sections.push(`<div class="ddm-section">
-      <div class="ddm-section-title">행사일정</div>
+      <div class="ddm-section-title">행사일정 <span class="ddm-count">${events.length}</span></div>
       ${events.map(e => `<div class="ddm-row" onclick="openDashEventInfo(${e.no})">
         <span class="ddm-badge" style="background:var(--primary);color:#fff">${esc(e.channel || '')}</span>
         <span class="ddm-item-name">${esc(e.name)}</span>
@@ -380,7 +382,7 @@ function openDashDayModal(dateStr) {
   }
   if (planHits.length) {
     sections.push(`<div class="ddm-section">
-      <div class="ddm-section-title">기획일정</div>
+      <div class="ddm-section-title">기획일정 <span class="ddm-count">${planHits.length}</span></div>
       ${planHits.map(({item, phase}) => `<div class="ddm-row" onclick="openPlanScheduleForDate('${dateStr}')">
         <span class="ddm-badge" style="background:var(--accent);color:#1a1a2e">${esc(phase.label)}</span>
         <span class="ddm-item-name">${esc(item.productCode || item.sampleNo || '-')}</span>
@@ -390,7 +392,7 @@ function openDashDayModal(dateStr) {
   }
   if (works.length) {
     sections.push(`<div class="ddm-section">
-      <div class="ddm-section-title">업무일정</div>
+      <div class="ddm-section-title">업무일정 <span class="ddm-count">${works.length}</span></div>
       ${works.map(w => `<div class="ddm-row" onclick="openWorkDetailModal(${w.no}, true)">
         <span class="ddm-badge" style="background:${getWorkCatColor(w.category).bg};color:${getWorkCatColor(w.category).text}">${esc(w.category || '')}</span>
         <span class="ddm-item-name">${esc(w.title)}</span>
