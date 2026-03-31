@@ -100,6 +100,9 @@ function resetTabs() {
 
 // ===== 탭 상태 반영 =====
 function applyTabState() {
+  // FIX: close any open srm-modal dialogs so they don't persist across tab switches
+  document.querySelectorAll('dialog.srm-modal[open]').forEach(d => d.close())
+
   // 해시 업데이트
   const hash = '#' + State.activeTab
   if (location.hash !== hash) {

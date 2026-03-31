@@ -377,8 +377,10 @@ function openDashDayModal(dateStr) {
 
   modal.querySelector('.ddm-date').textContent = fmtKo(dateStr)
   modal.querySelector('.ddm-body').innerHTML = sections.join('') || '<p style="color:var(--text-light);font-size:13px">일정 없음</p>'
+  // FIX: showModal() must come before centerModal() so the element is visible
+  // and has real dimensions when centerModal() calculates position.
+  if (!modal.open) modal.showModal()
   centerModal(modal)
-  modal.showModal()
 }
 
 // =============================================
