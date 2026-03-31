@@ -977,6 +977,36 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 ---
 
+### 2026-03-31
+
+#### 대시보드 캘린더 셀 확장 + Overflow day modal
+
+- 셀당 최대 표시 바: 4 → 6줄, `.dcal-cell` min-height: 96px → 130px
+- `+N건` 클릭 → `openDashDayModal(dateStr)` 신규 함수
+  - 해당 날짜의 행사일정 + 기획일정(단계별) + 업무일정 전부 수집
+  - `#dashDayModal` (`<dialog class="srm-modal">`) 에 3개 섹션으로 그룹 렌더
+  - 각 행 클릭 → 해당 상세 모달 열림 (event/plan/work)
+  - 드래그+리사이즈, 중앙배치, ×버튼+backdrop 클릭 닫기
+- `index.html` — `#dashDayModal` 다이얼로그 추가
+- `js/main.js` — `makeDraggableResizable(dashDayModal)` + backdrop close 초기화
+- `style.css` — `.ddm-section`, `.ddm-section-title`, `.ddm-row`, `.ddm-badge`, `.ddm-item-name`, `.ddm-item-period` 신규
+
+#### 대시보드 업무일정 바 클릭 → 모달 (탭 이동 수정)
+
+- 대시보드 캘린더 업무일정 바 onclick: `openTab('work')` → `openWorkDetailModal(w.no)` 수정
+- 일반 바·past 바 양쪽 모두 적용
+- `js/work.js`는 이미 정상 (`openWorkDetailModal` → `modal.showModal()`)
+
+#### 기획일정 모달 → 품번 필터 조회
+
+- `openPlanScheduleForDate()` 내 각 품번 행에 **보기** 버튼 추가
+- 신규 `goToPlanWithItem(identifier)` 함수:
+  - `openTab('plan')` → `#npKeyword` = identifier → 검색타입 '품번+샘플번호' → `searchPlan()`
+  - 결과: 기획 탭에서 해당 품번/샘플번호 즉시 필터
+- 기존 "신규기획에서 수정하기" 버튼 → `goToPlanWithDate` 유지 (날짜 전체 보기)
+
+---
+
 ## 보류 중 작업
 
 ### 이미지합치기 웹 통합 (테스트 후 결정)
