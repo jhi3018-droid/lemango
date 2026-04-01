@@ -1113,6 +1113,27 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - `npKeyword` = `codesStr`, `npSearchType` = `'code'`, `npConfirmed` = `''` (이전 항목도 표시)
 - 날짜 필터(`npDateFrom/To`)는 초기화 — 정확한 품번만 필터링
 
+#### dashDayModal 기획일정 데이터 조건 수정 (캘린더 동기화)
+
+- 기존: `start <= dateStr <= end` (범위 전체 매치) — 캘린더에 바 없는 날짜도 모달에 표시
+- 수정: `dateStr === start || dateStr === end` (시작일/종료일만 매치) — 캘린더와 동일 조건
+- `start`와 `end` 모두 존재해야 표시 (`if (!sch.start || !sch.end) return`)
+
+#### dashDayModal 조회 버튼 이벤트 위임 방식 전환
+
+- inline `onclick` 속성 → `data-*` 속성 + `addEventListener` event delegation 으로 전환
+- 원인: onclick 문자열 내 큰따옴표/쉼표가 HTML 속성 파싱을 깨뜨려 버튼 무반응
+- `goToPlanFromDash` / `goToPlanPhaseFromDash` 함수 제거 → 이벤트 핸들러 내 직접 처리
+- 모달 닫기: `modal.close()` 직접 호출
+
+#### dashDayModal 디자인 정리
+
+- 섹션별 색상 구분 제거 (border-left, 배경 tint, `ddm-section-event/plan/work` 클래스)
+- 섹션: 심플한 타이틀 + 중립 count 뱃지
+- 기획 단계 서브헤더: 작은 컬러 도트(3px)로 단계 구분, 조회 버튼 중립 보더
+- 모달: 420px 폭, border-radius 10px, 깔끔한 헤더 (날짜만 표시)
+- 불필요한 장식 제거 (골드 바, 부제, 커스텀 닫기 버튼, 회색 body 배경)
+
 ---
 
 ## 보류 중 작업
