@@ -2689,6 +2689,12 @@ body.col-resize-active * { cursor: col-resize !important; }
 .ddm-section { margin-bottom: 0; }
 .ddm-section:last-child { margin-bottom: 0; }
 .ddm-section + .ddm-section { margin-top: 14px; }
+.ddm-section-event  { border-left: 3px solid var(--primary); }
+.ddm-section-plan   { border-left: 3px solid var(--accent); }
+.ddm-section-work   { border-left: 3px solid var(--success); }
+.ddm-section-event .ddm-section-title { background: rgba(26,26,46,0.06); }
+.ddm-section-plan  .ddm-section-title { background: rgba(201,169,110,0.10); }
+.ddm-section-work  .ddm-section-title { background: rgba(76,175,125,0.08); }
 .ddm-section-title {
   font-size: 11px;
   font-weight: 500;
@@ -2729,6 +2735,22 @@ body.col-resize-active * { cursor: col-resize !important; }
 }
 .ddm-item-name { flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ddm-item-period { font-size: 11px; color: var(--text-light); white-space: nowrap; flex-shrink: 0; }
+.ddm-phase-header {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 4px;
+}
+.ddm-phase-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
 
 /* ===== 미니 달력 (연월 선택 팝업) ===== */
 .cal-month-clickable { cursor: pointer; user-select: none; border-radius: 4px; padding: 2px 8px; transition: background 0.15s; }

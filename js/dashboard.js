@@ -371,7 +371,7 @@ function openDashDayModal(dateStr) {
   const sections = []
 
   if (events.length) {
-    sections.push(`<div class="ddm-section">
+    sections.push(`<div class="ddm-section ddm-section-event">
       <div class="ddm-section-title">행사일정 <span class="ddm-count">${events.length}</span></div>
       ${events.map(e => `<div class="ddm-row" onclick="openDashEventInfo(${e.no})">
         <span class="ddm-badge" style="background:var(--primary);color:#fff">${esc(e.channel || '')}</span>
@@ -381,17 +381,64 @@ function openDashDayModal(dateStr) {
     </div>`)
   }
   if (planHits.length) {
-    sections.push(`<div class="ddm-section">
-      <div class="ddm-section-title">기획일정 <span class="ddm-count">${planHits.length}</span></div>
-      ${planHits.map(({item, phase}) => `<div class="ddm-row" onclick="openPlanScheduleForDate('${dateStr}')">
-        <span class="ddm-badge" style="background:var(--accent);color:#1a1a2e">${esc(phase.label)}</span>
-        <span class="ddm-item-name">${esc(item.productCode || item.sampleNo || '-')}</span>
-        <span class="ddm-item-period">${item.schedule?.[phase.key]?.start||''} ~ ${item.schedule?.[phase.key]?.end||''}</span>
-      </div>`).join('')}
+    const PHASE_ORDER_LABELS = [
+      { key: 'design',     label: '디자인' },
+      { key: 'production', label: '생산' },
+      { key: 'image',      label: '이미지' },
+      { key: 'register',   label: '상품등록' },
+      { key: 'logistics',  label: '물류입고' },
+    ]
+    // Group planHits by phase key
+    const phaseGroups = {}
+    PHASE_ORDER_LABELS.forEach(ph => { phaseGroups[ph.key] = [] })
+    planHits.forEach(hit => {
+      if (phaseGroups[hit.phase.key]) phaseGroups[hit.phase.key].push(hit)
+    })
+    // Sort each group by startDate asc
+    PHASE_ORDER_LABELS.forEach(ph => {
+      phaseGroups[ph.key].sort((a, b) =>
+        (a.item.schedule?.[ph.key]?.start || '').localeCompare(b.item.schedule?.[ph.key]?.start || '')
+      )
+    })
+
+    let planBodyHtml = ''
+    PHASE_ORDER_LABELS.forEach(ph => {
+      const hits = phaseGroups[ph.key]
+      if (!hits.length) return
+      const phColor = PLAN_PHASE_COLORS[ph.key] || { bar: '#999', text: '#fff' }
+      // Convert hex to rgba 10% for background
+      const hexToRgba10 = hex => {
+        const r = parseInt(hex.slice(1,3),16)
+        const g = parseInt(hex.slice(3,5),16)
+        const b = parseInt(hex.slice(5,7),16)
+        return `rgba(${r},${g},${b},0.10)`
+      }
+      const bgColor = hexToRgba10(phColor.bar)
+      const phaseCodes = hits.map(h => h.item.productCode || h.item.sampleNo || '')
+      // FIX: JSON.stringify 배열을 onclick 속성에 직접 삽입하면 큰따옴표가 HTML 속성과 충돌 → 쉼표 구분 문자열로 변환
+      planBodyHtml += `<div class="ddm-phase-header" style="display:flex;align-items:center;gap:6px;border-left:3px solid ${phColor.bar};background:${bgColor}">
+        ${esc(ph.label)} <span class="ddm-count">${hits.length}</span><button onclick="goToPlanPhaseFromDash('${dateStr}','${ph.key}','${phaseCodes.join(',')}')" style="margin-left:auto;font-size:12px;padding:2px 8px;border-radius:4px;background:transparent;border:1px solid ${phColor.bar};color:${phColor.bar};cursor:pointer">조회</button>
+      </div>`
+      hits.forEach(({item, phase}) => {
+        const start = item.schedule?.[phase.key]?.start || ''
+        const end   = item.schedule?.[phase.key]?.end   || ''
+        planBodyHtml += `<div class="ddm-row" onclick="openPlanScheduleForDate('${dateStr}')">
+          <span class="ddm-phase-badge" style="background:${phColor.bar}">${esc(ph.label)}</span>
+          <span class="ddm-item-name">${esc(item.productCode || item.sampleNo || '-')}</span>
+          <span class="ddm-item-period">${start} ~ ${end}</span>
+        </div>`
+      })
+    })
+
+    const allCodes = [...new Set(planHits.map(h => h.item.productCode || h.item.sampleNo || ''))]
+    // FIX: JSON.stringify 배열을 onclick 속성에 직접 삽입하면 큰따옴표가 HTML 속성과 충돌 → 쉼표 구분 문자열로 변환
+    sections.push(`<div class="ddm-section ddm-section-plan">
+      <div class="ddm-section-title" style="display:flex;align-items:center;gap:6px">기획일정 <span class="ddm-count">${planHits.length}</span><button onclick="goToPlanFromDash('${dateStr}','${allCodes.join(',')}')" style="margin-left:auto;font-size:12px;padding:2px 10px;border-radius:4px;background:var(--accent);color:#fff;border:none;cursor:pointer">전체조회</button></div>
+      ${planBodyHtml}
     </div>`)
   }
   if (works.length) {
-    sections.push(`<div class="ddm-section">
+    sections.push(`<div class="ddm-section ddm-section-work">
       <div class="ddm-section-title">업무일정 <span class="ddm-count">${works.length}</span></div>
       ${works.map(w => `<div class="ddm-row" onclick="openWorkDetailModal(${w.no}, true)">
         <span class="ddm-badge" style="background:${getWorkCatColor(w.category).bg};color:${getWorkCatColor(w.category).text}">${esc(w.category || '')}</span>
@@ -541,5 +588,33 @@ function goToPlanWithItem(identifier) {
   document.getElementById('npConfirmed').value = 'all'
   searchPlan()
 }
+function goToPlanFromDash(dateStr, codesStr) {
+  // FIX: onclick에서 배열 대신 쉼표 구분 문자열로 수신 (HTML 속성 따옴표 충돌 방지)
+  closeDashDayModal()
+  openTab('plan')
+  document.getElementById('npKeyword').value = codesStr || ''
+  document.getElementById('npSearchType').value = 'code'
+  document.getElementById('npPhase').value = ''
+  document.getElementById('npDateFrom').value = ''
+  document.getElementById('npDateTo').value = ''
+  document.getElementById('npConfirmed').value = ''
+  searchPlan()
+}
+
+function goToPlanPhaseFromDash(dateStr, phaseKey, codesStr) {
+  // FIX: onclick에서 배열 대신 쉼표 구분 문자열로 수신 (HTML 속성 따옴표 충돌 방지)
+  closeDashDayModal()
+  openTab('plan')
+  document.getElementById('npKeyword').value = codesStr || ''
+  document.getElementById('npSearchType').value = 'code'
+  document.getElementById('npPhase').value = phaseKey
+  document.getElementById('npDateFrom').value = ''
+  document.getElementById('npDateTo').value = ''
+  document.getElementById('npConfirmed').value = ''
+  searchPlan()
+}
+
 window.goToPlanWithItem = goToPlanWithItem
 window.openDashDayModal = openDashDayModal
+window.goToPlanFromDash = goToPlanFromDash
+window.goToPlanPhaseFromDash = goToPlanPhaseFromDash

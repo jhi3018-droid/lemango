@@ -1077,6 +1077,44 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 ---
 
+### 2026-04-01
+
+#### dashDayModal 섹션별 컬러 코딩
+
+- 기획일정/행사일정/업무일정 섹션 div에 타입별 CSS 클래스 추가
+  - 행사일정: `ddm-section-event` (left border `var(--primary)` 네이비)
+  - 기획일정: `ddm-section-plan` (left border `var(--accent)` 골드)
+  - 업무일정: `ddm-section-work` (left border `var(--success)` 초록)
+- 섹션 타이틀 배경 tint: 각 색상 10% opacity
+- `style.css` — 6개 규칙 추가 (`.ddm-section-event/plan/work`, `.ddm-section-title` 배경)
+
+#### dashDayModal 기획일정 단계별 서브 그룹
+
+- 기획일정 섹션을 flat 목록 → 단계별 서브 그룹으로 재구성
+- 단계 순서: 디자인 → 생산 → 이미지 → 상품등록 → 물류입고
+- `PHASE_ORDER_LABELS` 배열로 순서 정의
+- `phaseGroups` 객체로 `planHits`를 단계 키별 분류 → `startDate` ASC 정렬
+- 빈 단계 숨김
+- `hexToRgba10()` 헬퍼 추가: hex 색상 → `rgba()` 10% opacity 변환
+- 서브 헤더 (`.ddm-phase-header`): phase color `border-left` + 10% tint 배경 + 항목 수 뱃지
+- 아이템 행: `.ddm-phase-badge` (phase color 배경 + 흰 글자) + 품번 + 날짜 범위
+- `style.css` — `.ddm-phase-header`, `.ddm-phase-badge` 2개 규칙 추가
+
+#### dashDayModal 기획일정 조회 버튼
+
+- 기획일정 섹션 헤더에 "전체조회" 버튼 추가 (골드 배경, 오른쪽 정렬)
+- 각 단계 서브헤더에 "조회" 버튼 추가 (phase color 아웃라인)
+- 신규 함수 2개 (`js/dashboard.js`):
+  - `goToPlanFromDash(dateStr, codesStr)` — 모달 닫기 → plan 탭 → 품번 키워드 필터 → `searchPlan()`
+  - `goToPlanPhaseFromDash(dateStr, phaseKey, codesStr)` — 위 + `npPhase` 단계 필터
+- 버튼 onclick: codes 배열을 comma-join 문자열로 전달 (`JSON.stringify` 금지 — 큰따옴표가 HTML 속성 파싱을 깨뜨림)
+- `allCodes`: 전체 planHits의 productCode (Set으로 중복 제거)
+- `phaseCodes`: 각 단계 hits의 productCode
+- `npKeyword` = `codesStr`, `npSearchType` = `'code'`, `npConfirmed` = `''` (이전 항목도 표시)
+- 날짜 필터(`npDateFrom/To`)는 초기화 — 정확한 품번만 필터링
+
+---
+
 ## 보류 중 작업
 
 ### 이미지합치기 웹 통합 (테스트 후 결정)
