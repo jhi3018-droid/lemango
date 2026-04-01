@@ -1134,6 +1134,14 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - 모달: 420px 폭, border-radius 10px, 깔끔한 헤더 (날짜만 표시)
 - 불필요한 장식 제거 (골드 바, 부제, 커스텀 닫기 버튼, 회색 body 배경)
 
+#### dashDayModal → 신규기획 탭 이동 검색 버그 수정
+
+- `npSearchType`(존재하지 않는 ID) → `npSearchField`(실제 ID) 수정
+- `'code'` → `'productCode'` (searchPlan이 사용하는 실제 값)
+- `npConfirmed = ''` → `'all'` 수정 (빈 값은 select option에 없어서 `|| 'pending'` fallback → confirmed 항목 필터됨)
+- `goToPlanWithItem()` 함수도 동일하게 수정
+- 기획 항목 개별 행 클릭: `openPlanScheduleForDate` → `ddm-plan-nav` event delegation으로 변경 (해당 품번으로 직접 탭 이동)
+
 ---
 
 ## 보류 중 작업

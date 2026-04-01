@@ -413,9 +413,10 @@ function openDashDayModal(dateStr) {
       hits.forEach(({item, phase}) => {
         const start = item.schedule?.[phase.key]?.start || ''
         const end   = item.schedule?.[phase.key]?.end   || ''
-        planBodyHtml += `<div class="ddm-row" onclick="openPlanScheduleForDate('${dateStr}')">
+        const code = item.productCode || item.sampleNo || ''
+        planBodyHtml += `<div class="ddm-row ddm-plan-nav" data-action="item" data-codes="${esc(code)}" data-phase="" data-date="${dateStr}">
           <span class="ddm-phase-badge" style="background:${phColor.bar}">${esc(ph.label)}</span>
-          <span class="ddm-item-name">${esc(item.productCode || item.sampleNo || '-')}</span>
+          <span class="ddm-item-name">${esc(code || '-')}</span>
           <span class="ddm-item-period">${start}${end && end !== start ? ' ~ ' + end : ''}</span>
         </div>`
       })
@@ -441,19 +442,18 @@ function openDashDayModal(dateStr) {
   modal.querySelector('.ddm-date').textContent = fmtKo(dateStr)
   modal.querySelector('.ddm-body').innerHTML = sections.join('') || '<p style="color:var(--text-light);font-size:13px">일정 없음</p>'
 
-  // FIX: event delegation for plan nav buttons (inline onclick 대신 data 속성 기반)
+  // event delegation for plan nav buttons — 모달 유지한 채 탭 이동
   modal.querySelectorAll('.ddm-plan-nav').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation()
       const { action, date, codes, phase } = btn.dataset
-      modal.close()
       openTab('plan')
       document.getElementById('npKeyword').value = codes || ''
-      document.getElementById('npSearchType').value = 'code'
-      document.getElementById('npPhase').value = (action === 'phase' ? (phase || '') : '')
+      document.getElementById('npSearchField').value = 'productCode'
+      document.getElementById('npPhase').value = (action === 'phase' ? (phase || '') : 'all')
       document.getElementById('npDateFrom').value = ''
       document.getElementById('npDateTo').value = ''
-      document.getElementById('npConfirmed').value = ''
+      document.getElementById('npConfirmed').value = 'all'
       searchPlan()
     })
   })
@@ -584,15 +584,7 @@ function goToPlanWithItem(identifier) {
   closePlanScheduleModal()
   openTab('plan')
   document.getElementById('npKeyword').value = identifier
-  const typeEl = document.getElementById('npSearchType')
-  if (typeEl) {
-    for (const opt of typeEl.options) {
-      if (opt.value === 'code' || opt.text.includes('품번')) {
-        typeEl.value = opt.value
-        break
-      }
-    }
-  }
+  document.getElementById('npSearchField').value = 'productCode'
   document.getElementById('npConfirmed').value = 'all'
   searchPlan()
 }
