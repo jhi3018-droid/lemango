@@ -361,6 +361,25 @@
             <option value="confirmed">이전됨</option>
           </select>
         </div>
+        <div class="search-group">
+          <label>일정 단계</label>
+          <select id="npPhase" onchange="searchPlan()">
+            <option value="all">전체</option>
+            <option value="design">디자인</option>
+            <option value="production">생산</option>
+            <option value="image">이미지</option>
+            <option value="register">상품등록</option>
+            <option value="logistics">물류입고</option>
+          </select>
+        </div>
+        <div class="search-group">
+          <label>시작일</label>
+          <input type="date" id="npDateFrom" onchange="searchPlan()" />
+        </div>
+        <div class="search-group">
+          <label>종료일</label>
+          <input type="date" id="npDateTo" onchange="searchPlan()" />
+        </div>
       </div>
       <div class="search-actions">
         <button class="btn btn-primary" onclick="searchPlan()">검색</button>
@@ -697,12 +716,20 @@
       <div class="rform-section-title">이미지 URL</div>
       <div class="rform-grid">
         <div class="rform-field" style="grid-column:span 2">
-          <label>이미지 URL 1</label>
-          <input type="url" id="rImg1" placeholder="https://..." />
+          <label>자사몰 URL</label>
+          <textarea id="rImgJasa" rows="3" placeholder="URL을 줄바꿈으로 구분"></textarea>
         </div>
         <div class="rform-field" style="grid-column:span 2">
-          <label>이미지 URL 2</label>
-          <input type="url" id="rImg2" placeholder="https://..." />
+          <label>외부몰 URL</label>
+          <textarea id="rImgExternal" rows="3" placeholder="URL을 줄바꿈으로 구분"></textarea>
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>SUM URL</label>
+          <textarea id="rImgSum" rows="3" placeholder="URL을 줄바꿈으로 구분"></textarea>
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>영상 URL</label>
+          <input type="url" id="rVideoUrl" placeholder="https://..." />
         </div>
         <div class="rform-field" style="grid-column:span 4">
           <label>디자이너 코멘트</label>

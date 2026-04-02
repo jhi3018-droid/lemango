@@ -448,12 +448,13 @@ function openDashDayModal(dateStr) {
       e.stopPropagation()
       const { action, date, codes, phase } = btn.dataset
       openTab('plan')
-      document.getElementById('npKeyword').value = codes || ''
-      document.getElementById('npSearchField').value = 'productCode'
-      document.getElementById('npPhase').value = (action === 'phase' ? (phase || '') : 'all')
-      document.getElementById('npDateFrom').value = ''
-      document.getElementById('npDateTo').value = ''
-      document.getElementById('npConfirmed').value = 'all'
+      const el = id => document.getElementById(id)
+      el('npKeyword').value = codes || ''
+      el('npSearchField').value = 'productCode'
+      if (el('npPhase')) el('npPhase').value = (action === 'phase' ? (phase || '') : 'all')
+      if (el('npDateFrom')) el('npDateFrom').value = ''
+      if (el('npDateTo')) el('npDateTo').value = ''
+      el('npConfirmed').value = 'all'
       searchPlan()
     })
   })
@@ -572,10 +573,11 @@ function goToPlanWithDate(dateStr) {
   closePlanScheduleModal()
   openTab('plan')
   // 날짜 필터 세팅
-  document.getElementById('npPhase').value = 'all'
-  document.getElementById('npDateFrom').value = dateStr
-  document.getElementById('npDateTo').value = dateStr
-  document.getElementById('npConfirmed').value = 'all'
+  const el = id => document.getElementById(id)
+  if (el('npPhase')) el('npPhase').value = 'all'
+  if (el('npDateFrom')) el('npDateFrom').value = dateStr
+  if (el('npDateTo')) el('npDateTo').value = dateStr
+  el('npConfirmed').value = 'all'
   searchPlan()
 }
 
