@@ -54,7 +54,7 @@ function downloadExcel(type) {
       ..._platforms.map(pl => p.sales?.[pl]||0),
       getTotalSales(p)
     ])
-    sheetName = '판매조회'
+    sheetName = '매출현황'
   }
 
   const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])

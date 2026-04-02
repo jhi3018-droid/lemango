@@ -98,47 +98,123 @@ table { border-collapse: collapse; width: 100%; }
 .tab-bar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
 
 .tab-bar-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 14px;
+  gap: 4px;
+  padding: 6px 4px;
   background: transparent;
   border: none;
   color: rgba(255,255,255,0.45);
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
+  font-size: 13px;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
-  transition: all 0.15s;
+  white-space: nowrap;
+  position: relative;
 }
 .tab-bar-btn:hover {
   color: rgba(255,255,255,0.75);
-  background: rgba(255,255,255,0.04);
+}
+.tab-bar-btn .tab-bar-label {
+  position: relative;
+}
+.tab-bar-btn-active .tab-bar-label::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
 }
 .tab-bar-btn-active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-  font-weight: 600;
+  color: rgba(255,255,255,0.95);
 }
 .tab-bar-btn-active:hover {
-  color: var(--accent);
+  color: rgba(255,255,255,0.95);
 }
 .tab-bar-close {
-  font-size: 14px;
+  font-size: 11px;
   line-height: 1;
+  padding: 0;
+  margin-left: 2px;
   opacity: 0;
-  padding: 0 2px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  color: inherit;
   border-radius: 3px;
-  transition: opacity 0.15s, background 0.15s;
+  transition: opacity 0.15s;
 }
 .tab-bar-btn:hover .tab-bar-close {
-  opacity: 0.6;
+  opacity: 0.7;
 }
 .tab-bar-close:hover {
   opacity: 1 !important;
   background: rgba(255,255,255,0.12);
 }
+
+/* ===== 판매 업로드 모달 내부 탭 ===== */
+.sul-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  background: var(--bg);
+  flex-shrink: 0;
+}
+.sul-tab-btn {
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-sub);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.sul-tab-btn:hover { color: var(--text); }
+.sul-tab-btn.active {
+  color: var(--primary);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+.sul-tab-content {
+  display: none;
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+.sul-tab-content.active { display: flex; flex-direction: column; gap: 12px; }
+.sul-upload-area { display: flex; flex-direction: column; gap: 10px; }
+.sul-desc { font-size: 13px; color: var(--text); margin: 0; }
+.sul-format { font-size: 11px; color: var(--text-sub); margin: 0; font-family: Inter, monospace; }
+.sul-file-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.sul-file-label { flex-shrink: 0; }
+.sul-file-name { font-size: 12px; color: var(--text-sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sul-preview { flex: 1; min-height: 0; overflow-y: auto; }
+.sul-placeholder {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 60px 20px; text-align: center;
+}
+.sul-placeholder-icon { font-size: 36px; margin-bottom: 12px; }
+.sul-placeholder-text { font-size: 14px; color: var(--text-sub); margin: 0; }
+
+/* 카페24 환불 행 */
+.cafe24-refund-row { background: #fff3f3; }
+.cafe24-refund-row td { text-decoration: line-through; color: var(--text-sub); }
+.cafe24-refund-row td:first-child,
+.cafe24-refund-row td:nth-child(2) { text-decoration: none; }
+
+/* 카페24 중복 행 */
+.cafe24-dup-row { background: #e3f2fd; }
+.cafe24-dup-row td { text-decoration: line-through; color: var(--text-sub); }
+.cafe24-dup-row td:first-child,
+.cafe24-dup-row td:nth-child(2) { text-decoration: none; }
+.badge-preview-dup { background: #bbdefb; color: #1565c0; }
+
+.cafe24-chk { cursor: pointer; width: 15px; height: 15px; }
+.cafe24-chk:disabled { cursor: not-allowed; opacity: 0.4; }
 
 /* ===== 메인 ===== */
 .main { padding: 20px 20px 40px; max-width: none; margin: 0; }

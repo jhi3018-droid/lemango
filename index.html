@@ -23,7 +23,7 @@
       <button class="tab-btn active" data-tab="dashboard">대시보드</button>
       <button class="tab-btn" data-tab="product">상품조회</button>
       <button class="tab-btn" data-tab="stock">재고 관리</button>
-      <button class="tab-btn" data-tab="sales">판매조회</button>
+      <button class="tab-btn" data-tab="sales">매출현황</button>
       <button class="tab-btn" data-tab="plan">신규기획</button>
       <button class="tab-btn" data-tab="event">행사일정</button>
       <button class="tab-btn" data-tab="work">업무일정</button>
@@ -241,7 +241,7 @@
     <div id="sPagination"></div>
   </section>
 
-  <!-- ===== 판매조회 탭 ===== -->
+  <!-- ===== 매출현황 탭 ===== -->
   <section class="tab-content" id="tab-sales">
     <div class="search-bar card">
       <div class="search-row">
@@ -267,8 +267,7 @@
           <button class="btn btn-accent" onclick="downloadExcel('sales')">⬇ 다운로드</button>
           <label class="btn btn-outline" for="slUploadFile">⬆ 판매 업로드</label>
           <input type="file" id="slUploadFile" accept=".xlsx,.xls" style="display:none" onchange="handleUpload(this,'sales')" />
-          <label class="btn btn-new" for="gonghomUploadFile">🏠 공홈 주문 업로드</label>
-          <input type="file" id="gonghomUploadFile" accept=".xlsx,.xls" style="display:none" onchange="handleGonghomUpload(this)" />
+          <button class="btn btn-new" onclick="openSalesUploadModal()">📦 판매 업로드</button>
           <button class="btn btn-ghost" onclick="downloadSample('sales')">샘플</button>
         </div>
       </div>
@@ -1213,10 +1212,55 @@
   </div>
 </dialog>
 
-<!-- 공홈 주문 업로드 미리보기 모달 -->
-<dialog id="gonghomPreviewModal" class="srm-modal" style="width:860px;max-width:96vw;min-height:340px">
+<!-- 판매 업로드 모달 (채널별 탭) -->
+<dialog id="salesUploadModal" class="srm-modal" style="width:680px;max-width:96vw;min-height:400px">
   <div class="srm-header">
-    <span>🏠 공홈 주문 내역 업로드 미리보기</span>
+    <span>📦 판매 업로드</span>
+    <button class="modal-close" onclick="document.getElementById('salesUploadModal').close()">✕</button>
+  </div>
+  <div class="srm-body" style="padding:0;display:flex;flex-direction:column;min-height:320px">
+    <div class="sul-tabs">
+      <button class="sul-tab-btn active" data-sul="cafe24">카페24</button>
+      <button class="sul-tab-btn" data-sul="sabangnet">사방넷</button>
+      <button class="sul-tab-btn" data-sul="dutyfree">면세점</button>
+    </div>
+    <!-- 카페24 탭 -->
+    <div class="sul-tab-content active" id="sulCafe24">
+      <div class="sul-upload-area">
+        <p class="sul-desc">카페24 주문내역 엑셀 파일 (A~AA열, 27컬럼)</p>
+        <p class="sul-format">주문일시 | 환불완료일 | 주문번호 | 회원등급 | 자체상품코드 | 상품명 | ... | 환불금액</p>
+        <div class="sul-file-row">
+          <label class="btn btn-accent sul-file-label" for="sulCafe24File">파일 선택</label>
+          <input type="file" id="sulCafe24File" accept=".xlsx,.xls,.csv" style="display:none" />
+          <span class="sul-file-name" id="sulCafe24FileName">선택된 파일 없음</span>
+        </div>
+      </div>
+    </div>
+    <!-- 사방넷 탭 -->
+    <div class="sul-tab-content" id="sulSabangnet">
+      <div class="sul-upload-area">
+        <div class="sul-placeholder">
+          <span class="sul-placeholder-icon">🔧</span>
+          <p class="sul-placeholder-text">사방넷 업로드 기능 준비 중입니다.</p>
+        </div>
+      </div>
+    </div>
+    <!-- 면세점 탭 -->
+    <div class="sul-tab-content" id="sulDutyfree">
+      <div class="sul-upload-area">
+        <div class="sul-placeholder">
+          <span class="sul-placeholder-icon">🔧</span>
+          <p class="sul-placeholder-text">면세점 업로드 기능 준비 중입니다.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<!-- 카페24 주문 업로드 미리보기 모달 -->
+<dialog id="gonghomPreviewModal" class="srm-modal" style="width:1020px;max-width:96vw;min-height:340px">
+  <div class="srm-header">
+    <span>카페24 주문 내역 미리보기</span>
     <button class="modal-close" onclick="document.getElementById('gonghomPreviewModal').close()">✕</button>
   </div>
   <div class="srm-body" style="overflow-y:auto;max-height:60vh">
@@ -1224,13 +1268,17 @@
     <table class="srm-table" style="width:100%;font-size:12px">
       <thead>
         <tr>
-          <th style="width:36px">#</th>
-          <th style="width:72px">상태</th>
-          <th>자체 상품코드</th>
+          <th style="width:32px;text-align:center">선택</th>
+          <th style="width:56px">상태</th>
+          <th style="width:88px">주문일시</th>
+          <th style="width:90px">주문번호</th>
+          <th style="width:56px">채널</th>
+          <th>품번</th>
           <th>상품명</th>
-          <th style="width:48px;text-align:center">수량</th>
-          <th style="width:56px;text-align:center">사이즈</th>
-          <th style="width:140px">바코드</th>
+          <th style="width:46px;text-align:center">사이즈</th>
+          <th style="width:38px;text-align:center">수량</th>
+          <th style="width:80px;text-align:right">매출액</th>
+          <th style="width:56px">매칭</th>
         </tr>
       </thead>
       <tbody id="gonghomPreviewBody"></tbody>

@@ -1,6 +1,54 @@
 // =============================================
-// ===== 판매조회 =====
+// ===== 매출현황 =====
 // =============================================
+
+// ===== 판매 업로드 모달 =====
+function openSalesUploadModal() {
+  const modal = document.getElementById('salesUploadModal')
+  if (!modal) return
+  // 탭 초기화 — 카페24 활성
+  modal.querySelectorAll('.sul-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.sul === 'cafe24'))
+  modal.querySelectorAll('.sul-tab-content').forEach(c => c.classList.toggle('active', c.id === 'sulCafe24'))
+  // 파일 초기화
+  const fileInput = document.getElementById('sulCafe24File')
+  if (fileInput) fileInput.value = ''
+  document.getElementById('sulCafe24FileName').textContent = '선택된 파일 없음'
+  document.getElementById('sulCafe24Preview').innerHTML = ''
+  modal.showModal()
+  centerModal(modal)
+}
+
+// 내부 탭 전환 + 파일 선택 이벤트 (DOMContentLoaded 후)
+document.addEventListener('DOMContentLoaded', () => {
+  const modal = document.getElementById('salesUploadModal')
+  if (!modal) return
+
+  // 탭 전환
+  modal.querySelectorAll('.sul-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      modal.querySelectorAll('.sul-tab-btn').forEach(b => b.classList.remove('active'))
+      modal.querySelectorAll('.sul-tab-content').forEach(c => c.classList.remove('active'))
+      btn.classList.add('active')
+      const panelId = { cafe24: 'sulCafe24', sabangnet: 'sulSabangnet', dutyfree: 'sulDutyfree' }[btn.dataset.sul]
+      document.getElementById(panelId)?.classList.add('active')
+    })
+  })
+
+  // 카페24 파일 선택 → gonghom 로직 재사용
+  const fileInput = document.getElementById('sulCafe24File')
+  if (fileInput) {
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0]
+      document.getElementById('sulCafe24FileName').textContent = file ? file.name : '선택된 파일 없음'
+      if (file) handleGonghomUpload(fileInput)
+    })
+  }
+
+  // backdrop 닫기
+  modal.addEventListener('click', e => {
+    if (e.target === e.currentTarget) e.currentTarget.close()
+  })
+})
 
 // ===== 플랫폼 상태 초기화 =====
 function initSalesPlatforms() {

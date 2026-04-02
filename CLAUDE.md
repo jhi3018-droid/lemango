@@ -19,7 +19,7 @@
 │   ├── utils.js            # 유틸, 페이지네이션, 정렬/필터(initTableFeatures), 미니달력(openMonthPicker)
 │   ├── products.js         # 상품조회 검색·렌더
 │   ├── stock.js            # 재고조회·입고·출고
-│   ├── sales.js            # 판매조회·공홈주문
+│   ├── sales.js            # 매출현황·판매업로드모달
 │   ├── plan.js             # 신규기획
 │   ├── event.js            # 행사일정 캘린더·CRUD
 │   ├── dashboard.js        # 대시보드 + 대시보드 캘린더
@@ -43,7 +43,7 @@
 | 대시보드 | `tab-dashboard` | KPI 카드, 캘린더(좌)+매출현황·BEST TOP10(우) 2컬럼 |
 | 상품조회 | `tab-product` | 검색+필터, 데이터 테이블, 품번 클릭→상세 모달 |
 | 재고 관리 | `tab-stock` | 사이즈별(XS~XL) 재고 테이블 + 신규입고/개별출고 모달 |
-| 판매조회 | `tab-sales` | 플랫폼별 판매 테이블 + 공홈 주문 업로드 |
+| 매출현황 | `tab-sales` | 플랫폼별 판매 테이블 + 판매 업로드 모달 (카페24/사방넷/면세점) |
 | 신규기획 | `tab-plan` | 기획 상품 관리, 일정(단계+날짜 필터), 상품조회 이전 |
 | 행사일정 | `tab-event` | 월간 캘린더 + 행사 등록/수정/삭제 (localStorage) |
 | 업무일정 | `tab-work` | 업무 일정 등록/조회/수정/삭제 (localStorage) |
@@ -55,7 +55,7 @@ State.allProducts          // 전체 상품 배열 (단일 진실 소스)
 State.planItems            // 신규기획 아이템 배열
 State.product.filtered     // 상품조회 필터 결과
 State.stock.filtered       // 재고조회 필터 결과
-State.sales.filtered       // 판매조회 필터 결과
+State.sales.filtered       // 매출현황 필터 결과
 State.plan.filtered        // 기획조회 필터 결과
 State.workItems            // 업무일정 아이템 배열
 State.work.filtered        // 업무일정 필터 결과
@@ -93,7 +93,8 @@ State.modal.images/idx     // 이미지 모달 상태
   stockLog: [{ type:'in'|'out', date, XS,S,M,L,XL, memo, registeredAt }],
   sales: { 공홈, GS, '29cm', W쇼핑, 기타 },  // 키는 _platforms 배열 기준 (동적)
   scheduleLog: [{ confirmedAt, schedule: { design, production, image, register, logistics } }],
-  registDate, logisticsDate
+  registDate, logisticsDate,
+  revenueLog: [{ date, channel, orderNo, qty, revenue, registeredAt }]
 }
 ```
 
@@ -144,7 +145,8 @@ State.modal.images/idx     // 이미지 모달 상태
 | 신규입고 | `stockRegisterModal` | `openStockRegisterModal()` |
 | 개별출고 | `outgoingModal` | `openOutgoingModal()` |
 | 엑셀 업로드 미리보기 | `uploadPreviewModal` | `showRegisterPreview()` |
-| 공홈 주문 미리보기 | `gonghomPreviewModal` | `showGonghomPreview(rows)` |
+| 판매 업로드 | `salesUploadModal` | `openSalesUploadModal()` |
+| 카페24 주문 미리보기 | `gonghomPreviewModal` | `showGonghomPreview(rows)` |
 | 기획 상세 | `planDetailModal` | `openPlanDetailModal(no)` |
 | 행사 등록/수정 | `eventRegisterModal` | `openEventRegisterModal()` / `editEvent(no)` |
 | 기획일정 조회 | `planScheduleModal` | `openPlanScheduleForDate(dateStr)` / `openDashEventInfo(no)` |
@@ -228,23 +230,73 @@ State.modal.images/idx     // 이미지 모달 상태
   - p.stockLog.push({type:'out', ...})
 ```
 
-## 공홈 주문 업로드
+## 카페24 주문 업로드
 
-파일 형식 (카페24 주문 내역 엑셀):
-| 열 | 내용 |
-|----|------|
-| A (0) | 카페24코드 (보조 매칭) |
-| B (1) | 자체 상품코드 (메인 매칭) |
-| C (2) | 수량 |
-| H (7) | 상품옵션 → 사이즈 파싱 |
-| L (11) | 바코드 |
+판매 업로드 모달 (`salesUploadModal`) — 카페24/사방넷/면세점 3탭 구조
 
-`parseGonghomSize(optStr)` 규칙:
+### 카페24 파일 형식 (A~AA, 27컬럼)
+| 열 | 인덱스 | 내용 | 용도 |
+|----|--------|------|------|
+| A | 0 | 주문일시 | 미리보기 표시 |
+| B | 1 | 환불완료일 | 빈값=정상, 값있음=환불 (환불행 구분) |
+| C | 2 | 주문번호 | 미리보기 표시 |
+| E | 4 | 자체 상품코드 | ★ 품번 매칭 키 (`State.allProducts[].productCode`) |
+| F | 5 | 상품명 | 미매칭 시 표시용 |
+| H | 7 | 상품옵션 | ★ 사이즈 파싱 (`parseCafe24Size`) |
+| I | 8 | 쇼핑몰 | LEMANGOKOREA=자사몰, LEMANGO PARTNER=파트너 |
+| M | 12 | 수량 | ★ 판매 반영 수량 |
+| N | 13 | 판매가 | 미리보기 표시 |
+| P | 15 | 상품구매금액 | ★ 매출액 계산 (per-item) |
+| Q | 16 | 총 배송비 | ★ 매출액 계산 (주문번호당 첫 행에만 값) |
+| U | 20 | 실제 환불금액 | ★ 매출액 계산 (주문번호당 첫 행에만 값) |
+| Y | 24 | 상품별 추가할인금액 | ★ 매출액 계산 (per-item) |
+
+### 매출액 계산 공식
+`revenue = P(상품구매금액) + Q(총배송비) - U(실제환불금액) - Y(상품별추가할인금액)`
+- **Q, U**: 동일 주문번호(C열) 행이 여러 개일 때 첫 행에만 적용 (`_applyQ`, `_applyU` 플래그)
+- **P, Y**: 행별 적용 (per-item)
+
+### 채널 매핑
+- `LEMANGOKOREA` → `'공홈'`
+- `LEMANGO PARTNER` → `'파트너'`
+- 파트너 채널이 `_platforms`에 없으면 경고 토스트
+
+`parseCafe24Size(optStr)` 규칙:
+- `SIZE=90(L)` → `L` (괄호 안 추출)
 - `Size=M` → `M`
-- `SIZE=85(M)` → `M` (괄호 안 추출)
 - 빈 값 → `F` (프리사이즈)
 
-처리: `p.sales['공홈'] += qty` → `renderSalesTable()` + `renderDashboard()` 갱신
+### 주문번호 중복 검출 (CRITICAL)
+- 업로드 시 전체 `State.allProducts[].revenueLog[].orderNo` 수집 → Set 구축
+- 각 행의 주문번호(C열)가 Set에 존재하면 `isDuplicate = true`
+- 중복 행: 파란 배경 + 취소선, 체크박스 disabled, 확정 시 절대 반영 안 됨
+- 같은 파일 재업로드 시 모든 행이 "중복" 표시
+
+### 행 상태 우선순위
+| 우선순위 | 조건 | 상태 | 체크박스 | 적용 |
+|---------|------|------|---------|------|
+| 1 | orderNo 기존 revenueLog에 있음 | 중복 | disabled | 안 됨 |
+| 2 | B열 값 + 미매칭 | 환불(미매칭) | disabled | 안 됨 |
+| 3 | B열 값 + 매칭 | 환불 | **checked** | **마이너스 적용** |
+| 4 | 매칭 | 정상 | checked | 플러스 적용 |
+| 5 | 미매칭 | 미매칭 | disabled | 안 됨 |
+
+### 미리보기 모달 (`gonghomPreviewModal`)
+- 열: 선택(체크박스) | 상태 | 주문일시 | 주문번호 | 채널 | 품번 | 상품명 | 사이즈 | 수량 | 매출액 | 매칭
+- 중복행: 파란 배경 + 취소선, checkbox disabled
+- 환불행: 연분홍 배경 + 취소선, checkbox checked (매칭 시), 매출액 빨간 마이너스 표시
+- 환불(미매칭)행: 주황 배경, checkbox disabled
+- 미매칭행: checkbox disabled
+- 정상+매칭 행: 기본 체크됨
+- 상단 요약: 총건수, 정상, 환불, 중복, 매칭, 미매칭, 매출액(정상-환불 순액)
+
+### 확정 처리
+- 중복 행: 무조건 skip (isDuplicate === true)
+- **정상 행**: `p.sales[channel] += qty`, revenueLog `type:'sale'`, 양수 qty/revenue
+- **환불 행**: `p.sales[channel] -= qty`, revenueLog `type:'refund'`, 음수 qty/revenue
+- revenueLog 구조: `{ type:'sale'|'refund', date, channel, orderNo, qty, revenue, registeredAt }`
+- `renderSalesTable()` + `renderDashboard()` 갱신
+- 토스트: "카페24 주문 반영: 정상 N건, 환불 N건 차감 (중복 N건, 미매칭 N건 제외)"
 
 ## 업로드 컬럼 구조 (상품 샘플 파일)
 2행 헤더, 3행부터 데이터. `UPLOAD_COL` 상수로 컬럼 인덱스 관리.
@@ -383,10 +435,14 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - `openOutgoingModal()` / `submitOutgoing()` — 개별 출고
 
 ### 판매
-- `handleGonghomUpload(input)` — 공홈 주문 엑셀 파일 읽기
-- `showGonghomPreview(rows)` — 공홈 주문 미리보기
-- `confirmGonghomUpload()` — 공홈 주문 판매 반영
-- `parseGonghomSize(optStr)` — 상품옵션 문자열 → 사이즈 파싱
+- `openSalesUploadModal()` — 판매 업로드 모달 열기 (카페24/사방넷/면세점 탭)
+- `handleGonghomUpload(input)` — 카페24 주문 엑셀 파일 읽기 (CAFE24 컬럼 매핑, A~AA 27컬럼)
+- `showGonghomPreview(rows)` — 카페24 주문 미리보기 (중복검출, 환불구분, 체크박스)
+- `confirmGonghomUpload()` — 정상: sales += qty, 환불: sales -= qty, revenueLog 기록
+- `calcRowRevenue(r)` — 매출액 계산: P + Q(주문당1회) - U(주문당1회) - Y(행별)
+- `cafe24Channel(shopName)` — LEMANGOKOREA→'공홈', LEMANGO PARTNER→'파트너'
+- `parseCafe24Size(optStr)` — 상품옵션 → 사이즈 파싱 (SIZE=90(L)→L, Size=M→M, 빈값→F)
+- `_buildExistingOrderIndex()` — revenueLog 전체 주문번호 Set 구축 (중복 검출용)
 
 ### 업무일정
 - `renderWorkCalendar()` — 업무일정 캘린더 렌더
@@ -404,7 +460,7 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - `addPlatformSetting()` / `editPlatformSetting(idx)` / `savePlatformEdit(idx)` / `removePlatformSetting(idx)` — 판매 채널 CRUD
 - `addWorkCategorySetting()` / `editWorkCategorySetting(idx)` / `saveWorkCategoryEdit(idx)` / `removeWorkCategorySetting(idx)` — 업무 카테고리 CRUD
 
-### 판매조회 플랫폼 관리
+### 매출현황 플랫폼 관리
 - `initSalesPlatforms()` — 플랫폼 active/inactive 초기화 + 설정 동기화
 - `renderInactiveArea()` — 비활성 칩 렌더 + 드래그 이벤트 바인딩
 - `removeSalesPlatform(pl)` / `activateSalesPlatform(pl, idx)` / `reorderSalesPlatform(from, toIdx)` — 플랫폼 상태 변경
@@ -458,7 +514,7 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - `changeProductPageSize()` — 상품조회 페이지 사이즈 변경
 - `changeStockPageSize()` — 재고관리 페이지 사이즈 변경
 - `changePlanPageSize()` — 신규기획 페이지 사이즈 변경
-- `changeSalesPageSize()` — 판매조회 페이지 사이즈 변경
+- `changeSalesPageSize()` — 매출현황 페이지 사이즈 변경
 - `fixStickySubRow(tableId)` — 2단 헤더 2행 `top` 동적 계산 적용
 
 ## 에이전트 목록 (`.claude/agents/`)
@@ -1141,6 +1197,93 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - `npConfirmed = ''` → `'all'` 수정 (빈 값은 select option에 없어서 `|| 'pending'` fallback → confirmed 항목 필터됨)
 - `goToPlanWithItem()` 함수도 동일하게 수정
 - 기획 항목 개별 행 클릭: `openPlanScheduleForDate` → `ddm-plan-nav` event delegation으로 변경 (해당 품번으로 직접 탭 이동)
+
+---
+
+### 2026-04-02
+
+#### 판매조회 → 매출현황 이름 변경
+
+- 네비게이션 버튼, TAB_LABELS, 엑셀 시트명, HTML 주석, CLAUDE.md 전체 — "판매조회" → "매출현황"
+- `index.html:26` nav 버튼, `js/core.js` TAB_LABELS, `js/excel.js` sheetName
+
+#### 판매 업로드 모달 (`salesUploadModal`) 신규
+
+- 공홈 주문 업로드 독립 버튼 제거 → "📦 판매 업로드" 버튼으로 통합
+- `salesUploadModal` (`<dialog class="srm-modal">`) — 카페24/사방넷/면세점 3탭 구조
+- 카페24 탭: 파일 선택 → `handleGonghomUpload` → `gonghomPreviewModal` 미리보기
+- 사방넷/면세점: 플레이스홀더 ("준비 중")
+- `js/sales.js` — `openSalesUploadModal()`, 내부 탭 전환 (DOMContentLoaded), 파일 input 바인딩
+- `js/main.js` — `makeDraggableResizable(salesUploadModal, 600, 400)`
+- `style.css` — `.sul-tabs`, `.sul-tab-btn`, `.sul-tab-content`, `.sul-placeholder` 스타일
+
+#### 카페24 파싱 전면 개편 (27컬럼 A~AA)
+
+- `CAFE24` 상수: 27개 컬럼 인덱스 매핑 (A=주문일시 ~ AA=환불금액)
+- 품번 매칭: E열(4) `productCode` vs `State.allProducts[].productCode`
+- 사이즈 파싱: H열(7) `parseCafe24Size()` — SIZE=90(L)→L, Size=M→M, 빈값→F
+- 수량: M열(12), 판매가: N열(13)
+- xlsx/xls: `readAsArrayBuffer` + `{type:'array'}`, csv: `readAsText(UTF-8)` + `{type:'string', codepage:65001}`
+
+#### 매출액 계산 (revenue)
+
+- 공식: `P(상품구매금액) + Q(총배송비) - U(실제환불금액) - Y(상품별추가할인금액)`
+- Q(16열), U(20열): 동일 주문번호(C열) 중 첫 행에만 적용 (`_applyQ`, `_applyU` 플래그)
+- P(15열), Y(24열): 행별 적용 (per-item)
+- `calcRowRevenue(r)` 함수
+
+#### 쇼핑몰 → 채널 분류
+
+- I열(8): `LEMANGOKOREA` → `'공홈'`, `LEMANGO PARTNER` → `'파트너'`
+- `cafe24Channel(shopName)` 함수
+- 파트너 채널이 `_platforms`에 없으면 경고 토스트
+
+#### 주문번호 중복 검출 (CRITICAL)
+
+- `_buildExistingOrderIndex()` — 전체 `State.allProducts[].revenueLog[].orderNo` → Set
+- 업로드 행의 주문번호가 Set에 존재하면 `isDuplicate = true`
+- 중복 행: 파란 배경 + 취소선, checkbox disabled, 확정 시 절대 반영 안 됨
+- 날짜 무관 — 같은 주문번호면 중복, 같은 파일 재업로드 시 전체 중복 표시
+
+#### 환불 처리 (마이너스 적용)
+
+- B열(환불완료일) 값 있으면 환불 행
+- 환불 + 매칭: checkbox **checked**, 확정 시 `p.sales[channel] -= qty`
+- `revenueLog.push({type:'refund', qty:-qty, revenue:-|revenue|, ...})`
+- 환불 + 미매칭: "환불(미매칭)" 주황 배지, checkbox disabled
+- 환불 + 중복: "중복" 우선, 반영 안 됨
+
+#### revenueLog type 구분
+
+- `type: 'sale'` — 정상 주문, 양수 qty/revenue
+- `type: 'refund'` — 환불, 음수 qty/revenue
+- 상품 스키마에 `revenueLog[]` 추가: `{ type, date, channel, orderNo, qty, revenue, registeredAt }`
+
+#### 미리보기 모달 개편 (`gonghomPreviewModal`)
+
+- 폭: 960px → 1020px (채널/매출액 컬럼 추가)
+- 11컬럼: 선택 | 상태 | 주문일시 | 주문번호 | 채널 | 품번 | 상품명 | 사이즈 | 수량 | 매출액 | 매칭
+- 5단계 상태 우선순위: 중복(파랑) > 환불(미매칭)(주황) > 환불(빨강) > 정상(초록) > 미매칭(빨강)
+- 환불행 매출액: 빨간 마이너스 표시
+- 상단 요약: 총건수, 정상, 환불, 중복, 매칭, 미매칭, 매출액(정상-환불 순액)
+- 토스트: "카페24 주문 반영: 정상 N건, 환불 N건 차감 (중복 N건, 미매칭 N건 제외)"
+
+#### CSS 추가
+
+- `.cafe24-dup-row`: 파란 배경(`#e3f2fd`) + 취소선
+- `.badge-preview-dup`: 파란 배지(`#bbdefb` bg, `#1565c0` 텍스트)
+- `.cafe24-chk:disabled`: `cursor:not-allowed`, `opacity:0.4`
+- `.sul-*` 클래스: 판매 업로드 모달 내부 탭 스타일
+
+#### 탭 바 밑줄 수정
+
+- `border-bottom` 제거 → `.tab-bar-btn-active .tab-bar-label::after` pseudo-element
+- 밑줄이 텍스트 폭에만 정확히 맞춤 (× 버튼 영역 제외)
+- `padding: 6px 4px`, `inline-flex`, `font-size: 13px`
+
+#### 다음 작업 후보 업데이트
+
+- `공홈 외 다른 쇼핑몰 주문 업로드 포맷` → salesUploadModal 사방넷/면세점 탭으로 이동 (구조 준비됨)
 
 ---
 

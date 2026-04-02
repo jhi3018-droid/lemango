@@ -140,7 +140,7 @@ const TAB_LABELS = {
   dashboard: '대시보드',
   product:   '상품조회',
   stock:     '재고 관리',
-  sales:     '판매조회',
+  sales:     '매출현황',
   plan:      '신규기획',
   event:     '행사일정',
   work:      '업무일정',
