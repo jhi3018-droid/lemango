@@ -246,15 +246,30 @@ State.modal.images/idx     // 이미지 모달 상태
 | I | 8 | 쇼핑몰 | LEMANGOKOREA=자사몰, LEMANGO PARTNER=파트너 |
 | M | 12 | 수량 | ★ 판매 반영 수량 |
 | N | 13 | 판매가 | 미리보기 표시 |
-| P | 15 | 상품구매금액 | ★ 매출액 계산 (per-item) |
-| Q | 16 | 총 배송비 | ★ 매출액 계산 (주문번호당 첫 행에만 값) |
-| U | 20 | 실제 환불금액 | ★ 매출액 계산 (주문번호당 첫 행에만 값) |
+| P | 15 | 상품구매금액 | ★ 매출액 계산 (판매가×수량, per-item) |
+| Q | 16 | 총 배송비 | ★ 매출액 계산 (소스에서 첫품목만 값, 나머지 0) |
+| U | 20 | 실제 환불금액 | ★ 매출액 계산 (동일주문 전행 동일값 반복 → MAX 1회) |
+| W | 22 | 사용한 적립금액(최종) | 순실결제 계산용 (동일주문 전행 동일값) |
 | Y | 24 | 상품별 추가할인금액 | ★ 매출액 계산 (per-item) |
 
-### 매출액 계산 공식
-`revenue = P(상품구매금액) + Q(총배송비) - U(실제환불금액) - Y(상품별추가할인금액)`
-- **Q, U**: 동일 주문번호(C열) 행이 여러 개일 때 첫 행에만 적용 (`_applyQ`, `_applyU` 플래그)
-- **P, Y**: 행별 적용 (per-item)
+### 매출액 계산 공식 (검증완료)
+```
+매출 = P(전체합산) + Q(전체합산) - U(주문번호당 MAX값 1회) - Y(전체합산)
+```
+- **P**: 상품구매금액, SUM 전체행 (판매가×수량, per-item)
+- **Q**: 총배송비, SUM 전체행 (소스에서 이미 첫품목만 값있음, 나머지 0/NaN)
+- **U**: 실제환불금액, **주문번호당 MAX** 후 SUM (⚠️ 동일값이 전 행에 반복기재 → SUM하면 중복계산, FIRST는 부분환불 11건 누락)
+- **Y**: 상품별추가할인금액, SUM 전체행 (per-item)
+- **W**: 사용한적립금액, 주문번호당 FIRST (순실결제 = 매출 - W)
+
+검증값(2026-01): P=300,281,100 + Q=3,399,000 - U=8,329,593 - Y=87,712,735 = **207,637,772**
+(이전 U=7,652,196은 FIRST방식으로 부분환불 11건 누락. MAX로 보정완료)
+
+### 주문단위 계산 (`_cafe24Orders`)
+- 주문번호(C열)로 그룹핑 → 각 주문별 P/Q/U/Y/W 집계
+- `order.revenue = P + Q - U(MAX) - Y`
+- 행단위 항목매출: `itemRevenue = P - Y` (상품 기여분, Q/U 제외)
+- 미리보기 테이블: 행별 `P-Y` 표시, 상단 요약에 주문단위 매출총액 표시
 
 ### 채널 매핑
 - `LEMANGOKOREA` → `'공홈'`
@@ -439,7 +454,7 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - `handleGonghomUpload(input)` — 카페24 주문 엑셀 파일 읽기 (CAFE24 컬럼 매핑, A~AA 27컬럼)
 - `showGonghomPreview(rows)` — 카페24 주문 미리보기 (중복검출, 환불구분, 체크박스)
 - `confirmGonghomUpload()` — 정상: sales += qty, 환불: sales -= qty, revenueLog 기록
-- `calcRowRevenue(r)` — 매출액 계산: P + Q(주문당1회) - U(주문당1회) - Y(행별)
+- `_toNum(v)` — 안전한 숫자 변환 (NaN/empty → 0)
 - `cafe24Channel(shopName)` — LEMANGOKOREA→'공홈', LEMANGO PARTNER→'파트너'
 - `parseCafe24Size(optStr)` — 상품옵션 → 사이즈 파싱 (SIZE=90(L)→L, Size=M→M, 빈값→F)
 - `_buildExistingOrderIndex()` — revenueLog 전체 주문번호 Set 구축 (중복 검출용)
@@ -1225,12 +1240,14 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - 수량: M열(12), 판매가: N열(13)
 - xlsx/xls: `readAsArrayBuffer` + `{type:'array'}`, csv: `readAsText(UTF-8)` + `{type:'string', codepage:65001}`
 
-#### 매출액 계산 (revenue)
+#### 매출액 계산 (revenue) — 주문단위 계산으로 전면 개편
 
-- 공식: `P(상품구매금액) + Q(총배송비) - U(실제환불금액) - Y(상품별추가할인금액)`
-- Q(16열), U(20열): 동일 주문번호(C열) 중 첫 행에만 적용 (`_applyQ`, `_applyU` 플래그)
-- P(15열), Y(24열): 행별 적용 (per-item)
-- `calcRowRevenue(r)` 함수
+- 공식: `매출 = P(전체합산) + Q(전체합산) - U(주문번호당 MAX) - Y(전체합산)`
+- U: **MAX per order** (이전 FIRST 방식은 부분환불 11건 누락 → MAX로 보정)
+- `_cafe24Orders` 주문번호별 집계 객체 도입
+- 행단위 `itemRevenue = P - Y` (상품 기여분), 주문단위 `order.revenue = P + Q - U(MAX) - Y`
+- 미리보기 요약: P/Q/U/Y 공식 분해 + 매출총액 + 채널별 분해 표시
+- 검증값(2026-01): P=300,281,100 + Q=3,399,000 - U=8,329,593 - Y=87,712,735 = 207,637,772
 
 #### 쇼핑몰 → 채널 분류
 
@@ -1284,6 +1301,38 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 #### 다음 작업 후보 업데이트
 
 - `공홈 외 다른 쇼핑몰 주문 업로드 포맷` → salesUploadModal 사방넷/면세점 탭으로 이동 (구조 준비됨)
+
+---
+
+### 2026-04-03
+
+#### 카페24 매출 계산 시스템 전면 재구축
+
+- **U 계산 방식 변경 (CRITICAL)**: FIRST → **MAX per order**
+  - 이전: `_applyU` 플래그로 주문번호 첫 행에만 적용 → 부분환불(정상+환불 혼합) 주문 11건에서 U=0 누락
+  - 수정: 주문번호별 `Math.max()` → 정확한 환불금액 취득
+  - 검증: U 합계 7,652,196(이전) → 8,329,593(수정후), 매출총액 207,637,772 확인
+
+- **주문단위 계산 구조 도입**
+  - `_cafe24Orders` 객체: 주문번호별 P/Q/U(MAX)/Y/W 집계
+  - `order.revenue = P + Q - U(MAX) - Y` (주문단위 매출)
+  - `order.netCash = revenue - W` (순실결제, 적립금 차감)
+  - 행단위 `itemRevenue = P - Y` (상품 기여분, Q/U 제외)
+
+- **미리보기 요약 3줄 구조**
+  - Line 1: 총건수 | 정상 | 환불 | 중복 | 미등록
+  - Line 2: P xxx + Q xxx - U xxx - Y xxx (공식 분해)
+  - Line 3: 매출총액 ₩xxx (공홈 ₩xxx / 파트너 ₩xxx)
+
+- **이전 per-row 방식 완전 제거**: `_applyQ`, `_applyU` 플래그, `calcRowRevenue()` 함수 삭제
+- `_toNum(v)` 헬퍼: `Number() || 0` 대신 `isNaN` 체크 (NaN/empty → 0)
+- `usedPoints` (W열, col 22) 파싱 추가 — 순실결제 계산용
+- 확정(confirm) 시 주문단위 Q/-U를 첫 매칭 행에 배분
+
+#### 기존 유지 기능
+- 미등록/중복/환불 상태 배지, 체크박스, 미리보기 컬럼 헤더 필터
+- 주문번호 중복 검출 (revenueLog 기반)
+- 채널 분류 (LEMANGOKOREA=공홈, LEMANGO PARTNER=파트너)
 
 ---
 

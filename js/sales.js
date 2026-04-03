@@ -12,8 +12,10 @@ function openSalesUploadModal() {
   // 파일 초기화
   const fileInput = document.getElementById('sulCafe24File')
   if (fileInput) fileInput.value = ''
-  document.getElementById('sulCafe24FileName').textContent = '선택된 파일 없음'
-  document.getElementById('sulCafe24Preview').innerHTML = ''
+  const fnEl = document.getElementById('sulCafe24FileName')
+  if (fnEl) fnEl.textContent = '선택된 파일 없음'
+  const pvEl = document.getElementById('sulCafe24Preview')
+  if (pvEl) pvEl.innerHTML = ''
   modal.showModal()
   centerModal(modal)
 }

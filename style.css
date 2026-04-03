@@ -1381,6 +1381,12 @@ body.col-resize-active * { cursor: col-resize !important; }
 .badge-preview-ok   { background: #e8f5e9; color: var(--success); }
 .badge-preview-warn { background: #fff8e1; color: var(--warning); }
 .badge-preview-error { background: #fdecea; color: var(--danger); }
+.badge-preview-new  { background: #fff3e0; color: #e65100; }
+
+/* ===== 카페24 미리보기 헤더 필터 ===== */
+.c24-th-filter { font-size: 9px; opacity: 0.3; cursor: pointer; flex-shrink: 0; padding: 1px 3px; border-radius: 3px; transition: opacity 0.15s, background 0.15s; user-select: none; }
+.c24-th-filter:hover { opacity: 0.7; background: rgba(0,0,0,0.06); }
+.c24-th-filter.active { opacity: 1; color: var(--accent); background: rgba(201,169,110,0.1); }
 
 /* ===== 신규등록 모달 ===== */
 .register-modal {
