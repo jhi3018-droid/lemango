@@ -36,13 +36,23 @@ document.addEventListener('DOMContentLoaded', () => {
     })
   })
 
-  // 카페24 파일 선택 → gonghom 로직 재사용
+  // 카페24 파일 선택
   const fileInput = document.getElementById('sulCafe24File')
   if (fileInput) {
     fileInput.addEventListener('change', () => {
       const file = fileInput.files[0]
       document.getElementById('sulCafe24FileName').textContent = file ? file.name : '선택된 파일 없음'
       if (file) handleGonghomUpload(fileInput)
+    })
+  }
+
+  // 사방넷 파일 선택
+  const sbFileInput = document.getElementById('sulSabangnetFile')
+  if (sbFileInput) {
+    sbFileInput.addEventListener('change', () => {
+      const file = sbFileInput.files[0]
+      document.getElementById('sulSabangnetFileName').textContent = file ? file.name : '선택된 파일 없음'
+      if (file) handleSabangnetUpload(sbFileInput)
     })
   }
 

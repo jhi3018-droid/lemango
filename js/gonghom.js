@@ -100,17 +100,50 @@ function _cafe24ColValue(r, key) {
     case 'size':        return r.size
     case 'qty':         return String(r.qty)
     case 'revenue':     return String(r.itemRevenue)
-    case 'matchStatus': return r.matched ? '매칭' : '미등록'
+    case 'matchStatus': return r.matched ? '매칭' : '신규등록'
     default:            return ''
   }
 }
 
 function _rowStatus(r) {
   if (r.isDuplicate) return '중복'
-  if (r.isRefund && !r.matched) return '환불(미등록)'
+  if (r.isRefund && !r.matched) return '환불(신규등록)'
   if (r.isRefund) return '환불'
-  if (!r.matched) return '미등록'
+  if (!r.matched) return '신규등록'
   return '정상'
+}
+
+// --- Auto-create product for unregistered Cafe24 items ---
+function _cafe24CreateProduct(code, name, salePrice) {
+  const newP = {
+    no: State.allProducts.length + 1,
+    brand: _sbDetectBrand(code),   // reuse sabangnet helper
+    productCode: code,
+    sampleNo: '', cafe24Code: '', barcode: '',
+    nameKr: name, nameEn: '',
+    colorKr: '', colorEn: '',
+    salePrice: salePrice || 0, costPrice: 0,
+    type: _sbDetectType(code),     // reuse sabangnet helper
+    backStyle: '', legCut: '', guide: '', fabricType: '',
+    chestLine: '', transparency: '', lining: '', capRing: '',
+    material: '', comment: '', washMethod: '',
+    bust: '', waist: '', hip: '', modelSize: '',
+    madeMonth: '', madeBy: '', madeIn: '',
+    videoUrl: '',
+    saleStatus: '판매중', productionStatus: '지속생산',
+    productCodeLocked: false,
+    images: { sum: [], lemango: [], noir: [], external: [], design: [], shoot: [] },
+    barcodes: { XS: '', S: '', M: '', L: '', XL: '' },
+    stock: { XS: 0, S: 0, M: 0, L: 0, XL: 0 },
+    stockLog: [],
+    sales: {},
+    revenueLog: [],
+    scheduleLog: [],
+    registDate: new Date().toISOString().split('T')[0],
+    logisticsDate: ''
+  }
+  _platforms.forEach(pl => { newP.sales[pl] = 0 })
+  return newP
 }
 
 // ===========================================
@@ -166,7 +199,7 @@ function showGonghomPreview(rawRows) {
 
     const p = State.allProducts.find(pr => pr.productCode === productCode)
     const matched = !!p
-    const checked = matched && !isDuplicate
+    const checked = !isDuplicate  // unmatched rows also checked (auto-create on confirm)
 
     // Item-level revenue: P - Y (product contribution, no order-level adjustments)
     const itemRevenue = purchaseAmt - extraDiscount
@@ -300,24 +333,24 @@ function _renderCafe24Preview() {
     if (r.isDuplicate) {
       statusBadge = '<span class="badge-preview badge-preview-dup">중복</span>'
     } else if (r.isRefund && !r.matched) {
-      statusBadge = '<span class="badge-preview badge-preview-warn">환불(미등록)</span>'
+      statusBadge = '<span class="badge-preview badge-preview-warn">환불(신규등록)</span>'
     } else if (r.isRefund) {
       statusBadge = '<span class="badge-preview badge-preview-error">환불</span>'
     } else if (!r.matched) {
-      statusBadge = '<span class="badge-preview badge-preview-new">미등록</span>'
+      statusBadge = '<span class="badge-preview badge-preview-newreg">신규등록</span>'
     } else {
       statusBadge = '<span class="badge-preview badge-preview-ok">정상</span>'
     }
 
     const matchBadge = r.matched
       ? '<span class="badge-preview badge-preview-ok">매칭</span>'
-      : '<span class="badge-preview badge-preview-new">미등록</span>'
+      : '<span class="badge-preview badge-preview-newreg">신규등록</span>'
     const channelBadge = r.channel === '파트너'
       ? '<span class="badge-preview" style="background:#e8eaf6;color:#3949ab">파트너</span>'
       : '<span class="badge-preview" style="background:#e8f5e9;color:#2e7d32">공홈</span>'
 
     const checked = r.checked ? 'checked' : ''
-    const disabled = (r.isDuplicate || !r.matched) ? 'disabled' : ''
+    const disabled = r.isDuplicate ? 'disabled' : ''
 
     // Item-level revenue display (P - Y)
     const revDisplay = r.isRefund
@@ -348,7 +381,7 @@ function _renderCafe24Preview() {
     `정상 <b style="color:var(--success)">${normalCnt}</b> &nbsp;|&nbsp; ` +
     `환불 <b style="color:var(--danger)">${refundCnt}</b>`
   if (dupRowCnt > 0) line1 += ` &nbsp;|&nbsp; 중복 <b style="color:#1565c0">${dupRowCnt}</b>`
-  line1 += ` &nbsp;|&nbsp; 미등록 <b style="color:var(--warning)">${unmatchCnt}</b>`
+  line1 += ` &nbsp;|&nbsp; 신규등록 <b style="color:#1b5e20">${unmatchCnt}</b>`
 
   // Line 2: revenue formula breakdown
   const line2 =
@@ -508,8 +541,44 @@ function confirmGonghomUpload() {
   let saleCnt = 0
   let refundCnt = 0
   let dupSkipped = 0
-  let unmatchSkipped = 0
+  let newProductCnt = 0, newPlatformCnt = 0
   const now = new Date().toISOString()
+
+  // --- Auto-add new channels ---
+  const channels = [...new Set(_cafe24Rows.map(r => r.channel).filter(Boolean))]
+  const newChannels = channels.filter(ch => !_platforms.includes(ch))
+  if (newChannels.length > 0) {
+    newChannels.forEach(ch => {
+      _platforms.push(ch)
+      State.allProducts.forEach(p => { if (!p.sales[ch]) p.sales[ch] = 0 })
+    })
+    savePlatforms()
+    populateAllSelects()
+    newPlatformCnt = newChannels.length
+  }
+
+  // --- Auto-create new products ---
+  const createdCodes = new Set()
+  _cafe24Rows.forEach(r => {
+    if (r.isDuplicate || !r.checked || r.matched) return
+    if (r.productCode && !createdCodes.has(r.productCode)) {
+      const newP = _cafe24CreateProduct(r.productCode, r.productName, r.salePrice)
+      State.allProducts.push(newP)
+      createdCodes.add(r.productCode)
+      newProductCnt++
+      r.p = newP
+      r.matched = true
+    }
+  })
+  // Update other rows referencing newly created products
+  if (createdCodes.size > 0) {
+    _cafe24Rows.forEach(r => {
+      if (!r.p && createdCodes.has(r.productCode)) {
+        r.p = State.allProducts.find(pr => pr.productCode === r.productCode)
+        r.matched = !!r.p
+      }
+    })
+  }
 
   // Track which orders have had Q/U applied (for first matched row allocation)
   const orderQUApplied = new Set()
@@ -517,7 +586,7 @@ function confirmGonghomUpload() {
   _cafe24Rows.forEach(r => {
     if (r.isDuplicate) { dupSkipped++; return }
     if (!r.checked) return
-    if (!r.matched) { unmatchSkipped++; return }
+    if (!r.matched) return
 
     const ch = r.channel
     const o = _cafe24Orders[r.orderNo]
@@ -560,9 +629,10 @@ function confirmGonghomUpload() {
   const parts = []
   if (saleCnt > 0) parts.push(`정상 ${saleCnt}건`)
   if (refundCnt > 0) parts.push(`환불 ${refundCnt}건 차감`)
+  if (newProductCnt > 0) parts.push(`신규상품 ${newProductCnt}개 등록`)
+  if (newPlatformCnt > 0) parts.push(`신규채널 ${newPlatformCnt}개 추가`)
   const excludes = []
   if (dupSkipped > 0) excludes.push(`중복 ${dupSkipped}건`)
-  if (unmatchSkipped > 0) excludes.push(`미등록 ${unmatchSkipped}건`)
 
   if (saleCnt === 0 && refundCnt === 0) {
     showToast('반영할 건이 없습니다.', 'warning')

@@ -1239,9 +1239,12 @@
     <!-- 사방넷 탭 -->
     <div class="sul-tab-content" id="sulSabangnet">
       <div class="sul-upload-area">
-        <div class="sul-placeholder">
-          <span class="sul-placeholder-icon">🔧</span>
-          <p class="sul-placeholder-text">사방넷 업로드 기능 준비 중입니다.</p>
+        <p class="sul-desc">사방넷 주문 엑셀 (A~T열, 20컬럼)</p>
+        <p class="sul-format">No. | 쇼핑몰명 | 주문번호 | 자체상품코드 | 상품명 | 옵션 | 수량 | 결제금액 | 배송비 | ...</p>
+        <div class="sul-file-row">
+          <label class="btn btn-accent sul-file-label" for="sulSabangnetFile">파일 선택</label>
+          <input type="file" id="sulSabangnetFile" accept=".xlsx,.xls,.csv" style="display:none" />
+          <span class="sul-file-name" id="sulSabangnetFileName">선택된 파일 없음</span>
         </div>
       </div>
     </div>
@@ -1273,6 +1276,25 @@
   <div class="srm-footer">
     <button id="gonghomConfirmBtn" class="btn btn-primary" onclick="confirmGonghomUpload()">판매 반영</button>
     <button class="btn btn-outline" onclick="document.getElementById('gonghomPreviewModal').close()">닫기</button>
+  </div>
+</dialog>
+
+<!-- 사방넷 주문 업로드 미리보기 모달 -->
+<dialog id="sabangnetPreviewModal" class="srm-modal" style="width:1020px;max-width:96vw;min-height:340px">
+  <div class="srm-header">
+    <span>사방넷 주문 내역 미리보기</span>
+    <button class="modal-close" onclick="document.getElementById('sabangnetPreviewModal').close()">✕</button>
+  </div>
+  <div class="srm-body" style="overflow-y:auto;max-height:60vh">
+    <p id="sabangnetPreviewInfo" style="margin:0 0 10px;font-size:13px;color:var(--text-sub)"></p>
+    <table class="srm-table" style="width:100%;font-size:12px">
+      <thead><tr></tr></thead>
+      <tbody id="sabangnetPreviewBody"></tbody>
+    </table>
+  </div>
+  <div class="srm-footer">
+    <button id="sabangnetConfirmBtn" class="btn btn-primary" onclick="confirmSabangnetUpload()">판매 반영</button>
+    <button class="btn btn-outline" onclick="document.getElementById('sabangnetPreviewModal').close()">닫기</button>
   </div>
 </dialog>
 
@@ -1355,6 +1377,7 @@
 <script src="js/stock.js"></script>
 <script src="js/sales.js"></script>
 <script src="js/gonghom.js"></script>
+<script src="js/sabangnet.js"></script>
 <script src="js/plan.js"></script>
 <!-- 대시보드 날짜 일정 상세 모달 -->
 <!-- FIX: removed inline display:flex;flex-direction:column — these conflict with .srm-modal[open] CSS and prevent dialog.close() from hiding the element -->

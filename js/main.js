@@ -129,6 +129,7 @@ async function init() {
   makeDraggableResizable(document.getElementById('outgoingModal'))
   makeDraggableResizable(document.getElementById('salesUploadModal'), 600, 400)
   makeDraggableResizable(document.getElementById('gonghomPreviewModal'))
+  makeDraggableResizable(document.getElementById('sabangnetPreviewModal'))
   makeDraggableResizable(document.getElementById('eventRegisterModal'))
   makeDraggableResizable(document.getElementById('planScheduleModal'))
   makeDraggableResizable(document.getElementById('workRegisterModal'))

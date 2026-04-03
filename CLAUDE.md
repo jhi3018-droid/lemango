@@ -13,13 +13,14 @@
 ├── .firebaserc             # Firebase 프로젝트 (lemango-office)
 ├── CLAUDE.md               # 이 파일
 ├── .claude/agents/         # 전문 에이전트
-├── js/                     # JS 모듈 분리 (16개 파일)
+├── js/                     # JS 모듈 분리 (17개 파일)
 │   ├── core.js             # State, 설정, 플랫폼, populateAllSelects
 │   ├── router.js           # 탭 바 시스템 (openTab, closeTab, resetTabs, applyTabState)
 │   ├── utils.js            # 유틸, 페이지네이션, 정렬/필터(initTableFeatures), 미니달력(openMonthPicker)
 │   ├── products.js         # 상품조회 검색·렌더
 │   ├── stock.js            # 재고조회·입고·출고
 │   ├── sales.js            # 매출현황·판매업로드모달
+│   ├── sabangnet.js        # 사방넷 주문 업로드·미리보기·확정
 │   ├── plan.js             # 신규기획
 │   ├── event.js            # 행사일정 캘린더·CRUD
 │   ├── dashboard.js        # 대시보드 + 대시보드 캘린더
@@ -147,6 +148,7 @@ State.modal.images/idx     // 이미지 모달 상태
 | 엑셀 업로드 미리보기 | `uploadPreviewModal` | `showRegisterPreview()` |
 | 판매 업로드 | `salesUploadModal` | `openSalesUploadModal()` |
 | 카페24 주문 미리보기 | `gonghomPreviewModal` | `showGonghomPreview(rows)` |
+| 사방넷 주문 미리보기 | `sabangnetPreviewModal` | `showSabangnetPreview(rows)` |
 | 기획 상세 | `planDetailModal` | `openPlanDetailModal(no)` |
 | 행사 등록/수정 | `eventRegisterModal` | `openEventRegisterModal()` / `editEvent(no)` |
 | 기획일정 조회 | `planScheduleModal` | `openPlanScheduleForDate(dateStr)` / `openDashEventInfo(no)` |
@@ -1334,6 +1336,43 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - 주문번호 중복 검출 (revenueLog 기반)
 - 채널 분류 (LEMANGOKOREA=공홈, LEMANGO PARTNER=파트너)
 
+#### 사방넷 업로드 시스템 신규 (`js/sabangnet.js`)
+
+- `SABANGNET` 상수: 20컬럼 인덱스 매핑 (A~T)
+  - A(0)=주문번호, B(1)=주문일시, C(2)=결제일, D(3)=상품구분, E(4)=쇼핑몰
+  - F(5)=상품코드, G(6)=상품명, H(7)=결제금액, I(8)=배송비, J(9)=옵션
+  - K(10)=수량, L(11)=단가, M(12)=주문자, N(13)=수령자, O(14)=연락처
+  - P(15)=주소, Q(16)=옵션1, R(17)=사이즈, S(18)=메모, T(19)=환불완료일
+- 매출액 계산: `paymentAmt(H) + shippingFee(I)` (행별 단순 합산)
+- 행 상태 5단계: 중복 > 사은품 > 환불 > 신규등록(미매칭) > 정상
+  - 사은품: D열="사은품(랜덤)" 또는 H열=0
+  - 신규등록: 품번 미매칭 (체크 가능, 확정 시 자동 상품 생성)
+- `_sbDetectBrand(code)`: 품번 prefix → 브랜드 (LN→르망고 느와, 기본→르망고)
+- `_sbDetectType(code)`: 품번 prefix → 타입 (LSWON→onepiece, LSMBR→bikini 등)
+- `_sbCreateProduct(code, name, unitPrice)`: 전체 상품 스키마 자동 생성 (stock/sales/images 포함)
+- `_sbParseSize(sizeAlias, optionClean)`: R열 우선, fallback Q열 괄호 추출
+- `_sbParseDate(val)`: Excel 시리얼 또는 문자열 날짜 파싱
+- 컬럼 헤더 필터: `_openSbFilter`, `_closeSbFilter` (카페24와 동일 패턴)
+- `confirmSabangnetUpload()`: 플랫폼 자동추가 → 상품 자동생성 → 판매 반영
+- `sabangnetPreviewModal` 다이얼로그 추가 (index.html)
+
+#### 카페24/사방넷 공통 — 신규등록 자동생성
+
+- 미매칭 행 상태명: "미등록" → "신규등록" 변경 (badge-preview-newreg)
+- 미매칭 행 체크박스: disabled → **checked** (확정 시 자동 상품 생성)
+- 확정 시 자동 처리:
+  1. 신규 채널 감지 → `_platforms` 추가 + 전체 상품 `p.sales[ch]=0` 초기화
+  2. 미매칭 품번 → `_cafe24CreateProduct()` / `_sbCreateProduct()` 로 상품 자동 생성
+  3. 생성된 상품에 판매 수량/매출 반영
+- `_cafe24CreateProduct(code, name, salePrice)`: 카페24용 상품 자동생성
+- CSS: `.badge-preview-newreg { background:#e8f5e9; color:#1b5e20 }` (초록 배지)
+
+#### 파일 구조 변경
+- `js/sabangnet.js` 신규 파일 (17→18개 JS 파일)
+- `index.html`: 사방넷 탭 UI (파일 업로드) + `sabangnetPreviewModal` 추가
+- `js/sales.js`: 사방넷 파일 input change 이벤트 바인딩
+- `js/main.js`: `makeDraggableResizable(sabangnetPreviewModal)` 추가
+
 ---
 
 ## 보류 중 작업
@@ -1345,7 +1384,7 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - 상세 내용: `.claude/projects/.../memory/project_image_combiner.md` 참조
 
 ## 다음 작업 후보 (미구현)
-- [ ] 공홈 외 다른 쇼핑몰 주문 업로드 포맷
+- [ ] 면세점 주문 업로드 포맷
 - [ ] 상품 삭제 기능
 - [ ] 데이터 영속성 (localStorage 또는 서버 연동)
 - [ ] 인쇄/PDF 출력
