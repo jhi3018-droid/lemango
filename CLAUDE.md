@@ -13,7 +13,7 @@
 ├── .firebaserc             # Firebase 프로젝트 (lemango-office)
 ├── CLAUDE.md               # 이 파일
 ├── .claude/agents/         # 전문 에이전트
-├── js/                     # JS 모듈 분리 (17개 파일)
+├── js/                     # JS 모듈 분리 (20개 파일)
 │   ├── core.js             # State, 설정, 플랫폼, populateAllSelects
 │   ├── router.js           # 탭 바 시스템 (openTab, closeTab, resetTabs, applyTabState)
 │   ├── utils.js            # 유틸, 페이지네이션, 정렬/필터(initTableFeatures), 미니달력(openMonthPicker)
@@ -31,6 +31,8 @@
 │   ├── design.js           # 디자인 코드·백스타일 관리
 │   ├── upload.js           # 업로드 미리보기·확정
 │   ├── work.js             # 업무일정 CRUD·검색·렌더
+│   ├── auth.js             # Firebase Auth 초기화, 로그인/로그아웃, 회원가입
+│   ├── members.js          # 회원관리 탭 CRUD, 등급/상태 관리
 │   └── main.js             # init(), DOMContentLoaded
 └── data/
     ├── products_lemango.json   # 르망고 26SS (실제 상품 데이터)
@@ -38,7 +40,7 @@
     └── combined.json           # 통합
 ```
 
-## 화면 구성 (탭 8개)
+## 화면 구성 (탭 9개)
 | 탭 | ID | 설명 |
 |----|----|------|
 | 대시보드 | `tab-dashboard` | KPI 카드, 캘린더(좌)+매출현황·BEST TOP10(우) 2컬럼 |
@@ -49,6 +51,7 @@
 | 행사일정 | `tab-event` | 월간 캘린더 + 행사 등록/수정/삭제 (localStorage) |
 | 업무일정 | `tab-work` | 업무 일정 등록/조회/수정/삭제 (localStorage) |
 | 설정 | `tab-settings` | 브랜드·타입·판매채널·업무카테고리 등 기본 옵션 관리 |
+| 회원관리 | `tab-members` | 회원 CRUD, 등급/상태 관리, KPI 카드 (Firebase Auth + Firestore) |
 
 ## 전역 상태 (`State` 객체)
 ```js
@@ -155,6 +158,9 @@ State.modal.images/idx     // 이미지 모달 상태
 | 업무일정 등록 | `workRegisterModal` | `openWorkRegisterModal()` |
 | 업무일정 상세 | `workDetailModal` | `openWorkDetailModal(no)` |
 | 일정 상세 (Overflow) | `dashDayModal` | `openDashDayModal(dateStr)` |
+| 회원가입 | `signupModal` | `openSignupModal()` |
+| 회원 수정 | `memberEditModal` | `openMemberEditModal(uid)` |
+| 회원 추가 | `memberAddModal` | `openMemberAddModal()` |
 
 > 모든 `.srm-modal` 다이얼로그는 `makeDraggableResizable()` 적용 — 드래그+8방향 리사이즈
 
@@ -1388,6 +1394,82 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 ---
 
+### 2026-04-03 (추가)
+
+#### 로그인/회원관리 시스템 구축 (Firebase Auth + Firestore)
+
+- **Firebase SDK 추가**: firebase-app-compat, firebase-auth-compat, firebase-firestore-compat (v10.12.0 compat)
+- **`js/auth.js` 신규**: Firebase 초기화, 로그인/로그아웃, 회원가입, 비밀번호 재설정, 초기 관리자 생성
+- **`js/members.js` 신규**: 회원관리 탭 렌더, Firestore CRUD, 등급/상태 관리
+
+**로그인 페이지 (`#loginPage`)**
+- 전체 화면 (`position:fixed`, 네이비 배경)
+- 이메일/비밀번호 입력 → `auth.signInWithEmailAndPassword()`
+- 승인 대기(`status !== 'approved'`) → "관리자 승인 대기중" 에러
+- 비밀번호 찾기 → `auth.sendPasswordResetEmail()`
+- **세션 로그인** (`SESSION` persistence) — 탭/브라우저 닫으면 로그아웃, 같은 탭 새로고침은 유지
+- **이메일 기억** — localStorage에 최근 이메일 저장, 다음 접속 시 자동 입력 + 비밀번호 포커스
+
+**회원가입 모달 (`#signupModal`)**
+- `auth.createUserWithEmailAndPassword()` + Firestore `users` doc 생성
+- 가입 후 `status: 'pending'`, `grade: 1` (일반사용자)
+- 즉시 로그아웃 → "승인 후 로그인 가능" 안내
+- 비밀번호 일치 실시간 체크 (`pw-match-ok/no`)
+
+**회원 등급 (4단계)**
+| Lv | 이름 | 배지 |
+|----|------|------|
+| 4 | 최종관리자 | 네이비 bg + 골드 text |
+| 3 | 관리자 | 골드 bg + 흰 text |
+| 2 | 담당자 | 연파랑 bg + 남색 text |
+| 1 | 일반사용자 | 베이지 bg + 회색 text |
+
+**Firestore `users` 컬렉션 스키마**
+```js
+{ uid, email, name, phone, dept, grade(1~4), status('pending'|'approved'|'rejected'|'suspended'), createdAt, lastLogin }
+```
+
+**회원관리 탭 (`tab-members`)**
+- KPI 카드 4개: 전체/최종관리자/관리자/담당자+일반
+- 회원 테이블: NO/상태(dot)/이메일/이름/부서/등급(배지)/최종로그인/가입일/관리
+- 상태: active(초록)/pending(주황)/suspended(빨강)
+- 승인/거절/정지/해제/수정/삭제 버튼
+- 수정 모달(`memberEditModal`): 이름, 전화번호, 부서, 등급(최종관리자만 변경)
+- 추가 모달(`memberAddModal`): 이메일, 이름, 비밀번호, 부서, 등급 → 바로 `approved`
+
+**헤더 사용자 영역**
+- `#headerUserGrade` (등급 배지) + `#headerUserName` (이름님) + 로그아웃 버튼
+- 날짜 옆 오른쪽 정렬
+
+**앱 컨테이너 래핑 (`#appContainer`)**
+- 기존 header + tabBar + main을 `#appContainer`로 래핑
+- 로그인 전: loginPage 표시, appContainer 숨김
+- 로그인 후: loginPage 숨김, appContainer 표시
+
+**Auth → Firestore 자동 문서 생성**
+- Firebase Auth에 직접 생성된 계정(Firestore 문서 없음) → `checkApproval()`에서 자동 생성 (grade:4, approved)
+- 앱 회원가입은 `status:'pending'` → 관리자 승인 필요
+
+**로그인 안 된 상태 최적화**
+- `init()` → `initAuth()` 후 `State.currentUser` 없으면 앱 초기화 건너뜀 (데이터 로드/렌더 안 함)
+- 로그인 성공 시 `showApp()` → `initApp()` 호출하여 앱 초기화
+
+**폴백 이미지 수정**
+- `file://` 로컬 네트워크 경로 → 인라인 SVG data URI (LEMANGO 로고)로 교체
+- `js/modals.js` FALLBACK_LOGO + `index.html` dImgMain onerror
+
+**파일 변경 목록**
+- `js/auth.js` — 신규 (Firebase init, login, signup, admin init, SESSION persistence, 이메일 기억)
+- `js/members.js` — 신규 (회원관리 탭 전체)
+- `index.html` — loginPage, signupModal, appContainer 래핑, tab-members, 회원 모달 2개, 헤더 사용자 영역, Firebase SDK, 폴백 이미지 SVG
+- `style.css` — 로그인/회원가입/등급배지/상태dot/헤더 사용자 영역 스타일
+- `js/core.js` — State.currentUser, State.members, TAB_LABELS.members
+- `js/router.js` — members 탭 렌더 트리거
+- `js/main.js` — init()/initApp() 분리, initAdminAccount(), initAuth() 호출
+- `js/modals.js` — FALLBACK_LOGO → SVG data URI
+
+---
+
 ## 보류 중 작업
 
 ### 이미지합치기 웹 통합 (테스트 후 결정)
@@ -1403,3 +1485,4 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - [ ] 인쇄/PDF 출력
 - [ ] 이미지합치기 웹 통합 (테스트 후)
 - [ ] 업무일정 수정 권한 관리 (작성자/관리자/인사담당자만 수정 가능)
+- [ ] 권한 기반 UI 숨김 (등급별 탭/기능 접근 제어)

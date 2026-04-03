@@ -122,9 +122,10 @@ function applyTabState() {
   // 탭 바 재렌더
   renderTabBar()
 
-  // 설정/행사 탭은 열 때마다 렌더
+  // 설정/행사/회원관리 탭은 열 때마다 렌더
   if (State.activeTab === 'settings') renderSettings()
   if (State.activeTab === 'event') renderEventTable()
+  if (State.activeTab === 'members') loadMembers()
 }
 
 // ===== 탭 첫 열림 시 렌더 호출 =====
@@ -146,6 +147,7 @@ function triggerTabRender(tab) {
     case 'event':     renderEventTable(); break
     case 'work':      renderWorkCalendar(); break
     case 'settings':  renderSettings(); break
+    case 'members':   loadMembers(); break
   }
 }
 

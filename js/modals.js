@@ -168,7 +168,7 @@ function openDetailModal(productCode) {
   document.getElementById('dCode').textContent    = p.productCode
 
   // 이미지 (SUM 첫 번째 우선, 없으면 다른 이미지, 없으면 로고)
-  const FALLBACK_LOGO = 'file:////lemangokorea/온라인/01.이미지/로고/Lemango/르망고_송부용_로고(WH).png'
+  const FALLBACK_LOGO = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='60' viewBox='0 0 200 60'%3E%3Crect fill='%231a1a2e' width='200' height='60' rx='8'/%3E%3Ctext x='100' y='37' text-anchor='middle' fill='%23c9a96e' font-family='Inter,sans-serif' font-size='18' font-weight='700' letter-spacing='3'%3ELEMANGO%3C/text%3E%3C/svg%3E"
   const allImgs = getAllImages(p)
   const sumFirst = p.images?.sum?.[0] || null
   const mainImg = document.getElementById('dImgMain')

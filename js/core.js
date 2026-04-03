@@ -130,6 +130,8 @@ const State = {
   event:   { filtered: [], sort: { key: 'startDate', dir: 'asc' }, page: 1 },
   work:    { filtered: [], sort: { key: 'startDate', dir: 'desc' }, page: 1 },
   workItems: [],
+  members: [],
+  currentUser: null,
   modal:   { images: [], idx: 0 },
   openTabs:  ['dashboard'],
   activeTab: 'dashboard'
@@ -144,7 +146,8 @@ const TAB_LABELS = {
   plan:      '신규기획',
   event:     '행사일정',
   work:      '업무일정',
-  settings:  '설정'
+  settings:  '설정',
+  members:   '회원관리'
 }
 
 // =============================================

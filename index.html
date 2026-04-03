@@ -12,6 +12,90 @@
 </head>
 <body>
 
+<!-- ===== 로그인 페이지 ===== -->
+<div id="loginPage" class="login-page">
+  <div class="login-card">
+    <div class="login-logo">LEMANGO</div>
+    <div class="login-sub">관리 시스템</div>
+    <div id="loginError" class="login-error" style="display:none"></div>
+    <div class="login-field">
+      <label>이메일</label>
+      <input type="email" id="loginEmail" placeholder="email@example.com" autocomplete="email">
+    </div>
+    <div class="login-field">
+      <label>비밀번호</label>
+      <input type="password" id="loginPassword" placeholder="비밀번호 입력" autocomplete="current-password">
+    </div>
+    <button id="loginBtn" class="login-btn-primary" onclick="handleLogin()">로그인</button>
+    <div class="login-divider"><span>또는</span></div>
+    <button class="login-btn-outline" onclick="openSignupModal()">회원가입</button>
+    <div class="login-forgot" onclick="handleForgotPassword()">비밀번호 찾기</div>
+  </div>
+  <div class="login-footer">&copy; 2026 LEMANGO. All rights reserved.</div>
+</div>
+
+<!-- ===== 회원가입 모달 ===== -->
+<dialog id="signupModal" class="signup-modal">
+  <div class="signup-header">
+    <span>회원가입</span>
+    <button class="modal-close" onclick="closeSignupModal()">&times;</button>
+  </div>
+  <div class="signup-body">
+    <div class="signup-notice">
+      가입 신청 후 관리자 승인이 완료되면 로그인할 수 있습니다.
+    </div>
+    <div class="signup-field">
+      <label>이메일 <span class="req">*</span></label>
+      <input type="email" id="signupEmail" placeholder="email@example.com">
+    </div>
+    <div class="signup-row">
+      <div class="signup-field">
+        <label>비밀번호 <span class="req">*</span></label>
+        <input type="password" id="signupPassword" placeholder="8자 이상">
+        <span class="signup-hint">영문, 숫자 포함 8자 이상</span>
+      </div>
+      <div class="signup-field">
+        <label>비밀번호 확인 <span class="req">*</span></label>
+        <input type="password" id="signupPasswordConfirm" placeholder="비밀번호 재입력">
+        <span id="pwMatchMsg"></span>
+      </div>
+    </div>
+    <div class="signup-row">
+      <div class="signup-field">
+        <label>이름 <span class="req">*</span></label>
+        <input type="text" id="signupName" placeholder="홍길동">
+      </div>
+      <div class="signup-field">
+        <label>전화번호</label>
+        <input type="tel" id="signupPhone" placeholder="010-0000-0000">
+      </div>
+    </div>
+    <div class="signup-field">
+      <label>부서 <span class="req">*</span></label>
+      <select id="signupDept">
+        <option value="">부서를 선택하세요</option>
+        <option>경영지원</option>
+        <option>디자인</option>
+        <option>생산관리</option>
+        <option>영업/마케팅</option>
+        <option>물류</option>
+        <option>IT</option>
+      </select>
+    </div>
+    <label class="signup-terms">
+      <input type="checkbox" id="signupAgree">
+      개인정보 수집 및 이용에 동의합니다
+    </label>
+  </div>
+  <div class="signup-footer">
+    <button class="btn btn-primary" onclick="handleSignup()">가입 신청</button>
+    <button class="btn btn-outline" onclick="closeSignupModal()">취소</button>
+  </div>
+</dialog>
+
+<!-- ===== 앱 컨테이너 ===== -->
+<div id="appContainer" style="display:none">
+
 <!-- 헤더 -->
 <header class="header">
   <div class="header-inner">
@@ -28,8 +112,16 @@
       <button class="tab-btn" data-tab="event">행사일정</button>
       <button class="tab-btn" data-tab="work">업무일정</button>
       <button class="tab-btn" data-tab="settings">⚙ 설정</button>
+      <button class="tab-btn" data-tab="members">👥 회원관리</button>
     </nav>
-    <div class="header-date" id="headerDate"></div>
+    <div class="header-right">
+      <div class="header-date" id="headerDate"></div>
+      <div class="header-user-area">
+        <span id="headerUserGrade"></span>
+        <span class="header-user-name" id="headerUserName"></span>
+        <button class="header-logout-btn" onclick="handleLogout()">로그아웃</button>
+      </div>
+    </div>
   </div>
 </header>
 
@@ -457,7 +549,103 @@
     <div class="settings-page" id="settingsPage"></div>
   </section>
 
+  <!-- ===== 회원관리 탭 ===== -->
+  <section class="tab-content" id="tab-members">
+    <div class="kpi-row" id="membersKpiRow"></div>
+    <div style="display:flex;justify-content:flex-end;margin:12px 0 8px">
+      <button class="btn btn-new" onclick="openMemberAddModal()">＋ 회원 추가</button>
+    </div>
+    <div class="table-wrap card" style="margin-top:0">
+      <table class="data-table" id="membersTable">
+        <thead>
+          <tr>
+            <th style="width:45px;text-align:center">NO</th>
+            <th style="width:100px">상태</th>
+            <th>이메일</th>
+            <th style="width:100px">이름</th>
+            <th style="width:100px">부서</th>
+            <th style="width:110px">등급</th>
+            <th style="width:140px">최종로그인</th>
+            <th style="width:140px">가입일</th>
+            <th style="width:200px">관리</th>
+          </tr>
+        </thead>
+        <tbody id="membersTbody">
+          <tr><td colspan="9" class="empty-row">로딩 중...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
 </main>
+
+<!-- 회원 수정 모달 -->
+<dialog id="memberEditModal" class="srm-modal" style="width:440px;max-width:96vw">
+  <div class="srm-header">
+    <span>회원 정보 수정</span>
+    <button class="modal-close" onclick="closeMemberEditModal()">&times;</button>
+  </div>
+  <div class="srm-body" style="display:flex;flex-direction:column;gap:12px;padding:20px">
+    <div class="rform-field"><label>이름</label><input type="text" id="meEditName"></div>
+    <div class="rform-field"><label>전화번호</label><input type="tel" id="meEditPhone"></div>
+    <div class="rform-field">
+      <label>부서</label>
+      <select id="meEditDept">
+        <option value="">선택</option>
+        <option>경영지원</option><option>디자인</option><option>생산관리</option>
+        <option>영업/마케팅</option><option>물류</option><option>IT</option>
+      </select>
+    </div>
+    <div class="rform-field">
+      <label>등급</label>
+      <select id="meEditGrade">
+        <option value="1">일반사용자 (Lv.1)</option>
+        <option value="2">담당자 (Lv.2)</option>
+        <option value="3">관리자 (Lv.3)</option>
+        <option value="4">최종관리자 (Lv.4)</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+      <button class="btn btn-primary" onclick="saveMemberEdit()">저장</button>
+      <button class="btn btn-outline" onclick="closeMemberEditModal()">취소</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- 회원 추가 모달 -->
+<dialog id="memberAddModal" class="srm-modal" style="width:440px;max-width:96vw">
+  <div class="srm-header">
+    <span>회원 추가</span>
+    <button class="modal-close" onclick="closeMemberAddModal()">&times;</button>
+  </div>
+  <div class="srm-body" style="display:flex;flex-direction:column;gap:12px;padding:20px">
+    <div class="rform-field"><label>이메일 *</label><input type="email" id="maEmail" placeholder="email@example.com"></div>
+    <div class="rform-field"><label>이름 *</label><input type="text" id="maName" placeholder="홍길동"></div>
+    <div class="rform-field"><label>초기 비밀번호 *</label><input type="text" id="maPassword" placeholder="초기 비밀번호"></div>
+    <div class="rform-field"><label>전화번호</label><input type="tel" id="maPhone" placeholder="010-0000-0000"></div>
+    <div class="rform-field">
+      <label>부서 *</label>
+      <select id="maDept">
+        <option value="">선택</option>
+        <option>경영지원</option><option>디자인</option><option>생산관리</option>
+        <option>영업/마케팅</option><option>물류</option><option>IT</option>
+      </select>
+    </div>
+    <div class="rform-field">
+      <label>등급</label>
+      <select id="maGrade">
+        <option value="1">일반사용자 (Lv.1)</option>
+        <option value="2">담당자 (Lv.2)</option>
+        <option value="3">관리자 (Lv.3)</option>
+        <option value="4">최종관리자 (Lv.4)</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+      <button class="btn btn-primary" onclick="saveMemberAdd()">추가</button>
+      <button class="btn btn-outline" onclick="closeMemberAddModal()">취소</button>
+    </div>
+  </div>
+</dialog>
 
 <!-- 신규등록 모달 -->
 <dialog id="registerModal" class="register-modal">
@@ -773,7 +961,7 @@
     <!-- 왼쪽: 이미지 -->
     <div class="dmodal-left">
       <div class="dimg-main-wrap">
-        <img id="dImgMain" src="" alt="" class="dimg-main" onerror="this.src='file:////lemangokorea/온라인/01.이미지/로고/Lemango/르망고_송부용_로고(WH).png'" />
+        <img id="dImgMain" src="" alt="" class="dimg-main" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%27200%27 height=%2760%27 viewBox=%270 0 200 60%27%3E%3Crect fill=%27%231a1a2e%27 width=%27200%27 height=%2760%27 rx=%278%27/%3E%3Ctext x=%27100%27 y=%2737%27 text-anchor=%27middle%27 fill=%27%23c9a96e%27 font-family=%27Inter,sans-serif%27 font-size=%2718%27 font-weight=%27700%27 letter-spacing=%273%27%3ELEMANGO%3C/text%3E%3C/svg%3E'" />
         <div id="dImgNone" class="dimg-none" style="display:none">이미지 없음</div>
       </div>
       <div class="dimg-thumbs" id="dImgThumbs"></div>
@@ -1364,8 +1552,16 @@
   <div class="srm-body" id="wkDetailBody"></div>
 </dialog>
 
-<!-- 토스트 알림 -->
+<!-- /appContainer -->
+</div>
+
+<!-- 토스트 알림 (appContainer 밖 — 로그인 페이지에서도 표시) -->
 <div id="toast" class="toast"></div>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 
 <!-- SheetJS -->
 <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
@@ -1397,6 +1593,8 @@
 <script src="js/product-code.js"></script>
 <script src="js/excel.js"></script>
 <script src="js/settings.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/members.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

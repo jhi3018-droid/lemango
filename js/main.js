@@ -119,8 +119,23 @@ function injectSampleData() {
 // ===== 초기화 =====
 // =============================================
 async function init() {
+  // Firebase 초기 관리자 계정 생성 (Firestore에 유저 없을 때만)
+  try { await initAdminAccount() } catch (e) { console.log('initAdmin skip:', e.message) }
+
+  // Auth 상태 리스너 등록 + 초기 상태 대기
+  await initAuth()
+
+  // 로그인 안 된 상태면 앱 초기화 건너뜀 (로그인 페이지만 표시)
+  if (!State.currentUser) return
+
+  initApp()
+}
+
+async function initApp() {
   renderDate()
   bindTabs()
+  makeDraggableResizable(document.getElementById('memberEditModal'))
+  makeDraggableResizable(document.getElementById('memberAddModal'))
   makeDraggableResizable(document.getElementById('detailModal'), 480, 300)
   makeDraggableResizable(document.getElementById('registerModal'))
   makeDraggableResizable(document.getElementById('planRegisterModal'))
