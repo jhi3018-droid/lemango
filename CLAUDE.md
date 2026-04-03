@@ -1343,9 +1343,12 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
   - F(5)=상품코드, G(6)=상품명, H(7)=결제금액, I(8)=배송비, J(9)=옵션
   - K(10)=수량, L(11)=단가, M(12)=주문자, N(13)=수령자, O(14)=연락처
   - P(15)=주소, Q(16)=옵션1, R(17)=사이즈, S(18)=메모, T(19)=환불완료일
-- 매출액 계산: `paymentAmt(H) + shippingFee(I)` (행별 단순 합산)
+- 매출액 계산: `H(결제금액) + I(배송비)` — **사은품 행 제외** 후 전행 합산
+  - 사은품 H=항상0, I=배송비 본품과 중복기재 → 포함시 과대계상
+  - 검증값(2026-01): H=26,607,452 + I=1,035,000 = **27,642,452**
+- 사은품 판별: C열(주문번호)에 `_사은품` 포함 OR D열(자체상품코드)에 `사은품` 포함
 - 행 상태 5단계: 중복 > 사은품 > 환불 > 신규등록(미매칭) > 정상
-  - 사은품: D열="사은품(랜덤)" 또는 H열=0
+  - 사은품: revenue=0, 기본 unchecked, 확정 시 완전 skip (상품 미생성, sales/revenueLog 미반영)
   - 신규등록: 품번 미매칭 (체크 가능, 확정 시 자동 상품 생성)
 - `_sbDetectBrand(code)`: 품번 prefix → 브랜드 (LN→르망고 느와, 기본→르망고)
 - `_sbDetectType(code)`: 품번 prefix → 타입 (LSWON→onepiece, LSMBR→bikini 등)
@@ -1372,6 +1375,16 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - `index.html`: 사방넷 탭 UI (파일 업로드) + `sabangnetPreviewModal` 추가
 - `js/sales.js`: 사방넷 파일 input change 이벤트 바인딩
 - `js/main.js`: `makeDraggableResizable(sabangnetPreviewModal)` 추가
+
+#### 사방넷 매출액 — 사은품 행 배송비 중복 수정
+
+- **원인**: 사은품 행의 I(배송비)=3000이 본품과 중복 기재 (77건, ₩321,000 과대계상)
+- **사은품 판별 개선**: 기존 `D열="사은품(랜덤)" OR H열=0` → `C열(주문번호)에 '_사은품' 포함 OR D열에 '사은품' 포함`
+- **매출액**: 사은품 행 revenue=0 (H+I 계산 제외)
+- **미리보기**: 사은품 행 기본 unchecked (enabled, 사용자 수동 체크 가능)
+- **매출 요약**: 3개 총액 모두 사은품 행 제외
+- **확정**: 사은품 행 완전 skip (상품 미생성, sales/revenueLog 미반영)
+- **검증**: ₩27,963,452(이전) → ₩27,642,452(수정후, 차이 ₩321,000 = 3000×107건)
 
 ---
 

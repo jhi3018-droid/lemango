@@ -3,8 +3,10 @@
 // =============================================
 // 사방넷 엑셀 양식: A~T (20컬럼)
 //
-// 매출 공식: H(결제금액, 전체합산) + I(배송비, 전체합산)
-// 검증값(2026-01): H=26,607,452 + I=1,356,000 = 27,963,452
+// 매출 공식: H(결제금액) + I(배송비) — 사은품 행 제외 후 전행 합산
+// 사은품 판별: C열(주문번호)에 '_사은품' 포함 OR D열(자체상품코드)에 '사은품' 포함
+// 사은품 H=항상0, I=배송비 본품과 중복기재 → 포함시 과대계상
+// 검증값(2026-01): H=26,607,452 + I=1,035,000 = 27,642,452
 
 const SABANGNET = {
   no:           0,  // A: No.
@@ -83,9 +85,9 @@ function _sbDetectType(code) {
 }
 
 function _sbIsFreebie(row) {
+  const orderNo = String(row[SABANGNET.orderNo] || '').trim()
   const code = String(row[SABANGNET.productCode] || '').trim()
-  const payment = _sbToNum(row[SABANGNET.paymentAmt])
-  return code === '사은품(랜덤)' || (payment === 0 && code)
+  return orderNo.includes('_사은품') || code.includes('사은품')
 }
 
 function _sbRowStatus(r) {
@@ -189,13 +191,13 @@ function showSabangnetPreview(rawRows) {
     const size         = _sbParseSize(row[SABANGNET.sizeAlias], row[SABANGNET.optionClean])
     const isDuplicate  = existingOrders.has(orderNo)
     const isFreebie    = _sbIsFreebie(row)
-    const revenue      = paymentAmt + shippingFee
+    const revenue      = isFreebie ? 0 : (paymentAmt + shippingFee)
 
     const p = State.allProducts.find(pr => pr.productCode === productCode)
     const matched = !!p
 
-    // 사은품: included but H=0 so revenue=0; 신규등록: checked by default; 중복: disabled
-    const checked = !isDuplicate
+    // 사은품: unchecked (배송비 중복 방지); 중복: disabled; 나머지: checked
+    const checked = !isDuplicate && !isFreebie
 
     return {
       idx: i, shopName, orderNo, productCode, productName,
@@ -210,10 +212,10 @@ function showSabangnetPreview(rawRows) {
   // Store for summary display (applied at confirm time)
   _sbRows._newShops = newShops
 
-  // Detect new products
+  // Detect new products (exclude gift rows)
   const newProductCodes = new Set()
   _sbRows.forEach(r => {
-    if (!r.matched && !r.isDuplicate && !r.isFreebie && r.productCode && r.productCode !== '사은품(랜덤)') {
+    if (!r.matched && !r.isDuplicate && !r.isFreebie && r.productCode) {
       newProductCodes.add(r.productCode)
     }
   })
@@ -251,10 +253,10 @@ function _renderSbPreview() {
   const newRegCnt  = _sbRows.filter(r => !r.matched && !r.isDuplicate && !r.isFreebie).length
   const freebieCnt = _sbRows.filter(r => r.isFreebie && !r.isDuplicate).length
 
-  // Revenue
-  const nonDup = _sbRows.filter(r => !r.isDuplicate)
-  const matchedRev   = nonDup.filter(r => r.matched).reduce((s, r) => s + r.revenue, 0)
-  const unmatchedRev  = nonDup.filter(r => !r.matched && !r.isFreebie).reduce((s, r) => s + r.revenue, 0)
+  // Revenue — exclude gift rows (배송비 중복 방지)
+  const nonDupNonGift = _sbRows.filter(r => !r.isDuplicate && !r.isFreebie)
+  const matchedRev   = nonDupNonGift.filter(r => r.matched).reduce((s, r) => s + r.revenue, 0)
+  const unmatchedRev  = nonDupNonGift.filter(r => !r.matched).reduce((s, r) => s + r.revenue, 0)
   const totalRev      = matchedRev + unmatchedRev
 
   const fmtW = v => `₩${v.toLocaleString()}`
@@ -304,6 +306,7 @@ function _renderSbPreview() {
 
     const checked = r.checked ? 'checked' : ''
     const disabled = r.isDuplicate ? 'disabled' : ''
+    // 사은품 rows: enabled but unchecked by default (user can manually check)
 
     return `<tr${rowCls}>
       <td style="text-align:center"><input type="checkbox" class="sb-chk" data-idx="${i}" ${checked} ${disabled} /></td>
@@ -484,11 +487,11 @@ function confirmSabangnetUpload() {
     newPlatformCnt = newShops.length
   }
 
-  // --- Step 2: Auto-create new products ---
+  // --- Step 2: Auto-create new products (skip gift rows) ---
   const createdCodes = new Set()
   _sbRows.forEach(r => {
     if (r.isDuplicate || r.isFreebie || !r.checked) return
-    if (!r.matched && r.productCode && r.productCode !== '사은품(랜덤)' && !createdCodes.has(r.productCode)) {
+    if (!r.matched && r.productCode && !r.productCode.includes('사은품') && !createdCodes.has(r.productCode)) {
       const newP = _sbCreateProduct(r.productCode, r.productName, r.unitPrice)
       State.allProducts.push(newP)
       createdCodes.add(r.productCode)
@@ -509,9 +512,10 @@ function confirmSabangnetUpload() {
     })
   }
 
-  // --- Step 3: Apply sales ---
+  // --- Step 3: Apply sales (skip gift rows entirely) ---
   _sbRows.forEach(r => {
     if (r.isDuplicate) { dupSkipped++; return }
+    if (r.isFreebie) { freebieCnt++; return }
     if (!r.checked) return
     if (!r.p) return
 
@@ -521,21 +525,12 @@ function confirmSabangnetUpload() {
     // Ensure sales key exists
     if (r.p.sales[ch] === undefined) r.p.sales[ch] = 0
 
-    if (r.isFreebie) {
-      r.p.sales[ch] += r.qty
-      r.p.revenueLog.push({
-        type: 'sale', source: '사방넷', date: r.orderDate, channel: ch, orderNo: r.orderNo,
-        qty: r.qty, revenue: 0, registeredAt: now
-      })
-      freebieCnt++
-    } else {
-      r.p.sales[ch] += r.qty
-      r.p.revenueLog.push({
-        type: 'sale', source: '사방넷', date: r.orderDate, channel: ch, orderNo: r.orderNo,
-        qty: r.qty, revenue: r.revenue, registeredAt: now
-      })
-      saleCnt++
-    }
+    r.p.sales[ch] += r.qty
+    r.p.revenueLog.push({
+      type: 'sale', source: '사방넷', date: r.orderDate, channel: ch, orderNo: r.orderNo,
+      qty: r.qty, revenue: r.revenue, registeredAt: now
+    })
+    saleCnt++
   })
 
   _closeSbFilter()
