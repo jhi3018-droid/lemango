@@ -62,6 +62,7 @@ function submitPlanRegister(e) {
   renderPlanTable()
   closePlanRegisterModal()
   showToast(`"${sampleNo}" 기획 등록 완료`, 'success')
+  logActivity('create', '신규기획', `기획등록: ${sampleNo}`)
 }
 
 // ===== 신규기획 품번 자동생성 =====
@@ -474,6 +475,7 @@ function openPlanDetailModal(no) {
   if (confirmBtn) confirmBtn.style.display = item.confirmed ? 'none' : ''
   modal.showModal()
   centerModal(modal)
+  loadComments('plan', no)
 }
 
 function closePlanDetailModal() {
@@ -657,6 +659,7 @@ function savePlanDetailEdit() {
   document.getElementById('pdSaveBtn').style.display = 'none'
   renderPlanTable()
   showToast('저장됐습니다.', 'success')
+  logActivity('update', '신규기획', `기획수정: ${item.sampleNo || item.productCode}`)
 }
 
 async function confirmPlanToProduct() {
@@ -749,6 +752,7 @@ async function confirmPlanToProduct() {
   setTimeout(() => openDetailModal(newProduct.productCode), 100)
 
   showToast(`"${newProduct.productCode}" 상품이 상품조회로 이전됐습니다.`, 'success')
+  logActivity('create', '신규기획', `상품이전: ${newProduct.productCode}`)
 }
 
 function buildPlanDetailContent(item) {
@@ -892,5 +896,7 @@ function buildPlanDetailContent(item) {
           </tr>`
         }).join('')}</tbody>
       </table>
-    </div>`
+    </div>
+
+    ${buildCommentSection('plan', item.no)}`
 }

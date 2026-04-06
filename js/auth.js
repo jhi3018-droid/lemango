@@ -61,6 +61,9 @@ function clearLoginError() {
   if (el) { el.textContent = ''; el.style.display = 'none' }
 }
 
+// handleLogin은 Auth만 처리, checkApproval은 onAuthStateChanged에서 단일 호출
+let _loginInProgress = false
+
 window.handleLogin = async function() {
   clearLoginError()
   if (!auth) { showLoginError('Firebase가 초기화되지 않았습니다. apiKey를 설정해주세요.'); return }
@@ -70,30 +73,30 @@ window.handleLogin = async function() {
 
   const btn = document.getElementById('loginBtn')
   btn.disabled = true; btn.textContent = '로그인 중...'
+  _loginInProgress = true
   try {
-    const cred = await auth.signInWithEmailAndPassword(email, password)
+    await auth.signInWithEmailAndPassword(email, password)
     saveLastEmail(email)
-    try {
-      await checkApproval(cred.user)
-    } catch (fsErr) {
-      console.error('Firestore error:', fsErr)
-      showLoginError('Firestore 오류: ' + fsErr.message)
-    }
+    // checkApproval은 onAuthStateChanged에서 호출됨 — 여기서 중복 호출하지 않음
   } catch (err) {
     console.error('Auth error:', err)
+    _loginInProgress = false
+    btn.disabled = false; btn.textContent = '로그인'
     if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
       showLoginError('이메일 또는 비밀번호가 올바르지 않습니다.')
     } else {
       showLoginError('로그인 오류: ' + err.message)
     }
-  } finally {
-    btn.disabled = false; btn.textContent = '로그인'
   }
+  // 버튼 복원은 onAuthStateChanged 콜백 완료 후 _resetLoginBtn()에서 처리
 }
 
 async function checkApproval(user) {
   const docRef = db.collection('users').doc(user.uid)
   let doc = await docRef.get()
+
+  console.log('[checkApproval] uid:', user.uid, 'doc.exists:', doc.exists)
+  if (doc.exists) console.log('[checkApproval] doc.data():', JSON.stringify(doc.data()))
 
   // Auth에는 있지만 Firestore 문서가 없는 경우 → 자동 생성
   if (!doc.exists) {
@@ -113,13 +116,22 @@ async function checkApproval(user) {
     return
   }
 
-  if (doc.data().status !== 'approved') {
+  const data = doc.data()
+  if (data.status !== 'approved') {
+    console.warn('[checkApproval] 승인 거부 — status:', data.status)
     await auth.signOut()
-    showLoginError('관리자 승인 대기중입니다.')
+    const statusMsg = {
+      pending:   '관리자 승인 대기중입니다.',
+      rejected:  '가입이 거절되었습니다. 관리자에게 문의해주세요.',
+      suspended: '계정이 정지되었습니다. 관리자에게 문의해주세요.'
+    }
+    showLoginError(statusMsg[data.status] || '로그인할 수 없습니다. (status: ' + data.status + ')')
     return
   }
+  console.log('[checkApproval] 승인 확인 — showApp 호출')
   docRef.update({ lastLogin: new Date() })
-  showApp(doc.data())
+  showApp(data)
+  logActivity('login', '', '로그인 성공')
 }
 
 let _appInitialized = false
@@ -129,11 +141,18 @@ function showApp(userData) {
   document.getElementById('appContainer').style.display = ''
   State.currentUser = userData
   updateHeaderUser(userData)
+  applyGradeAccess(userData.grade)
   // 첫 로그인 시 앱 초기화 (init에서 return된 경우)
   if (!_appInitialized && typeof initApp === 'function') {
     _appInitialized = true
     initApp()
   }
+}
+
+function applyGradeAccess(grade) {
+  // 회원관리 탭: grade 3(관리자), 4(최종관리자)만 접근 가능
+  const membersBtn = document.querySelector('.tab-btn[data-tab="members"]')
+  if (membersBtn) membersBtn.style.display = grade >= 3 ? '' : 'none'
 }
 
 function showLogin() {
@@ -150,6 +169,7 @@ function updateHeaderUser(userData) {
 }
 
 window.handleLogout = function() {
+  logActivity('logout', '', '로그아웃')
   auth.signOut()
 }
 
@@ -166,6 +186,8 @@ window.handleForgotPassword = function() {
 
 // ===== Signup Modal =====
 window.openSignupModal = function() {
+  // 부서 select 채우기 (로그인 전이므로 populateAllSelects 미호출 상태)
+  populateSelect('signupDept', _depts, false, true)
   const modal = document.getElementById('signupModal')
   if (modal) modal.showModal()
 }
@@ -179,10 +201,24 @@ window.closeSignupModal = function() {
   const dept = document.getElementById('signupDept'); if (dept) dept.value = ''
   const agree = document.getElementById('signupAgree'); if (agree) agree.checked = false
   const msg = document.getElementById('pwMatchMsg'); if (msg) msg.textContent = ''
+  clearSignupError()
+}
+
+function showSignupError(msg) {
+  const el = document.getElementById('signupError')
+  if (!el) return
+  el.textContent = msg
+  el.className = 'signup-error'
+  el.style.display = 'block'
+}
+function clearSignupError() {
+  const el = document.getElementById('signupError')
+  if (el) { el.textContent = ''; el.style.display = 'none' }
 }
 
 window.handleSignup = async function() {
-  if (!auth) { showToast('Firebase가 초기화되지 않았습니다.', 'danger'); return }
+  clearSignupError()
+  if (!auth) { showSignupError('Firebase가 초기화되지 않았습니다.'); return }
   const email     = document.getElementById('signupEmail').value.trim()
   const pw        = document.getElementById('signupPassword').value
   const pwConfirm = document.getElementById('signupPasswordConfirm').value
@@ -191,11 +227,11 @@ window.handleSignup = async function() {
   const dept      = document.getElementById('signupDept').value
   const agree     = document.getElementById('signupAgree').checked
 
-  if (!email || !pw || !name || !dept) return showToast('필수 항목을 입력해주세요.', 'warning')
-  if (pw.length < 8) return showToast('비밀번호는 8자 이상이어야 합니다.', 'warning')
-  if (!/[a-zA-Z]/.test(pw) || !/[0-9]/.test(pw)) return showToast('비밀번호는 영문과 숫자를 포함해야 합니다.', 'warning')
-  if (pw !== pwConfirm) return showToast('비밀번호가 일치하지 않습니다.', 'warning')
-  if (!agree) return showToast('개인정보 수집에 동의해주세요.', 'warning')
+  if (!email || !pw || !name || !dept) return showSignupError('필수 항목을 입력해주세요.')
+  if (pw.length < 8) return showSignupError('비밀번호는 8자 이상이어야 합니다.')
+  if (!/[a-zA-Z]/.test(pw) || !/[0-9]/.test(pw)) return showSignupError('비밀번호는 영문과 숫자를 포함해야 합니다.')
+  if (pw !== pwConfirm) return showSignupError('비밀번호가 일치하지 않습니다.')
+  if (!agree) return showSignupError('개인정보 수집에 동의해주세요.')
 
   try {
     const cred = await auth.createUserWithEmailAndPassword(email, pw)
@@ -215,9 +251,9 @@ window.handleSignup = async function() {
     showLoginError('가입 신청이 완료되었습니다. 관리자 승인 후 로그인할 수 있습니다.', 'success')
   } catch (err) {
     if (err.code === 'auth/email-already-in-use') {
-      showToast('이미 등록된 이메일입니다.', 'danger')
+      showSignupError('이미 등록된 이메일입니다.')
     } else {
-      showToast('가입 중 오류가 발생했습니다: ' + err.message, 'danger')
+      showSignupError('가입 중 오류: ' + err.message)
     }
   }
 }
@@ -229,7 +265,7 @@ async function initAdminAccount() {
   if (!snapshot.empty) return
 
   try {
-    const cred = await auth.createUserWithEmailAndPassword('jhi3018@gmail.com', '1234')
+    const cred = await auth.createUserWithEmailAndPassword('jhi3018@gmail.com', 'lemango2026!')
     await db.collection('users').doc(cred.user.uid).set({
       uid: cred.user.uid,
       email: 'jhi3018@gmail.com',
@@ -251,6 +287,12 @@ async function initAdminAccount() {
 // ===== Auth State Listener =====
 let _authInitialized = false
 
+function _resetLoginBtn() {
+  const btn = document.getElementById('loginBtn')
+  if (btn) { btn.disabled = false; btn.textContent = '로그인' }
+  _loginInProgress = false
+}
+
 function initAuth() {
   if (!auth) {
     showLogin()
@@ -258,15 +300,19 @@ function initAuth() {
   }
   return new Promise(resolve => {
     auth.onAuthStateChanged(async user => {
+      console.log('[onAuthStateChanged] user:', user ? user.uid : null)
       if (user) {
         try {
           await checkApproval(user)
         } catch (e) {
+          console.error('[onAuthStateChanged] checkApproval error:', e)
+          showLoginError('로그인 처리 중 오류: ' + e.message)
           showLogin()
         }
       } else {
         showLogin()
       }
+      _resetLoginBtn()
       if (!_authInitialized) {
         _authInitialized = true
         resolve()

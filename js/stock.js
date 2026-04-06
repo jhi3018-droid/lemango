@@ -226,6 +226,7 @@ function saveSrmStock(productCode) {
   State.stock.filtered = State.stock.filtered.map(x => x.productCode === productCode ? p : x)
   renderStockTable()
   showToast(`${p.nameKr} 입고 ${total}개 저장 완료`, 'success')
+  logActivity('create', '재고관리', `입고: ${p.productCode} ${p.nameKr} ${total}개`)
   // 저장 후 동일 상품 다시 렌더 (현재 재고 + 입고 이력 포함)
   document.getElementById('srmProductArea').innerHTML = buildSrmProductArea(p)
 }
@@ -328,6 +329,7 @@ function confirmStockUpload() {
   State.stock.filtered = [...State.allProducts]
   renderStockTable()
   showToast(`${cnt}개 상품 입고 저장 완료`, 'success')
+  logActivity('create', '재고관리', `일괄입고: ${cnt}개 상품`)
   document.getElementById('stockRegisterModal').close()
   _stockUploadData = null
 }
@@ -439,6 +441,7 @@ function submitOutgoing(productCode) {
   State.stock.filtered = State.stock.filtered.map(x => x.productCode === productCode ? p : x)
   renderStockTable()
   showToast(`${p.nameKr} 출고 ${total}개 처리 완료`, 'success')
+  logActivity('create', '재고관리', `출고: ${p.productCode} ${p.nameKr} ${total}개`)
   closeOutgoingModal()
 }
 

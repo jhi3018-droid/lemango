@@ -44,6 +44,7 @@
     <div class="signup-notice">
       가입 신청 후 관리자 승인이 완료되면 로그인할 수 있습니다.
     </div>
+    <div id="signupError" class="signup-error" style="display:none"></div>
     <div class="signup-field">
       <label>이메일 <span class="req">*</span></label>
       <input type="email" id="signupEmail" placeholder="email@example.com">
@@ -74,12 +75,6 @@
       <label>부서 <span class="req">*</span></label>
       <select id="signupDept">
         <option value="">부서를 선택하세요</option>
-        <option>경영지원</option>
-        <option>디자인</option>
-        <option>생산관리</option>
-        <option>영업/마케팅</option>
-        <option>물류</option>
-        <option>IT</option>
       </select>
     </div>
     <label class="signup-terms">
@@ -111,6 +106,7 @@
       <button class="tab-btn" data-tab="plan">신규기획</button>
       <button class="tab-btn" data-tab="event">행사일정</button>
       <button class="tab-btn" data-tab="work">업무일정</button>
+      <button class="tab-btn" data-tab="board">게시판</button>
       <button class="tab-btn" data-tab="settings">⚙ 설정</button>
       <button class="tab-btn" data-tab="members">👥 회원관리</button>
     </nav>
@@ -118,7 +114,7 @@
       <div class="header-date" id="headerDate"></div>
       <div class="header-user-area">
         <span id="headerUserGrade"></span>
-        <span class="header-user-name" id="headerUserName"></span>
+        <span class="header-user-name header-user-clickable" id="headerUserName" onclick="openMyProfile()"></span>
         <button class="header-logout-btn" onclick="handleLogout()">로그아웃</button>
       </div>
     </div>
@@ -133,7 +129,10 @@
 
   <!-- ===== 대시보드 탭 ===== -->
   <section class="tab-content active" id="tab-dashboard">
-    <div class="kpi-row" id="kpiRow"></div>
+    <div class="dash-info-row">
+      <div class="dash-notice-card" id="dashNoticeCard"></div>
+      <div class="dash-activity-card" id="dashActivityCard"></div>
+    </div>
     <div class="dashboard-main">
       <div class="card dash-cal-card">
         <div class="card-header">
@@ -544,6 +543,66 @@
     </div>
   </section>
 
+  <!-- ===== 게시판 탭 ===== -->
+  <section class="tab-content" id="tab-board">
+    <!-- 이너 탭 -->
+    <div class="board-inner-tabs">
+      <button class="board-itab active" data-type="notice" onclick="switchBoardType('notice')">공지게시판</button>
+      <button class="board-itab" data-type="free" onclick="switchBoardType('free')">자유게시판</button>
+    </div>
+
+    <!-- 목록 뷰 -->
+    <div id="boardListView">
+      <div class="brd-toolbar">
+        <div class="brd-toolbar-left">
+          <select id="boardSearchField" class="brd-select">
+            <option value="all">전체</option>
+            <option value="title">제목</option>
+            <option value="content">내용</option>
+            <option value="author">작성자</option>
+          </select>
+          <input type="text" id="boardSearchInput" class="brd-input" placeholder="검색어 입력" onkeydown="if(event.key==='Enter')searchBoard()">
+          <select id="boardCatFilter" class="brd-select">
+            <option value="">전체 분류</option>
+          </select>
+          <button class="brd-search-btn" onclick="searchBoard()">검색</button>
+        </div>
+        <div class="brd-toolbar-right">
+          <span class="brd-count" id="boardCount"></span>
+          <select id="boardPageSize" class="brd-select brd-select-sm" onchange="changeBoardPageSize()">
+            <option value="20">20개</option>
+            <option value="30">30개</option>
+            <option value="50">50개</option>
+          </select>
+          <button class="brd-write-btn" id="boardWriteBtn" onclick="openBoardWrite()">글쓰기</button>
+        </div>
+      </div>
+      <table class="brd-table">
+        <thead>
+          <tr>
+            <th class="brd-th-no">NO</th>
+            <th class="brd-th-cat">분류</th>
+            <th class="brd-th-title">제목</th>
+            <th class="brd-th-author">작성자</th>
+            <th class="brd-th-date">작성일</th>
+            <th class="brd-th-views">조회</th>
+            <th class="brd-th-file">첨부</th>
+          </tr>
+        </thead>
+        <tbody id="boardTableBody">
+          <tr><td colspan="7" class="brd-empty">게시글이 없습니다.</td></tr>
+        </tbody>
+      </table>
+      <div id="boardPagination" style="margin-top:10px"></div>
+    </div>
+
+    <!-- 상세 뷰 -->
+    <div id="boardDetailView" style="display:none"></div>
+
+    <!-- 글쓰기/수정 뷰 -->
+    <div id="boardWriteView" style="display:none"></div>
+  </section>
+
   <!-- ===== 설정 탭 ===== -->
   <section class="tab-content" id="tab-settings">
     <div class="settings-page" id="settingsPage"></div>
@@ -551,29 +610,119 @@
 
   <!-- ===== 회원관리 탭 ===== -->
   <section class="tab-content" id="tab-members">
-    <div class="kpi-row" id="membersKpiRow"></div>
-    <div style="display:flex;justify-content:flex-end;margin:12px 0 8px">
-      <button class="btn btn-new" onclick="openMemberAddModal()">＋ 회원 추가</button>
+    <!-- 이너 탭 -->
+    <div class="members-inner-tabs">
+      <button class="members-itab active" data-panel="memberList" onclick="switchMembersPanel('memberList')">회원목록</button>
+      <button class="members-itab" data-panel="activityLog" onclick="switchMembersPanel('activityLog')">활동 로그</button>
     </div>
-    <div class="table-wrap card" style="margin-top:0">
-      <table class="data-table" id="membersTable">
-        <thead>
-          <tr>
-            <th style="width:45px;text-align:center">NO</th>
-            <th style="width:100px">상태</th>
-            <th>이메일</th>
-            <th style="width:100px">이름</th>
-            <th style="width:100px">부서</th>
-            <th style="width:110px">등급</th>
-            <th style="width:140px">최종로그인</th>
-            <th style="width:140px">가입일</th>
-            <th style="width:200px">관리</th>
-          </tr>
-        </thead>
-        <tbody id="membersTbody">
-          <tr><td colspan="9" class="empty-row">로딩 중...</td></tr>
-        </tbody>
-      </table>
+
+    <!-- 회원목록 패널 -->
+    <div id="memberListPanel">
+      <div class="kpi-row" id="membersKpiRow"></div>
+      <div style="display:flex;justify-content:flex-end;margin:12px 0 8px">
+        <button class="btn btn-new" onclick="openMemberAddModal()">＋ 회원 추가</button>
+      </div>
+      <div class="table-wrap card" style="margin-top:0">
+        <table class="data-table" id="membersTable">
+          <thead>
+            <tr>
+              <th style="width:45px;text-align:center">NO</th>
+              <th style="width:100px">상태</th>
+              <th>이메일</th>
+              <th style="width:100px">이름</th>
+              <th style="width:100px">부서</th>
+              <th style="width:110px">등급</th>
+              <th style="width:140px">최종로그인</th>
+              <th style="width:140px">가입일</th>
+              <th style="width:200px">관리</th>
+            </tr>
+          </thead>
+          <tbody id="membersTbody">
+            <tr><td colspan="9" class="empty-row">로딩 중...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 활동 로그 패널 -->
+    <div id="activityLogPanel" style="display:none">
+      <!-- 카테고리 탭 -->
+      <div class="al-cat-tabs">
+        <button class="al-cat active" data-cat="all">전체</button>
+        <button class="al-cat" data-cat="login">로그인</button>
+        <button class="al-cat" data-cat="data">데이터 변경</button>
+        <button class="al-cat" data-cat="upload">매출 업로드</button>
+        <button class="al-cat" data-cat="member">회원/설정</button>
+      </div>
+
+      <!-- 필터 -->
+      <div class="al-filters">
+        <div class="al-filter-row">
+          <label>기간</label>
+          <input type="date" id="alDateFrom">
+          <span>~</span>
+          <input type="date" id="alDateTo">
+          <label style="margin-left:12px">활동유형</label>
+          <select id="alAction">
+            <option value="">전체</option>
+            <option value="login">로그인</option>
+            <option value="logout">로그아웃</option>
+            <option value="login_fail">로그인실패</option>
+            <option value="create">등록</option>
+            <option value="update">수정</option>
+            <option value="delete">삭제</option>
+            <option value="upload">업로드</option>
+            <option value="approve">승인</option>
+            <option value="setting">설정</option>
+          </select>
+          <label style="margin-left:12px">사용자</label>
+          <select id="alUser">
+            <option value="">전체</option>
+          </select>
+          <input type="text" id="alKeyword" placeholder="키워드 검색" style="margin-left:12px;width:160px">
+          <button class="btn btn-primary" onclick="searchActivityLog()" style="margin-left:8px">검색</button>
+          <button class="btn btn-outline" onclick="resetActivityLog()" style="margin-left:4px">초기화</button>
+        </div>
+      </div>
+
+      <!-- KPI 통계 -->
+      <div class="al-stats" id="alStats"></div>
+
+      <!-- 결과 헤더 -->
+      <div class="al-result-header">
+        <span id="alResultCount">검색결과 0건</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <select id="alPageSize" onchange="changeAlPageSize()">
+            <option value="30">30건</option>
+            <option value="50">50건</option>
+            <option value="100">100건</option>
+          </select>
+          <button class="btn btn-outline" onclick="exportActivityLog()">엑셀 다운로드</button>
+        </div>
+      </div>
+
+      <!-- 테이블 -->
+      <div class="table-wrap card" style="margin-top:0">
+        <table class="data-table" id="alTable">
+          <thead>
+            <tr>
+              <th style="width:45px;text-align:center">NO</th>
+              <th style="width:150px">일시</th>
+              <th style="width:100px">사용자</th>
+              <th style="width:90px;text-align:center">활동유형</th>
+              <th style="width:90px;text-align:center">대상메뉴</th>
+              <th>상세내용</th>
+              <th style="width:110px">IP</th>
+            </tr>
+          </thead>
+          <tbody id="alTableBody">
+            <tr><td colspan="7" class="empty-row">활동 로그가 없습니다.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 페이지네이션 -->
+      <div id="alPagination"></div>
     </div>
   </section>
 
@@ -592,8 +741,6 @@
       <label>부서</label>
       <select id="meEditDept">
         <option value="">선택</option>
-        <option>경영지원</option><option>디자인</option><option>생산관리</option>
-        <option>영업/마케팅</option><option>물류</option><option>IT</option>
       </select>
     </div>
     <div class="rform-field">
@@ -627,8 +774,6 @@
       <label>부서 *</label>
       <select id="maDept">
         <option value="">선택</option>
-        <option>경영지원</option><option>디자인</option><option>생산관리</option>
-        <option>영업/마케팅</option><option>물류</option><option>IT</option>
       </select>
     </div>
     <div class="rform-field">
@@ -644,6 +789,61 @@
       <button class="btn btn-primary" onclick="saveMemberAdd()">추가</button>
       <button class="btn btn-outline" onclick="closeMemberAddModal()">취소</button>
     </div>
+  </div>
+</dialog>
+
+<!-- 회원 프로필 수정 모달 -->
+<dialog id="memberProfileModal" class="srm-modal" style="width:500px;max-width:96vw">
+  <div class="srm-header">
+    <span id="mpTitle">회원 정보</span>
+    <button class="modal-close" onclick="closeMemberProfileModal()">&times;</button>
+  </div>
+  <div class="srm-body" style="display:flex;flex-direction:column;gap:14px;padding:20px">
+    <div id="mpError" class="signup-error" style="display:none"></div>
+    <!-- 기본 정보 -->
+    <div class="rform-field"><label>이메일</label><input type="email" id="mpEmail" readonly></div>
+    <div class="mp-row">
+      <div class="rform-field" style="flex:1"><label>이름</label><input type="text" id="mpName"></div>
+      <div class="rform-field" style="flex:1"><label>전화번호</label><input type="tel" id="mpPhone"></div>
+    </div>
+    <div class="mp-row">
+      <div class="rform-field" style="flex:1">
+        <label>부서</label>
+        <select id="mpDept"><option value="">선택</option></select>
+      </div>
+      <div class="rform-field" style="flex:1">
+        <label>등급</label>
+        <select id="mpGrade" disabled>
+          <option value="1">일반사용자 (Lv.1)</option>
+          <option value="2">담당자 (Lv.2)</option>
+          <option value="3">관리자 (Lv.3)</option>
+          <option value="4">최종관리자 (Lv.4)</option>
+        </select>
+      </div>
+    </div>
+    <div class="rform-field"><label>가입일</label><input type="text" id="mpCreatedAt" readonly class="mp-readonly"></div>
+    <!-- 비밀번호 변경 섹션 -->
+    <div class="mp-divider"></div>
+    <div id="mpPwSection">
+      <div class="mp-section-title">비밀번호 변경</div>
+      <div id="mpPwSelf" style="display:flex;flex-direction:column;gap:10px">
+        <div class="rform-field"><label>현재 비밀번호</label><input type="password" id="mpPwCurrent" placeholder="현재 비밀번호"></div>
+        <div class="rform-field"><label>새 비밀번호</label><input type="password" id="mpPwNew" placeholder="6자 이상"></div>
+        <div class="rform-field"><label>새 비밀번호 확인</label><input type="password" id="mpPwConfirm" placeholder="새 비밀번호 재입력"></div>
+        <button class="btn btn-outline" onclick="changeMemberPassword()" style="align-self:flex-start">비밀번호 변경</button>
+      </div>
+      <div id="mpPwAdmin" style="display:none">
+        <p class="mp-hint">다른 회원의 비밀번호는 직접 변경할 수 없습니다.</p>
+        <button class="btn btn-outline" onclick="resetMemberPassword()">비밀번호 초기화 이메일 발송</button>
+      </div>
+    </div>
+    <!-- 저장 -->
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+      <button class="btn btn-primary" onclick="saveMemberProfile()">저장</button>
+      <button class="btn btn-outline" onclick="closeMemberProfileModal()">취소</button>
+    </div>
+    <!-- 댓글 -->
+    <div id="mpCommentArea"></div>
   </div>
 </dialog>
 
@@ -954,6 +1154,7 @@
       <button class="btn btn-new" id="dEditBtn" onclick="toggleDetailEdit()">✏️ 수정</button>
       <button class="btn btn-accent" id="dSaveBtn" onclick="saveDetailEdit()">💾 저장</button>
       <button class="btn" id="dLockCodeBtn" onclick="lockProductCode()" style="background:var(--primary);color:white;font-size:12px;padding:4px 12px">🔒 품번 확정</button>
+      <button class="btn btn-delete-product" id="dDeleteBtn" onclick="deleteProduct()" style="display:none">삭제</button>
       <button class="modal-close" onclick="closeDetailModal()">✕</button>
     </div>
   </div>
@@ -1510,6 +1711,7 @@
       <button type="button" class="btn btn-outline" onclick="closeEventRegisterModal()">취소</button>
     </div>
   </form>
+  <div id="evCommentArea" style="padding:0 20px 16px;display:none"></div>
 </dialog>
 
 <!-- 기획일정 조회 모달 -->
@@ -1593,6 +1795,9 @@
 <script src="js/product-code.js"></script>
 <script src="js/excel.js"></script>
 <script src="js/settings.js"></script>
+<script src="js/comments.js"></script>
+<script src="js/board.js"></script>
+<script src="js/activity-log.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/members.js"></script>
 <script src="js/main.js"></script>

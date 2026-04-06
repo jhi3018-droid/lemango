@@ -7,13 +7,13 @@
 ## 파일 구조
 ```
 르망고/
-├── index.html              # 전체 화면 (탭 7개 + 모달들)
+├── index.html              # 전체 화면 (탭 10개 + 모달들)
 ├── style.css               # 전체 스타일
 ├── firebase.json           # Firebase Hosting 설정
 ├── .firebaserc             # Firebase 프로젝트 (lemango-office)
 ├── CLAUDE.md               # 이 파일
 ├── .claude/agents/         # 전문 에이전트
-├── js/                     # JS 모듈 분리 (20개 파일)
+├── js/                     # JS 모듈 분리 (23개 파일)
 │   ├── core.js             # State, 설정, 플랫폼, populateAllSelects
 │   ├── router.js           # 탭 바 시스템 (openTab, closeTab, resetTabs, applyTabState)
 │   ├── utils.js            # 유틸, 페이지네이션, 정렬/필터(initTableFeatures), 미니달력(openMonthPicker)
@@ -32,6 +32,9 @@
 │   ├── upload.js           # 업로드 미리보기·확정
 │   ├── work.js             # 업무일정 CRUD·검색·렌더
 │   ├── auth.js             # Firebase Auth 초기화, 로그인/로그아웃, 회원가입
+│   ├── comments.js         # 모달 댓글 시스템 (buildCommentSection, loadComments, CRUD)
+│   ├── board.js            # 게시판 시스템 (공지/자유, 목록/상세/글쓰기, 첨부파일)
+│   ├── activity-log.js     # 활동 로그 시스템 (logActivity, 필터/KPI/테이블/페이지네이션/엑셀)
 │   ├── members.js          # 회원관리 탭 CRUD, 등급/상태 관리
 │   └── main.js             # init(), DOMContentLoaded
 └── data/
@@ -50,6 +53,7 @@
 | 신규기획 | `tab-plan` | 기획 상품 관리, 일정(단계+날짜 필터), 상품조회 이전 |
 | 행사일정 | `tab-event` | 월간 캘린더 + 행사 등록/수정/삭제 (localStorage) |
 | 업무일정 | `tab-work` | 업무 일정 등록/조회/수정/삭제 (localStorage) |
+| 게시판 | `tab-board` | 공지게시판+자유게시판 이너탭, 목록/상세/글쓰기 뷰, 댓글, 첨부파일 (Firestore) |
 | 설정 | `tab-settings` | 브랜드·타입·판매채널·업무카테고리 등 기본 옵션 관리 |
 | 회원관리 | `tab-members` | 회원 CRUD, 등급/상태 관리, KPI 카드 (Firebase Auth + Firestore) |
 
@@ -63,6 +67,10 @@ State.sales.filtered       // 매출현황 필터 결과
 State.plan.filtered        // 기획조회 필터 결과
 State.workItems            // 업무일정 아이템 배열
 State.work.filtered        // 업무일정 필터 결과
+State.boardPosts           // 게시글 배열 (Firestore)
+State.boardFiltered        // 게시판 검색 필터 결과
+State.boardType            // 'notice' | 'free'
+State.boardPage/PageSize   // 페이지네이션
 State.modal.images/idx     // 이미지 모달 상태
 ```
 
@@ -553,6 +561,63 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 | `feature-builder.md` | 새 기능 구현 (다중 파일 일관성) |
 | `debugger.md` | 버그 진단·수정, 증상→파일 추적 |
 | `code-reviewer.md` | 코드 리뷰, 품질/일관성 체크리스트 |
+
+## 게시판 시스템 (`tab-board`)
+
+### 구조
+- Firestore `posts` 컬렉션 기반 (로그인 필수)
+- 이너 탭 2개: 공지게시판(`notice`), 자유게시판(`free`)
+- 3개 뷰: 목록(`boardListView`), 상세(`boardDetailView`), 글쓰기/수정(`boardWriteView`)
+
+### Firestore `posts` 스키마
+```js
+{
+  boardType,        // 'notice' | 'free'
+  category,         // notice: 공지/업데이트/행사/가이드, free: 일반/질문/공유/건의
+  title, content,
+  authorUid, authorName, authorGrade,
+  pinned,           // boolean (공지게시판 + grade>=3 만 설정 가능)
+  important,        // boolean
+  views,            // 조회수 (상세 열 때 +1)
+  commentCount,     // 댓글 수 (comments.js에서 increment/decrement)
+  attachments: [{ name, size, data(base64) }],  // 최대 5개, 10MB/개
+  createdAt, updatedAt
+}
+```
+
+### 카테고리
+- `BOARD_CATS = { notice: ['공지','업데이트','행사','가이드'], free: ['일반','질문','공유','건의'] }`
+- `getCategoryClass(cat)` → CSS 클래스 (8가지 색상 배지)
+
+### 목록 뷰
+- 고정글(pinned) 항상 최상단 ★ 아이콘, 24h 이내 NEW 배지(N), 댓글수 표시
+- 분류 필터 + 검색(제목/내용/작성자/전체) + 페이지네이션(20/30/50)
+- 클릭 → `openBoardPost(postId)` → 상세 뷰
+
+### 상세 뷰
+- 조회수 자동 증가, 첨부파일 다운로드, 이전/다음 글 네비게이션
+- 작성자 또는 grade>=3 → 수정/삭제 버튼
+- 하단 댓글 섹션 (`buildCommentSection('board', postId)`)
+
+### 글쓰기/수정 뷰
+- 분류 선택, 제목, 내용, 첨부파일 (base64, 최대 5개)
+- 공지게시판 + grade>=3: 고정/중요 체크박스 표시
+- 삭제 시 관련 댓글도 batch 삭제
+
+### 댓글 연동
+- `comments.js`에서 `modalType='board'` → `posts.commentCount` increment/decrement
+
+### 주요 함수
+- `renderBoard()` — 초기 렌더 (탭 열릴 때)
+- `switchBoardType(type)` — 이너 탭 전환
+- `loadBoardPosts()` — Firestore에서 게시글 로드
+- `applyBoardSearch()` / `searchBoard()` / `resetBoardSearch()` — 검색
+- `renderBoardList()` / `buildBoardRow()` — 목록 렌더
+- `openBoardPost(postId)` / `renderBoardDetail()` — 상세 보기
+- `openBoardWrite(editPostId?)` / `submitBoardPost()` / `cancelBoardWrite()` — 글쓰기/수정
+- `deleteBoardPost(postId)` — 삭제 (댓글 batch 삭제 포함)
+- `handleBoardFileSelect(input)` / `removeBoardAttachment(idx)` / `renderBoardAttachments()` / `downloadAttachment(idx)` — 첨부파일
+- `renderBoardPagination()` / `goBoardPage()` / `changeBoardPageSize()` — 페이지네이션
 
 ---
 
@@ -1470,6 +1535,41 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 ---
 
+### 2026-04-06
+
+#### 활동 로그 시스템 (Firebase Firestore)
+- `js/activity-log.js` 신규 — `logActivity(action, target, detail)` fire-and-forget
+- Firestore `activityLogs` 컬렉션, 31+ 함수에서 호출 (auth/register/stock/sales/plan/event/work/settings/members)
+- 회원관리 탭 이너 탭: 회원목록 | 활동로그
+- 활동로그 패널: KPI 카드 4개, 카테고리 필터, 검색/페이지네이션, 엑셀 다운로드
+
+#### 모달 댓글 시스템 (Firebase Firestore)
+- `js/comments.js` 신규 — `buildCommentSection(modalType, targetId)` + CRUD
+- Firestore `comments` 컬렉션, 5개 모달에 적용 (상세/기획상세/행사/업무/회원프로필)
+- 작성자 또는 grade>=3 수정/삭제 권한
+- `korConfirm()` 한글 삭제 확인, inline 에러 표시
+
+#### 이모티콘 선택기
+- 7개 카테고리: 최근/표정/손동작/하트/자연/음식/업무
+- `toggleEmojiPicker(btn, inputId)` — 팝업 패널, 탭 전환, 커서 위치 삽입
+- localStorage 최근 사용 이모티콘 저장 (최대 12개)
+
+#### 게시판 시스템 (`tab-board`) 신규
+- `js/board.js` 신규 — Firestore `posts` 컬렉션
+- 이너 탭: 공지게시판 + 자유게시판
+- 3개 뷰: 목록 (고정글/NEW배지/댓글수/분류필터/검색/페이지네이션) + 상세 (조회수/첨부/이전다음/댓글) + 글쓰기/수정 (분류/고정/중요/첨부파일base64)
+- 카테고리 8종: 공지/업데이트/행사/가이드/일반/질문/공유/건의 (색상 배지)
+- 댓글 연동: `comments.js`에서 `posts.commentCount` increment/decrement
+- 삭제 시 관련 댓글 batch 삭제
+- `firestore.rules` — posts 컬렉션 read/write 규칙 추가, 배포 완료
+
+#### Firestore 보안 규칙
+- `firestore.rules` 신규 생성 — users/comments/activityLogs/posts 4개 컬렉션
+- 인증된 사용자만 read/write 허용
+- `firebase deploy --only firestore:rules` 배포
+
+---
+
 ## 보류 중 작업
 
 ### 이미지합치기 웹 통합 (테스트 후 결정)
@@ -1478,9 +1578,139 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - 통합 방향: 순수 JS(Canvas API) + fetch() — CORS 테스트 필요
 - 상세 내용: `.claude/projects/.../memory/project_image_combiner.md` 참조
 
+---
+
+### 2026-04-06
+
+#### 활동 로그 시스템 구축
+
+- **`js/activity-log.js` 신규 파일**: 활동 로그 전체 시스템
+  - `logActivity(action, target, detail)` — fire-and-forget Firestore 기록 (메인 기능 블로킹 없음)
+  - `loadActivityLog()` — Firestore `activityLogs` 컬렉션 조회 (날짜 필터, limit 5000)
+  - `filterActivityLog()` — 클라이언트사이드 필터 (카테고리/활동유형/사용자/키워드)
+  - `renderAlStats(data)` — KPI 통계 카드 (전체/로그인/데이터변경/매출업로드/회원설정)
+  - `renderActivityLogTable()` — 테이블 렌더 (NO/일시/사용자/활동유형배지/대상메뉴/상세내용/IP)
+  - `renderAlPagination()` — 독립 페이지네이션 (30/50/100건)
+  - `exportActivityLog()` — 엑셀 다운로드 (SheetJS)
+  - `populateAlUserFilter()` — Firestore users 컬렉션 기반 사용자 필터 select 동적 생성
+  - `switchMembersPanel(panel)` — 회원관리 이너탭 전환 (회원목록 ↔ 활동로그)
+
+- **Firestore 컬렉션**: `activityLogs`
+  - 스키마: `{ timestamp, uid, userName, action, target, detail, ip }`
+  - action 유형: `login`, `logout`, `create`, `update`, `delete`, `upload`, `approve`, `setting`
+
+- **State 확장**: `State.activityLog = { all:[], filtered:[], page:1, pageSize:30, cat:'all' }`
+
+- **카테고리 매핑** (`AL_CAT_MAP`):
+  - `all`: 전체
+  - `login`: login, logout, login_fail
+  - `data`: create, update, delete
+  - `upload`: upload
+  - `member`: approve, setting
+
+- **회원관리 탭 이너탭 구조**:
+  - `#tab-members` 내부에 `.members-inner-tabs` (회원목록 | 활동로그)
+  - `#memberListPanel` — 기존 회원관리 테이블
+  - `#activityLogPanel` — 카테고리탭 + 필터 + KPI통계 + 테이블 + 페이지네이션
+
+- **`logActivity()` 삽입 위치** (31개 지점, 10개 파일):
+  - `auth.js`: 로그인 성공, 로그아웃
+  - `register.js`: 신규등록
+  - `modals.js`: 상품수정
+  - `stock.js`: 입고(개별/일괄), 출고
+  - `gonghom.js`: 카페24 업로드
+  - `sabangnet.js`: 사방넷 ���로드
+  - `plan.js`: 기획등록, 기획수정, 상품이전
+  - `event.js`: 행사등록/수정, 행사삭제
+  - `work.js`: 업무등록/수정, 업무삭제
+  - `members.js`: 회원승인, 회원삭제, 회원수정
+  - `settings.js`: 디자인번호/설정항목/판매채널/업무카테고리/부서 CRUD (15개 지점)
+
+- **CSS**: `.members-inner-tabs`, `.members-itab`, `.al-cat-tabs`, `.al-cat`, `.al-filters`, `.al-stats`, `.al-stat-card`, `.al-badge-*`, `.al-time`, `.al-detail-cell`, `.al-result-header`
+
+#### 모달 댓글 시스템 구축
+
+- **`js/comments.js` 신규 파일**: 모달 댓글 CRUD 시스템
+  - `buildCommentSection(modalType, targetId)` — 댓글 섹션 HTML 생성
+  - `loadComments(modalType, targetId)` — Firestore에서 댓글 로드 + 렌더
+  - `submitComment(modalType, targetId)` — 댓글 등록
+  - `editComment(commentId, modalType, targetId)` — 인라인 수정 모드
+  - `saveCommentEdit(commentId, modalType, targetId)` — 수정 저장
+  - `deleteComment(commentId, modalType, targetId)` — 삭제 (korConfirm)
+
+- **Firestore 컬렉션**: `comments`
+  - 스키마: `{ modalType, targetId, uid, userName, userGrade, content, createdAt, updatedAt }`
+  - 인덱스: modalType ASC + targetId ASC + createdAt ASC
+
+- **적용 대상 모달** (5개):
+  | Modal | modalType | targetId | 삽입 방식 |
+  |-------|-----------|----------|----------|
+  | 상품 상세 (`detailModal`) | `'product'` | productCode | buildDetailContent 하단 |
+  | 기획 상세 (`planDetailModal`) | `'plan'` | planItem.no | buildPlanDetailContent 하단 |
+  | 행사 수정 (`eventRegisterModal`) | `'event'` | event.no | `#evCommentArea` div (수정 시만) |
+  | 업무 상세 (`workDetailModal`) | `'work'` | workItem.no | buildWorkDetailContent 하단 |
+  | 회원 프로필 (`memberProfileModal`) | `'member'` | uid | `#mpCommentArea` div |
+
+- **권한**: 수정/삭제 = 작성자 본인 + grade 3(관리자) + grade 4(최종관리자)
+- **CSS**: `.comment-section`, `.comment-item`, `.comment-meta`, `.comment-grade-badge`, `.comment-input-area`, `.comment-edit-input`
+- `logActivity` 연동: 댓글 등록/수정/삭제 시 활동 로그 기록
+
+---
+
+### 2026-04-06 (추가2)
+
+#### 게시판 시스템 통합 + UI 전면 개편
+
+- **게시판 라우팅 연동**: `js/router.js` — `triggerTabRender`에 board case 추가, 데이터 가드에 board/members 예외 처리
+- **게시판 UI 전면 재설계**: `brd-*` 클래스 네이밍 (data-table 충돌 회피)
+  - 목록 뷰: 커스텀 brd-toolbar, brd-table, 분류 배지 8색, 고정글 ★, NEW 배지, 댓글수
+  - 상세 뷰: 카드형 레이아웃, 첨부파일 영역, 2컬럼 이전/다음글 네비게이션
+  - 글쓰기 뷰: B/I/U/리스트 텍스트 툴바, 드래그앤드롭 파일 업로드 존
+- **브라우저 뒤로가기 지원**: `history.pushState/popstate` — 상세 뷰 진입 시 pushState, 뒤로가기 시 목록 복귀
+- **댓글 연동**: `comments.js`에서 board 타입 `posts.commentCount` increment/decrement
+- **Firestore rules**: posts 컬렉션 read/write 규칙 추가 + 배포
+
+#### 대시보드 개편 — KPI 제거 + 공지/최근등록
+
+- **KPI 카드 완전 제거**: `renderKPI()` 함수 및 `#kpiRow` DOM 삭제
+- **`dash-info-row` 추가**: 대시보드 최상단 2컬럼 (공지사항 + 최근 등록)
+  - `renderDashNotice()` — Firestore posts(notice) 조회, 고정글 우선, 최근 5건, 클릭 시 게시판 탭 + 상세 오픈
+  - `renderDashActivity()` → `renderDashActivity()` 변경 — Firestore activityLogs 대신 State 데이터 수집 (planItems/events/workItems), 최근 7건 표시
+- **활동 배지 색상**: plan(파랑), event(앰버), work(보라)
+
+#### 상품 삭제 기능
+
+- **상세 모달 헤더**: `#dDeleteBtn` 삭제 버튼 추가 (grade >= 3 일 때만 표시)
+- **`deleteProduct()`**: korConfirm 확인 → State.allProducts 제거 → Firestore comments batch 삭제 → 테이블 재렌더 → 활동 로그
+- **매출 기록 경고**: revenueLog 존재 시 "매출 기록 N건이 있습니다" 경고 메시지
+
+#### 상품조회 생산상태 컬럼
+
+- `prodStatusBadge(status)` — 지속생산(초록)/단종(빨강)/시즌한정(파랑)/샘플(보라) 컬러 배지
+- PRODUCT_COLUMNS에 `productionStatus` 컬럼 추가 (타입 옆, width:80px)
+
+#### 엑셀 47컬럼 샘플 양식 + 업로드 파싱
+
+- **`downloadSample('product')` 전면 재작성** (`_downloadProductSample()`):
+  - Sheet1 "상품등록": 47컬럼 1행 헤더 + LSWON16266707 샘플 데이터 행
+  - Sheet2 "입력 가이드": 컬럼별 설명/필수/입력예시 테이블
+  - 헤더 스타일: 네이비(#1A1A2E) 배경 + 흰 글자, 필수 컬럼(품번/상품명/판매가/타입) 골드(#C9A96E) 배경
+  - 파일명: `르망고_상품등록_샘플양식.xlsx`
+
+- **`UPLOAD_COL` 47컬럼 인덱스**: NO(0)~최종입고일(46)
+  - 신규 컬럼: sampleNo(3), cafe24Code(4), saleStatus(32), productionStatus(33), barcodeXS~XL(34-38), urlDesign(43), urlShoot(44), registDate(45), lastInDate(46)
+
+- **`_LEGACY_COL`**: 이전 2행 헤더 양식 호환용 인덱스
+
+- **`uploadProducts(raw)` 전면 재작성**:
+  - 양식 자동 감지: `row[0][2] === '품번'` → 신규 47컬럼 (데이터 row 1~), 아니면 레거시 (데이터 row 2~)
+  - 47컬럼 전체 파싱: brand, sampleNo, cafe24Code, barcode, chestLine, transparency, lining, capRing, bust, waist, hip, saleStatus, productionStatus, barcodes(XS~XL), images.design, images.shoot, registDate
+  - 기존 품번 업데이트 시 stock/stockLog/sales/revenueLog/scheduleLog/productCodeLocked 보존
+
+---
+
 ## 다음 작업 후보 (미구현)
 - [ ] 면세점 주문 업로드 포맷
-- [ ] 상품 삭제 기능
 - [ ] 데이터 영속성 (localStorage 또는 서버 연동)
 - [ ] 인쇄/PDF 출력
 - [ ] 이미지합치기 웹 통합 (테스트 후)

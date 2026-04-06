@@ -158,6 +158,11 @@ function openDetailModal(productCode) {
     lockBtn.style.display = p.productCodeLocked ? 'none' : ''
     lockBtn.textContent = '🔒 품번 확정'
   }
+  // 삭제 버튼 (grade 3+ only)
+  const deleteBtn = document.getElementById('dDeleteBtn')
+  if (deleteBtn) {
+    deleteBtn.style.display = (State.currentUser && State.currentUser.grade >= 3) ? '' : 'none'
+  }
   // 위치 초기화 (매번 열릴 때 중앙으로)
   modal.style.left = ''
   modal.style.top  = ''
@@ -198,6 +203,7 @@ function openDetailModal(productCode) {
 
   modal.showModal()
   centerModal(modal)
+  loadComments('product', p.productCode)
 }
 
 function dSwitchImg(el, url) {
@@ -521,6 +527,8 @@ function buildDetailContent(p) {
       <button type="button" class="btn btn-outline" onclick="toggleDetailEdit()">취소</button>
       <button type="button" class="btn btn-new" onclick="saveDetailEdit()">저장</button>
     </div>
+
+    ${buildCommentSection('product', p.productCode)}
   `
 }
 
@@ -548,6 +556,53 @@ function closeDetailModal() {
     _detailPendingCode = null
   }
   document.getElementById('detailModal').close()
+}
+
+// ===== 상품 삭제 =====
+async function deleteProduct() {
+  const p = State.allProducts.find(x => x.productCode === _detailCode)
+  if (!p) return
+
+  // 매출 기록 경고
+  const revCount = (p.revenueLog || []).length
+  let msg = '상품을 삭제하시겠습니까?\n관련 매출/재고 데이터도 함께 삭제됩니다.\n삭제 후 복구할 수 없습니다.'
+  if (revCount > 0) {
+    msg = `이 상품에 매출 기록 ${revCount}건이 있습니다.\n정말 삭제하시겠습니까?\n\n관련 매출/재고 데이터도 함께 삭제됩니다.\n삭제 후 복구할 수 없습니다.`
+  }
+
+  const ok = await korConfirm(msg)
+  if (!ok) return
+
+  const code = p.productCode
+  const name = p.nameKr || ''
+
+  // State.allProducts에서 제거
+  const idx = State.allProducts.indexOf(p)
+  if (idx >= 0) State.allProducts.splice(idx, 1)
+
+  // Firestore comments 삭제 (product 타입)
+  if (db) {
+    try {
+      const snap = await db.collection('comments')
+        .where('modalType', '==', 'product')
+        .where('targetId', '==', code)
+        .get()
+      if (snap.docs.length) {
+        const batch = db.batch()
+        snap.docs.forEach(doc => batch.delete(doc.ref))
+        await batch.commit()
+      }
+    } catch (e) { console.warn('상품 댓글 삭제 실패:', e) }
+  }
+
+  // 모달 닫기 + 테이블 갱신
+  closeDetailModal()
+  if (typeof renderProductTable === 'function') renderProductTable()
+  if (typeof renderStockTable === 'function') renderStockTable()
+  if (typeof renderSalesTable === 'function') renderSalesTable()
+
+  logActivity('delete', '상품조회', `상품 삭제 — ${code} ${name}`)
+  showToast('상품이 삭제되었습니다.', 'success')
 }
 
 function toggleDetailEdit() {
@@ -604,6 +659,7 @@ function saveDetailEdit() {
   document.getElementById('dEditBtn').textContent = '✏️ 수정'
   openDetailModal(_detailCode)
   showToast('상품 정보가 수정되었습니다.', 'success')
+  logActivity('update', '상품조회', `상품수정: ${_detailCode}`)
 }
 
 async function lockProductCode() {

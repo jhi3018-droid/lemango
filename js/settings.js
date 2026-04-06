@@ -311,6 +311,47 @@ function renderSettings() {
     </div>
   </div>`
 
+  // 부서 카드 (최종관리자 grade 4만 표시)
+  const isTopAdmin = State.currentUser && State.currentUser.grade === 4
+  let deptSection = ''
+  if (isTopAdmin) {
+    const deptListHtml = _depts.map((d, idx) => `
+      <div class="set-item" id="deptItem_${idx}">
+        <div class="set-item-view">
+          <span class="set-item-label" style="font-weight:600">${d}</span>
+          <button class="set-item-action set-item-edit" onclick="editDeptSetting(${idx})" title="수정">&#9998;</button>
+          <button class="set-item-action set-item-del" onclick="removeDeptSetting(${idx})" title="삭제">&#10005;</button>
+        </div>
+        <div class="set-item-editrow" style="display:none">
+          <input type="text" class="set-edit-input" value="${d}" data-field="val" style="flex:1" />
+          <button class="set-edit-save" onclick="saveDeptEdit(${idx})">저장</button>
+          <button class="set-edit-cancel" onclick="renderSettings()">취소</button>
+        </div>
+      </div>`).join('') || '<div class="set-empty">항목 없음</div>'
+
+    const deptCard = `<div class="set-card set-card-wide">
+      <div class="set-card-header">
+        <span class="set-card-title">부서 목록</span>
+        <span class="set-card-count">${_depts.length}</span>
+      </div>
+      <div class="set-list set-list-scroll">${deptListHtml}</div>
+      <div class="set-add-row">
+        <input type="text" id="setDeptName" placeholder="부서명 (예: 해외사업)" class="set-add-input" style="flex:1"
+          onkeydown="if(event.key==='Enter')addDeptSetting()" />
+        <button class="btn btn-new set-add-btn" onclick="addDeptSetting()">+ 추가</button>
+      </div>
+    </div>`
+
+    deptSection = `<div class="set-section">
+      <button class="set-section-btn" onclick="toggleSetSection(this)">
+        <span>회원 관리</span><span class="set-section-arrow">▼</span>
+      </button>
+      <div class="set-section-body">
+        <div class="set-grid">${deptCard}</div>
+      </div>
+    </div>`
+  }
+
   container.innerHTML = `
     <div class="settings-header">
       <h2 class="settings-title">기본 옵션 관리</h2>
@@ -360,7 +401,9 @@ function renderSettings() {
           ${wkCatCard}
         </div>
       </div>
-    </div>`
+    </div>
+
+    ${deptSection}`
 }
 
 function toggleSetSection(btn) {
@@ -398,6 +441,7 @@ function addDesignCodeSetting() {
   saveDesignCodes()
   renderSettings()
   showToast('디자인번호 추가됐습니다.', 'success')
+  logActivity('setting', '설정', `디자인번호 추가: ${code}`)
 }
 
 function editDesignCodeSetting(idx) {
@@ -429,6 +473,7 @@ function saveDesignCodeEdit(idx) {
   saveDesignCodes()
   renderSettings()
   showToast('수정됐습니다.', 'success')
+  logActivity('setting', '설정', `디자인번호 수정: ${code}`)
 }
 
 async function removeDesignCodeSetting(idx) {
@@ -439,6 +484,7 @@ async function removeDesignCodeSetting(idx) {
   saveDesignCodes()
   renderSettings()
   showToast('삭제됐습니다.', 'success')
+  logActivity('setting', '설정', `디자인번호 삭제: ${dc[0]}`)
 }
 
 // ===== 일반 설정 항목 CRUD =====
@@ -466,6 +512,7 @@ function addSettingItem(key) {
   populateAllSelects()
   renderSettings()
   showToast('추가됐습니다.', 'success')
+  logActivity('setting', '설정', `설정항목 추가: ${key}`)
 }
 
 function editSettingItem(key, idx) {
@@ -508,6 +555,7 @@ function saveSettingItem(key, idx) {
   populateAllSelects()
   renderSettings()
   showToast('수정됐습니다.', 'success')
+  logActivity('setting', '설정', `설정항목 수정: ${key}`)
 }
 
 async function removeSettingItem(key, idx) {
@@ -521,6 +569,7 @@ async function removeSettingItem(key, idx) {
   populateAllSelects()
   renderSettings()
   showToast('삭제됐습니다.', 'success')
+  logActivity('setting', '설정', `설정항목 삭제: ${key} "${label}"`)
 }
 
 // ===== 판매 채널 CRUD =====
@@ -532,6 +581,7 @@ function addPlatformSetting() {
   savePlatforms()
   renderSettings()
   showToast(`"${name}" 추가됐습니다.`, 'success')
+  logActivity('setting', '설정', `판매채널 추가: ${name}`)
 }
 
 function editPlatformSetting(idx) {
@@ -560,6 +610,7 @@ function savePlatformEdit(idx) {
   renderDashboard()
   renderSettings()
   showToast(`"${oldName}" → "${newName}" 변경됐습니다.`, 'success')
+  logActivity('setting', '설정', `판매채널 수정: ${oldName} → ${newName}`)
 }
 
 async function removePlatformSetting(idx) {
@@ -571,6 +622,7 @@ async function removePlatformSetting(idx) {
   renderDashboard()
   renderSettings()
   showToast('삭제됐습니다.', 'success')
+  logActivity('setting', '설정', `판매채널 삭제: ${name}`)
 }
 
 // ===== 디자인번호 엑셀 다운로드 =====
@@ -681,6 +733,7 @@ function addWorkCategorySetting() {
   populateAllSelects()
   renderSettings()
   showToast(`"${name}" 추가됐습니다.`, 'success')
+  logActivity('setting', '설정', `업무카테고리 추가: ${name}`)
 }
 
 function editWorkCategorySetting(idx) {
@@ -710,6 +763,7 @@ function saveWorkCategoryEdit(idx) {
   populateAllSelects()
   renderSettings()
   showToast(`"${oldName}" → "${newName}" 변경됐습니다.`, 'success')
+  logActivity('setting', '설정', `업무카테고리 수정: ${oldName} → ${newName}`)
 }
 
 async function removeWorkCategorySetting(idx) {
@@ -729,4 +783,55 @@ async function removeWorkCategorySetting(idx) {
   populateAllSelects()
   renderSettings()
   showToast('삭제됐습니다.', 'success')
+  logActivity('setting', '설정', `업무카테고리 삭제: ${name}`)
+}
+
+// =============================================
+// ===== 부서 CRUD (최종관리자 전용) =====
+// =============================================
+function addDeptSetting() {
+  const name = document.getElementById('setDeptName')?.value.trim()
+  if (!name) { showToast('부서명을 입력해주세요.', 'warning'); return }
+  if (_depts.includes(name)) { showToast(`"${name}"은 이미 존재합니다.`, 'error'); return }
+  _depts.push(name)
+  saveDepts()
+  populateAllSelects()
+  renderSettings()
+  showToast(`"${name}" 추가됐습니다.`, 'success')
+  logActivity('setting', '설정', `부서 추가: ${name}`)
+}
+
+function editDeptSetting(idx) {
+  const el = document.getElementById('deptItem_' + idx)
+  if (!el) return
+  el.querySelector('.set-item-view').style.display = 'none'
+  el.querySelector('.set-item-editrow').style.display = ''
+  el.querySelector('.set-edit-input')?.focus()
+}
+
+function saveDeptEdit(idx) {
+  const el = document.getElementById('deptItem_' + idx)
+  if (!el) return
+  const newName = el.querySelector('[data-field="val"]')?.value.trim()
+  const oldName = _depts[idx]
+  if (!newName) { showToast('부서명을 입력해주세요.', 'warning'); return }
+  if (newName === oldName) { renderSettings(); return }
+  if (_depts.includes(newName)) { showToast(`"${newName}"은 이미 존재합니다.`, 'error'); return }
+  _depts[idx] = newName
+  saveDepts()
+  populateAllSelects()
+  renderSettings()
+  showToast(`"${oldName}" → "${newName}" 변경됐습니다.`, 'success')
+  logActivity('setting', '설정', `부서 수정: ${oldName} → ${newName}`)
+}
+
+async function removeDeptSetting(idx) {
+  const name = _depts[idx]
+  if (!await korConfirm(`"${name}" 부서를 삭제하시겠습니까?`)) return
+  _depts.splice(idx, 1)
+  saveDepts()
+  populateAllSelects()
+  renderSettings()
+  showToast('삭제됐습니다.', 'success')
+  logActivity('setting', '설정', `부서 삭제: ${name}`)
 }

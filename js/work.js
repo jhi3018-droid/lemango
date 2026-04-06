@@ -249,6 +249,7 @@ function submitWork(e) {
   closeWorkRegisterModal()
   renderWorkCalendar()
   showToast(isEdit ? '업무일정이 수정되었습니다.' : '업무일정이 등록되었습니다.', 'success')
+  logActivity(isEdit ? 'update' : 'create', '업무일정', `${isEdit ? '업무수정' : '업무등록'}: ${item.title}`)
 }
 
 // ===== 상세 모달 =====
@@ -263,6 +264,7 @@ function openWorkDetailModal(no, fromDash = false) {
   modal.querySelector('.rmodal-title').textContent = '업무일정 상세'
   modal.showModal()
   centerModal(modal)
+  loadComments('work', no)
 }
 
 function buildWorkDetailContent(w, fromDash = false) {
@@ -285,6 +287,8 @@ function buildWorkDetailContent(w, fromDash = false) {
       <div class="ps-actions" style="margin-top:16px">
         ${actionBtns}
       </div>
+
+      ${buildCommentSection('work', w.no)}
     </div>`
 }
 
@@ -326,4 +330,5 @@ async function deleteWork(no) {
   closeWorkDetailModal()
   renderWorkCalendar()
   showToast('업무일정이 삭제되었습니다.', 'success')
+  logActivity('delete', '업무일정', `업무삭제: no=${no}`)
 }

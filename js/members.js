@@ -92,7 +92,7 @@ function renderMembersTable() {
     return `<tr>
       <td style="text-align:center">${i + 1}</td>
       <td><span class="${st.dotClass}"></span> ${st.label}</td>
-      <td>${esc(m.email || '')}</td>
+      <td><span class="member-email-link" onclick="openMemberProfileModal('${m.uid}')">${esc(m.email || '')}</span></td>
       <td>${esc(m.name || '')}</td>
       <td>${esc(m.dept || '')}</td>
       <td>${gradeBadgeHtml(m.grade)}</td>
@@ -118,6 +118,7 @@ function formatTimestamp(ts) {
 window.approveMember = async function(uid) {
   await db.collection('users').doc(uid).update({ status: 'approved' })
   showToast('회원이 승인되었습니다.')
+  logActivity('approve', '회원관리', `회원승인: uid=${uid}`)
   loadMembers()
 }
 
@@ -149,6 +150,7 @@ window.deleteMember = async function(uid) {
   if (!ok) return
   await db.collection('users').doc(uid).delete()
   showToast('회원이 삭제되었습니다.')
+  logActivity('delete', '회원관리', `회원삭제: uid=${uid}`)
   loadMembers()
 }
 
@@ -195,6 +197,7 @@ window.saveMemberEdit = async function() {
 
   await db.collection('users').doc(_editingMemberUid).update(updates)
   showToast('회원 정보가 수정되었습니다.')
+  logActivity('update', '회원관리', `회원수정: uid=${_editingMemberUid}`)
   closeMemberEditModal()
   loadMembers()
 }
@@ -225,7 +228,7 @@ window.saveMemberAdd = async function() {
   const grade = parseInt(document.getElementById('maGrade').value)
 
   if (!email || !name || !pw || !dept) return showToast('필수 항목을 입력해주세요.', 'warning')
-  if (pw.length < 4) return showToast('비밀번호는 4자 이상이어야 합니다.', 'warning')
+  if (pw.length < 6) return showToast('비밀번호는 6자 이상이어야 합니다.', 'warning')
 
   try {
     // 현재 로그인 정보 저장 (Admin SDK 없이 우회)
@@ -262,3 +265,191 @@ window.saveMemberAdd = async function() {
 }
 
 function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+
+// =============================================
+// ===== 회원 프로필 모달 =====
+// =============================================
+let _profileUid = null
+
+function _mpError(msg) {
+  const el = document.getElementById('mpError')
+  if (!el) return
+  el.textContent = msg; el.style.display = 'block'
+}
+function _mpClearError() {
+  const el = document.getElementById('mpError')
+  if (el) { el.textContent = ''; el.style.display = 'none' }
+}
+
+window.openMemberProfileModal = async function(uid) {
+  _profileUid = uid
+  _mpClearError()
+
+  // Firestore에서 최신 데이터 로드
+  let member
+  try {
+    const doc = await db.collection('users').doc(uid).get()
+    if (!doc.exists) { showToast('회원 정보를 찾을 수 없습니다.', 'danger'); return }
+    member = { id: doc.id, ...doc.data() }
+  } catch (e) {
+    showToast('회원 정보 로드 실패: ' + e.message, 'danger'); return
+  }
+
+  const cu = State.currentUser
+  const isSelf = cu && cu.uid === uid
+  const isTopAdmin = cu && cu.grade === 4
+  const canEditInfo = isSelf || isTopAdmin
+  const canEditEmail = isSelf || isTopAdmin
+
+  // 부서 select 채우기 (populateAllSelects에서도 하지만 모달 열 때 최신화)
+  populateSelect('mpDept', _depts, false, true)
+
+  // 필드 채우기
+  document.getElementById('mpTitle').textContent = isSelf ? '내 프로필' : `${member.name || member.email} 정보`
+  document.getElementById('mpEmail').value = member.email || ''
+  document.getElementById('mpEmail').readOnly = !canEditEmail
+  document.getElementById('mpName').value = member.name || ''
+  document.getElementById('mpName').readOnly = !canEditInfo
+  document.getElementById('mpPhone').value = member.phone || ''
+  document.getElementById('mpPhone').readOnly = !canEditInfo
+  const deptSel = document.getElementById('mpDept')
+  deptSel.value = member.dept || ''
+  deptSel.disabled = !canEditInfo
+  const gradeSel = document.getElementById('mpGrade')
+  gradeSel.value = member.grade || 1
+  gradeSel.disabled = !isTopAdmin
+  const created = member.createdAt ? formatTimestamp(member.createdAt) : '-'
+  document.getElementById('mpCreatedAt').value = created
+
+  // 비밀번호 섹션
+  const pwSelf = document.getElementById('mpPwSelf')
+  const pwAdmin = document.getElementById('mpPwAdmin')
+  ;['mpPwCurrent','mpPwNew','mpPwConfirm'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = ''
+  })
+  if (isSelf) {
+    pwSelf.style.display = ''; pwAdmin.style.display = 'none'
+  } else if (isTopAdmin) {
+    pwSelf.style.display = 'none'; pwAdmin.style.display = ''
+  } else {
+    pwSelf.style.display = 'none'; pwAdmin.style.display = 'none'
+  }
+
+  // 댓글 영역
+  const commentArea = document.getElementById('mpCommentArea')
+  if (commentArea) commentArea.innerHTML = buildCommentSection('member', uid)
+
+  const modal = document.getElementById('memberProfileModal')
+  if (modal) { modal.showModal(); centerModal(modal) }
+  loadComments('member', uid)
+}
+
+window.openMyProfile = function() {
+  if (!State.currentUser) return
+  openMemberProfileModal(State.currentUser.uid)
+}
+
+window.closeMemberProfileModal = function() {
+  const modal = document.getElementById('memberProfileModal')
+  if (modal) modal.close()
+  _profileUid = null
+}
+
+window.saveMemberProfile = async function() {
+  if (!_profileUid) return
+  _mpClearError()
+
+  const cu = State.currentUser
+  const isSelf = cu && cu.uid === _profileUid
+  const isTopAdmin = cu && cu.grade === 4
+  if (!isSelf && !isTopAdmin) { _mpError('수정 권한이 없습니다.'); return }
+
+  const email = document.getElementById('mpEmail').value.trim()
+  const name  = document.getElementById('mpName').value.trim()
+  const phone = document.getElementById('mpPhone').value.trim()
+  const dept  = document.getElementById('mpDept').value
+  const grade = parseInt(document.getElementById('mpGrade').value)
+
+  if (!name) { _mpError('이름을 입력해주세요.'); return }
+  if (!email) { _mpError('이메일을 입력해주세요.'); return }
+
+  try {
+    // 이메일 변경 처리 (Firebase Auth)
+    const currentAuthUser = auth.currentUser
+    if (isSelf && currentAuthUser && email !== currentAuthUser.email) {
+      // 본인 이메일 변경 — reauthenticate 필요할 수 있음
+      await currentAuthUser.updateEmail(email)
+    } else if (isTopAdmin && !isSelf) {
+      // 최종관리자가 다른 회원 이메일 변경 — Firestore만 업데이트 (Admin SDK 없이 Auth email은 변경 불가)
+      // Firestore 기록만 업데이트
+    }
+
+    // Firestore 업데이트
+    const updates = { email, name, phone, dept }
+    if (isTopAdmin) updates.grade = grade
+    await db.collection('users').doc(_profileUid).update(updates)
+
+    // 본인 정보 변경 시 헤더 갱신
+    if (isSelf) {
+      State.currentUser = { ...State.currentUser, ...updates }
+      updateHeaderUser(State.currentUser)
+    }
+
+    showToast('회원 정보가 저장되었습니다.')
+    closeMemberProfileModal()
+    // 회원관리 탭 열려있으면 새로고침
+    if (State.openTabs.includes('members')) loadMembers()
+  } catch (err) {
+    if (err.code === 'auth/requires-recent-login') {
+      _mpError('이메일 변경을 위해 재로그인이 필요합니다. 로그아웃 후 다시 시도해주세요.')
+    } else {
+      _mpError('저장 실패: ' + err.message)
+    }
+  }
+}
+
+window.changeMemberPassword = async function() {
+  _mpClearError()
+  const cu = State.currentUser
+  if (!cu || cu.uid !== _profileUid) { _mpError('본인만 비밀번호를 변경할 수 있습니다.'); return }
+
+  const currentPw = document.getElementById('mpPwCurrent').value
+  const newPw     = document.getElementById('mpPwNew').value
+  const confirmPw = document.getElementById('mpPwConfirm').value
+
+  if (!currentPw) { _mpError('현재 비밀번호를 입력해주세요.'); return }
+  if (newPw.length < 6) { _mpError('새 비밀번호는 6자 이상이어야 합니다.'); return }
+  if (newPw !== confirmPw) { _mpError('새 비밀번호가 일치하지 않습니다.'); return }
+
+  try {
+    const user = auth.currentUser
+    // reauthenticate
+    const credential = firebase.auth.EmailAuthProvider.credential(user.email, currentPw)
+    await user.reauthenticateWithCredential(credential)
+    await user.updatePassword(newPw)
+    ;['mpPwCurrent','mpPwNew','mpPwConfirm'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = ''
+    })
+    showToast('비밀번호가 변경되었습니다.', 'success')
+  } catch (err) {
+    if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+      _mpError('현재 비밀번호가 올바르지 않습니다.')
+    } else {
+      _mpError('비밀번호 변경 실패: ' + err.message)
+    }
+  }
+}
+
+window.resetMemberPassword = async function() {
+  if (!_profileUid) return
+  // Firestore에서 이메일 가져오기
+  try {
+    const doc = await db.collection('users').doc(_profileUid).get()
+    if (!doc.exists) { _mpError('회원 정보를 찾을 수 없습니다.'); return }
+    const email = doc.data().email
+    await auth.sendPasswordResetEmail(email)
+    showToast(`${email}로 비밀번호 초기화 이메일을 발송했습니다.`, 'success')
+  } catch (err) {
+    _mpError('이메일 발송 실패: ' + err.message)
+  }
+}

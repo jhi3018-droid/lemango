@@ -35,6 +35,11 @@ function renderTabBar() {
 
 // ===== 탭 열기 (nav 버튼 또는 탭 바 클릭) =====
 function openTab(tab) {
+  // 회원관리 탭 접근 제한: grade 3 이상만
+  if (tab === 'members' && State.currentUser && State.currentUser.grade < 3) {
+    showToast('관리자만 접근할 수 있습니다.', 'warning')
+    return
+  }
   // 이미 열려있으면 포커스만 이동
   if (!State.openTabs.includes(tab)) {
     State.openTabs.push(tab)
@@ -134,7 +139,8 @@ const _renderedTabs = new Set()
 
 function triggerTabRender(tab) {
   // 데이터가 아직 로드 안 됐으면 스킵 (init에서 일괄 렌더)
-  if (!State.allProducts.length && tab !== 'dashboard') return
+  // dashboard, board, members는 allProducts 불필요
+  if (!State.allProducts.length && !['dashboard', 'board', 'members'].includes(tab)) return
   if (_renderedTabs.has(tab)) return
   _renderedTabs.add(tab)
 
@@ -148,6 +154,7 @@ function triggerTabRender(tab) {
     case 'work':      renderWorkCalendar(); break
     case 'settings':  renderSettings(); break
     case 'members':   loadMembers(); break
+    case 'board':     renderBoard(); break
   }
 }
 
@@ -165,8 +172,18 @@ function bindTabs() {
   }
 
   // 뒤로가기/앞으로가기
-  window.addEventListener('popstate', () => {
-    const tab = location.hash.replace('#', '') || 'dashboard'
+  window.addEventListener('popstate', (e) => {
+    // 게시판 상세/글쓰기 → 목록 복귀
+    const detailView = document.getElementById('boardDetailView')
+    const writeView = document.getElementById('boardWriteView')
+    if ((detailView && detailView.style.display !== 'none') ||
+        (writeView && writeView.style.display !== 'none')) {
+      showBoardView('list')
+      renderBoardList()
+      return
+    }
+    const raw = location.hash.replace('#', '') || 'dashboard'
+    const tab = raw.split('/')[0]
     openTab(tab)
   })
 }

@@ -227,6 +227,9 @@ function openEventRegisterModal() {
   document.getElementById('evRegForm').reset()
   document.getElementById('evRegNo').value = ''
   modal.querySelector('.rmodal-title').textContent = '행사 등록'
+  // 신규 등록 시 댓글 숨김
+  const commentArea = document.getElementById('evCommentArea')
+  if (commentArea) { commentArea.style.display = 'none'; commentArea.innerHTML = '' }
   modal.showModal()
   centerModal(modal)
 }
@@ -263,6 +266,7 @@ function submitEvent(e) {
   closeEventRegisterModal()
   renderEventCalendar()
   showToast(isEdit ? '행사가 수정되었습니다.' : '행사가 등록되었습니다.', 'success')
+  logActivity(isEdit ? 'update' : 'create', '행사일정', `${isEdit ? '행사수정' : '행사등록'}: ${ev.name}`)
 }
 
 /* ---------- 수정 ---------- */
@@ -280,8 +284,15 @@ function editEvent(no) {
 
   const modal = document.getElementById('eventRegisterModal')
   modal.querySelector('.rmodal-title').textContent = '행사 수정'
+  // 댓글 영역 표시
+  const commentArea = document.getElementById('evCommentArea')
+  if (commentArea) {
+    commentArea.style.display = ''
+    commentArea.innerHTML = buildCommentSection('event', ev.no)
+  }
   modal.showModal()
   centerModal(modal)
+  loadComments('event', ev.no)
 }
 
 /* ---------- 삭제 ---------- */
@@ -292,6 +303,7 @@ async function deleteEvent(no) {
   saveEvents()
   renderEventCalendar()
   showToast('행사가 삭제되었습니다.', 'success')
+  logActivity('delete', '행사일정', `행사삭제: no=${no}`)
 }
 
 /* ---------- 초기 렌더 ---------- */

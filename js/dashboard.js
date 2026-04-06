@@ -2,29 +2,120 @@
 // ===== 대시보드 =====
 // =============================================
 function renderDashboard() {
-  renderKPI()
+  renderDashNotice()
+  renderDashActivity()
   renderBestList()
   renderSalesSummary()
   renderMiniChart()
   renderDashCalendar()
 }
 
-function renderKPI() {
-  const all = State.allProducts
-  const totalStock = all.reduce((s,p) => s + getTotalStock(p), 0)
-  const totalSales = all.reduce((s,p) => s + getTotalSales(p), 0)
-  const avgEx = totalStock > 0 ? Math.round(totalSales / totalStock * 100) : 0
-  document.getElementById('kpiRow').innerHTML = [
-    { icon: '👗', label: '전체 상품', value: `${all.length}개` },
-    { icon: '📦', label: '총 입고수량', value: `${totalStock.toLocaleString()}개` },
-    { icon: '🛍️', label: '총 판매수량', value: `${totalSales.toLocaleString()}개` },
-    { icon: '📊', label: '평균 소진율', value: `${avgEx}%` }
-  ].map(c => `
-    <div class="kpi-card">
-      <span class="kpi-icon">${c.icon}</span>
-      <div class="kpi-label">${c.label}</div>
-      <div class="kpi-value">${c.value}</div>
-    </div>`).join('')
+// ===== 대시보드 공지사항 미니 섹션 =====
+async function renderDashNotice() {
+  const el = document.getElementById('dashNoticeCard')
+  if (!el) return
+  el.innerHTML = `<div class="dash-mini-header"><span class="dash-mini-title">공지사항</span><span class="dash-mini-more" onclick="openTab('board');switchBoardType('notice')">더보기</span></div><div class="dash-mini-body" style="color:#bbb;font-size:12px">로딩 중...</div>`
+  if (!db) return
+
+  try {
+    // pinned 공지 우선, composite index 회피 — client sort
+    const snap = await db.collection('posts')
+      .where('boardType', '==', 'notice')
+      .get()
+    let posts = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    // pinned first, then createdAt desc
+    posts.sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1
+      if (!a.pinned && b.pinned) return 1
+      const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()
+      const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()
+      return tb - ta
+    })
+    posts = posts.slice(0, 5)
+
+    if (!posts.length) {
+      el.querySelector('.dash-mini-body').innerHTML = '<div style="color:#bbb;font-size:12px;padding:8px 0">공지사항이 없습니다.</div>'
+      return
+    }
+
+    el.querySelector('.dash-mini-body').innerHTML = posts.map(p => {
+      const ts = p.createdAt?.toDate ? p.createdAt.toDate() : new Date(p.createdAt)
+      const dateStr = ts.toISOString().slice(0, 10)
+      const isNew = (Date.now() - ts.getTime()) < 24 * 60 * 60 * 1000
+      return `<div class="dash-notice-item" onclick="openTab('board');switchBoardType('notice');openBoardPost('${p.id}')">
+        ${p.pinned ? '<span class="dash-notice-pin">&#9733;</span>' : ''}
+        <span class="dash-notice-text">${esc(p.title)}</span>
+        ${isNew ? '<span class="brd-new" style="font-size:8px;padding:0 3px">N</span>' : ''}
+        <span class="dash-notice-date">${dateStr}</span>
+      </div>`
+    }).join('')
+  } catch (e) {
+    console.error('Dashboard notice error:', e)
+    el.querySelector('.dash-mini-body').innerHTML = ''
+  }
+}
+
+// ===== 대시보드 최근 등록 미니 섹션 =====
+function renderDashActivity() {
+  const el = document.getElementById('dashActivityCard')
+  if (!el) return
+
+  const items = []
+
+  // 1. 신규기획
+  if (State.planItems && State.planItems.length) {
+    State.planItems.forEach(p => {
+      const d = p.registeredAt || p.createdAt || ''
+      items.push({
+        type: 'plan', label: '기획',
+        text: (p.productCode || p.sampleNo || '') + ' ' + (p.nameKr || ''),
+        date: d, sortDate: new Date(d || 0),
+        onclick: "openTab('plan')"
+      })
+    })
+  }
+
+  // 2. 행사일정
+  if (_events && _events.length) {
+    _events.forEach(e => {
+      const d = e.registeredAt || e.startDate || ''
+      items.push({
+        type: 'event', label: '행사',
+        text: (e.name || '') + ' (' + (e.startDate || '') + '~' + (e.endDate || '') + ')',
+        date: d, sortDate: new Date(d || 0),
+        onclick: "openTab('event')"
+      })
+    })
+  }
+
+  // 3. 업무일정
+  if (State.workItems && State.workItems.length) {
+    State.workItems.forEach(w => {
+      const d = w.registeredAt || w.startDate || ''
+      items.push({
+        type: 'work', label: '업무',
+        text: (w.title || w.category || '') + ' (' + (w.startDate || '') + ')',
+        date: d, sortDate: new Date(d || 0),
+        onclick: "openTab('work')"
+      })
+    })
+  }
+
+  // Sort by date desc, take top 7
+  items.sort((a, b) => b.sortDate - a.sortDate)
+  const top = items.slice(0, 7)
+
+  el.innerHTML = `<div class="dash-mini-header"><span class="dash-mini-title">최근 등록</span></div><div class="dash-mini-body">${
+    top.length ? top.map(item => {
+      const dateStr = item.date ? String(item.date).slice(5, 10) : ''
+      const cls = { plan: 'dash-act-plan', event: 'dash-act-event', work: 'dash-act-work' }[item.type] || ''
+      return `<div class="dash-act-item" onclick="${item.onclick}" style="cursor:pointer">
+        <span class="dash-act-badge ${cls}">${item.label}</span>
+        <span class="dash-act-detail">${esc(item.text)}</span>
+        <span class="dash-act-time">${dateStr}</span>
+      </div>`
+    }).join('') : '<div style="color:#bbb;font-size:12px;padding:8px 0">등록된 항목이 없습니다.</div>'
+  }</div>`
 }
 
 function renderBestList() {

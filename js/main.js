@@ -136,6 +136,7 @@ async function initApp() {
   bindTabs()
   makeDraggableResizable(document.getElementById('memberEditModal'))
   makeDraggableResizable(document.getElementById('memberAddModal'))
+  makeDraggableResizable(document.getElementById('memberProfileModal'))
   makeDraggableResizable(document.getElementById('detailModal'), 480, 300)
   makeDraggableResizable(document.getElementById('registerModal'))
   makeDraggableResizable(document.getElementById('planRegisterModal'))

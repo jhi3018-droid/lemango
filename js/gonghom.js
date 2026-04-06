@@ -640,5 +640,6 @@ function confirmGonghomUpload() {
     let msg = `카페24 주문 반영: ${parts.join(', ')}`
     if (excludes.length > 0) msg += ` (${excludes.join(', ')} 제외)`
     showToast(msg, 'success')
+    logActivity('upload', '매출현황', `카페24 업로드: ${parts.join(', ')}`)
   }
 }

@@ -73,6 +73,22 @@ function saveSettings() {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(_settings))
 }
 
+// =============================================
+// ===== 부서 관리 =====
+// =============================================
+const DEFAULT_DEPTS = ['경영지원', '디자인', '생산관리', '영업/마케팅', '물류', 'IT']
+
+let _depts = (() => {
+  try {
+    const saved = localStorage.getItem('lemango_depts_v1')
+    return saved ? JSON.parse(saved) : [...DEFAULT_DEPTS]
+  } catch { return [...DEFAULT_DEPTS] }
+})()
+
+function saveDepts() {
+  localStorage.setItem('lemango_depts_v1', JSON.stringify(_depts))
+}
+
 // select 요소 하나를 채우는 유틸
 function populateSelect(id, items, withAll = false, withBlank = false) {
   const el = document.getElementById(id)
@@ -117,6 +133,11 @@ function populateAllSelects() {
   // 업무일정 카테고리
   populateSelect('wkCategory',   _workCategories,   true)
   populateSelect('wkRegCategory', _workCategories)
+  // 부서 select (회원가입·회원수정·회원추가·프로필)
+  populateSelect('signupDept',   _depts, false, true)
+  populateSelect('meEditDept',   _depts, false, true)
+  populateSelect('maDept',       _depts, false, true)
+  populateSelect('mpDept',       _depts, false, true)
 }
 
 // ===== 전역 상태 =====
@@ -134,7 +155,15 @@ const State = {
   currentUser: null,
   modal:   { images: [], idx: 0 },
   openTabs:  ['dashboard'],
-  activeTab: 'dashboard'
+  activeTab: 'dashboard',
+  boardPosts: [],
+  boardFiltered: [],
+  boardPage: 1,
+  boardPageSize: 20,
+  boardType: 'notice',
+  boardAttachments: [],
+  currentPost: null,
+  editingPostId: null
 }
 
 // 탭 ID → 표시 라벨 매핑
@@ -147,7 +176,8 @@ const TAB_LABELS = {
   event:     '행사일정',
   work:      '업무일정',
   settings:  '설정',
-  members:   '회원관리'
+  members:   '회원관리',
+  board:     '게시판'
 }
 
 // =============================================

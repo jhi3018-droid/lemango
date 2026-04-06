@@ -554,5 +554,6 @@ function confirmSabangnetUpload() {
     let msg = `사방넷 주문: ${parts.join(', ')}`
     if (excludes.length > 0) msg += ` (${excludes.join(', ')})`
     showToast(msg, 'success')
+    logActivity('upload', '매출현황', `사방넷 업로드: ${parts.join(', ')}`)
   }
 }

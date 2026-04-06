@@ -1,6 +1,16 @@
 // =============================================
 // ===== 상품조회 =====
 // =============================================
+function prodStatusBadge(status) {
+  if (!status) return '<span class="prod-status-badge prod-status-default">-</span>'
+  const cls = {
+    '지속생산': 'prod-status-active',
+    '단종': 'prod-status-disc',
+    '시즌한정': 'prod-status-season',
+    '샘플': 'prod-status-sample'
+  }[status] || 'prod-status-default'
+  return `<span class="prod-status-badge ${cls}">${status}</span>`
+}
 // 품번 13자리에서 성별 코드(char 2) 추출
 function _codeGender(code) {
   return (code && code.length === 13) ? code[2] : null
@@ -111,6 +121,7 @@ const PRODUCT_COLUMNS = [
   { key:'salePrice',  label:'판매가',    fixed:false, thAttr:'data-key="salePrice" style="text-align:right"', td:p=>`<td style="text-align:right"><span class="price">${fmtPrice(p.salePrice)}</span></td>` },
   { key:'costPrice',  label:'원가',      fixed:false, thAttr:'data-key="costPrice" style="text-align:right"', td:p=>`<td style="text-align:right"><span class="price">${fmtPrice(p.costPrice)}</span></td>` },
   { key:'type',       label:'타입',      fixed:false, thAttr:'data-key="type"', td:p=>`<td>${typeBadge(p.type)}</td>` },
+  { key:'productionStatus', label:'생산상태', fixed:false, thAttr:'data-key="productionStatus" style="width:80px"', td:p=>`<td>${prodStatusBadge(p.productionStatus)}</td>` },
   { key:'backStyle',  label:'백스타일',  fixed:false, thAttr:'data-key="backStyle"', td:p=>`<td style="font-size:12px;max-width:120px;overflow:hidden;text-overflow:ellipsis">${p.backStyle||'-'}</td>` },
   { key:'legCut',     label:'레그컷',    fixed:false, thAttr:'data-key="legCut"', td:p=>`<td style="font-size:12px">${p.legCut||'-'}</td>` },
   { key:'madeMonth',  label:'제조년월',  fixed:false, thAttr:'data-key="madeMonth"', td:p=>`<td style="font-size:12px">${p.madeMonth||'-'}</td>` },
