@@ -8,6 +8,44 @@ function renderDashboard() {
   renderSalesSummary()
   renderMiniChart()
   renderDashCalendar()
+  checkEventAlerts()
+  checkPlanAlerts()
+}
+
+// ===== 알림 자동 생성: 행사일정 =====
+function checkEventAlerts() {
+  const today = new Date().toISOString().slice(0, 10)
+  const soon = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10)
+  _events.forEach(ev => {
+    if (ev.startDate === today) {
+      addNotification('event_start', `행사 시작: ${ev.name}`, `${ev.channel || ''} ${ev.startDate}~${ev.endDate}`, '#event')
+    } else if (ev.startDate > today && ev.startDate <= soon) {
+      const days = Math.ceil((new Date(ev.startDate) - new Date(today)) / 86400000)
+      addNotification('event_start', `행사 D-${days}: ${ev.name}`, `${ev.channel || ''} ${ev.startDate} 시작`, '#event')
+    }
+    if (ev.endDate === today) {
+      addNotification('event_end', `행사 종료: ${ev.name}`, `${ev.channel || ''} 오늘 종료`, '#event')
+    }
+  })
+}
+
+// ===== 알림 자동 생성: 기획일정 마감 =====
+function checkPlanAlerts() {
+  const today = new Date().toISOString().slice(0, 10)
+  const soon = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10)
+  State.planItems.filter(it => !it.confirmed).forEach(it => {
+    if (!it.schedule) return
+    SCHEDULE_DEFS.forEach(def => {
+      const sch = it.schedule[def.key]
+      if (!sch || !sch.end) return
+      if (sch.end === today) {
+        addNotification('plan_deadline', `기획 마감: ${def.label}`, `${it.productCode || it.nameKr || ''} ${def.label} 오늘 마감`, '#plan')
+      } else if (sch.end > today && sch.end <= soon) {
+        const days = Math.ceil((new Date(sch.end) - new Date(today)) / 86400000)
+        addNotification('plan_deadline', `기획 D-${days}: ${def.label}`, `${it.productCode || it.nameKr || ''} ${def.label} ${sch.end} 마감`, '#plan')
+      }
+    })
+  })
 }
 
 // ===== 대시보드 공지사항 미니 섹션 =====
@@ -464,7 +502,7 @@ function openDashDayModal(dateStr) {
   if (events.length) {
     sections.push(`<div class="ddm-section">
       <div class="ddm-section-title">행사일정 <span class="ddm-count">${events.length}</span></div>
-      ${events.map(e => `<div class="ddm-row" onclick="openDashEventInfo(${e.no})">
+      ${events.map(e => `<div class="ddm-row" onclick="openEventDetailModal(${e.no})">
         <span class="ddm-badge" style="background:var(--primary);color:#fff">${esc(e.channel || '')}</span>
         <span class="ddm-item-name">${esc(e.name)}</span>
         <span class="ddm-item-period">${e.startDate} ~ ${e.endDate}</span>
@@ -628,35 +666,34 @@ function openDashEventInfo(no) {
   const title = document.getElementById('psModalTitle')
   const body  = document.getElementById('psModalBody')
 
-  title.textContent = '행사 정보'
-
   const status = getEventStatus(ev)
   const statusBadge = { '예정': 'badge-warning', '진행중': 'badge-success', '종료': 'badge-muted' }
   const color = EV_COLORS[ev.no % EV_COLORS.length]
 
+  title.innerHTML = `<span class="ev-info-channel" style="background:${color.bar}">${esc(ev.channel || '')}</span> ${esc(ev.name)}`
+
   body.innerHTML = `
     <div class="ps-ev-info">
-      <div class="ps-ev-color" style="background:${color.bar}"></div>
       <div class="ps-ev-detail">
         <table class="ps-phase-table">
           <tbody>
-            <tr><td class="ps-label">행사명</td><td><strong>${esc(ev.name)}</strong></td></tr>
-            <tr><td class="ps-label">채널</td><td>${esc(ev.channel || '-')}</td></tr>
-            <tr><td class="ps-label">기간</td><td>${ev.startDate} ~ ${ev.endDate}</td></tr>
-            <tr><td class="ps-label">상태</td><td><span class="badge ${statusBadge[status] || ''}">${status}</span></td></tr>
+            <tr><td class="ps-label">기간</td><td>${ev.startDate} ~ ${ev.endDate} <span class="badge ${statusBadge[status] || ''}" style="margin-left:6px">${status}</span></td></tr>
             ${ev.discount ? `<tr><td class="ps-label">할인율</td><td>${ev.discount}%</td></tr>` : ''}
             ${ev.support ? `<tr><td class="ps-label">당사지원</td><td>${ev.support}%</td></tr>` : ''}
             ${ev.memo ? `<tr><td class="ps-label">메모</td><td>${esc(ev.memo)}</td></tr>` : ''}
           </tbody>
         </table>
-        <div class="ps-actions">
-          <button class="btn btn-primary btn-sm" onclick="closePlanScheduleModal(); openTab('event'); setTimeout(()=>editEvent(${ev.no}),200)">수정하러 가기</button>
+        <div class="ps-actions" style="display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" onclick="closePlanScheduleModal(); openEventDetailModal(${ev.no})">상세보기</button>
+          <button class="btn btn-outline btn-sm" onclick="closePlanScheduleModal(); openTab('event')">행사일정 탭</button>
         </div>
       </div>
-    </div>`
+    </div>
+    <div id="dashEvCommentArea" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">${buildCommentSection('event', ev.no)}</div>`
 
   modal.showModal()
   centerModal(modal)
+  loadComments('event', ev.no)
 }
 
 // ===== 대시보드 → 기획일정 날짜 기준 검색으로 이동 =====

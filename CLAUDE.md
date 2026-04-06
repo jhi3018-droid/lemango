@@ -1709,6 +1709,83 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 ---
 
+### 2026-04-06 (추가3)
+
+#### 바코드 엑셀 업로드 + 모달 바코드 표시
+- `openBarcodeUploadModal()` / `closeBarcodeUploadModal()` / `downloadBarcodeSample()` / `handleBarcodeUpload()` / `renderBarcodePreview()` / `confirmBarcodeUpload()` — `js/stock.js`
+- `barcodeUploadModal` 다이얼로그 — `index.html`
+- 상세 모달 재고현황 섹션에 바코드 테이블 추가 (수정 모드에서 편집 가능)
+- 엑셀 샘플: 품번 | XS~2XL | F (7사이즈)
+
+#### 상세모달 기본정보 2컬럼 그리드
+- cafe24Code/barcode 필드를 기본정보에서 제거 (쇼핑몰 코드 섹션으로 이동)
+- `.detail-basic-grid` 2컬럼 CSS Grid 레이아웃
+
+#### 성별 필드 + 사이즈 규격 그리드 (sizeSpec)
+- `SIZES` 상수 확장: `['XS','S','M','L','XL','2XL','F']` (7사이즈)
+- `GENDER_MAP = { W: '여성', M: '남성', U: '공용' }`
+- `ensureSizeSpec(p)` — sizeSpec 마이그레이션 헬퍼 (누락 키 자동 보충)
+- `sizeSpec` 중첩 객체: `{ bust: {XS:'',S:'',...}, waist:{...}, hip:{...}, etc:{...} }`
+- 상세 모달: 7컬럼 × 4행 사이즈 규격 그리드 (보기/수정 모드)
+- 신규등록 모달: 동일 sizeSpec 그리드 동적 생성
+- 전체 파일 SIZES 동적 참조: `Object.fromEntries(SIZES.map(...))` (stock, barcodes, excel, plan, gonghom, sabangnet)
+
+#### 수정모드 모달 종료 확인 (safeCloseModal)
+- `safeCloseModal(modal, isEditing, closeFn)` — `js/utils.js`
+- `_closingInProgress` 플래그로 중복 호출 방지
+- 8개 모달 적용: detailModal, planDetailModal, registerModal, eventRegisterModal, stockRegisterModal, outgoingModal, barcodeUploadModal, workRegisterModal
+- `cancel` 이벤트 (ESC키) → `modalCloseMap` 라우팅 — `js/main.js`
+
+#### korConfirm `<dialog>` 전환
+- `korConfirm()` — div overlay → `<dialog>` with `showModal()` (top-layer 스택)
+- `resolved` 플래그 + `{ once: true }` 리스너 → 중복 resolve 방지
+- CSS: `position:fixed; top:50%; left:50%; transform:translate(-50%,-50%)` 중앙 배치
+
+#### 모든 close 함수 force 파라미터
+- 8개 close 함수에 `force` 파라미터 추가
+- 저장 후 닫기: `close*(true)` → 확인 없이 바로 닫기
+- X버튼/ESC: `close*()` → `safeCloseModal` 확인
+
+#### 상품 타입 기본값 전체 등록
+- `DEFAULT_SETTINGS.types`: 3개 → 15개 (onepiece~accessories)
+
+#### 알림 시스템
+- **`js/core.js`**: `_notifications` localStorage, `addNotification()`, `cleanOldNotifications()`, `timeAgo()`, `NOTIF_ICONS` (5종)
+- **`js/utils.js`**: `renderNotifications()`, `toggleNotifDropdown()`, `clickNotification()`, `dismissNotification()`, `clearAllNotifications()`
+- **`index.html`**: 헤더 벨 아이콘 + 배지 + 드롭다운 (`notif-wrap`)
+- **알림 자동 생성 5종**:
+  - `event_start` / `event_end` — 행사 시작/종료 D-3 이내 (`js/dashboard.js` `checkEventAlerts()`)
+  - `plan_deadline` — 기획 단계 마감 D-3 이내 (`js/dashboard.js` `checkPlanAlerts()`)
+  - `board_notice` — 공지게시판 새 글 (`js/board.js`)
+  - `member_pending` — 승인대기 회원 (`js/members.js` `checkMemberAlerts()`, grade>=3)
+- 중복 방지: 동일 type+title 1시간 이내 무시
+- 30일 경과 알림 자동 삭제, 최대 50개
+
+#### 행사일정 모달 — 보기/수정 모드 분리
+- **`openEventDetailModal(no)`** — 보기 모드로 열기 (읽기 전용)
+- **`openEventRegisterModal(dateStr)`** — 신규 등록 (바로 편집 상태)
+- **`toggleEventEdit()`** — 보기↔수정 전환, 취소 시 원래 데이터 복원
+- **`saveEventEdit()`** / **`submitEventNew()`** — 수정/등록 저장
+- **`buildEventDetailContent(ev)`** — `.dfield` 패턴 (dfield-value + input 토글)
+- 캘린더 바 클릭 → `openEventDetailModal()` (보기 모드, 기존 editEvent 대체)
+- 보기 모드 ESC/X → 바로 닫힘, 수정 모드에서만 종료 확인
+- 헤더 버튼: 보기(수정/✕) / 수정(저장/취소/✕) / 신규(등록/✕)
+- `index.html` — eventRegisterModal 구조 변경 (form → div, 동적 콘텐츠)
+- CSS: `#eventRegisterModal.edit-mode` 전환, `.ev-detail-fields`, `.ev-date-pair`, `.ev-pct-field`
+
+#### 대시보드 행사 조회 모달 개선
+- **`openDashEventInfo(no)`** — 채널 컬러 배지 + 행사명 헤더, 상태 배지
+- "상세보기" 버튼 → `openEventDetailModal(no)` (행사 상세 모달 직접 오픈)
+- "행사일정 탭" 버튼 → 행사일정 탭 이동
+- 하단 댓글 섹션 추가 (`buildCommentSection('event', ev.no)`)
+
+#### 행사일정 댓글 연동
+- `buildCommentSection('event', ev.no)` + `loadComments('event', ev.no)` — 행사 상세모달 하단
+- 대시보드 행사 조회 모달에도 동일 댓글 표시
+- `dashDayModal` 행사 행 클릭 → `openEventDetailModal()` (기존 `openDashEventInfo` 대체)
+
+---
+
 ## 다음 작업 후보 (미구현)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 데이터 영속성 (localStorage 또는 서버 연동)

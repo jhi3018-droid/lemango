@@ -151,8 +151,33 @@ async function initApp() {
   makeDraggableResizable(document.getElementById('workRegisterModal'))
   makeDraggableResizable(document.getElementById('workDetailModal'))
   makeDraggableResizable(document.getElementById('dashDayModal'), 360, 200)
+  makeDraggableResizable(document.getElementById('barcodeUploadModal'), 500, 300)
+  makeDraggableResizable(document.getElementById('downloadFormatModal'), 400, 300)
+  makeDraggableResizable(document.getElementById('downloadFormatEditorModal'), 600, 400)
   document.getElementById('dashDayModal')?.addEventListener('click', e => {
     if (e.target === e.currentTarget) e.currentTarget.close()
+  })
+
+  // 모든 모달 ESC(cancel) 키 차단 → 각 close 함수로 위임
+  const modalCloseMap = {
+    detailModal: closeDetailModal,
+    planDetailModal: closePlanDetailModal,
+    registerModal: closeRegisterModal,
+    eventRegisterModal: closeEventRegisterModal,
+    stockRegisterModal: closeStockRegisterModal,
+    outgoingModal: closeOutgoingModal,
+    barcodeUploadModal: closeBarcodeUploadModal,
+    workRegisterModal: closeWorkRegisterModal,
+  }
+  document.querySelectorAll('dialog').forEach(modal => {
+    modal.addEventListener('cancel', e => {
+      const handler = modalCloseMap[modal.id]
+      if (handler) {
+        e.preventDefault()
+        handler()
+      }
+      // modals not in the map close normally via default ESC behavior
+    })
   })
 
   // 해시 기반 초기 탭
@@ -222,6 +247,16 @@ async function initApp() {
   ;['pKeyword','sKeyword','slKeyword','npKeyword'].forEach(id => {
     const el = document.getElementById(id)
     if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') el.closest('.tab-content')?.querySelector('.btn-primary')?.click() })
+  })
+  // 알림 초기화
+  cleanOldNotifications()
+  renderNotifications()
+  checkMemberAlerts()
+  // 알림 드롭다운 외부 클릭 닫기
+  document.addEventListener('click', e => {
+    const wrap = document.getElementById('notifWrap')
+    const dd = document.getElementById('notifDropdown')
+    if (wrap && dd && !wrap.contains(e.target)) dd.style.display = 'none'
   })
 }
 

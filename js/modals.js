@@ -172,22 +172,8 @@ function openDetailModal(productCode) {
   document.getElementById('dNameKr').textContent  = p.nameKr || ''
   document.getElementById('dCode').textContent    = p.productCode
 
-  // 이미지 (SUM 첫 번째 우선, 없으면 다른 이미지, 없으면 로고)
-  const FALLBACK_LOGO = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='60' viewBox='0 0 200 60'%3E%3Crect fill='%231a1a2e' width='200' height='60' rx='8'/%3E%3Ctext x='100' y='37' text-anchor='middle' fill='%23c9a96e' font-family='Inter,sans-serif' font-size='18' font-weight='700' letter-spacing='3'%3ELEMANGO%3C/text%3E%3C/svg%3E"
-  const allImgs = getAllImages(p)
-  const sumFirst = p.images?.sum?.[0] || null
-  const mainImg = document.getElementById('dImgMain')
-  const noneEl  = document.getElementById('dImgNone')
-  mainImg.src = sumFirst || allImgs[0] || FALLBACK_LOGO
-  mainImg.style.display = ''
-  noneEl.style.display = 'none'
-  mainImg.style.cursor = 'pointer'
-  mainImg.title = '클릭하면 새 탭에서 열립니다'
-  mainImg.onclick = () => { if (mainImg.src) window.open(mainImg.src) }
-  // 썸네일
-  document.getElementById('dImgThumbs').innerHTML = allImgs.map((url, i) =>
-    `<img src="${url}" class="dimg-thumb${i===0?' active':''}" onclick="dSwitchImg(this,'${url}')" onerror="this.style.display='none'" />`
-  ).join('')
+  // 이미지 네비게이션 초기화
+  initDetailImages(p)
 
   // 영상
   const vw = document.getElementById('dVideoWrap')
@@ -206,11 +192,130 @@ function openDetailModal(productCode) {
   loadComments('product', p.productCode)
 }
 
-function dSwitchImg(el, url) {
-  document.getElementById('dImgMain').src = url
-  document.getElementById('dImgMain').style.display = ''
-  document.querySelectorAll('.dimg-thumb').forEach(t => t.classList.remove('active'))
-  el.classList.add('active')
+// ===== 상세 모달 이미지 네비게이션 =====
+const FALLBACK_LOGO = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='60' viewBox='0 0 200 60'%3E%3Crect fill='%231a1a2e' width='200' height='60' rx='8'/%3E%3Ctext x='100' y='37' text-anchor='middle' fill='%23c9a96e' font-family='Inter,sans-serif' font-size='18' font-weight='700' letter-spacing='3'%3ELEMANGO%3C/text%3E%3C/svg%3E"
+let _detailImgList = []
+let _detailImgIdx = 0
+
+function getDetailImages(p) {
+  const imgs = []
+  if (p.mainImage) imgs.push(p.mainImage)
+  if (p.images) {
+    ;['sum','lemango','noir','external','design','shoot'].forEach(key => {
+      const arr = p.images[key]
+      if (Array.isArray(arr)) arr.forEach(url => { if (url && !imgs.includes(url)) imgs.push(url) })
+    })
+  }
+  return imgs
+}
+
+function initDetailImages(p) {
+  _detailImgList = getDetailImages(p)
+  _detailImgIdx = 0
+
+  const mainImg = document.getElementById('dImgMain')
+  const noneEl  = document.getElementById('dImgNone')
+  mainImg.src = _detailImgList[0] || FALLBACK_LOGO
+  mainImg.style.display = ''
+  noneEl.style.display = 'none'
+  mainImg.style.cursor = 'pointer'
+  mainImg.title = '클릭하면 새 탭에서 열립니다'
+  mainImg.onclick = () => { if (mainImg.src) window.open(mainImg.src) }
+
+  // 화살표 표시/숨김
+  const hasMulti = _detailImgList.length > 1
+  document.getElementById('dImgPrev').style.display = hasMulti ? '' : 'none'
+  document.getElementById('dImgNext').style.display = hasMulti ? '' : 'none'
+  updateDetailImgCounter()
+  renderDetailThumbs()
+}
+
+function updateDetailMainImg() {
+  const img = document.getElementById('dImgMain')
+  if (_detailImgList.length > 0) {
+    img.src = _detailImgList[_detailImgIdx]
+  }
+  updateDetailImgCounter()
+  // 썸네일 active 동기화
+  document.querySelectorAll('#dImgThumbs .dimg-thumb').forEach((t, i) => {
+    t.classList.toggle('active', i === _detailImgIdx)
+  })
+}
+
+function updateDetailImgCounter() {
+  const counter = document.getElementById('dImgCounter')
+  if (_detailImgList.length > 1) {
+    counter.textContent = `${_detailImgIdx + 1} / ${_detailImgList.length}`
+    counter.style.display = ''
+  } else {
+    counter.style.display = 'none'
+  }
+}
+
+function detailImgPrev() {
+  if (_detailImgList.length <= 1) return
+  _detailImgIdx = (_detailImgIdx - 1 + _detailImgList.length) % _detailImgList.length
+  updateDetailMainImg()
+}
+
+function detailImgNext() {
+  if (_detailImgList.length <= 1) return
+  _detailImgIdx = (_detailImgIdx + 1) % _detailImgList.length
+  updateDetailMainImg()
+}
+
+function detailImgGoTo(idx) {
+  _detailImgIdx = idx
+  updateDetailMainImg()
+}
+
+let _thumbMoved = 0
+
+function renderDetailThumbs() {
+  const container = document.getElementById('dImgThumbs')
+  if (!container) return
+  if (_detailImgList.length <= 1) { container.innerHTML = ''; return }
+  container.innerHTML = _detailImgList.map((url, i) =>
+    `<img class="dimg-thumb${i === _detailImgIdx ? ' active' : ''}" src="${url}" draggable="false" onmouseup="if(_thumbMoved<5)detailImgGoTo(${i})" onerror="this.style.display='none'" />`
+  ).join('')
+  _initThumbDragScroll(container)
+}
+
+function _initThumbDragScroll(el) {
+  let isDown = false, startX = 0, scrollLeft = 0
+
+  el.onmousedown = function(e) {
+    isDown = true
+    _thumbMoved = 0
+    startX = e.pageX
+    scrollLeft = el.scrollLeft
+    el.style.cursor = 'grabbing'
+    e.preventDefault()
+  }
+
+  document.addEventListener('mousemove', function(e) {
+    if (!isDown) return
+    const dx = e.pageX - startX
+    _thumbMoved = Math.abs(dx)
+    el.scrollLeft = scrollLeft - dx
+  })
+
+  document.addEventListener('mouseup', function() {
+    if (!isDown) return
+    isDown = false
+    el.style.cursor = 'grab'
+  })
+
+  el.ontouchstart = function(e) {
+    startX = e.touches[0].pageX
+    scrollLeft = el.scrollLeft
+    _thumbMoved = 0
+  }
+  el.ontouchmove = function(e) {
+    const dx = e.touches[0].pageX - startX
+    _thumbMoved = Math.abs(dx)
+    el.scrollLeft = scrollLeft - dx
+  }
 }
 
 function buildDetailContent(p) {
@@ -340,17 +445,19 @@ function buildDetailContent(p) {
   return `
     <div class="dsection">
       <div class="dsection-title">기본 정보</div>
-      <div class="dsection-grid">
+      <div class="detail-basic-grid">
         ${field('브랜드',    'brand',       p.brand,    'select', brandOpts)}
-        ${field('판매상태',  'saleStatus',  p.saleStatus||'판매중', 'select', saleStatusOpts)}
         ${productCodeField}
+        ${field('판매상태',  'saleStatus',  p.saleStatus||'판매중', 'select', saleStatusOpts)}
         ${field('샘플번호',  'sampleNo',    p.sampleNo)}
-        ${field('카페24 코드', 'cafe24Code', p.cafe24Code)}
-        ${field('바코드',    'barcode',     p.barcode)}
-        ${field('상품명(한글)', 'nameKr',   p.nameKr,   'text','','span2')}
-        ${field('상품명(영문)', 'nameEn',   p.nameEn,   'text','','span2')}
+        ${field('상품명(한글)', 'nameKr',   p.nameKr)}
+        ${field('상품명(영문)', 'nameEn',   p.nameEn)}
         ${field('색상(한글)', 'colorKr',   p.colorKr)}
         ${field('색상(영문)', 'colorEn',   p.colorEn)}
+        ${field('성별', 'gender', GENDER_MAP[p.gender] || p.gender || '', 'select',
+          `<option value=""${!p.gender?' selected':''}>-</option>` +
+          Object.entries(GENDER_MAP).map(([v,l]) => `<option value="${v}"${p.gender===v?' selected':''}>${l}</option>`).join('')
+        )}
       </div>
     </div>
 
@@ -383,11 +490,29 @@ function buildDetailContent(p) {
 
     <div class="dsection">
       <div class="dsection-title">사이즈 규격</div>
-      <div class="dsection-grid">
-        ${field('가슴(cm)', 'bust',  p.bust)}
-        ${field('허리(cm)', 'waist', p.waist)}
-        ${field('엉덩이(cm)', 'hip', p.hip)}
-        ${field('모델 착용사이즈', 'modelSize', p.modelSize, 'text','','span3')}
+      <div style="padding:10px 12px">
+        ${(() => {
+          const spec = ensureSizeSpec(p)
+          let h = '<div class="size-spec-table-wrap"><table class="size-spec-table"><thead><tr><th></th>'
+          SIZES.forEach(sz => { h += `<th>${sz}</th>` })
+          h += '</tr></thead><tbody>'
+          SPEC_ROWS.forEach(r => {
+            h += '<tr>'
+            h += `<td class="size-spec-label">${r.label}</td>`
+            SIZES.forEach(sz => {
+              const v = (spec[r.key] && spec[r.key][sz]) || ''
+              h += `<td><span class="dfield-value size-spec-val">${esc(v) || '-'}</span><input type="text" class="size-spec-input" data-spec="${r.key}" data-size="${sz}" value="${(v||'').replace(/"/g,'&quot;')}" /></td>`
+            })
+            h += '</tr>'
+          })
+          h += '</tbody></table></div>'
+          return h
+        })()}
+        <div class="dfield" style="margin-top:10px">
+          <span class="dfield-label">모델착용사이즈</span>
+          <span class="dfield-value">${esc(p.modelSize) || '-'}</span>
+          <input type="text" data-key="modelSize" value="${(p.modelSize||'').replace(/"/g,'&quot;')}" />
+        </div>
       </div>
     </div>
 
@@ -431,6 +556,21 @@ function buildDetailContent(p) {
             data-status="생산중단"
             onclick="setProductionStatus(this, '생산중단')">생산중단</button>
         </div>
+        <div class="detail-bc-section">
+          <div class="detail-bc-title">바코드</div>
+          <table class="detail-bc-table">
+            <thead><tr><th>사이즈</th><th>바코드</th></tr></thead>
+            <tbody>
+              ${sizes.map(sz => {
+                const bc = (p.barcodes && p.barcodes[sz]) || ''
+                return `<tr>
+                  <td class="detail-bc-sz">${sz}</td>
+                  <td><span class="dfield-value detail-bc-val">${esc(bc) || '-'}</span><input type="text" class="detail-bc-input" data-size="${sz}" value="${(bc||'').replace(/"/g,'&quot;')}" /></td>
+                </tr>`
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -454,11 +594,12 @@ function buildDetailContent(p) {
     </div>
 
     <div class="dsection">
-      <div class="dsection-title dimg-toggle collapsed" onclick="toggleDImg('dImgBody')">
-        이미지 URL <span class="dimg-arrow">▶</span>
+      <div class="dsection-title dimg-toggle" onclick="toggleDImg('dImgBody')">
+        이미지 URL <span class="dimg-arrow">▼</span>
       </div>
-      <div id="dImgBody" class="dsection-grid col1 dimg-hidden">
+      <div id="dImgBody" class="dsection-grid col1">
         ${(() => {
+          const mainImg  = p.mainImage || ''
           const jasaUrls = [...(p.images?.lemango||[]), ...(p.images?.noir||[])]
           const extUrls  = p.images?.external || []
           const sumUrls  = p.images?.sum || []
@@ -468,6 +609,10 @@ function buildDetailContent(p) {
             return first ? `<span class="dimg-preview">${first}</span>` : ''
           }
           return `
+        <div class="dimg-sub">
+          <div class="dimg-sub-title collapsed" onclick="toggleDImg('dImgMain')">대표이미지 ${preview(mainImg)}<span class="dimg-arrow">▶</span></div>
+          <div id="dImgMain" class="dimg-hidden">${urlField('대표이미지', 'mainImage', mainImg, 'text')}</div>
+        </div>
         <div class="dimg-sub">
           <div class="dimg-sub-title collapsed" onclick="toggleDImg('dImgJasa')">자사몰 ${preview(jasaUrls)}<span class="dimg-arrow">▶</span></div>
           <div id="dImgJasa" class="dimg-hidden">${urlField('자사몰', 'urlJasa', jasaUrls.join('\n'), 'textarea')}</div>
@@ -485,6 +630,22 @@ function buildDetailContent(p) {
           <div id="dImgVideo" class="dimg-hidden">${urlField('영상 URL', 'videoUrl', vidUrl, 'text')}</div>
         </div>`
         })()}
+      </div>
+    </div>
+
+    <div class="dsection">
+      <div class="dsection-title dimg-toggle collapsed" onclick="toggleDImg('dMallBody')">
+        쇼핑몰 코드 <span class="dimg-arrow">▶</span>
+      </div>
+      <div id="dMallBody" class="dimg-hidden">
+        ${_platforms.map(pl => {
+          const code = (p.mallCodes && p.mallCodes[pl]) || ''
+          return `<div class="dmall-row dfield">
+            <span class="dmall-label">${pl}</span>
+            <span class="dfield-value dmall-value">${code || '-'}</span>
+            <input type="text" class="dmall-input" data-mall-platform="${pl}" value="${(code||'').replace(/"/g,'&quot;')}" />
+          </div>`
+        }).join('')}
       </div>
     </div>
 
@@ -546,16 +707,21 @@ function toggleDImg(id) {
   }
 }
 
-function closeDetailModal() {
-  // 미저장 임시 예약 품번 해제
-  if (_detailPendingCode) {
-    const currentProduct = State.allProducts.find(x => x.productCode === _detailCode)
-    if (!currentProduct || currentProduct.productCode !== _detailPendingCode) {
-      _reservedCodes.delete(_detailPendingCode)
+function closeDetailModal(force) {
+  const modal = document.getElementById('detailModal')
+  const doClose = () => {
+    if (modal.classList.contains('edit-mode')) modal.classList.remove('edit-mode')
+    if (_detailPendingCode) {
+      const currentProduct = State.allProducts.find(x => x.productCode === _detailCode)
+      if (!currentProduct || currentProduct.productCode !== _detailPendingCode) {
+        _reservedCodes.delete(_detailPendingCode)
+      }
+      _detailPendingCode = null
     }
-    _detailPendingCode = null
+    modal.close()
   }
-  document.getElementById('detailModal').close()
+  if (force) { doClose(); return }
+  safeCloseModal(modal, () => modal.classList.contains('edit-mode'), doClose)
 }
 
 // ===== 상품 삭제 =====
@@ -596,7 +762,7 @@ async function deleteProduct() {
   }
 
   // 모달 닫기 + 테이블 갱신
-  closeDetailModal()
+  closeDetailModal(true)
   if (typeof renderProductTable === 'function') renderProductTable()
   if (typeof renderStockTable === 'function') renderStockTable()
   if (typeof renderSalesTable === 'function') renderSalesTable()
@@ -632,6 +798,8 @@ function saveDetailEdit() {
       return // 품번 확정 후 변경 금지
     } else if (key === 'salePrice' || key === 'costPrice') {
       p[key] = parseInt(val) || 0
+    } else if (key === 'mainImage') {
+      p.mainImage = val || ''
     } else if (['urlJasa','urlExternal','urlSum'].includes(key)) {
       const arr = val.split(/[\n\r]+/).map(u=>u.trim()).filter(Boolean)
       if (key === 'urlJasa')    { p.images.lemango = arr; p.images.noir = [] }
@@ -642,6 +810,28 @@ function saveDetailEdit() {
     } else {
       p[key] = val
     }
+  })
+
+  // mallCodes 저장
+  if (!p.mallCodes) p.mallCodes = {}
+  document.querySelectorAll('#dDetailContent .dmall-input').forEach(inp => {
+    const pl = inp.dataset.mallPlatform
+    if (pl) p.mallCodes[pl] = inp.value.trim()
+  })
+
+  // sizeSpec 저장
+  ensureSizeSpec(p)
+  document.querySelectorAll('#detailModal .size-spec-input').forEach(inp => {
+    const specKey = inp.dataset.spec
+    const sz = inp.dataset.size
+    if (specKey && sz) p.sizeSpec[specKey][sz] = inp.value.trim()
+  })
+
+  // barcodes 저장
+  if (!p.barcodes) p.barcodes = Object.fromEntries(SIZES.map(sz => [sz, '']))
+  document.querySelectorAll('#detailModal .detail-bc-input').forEach(inp => {
+    const sz = inp.dataset.size
+    if (sz) p.barcodes[sz] = inp.value.trim()
   })
 
   // 테이블 갱신

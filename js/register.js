@@ -6,17 +6,58 @@ function openRegisterModal() {
   form.reset()
   // 오늘 날짜를 등록일 기본값으로
   document.getElementById('rRegistDate').value = new Date().toISOString().slice(0,10)
+
+  // 사이즈 규격 그리드 동적 생성
+  const specWrap = document.getElementById('rSizeSpecGrid')
+  if (specWrap) {
+    let h = '<table class="size-spec-table"><thead><tr><th></th>'
+    SIZES.forEach(sz => { h += `<th>${sz}</th>` })
+    h += '</tr></thead><tbody>'
+    SPEC_ROWS.forEach(r => {
+      h += '<tr>'
+      h += `<td class="size-spec-label">${r.label}</td>`
+      SIZES.forEach(sz => {
+        h += `<td><input type="text" class="size-spec-input" id="rSpec_${r.key}_${sz}" placeholder="" /></td>`
+      })
+      h += '</tr>'
+    })
+    h += '</tbody></table>'
+    specWrap.innerHTML = h
+  }
+
+  // 쇼핑몰 코드 동적 생성
+  const grid = document.getElementById('rMallCodesGrid')
+  if (grid) {
+    grid.innerHTML = _platforms.map(pl =>
+      `<div class="rform-field">
+        <label>${pl}</label>
+        <input type="text" data-mall-platform="${pl}" placeholder="쇼핑몰 코드" />
+      </div>`
+    ).join('')
+  }
+
   const modal = document.getElementById('registerModal')
   modal.showModal()
   centerModal(modal)
   initPcodePanel()
 }
 
-function closeRegisterModal() {
-  // 취소 시 적용했던 품번 예약 해제
-  const code = document.getElementById('rProductCode')?.value
-  if (code) _reservedCodes.delete(code)
-  document.getElementById('registerModal').close()
+function closeRegisterModal(force) {
+  const modal = document.getElementById('registerModal')
+  const doClose = () => {
+    const code = document.getElementById('rProductCode')?.value
+    if (code) _reservedCodes.delete(code)
+    modal.close()
+  }
+  if (force) { doClose(); return }
+  safeCloseModal(modal,
+    () => {
+      const code = document.getElementById('rProductCode')?.value.trim()
+      const name = document.getElementById('rNameKr')?.value.trim()
+      return !!(code || name)
+    },
+    doClose
+  )
 }
 
 function submitRegister(e) {
@@ -42,20 +83,47 @@ function submitRegister(e) {
   const transparency  = document.getElementById('rTransparency').value
   const lining        = document.getElementById('rLining').value
   const capRing       = document.getElementById('rCapRing').value
-  const bust          = document.getElementById('rBust').value.trim()
-  const waist         = document.getElementById('rWaist').value.trim()
-  const hip           = document.getElementById('rHip').value.trim()
-  const modelSize     = document.getElementById('rModelSize').value.trim()
+  const gender        = document.getElementById('rGender')?.value || ''
+  const modelSize     = document.getElementById('rModelSize')?.value.trim() || ''
+
+  // sizeSpec 수집
+  const sizeSpec = {}
+  SPEC_ROWS.forEach(r => {
+    sizeSpec[r.key] = {}
+    SIZES.forEach(sz => {
+      const inp = document.getElementById('rSpec_' + r.key + '_' + sz)
+      sizeSpec[r.key][sz] = inp ? inp.value.trim() : ''
+    })
+  })
   const material      = document.getElementById('rMaterial').value.trim()
   const madeMonth   = document.getElementById('rMadeMonth').value.trim()
   const madeIn      = document.getElementById('rMadeIn').value.trim()
   const madeBy      = document.getElementById('rMadeBy').value.trim()
   const registDate  = document.getElementById('rRegistDate').value
   const comment     = document.getElementById('rComment').value.trim()
+  const mainImage   = document.getElementById('rMainImage')?.value.trim() || ''
   const imgJasa     = (document.getElementById('rImgJasa')?.value || '').split('\n').map(u => u.trim()).filter(Boolean)
   const imgExternal = (document.getElementById('rImgExternal')?.value || '').split('\n').map(u => u.trim()).filter(Boolean)
   const imgSum      = (document.getElementById('rImgSum')?.value || '').split('\n').map(u => u.trim()).filter(Boolean)
   const videoUrl    = document.getElementById('rVideoUrl')?.value.trim() || null
+  const saleStatus       = document.getElementById('rSaleStatus')?.value || '판매중'
+  const productionStatus = document.getElementById('rProductionStatus')?.value || '지속생산'
+  const logisticsDate    = document.getElementById('rLogisticsDate')?.value || null
+
+  // mallCodes 수집
+  const mallCodes = {}
+  document.querySelectorAll('#rMallCodesGrid input[data-mall-platform]').forEach(inp => {
+    const pl = inp.dataset.mallPlatform
+    const val = inp.value.trim()
+    if (pl && val) mallCodes[pl] = val
+  })
+
+  // 품번 필수 체크
+  if (!productCode) {
+    showToast('품번은 필수 입력 항목입니다.', 'error')
+    document.getElementById('rProductCode').focus()
+    return
+  }
 
   // 품번 중복 체크
   if (State.allProducts.some(p => p.productCode === productCode)) {
@@ -86,14 +154,14 @@ function submitRegister(e) {
     transparency,
     lining,
     capRing,
-    bust,
-    waist,
-    hip,
+    gender,
+    sizeSpec,
     material,
     madeMonth,
     madeIn,
     madeBy,
     comment,
+    mainImage,
     videoUrl,
     images: {
       sum:      imgSum,
@@ -105,16 +173,17 @@ function submitRegister(e) {
     },
     modelSize,
     washMethod: '',
-    barcodes: { XS: '', S: '', M: '', L: '', XL: '' },
+    barcodes: Object.fromEntries(SIZES.map(sz => [sz, ''])),
     stockLog: [],
     scheduleLog: [],
-    saleStatus: '판매중',
-    productionStatus: '지속생산',
+    mallCodes,
+    saleStatus,
+    productionStatus,
     productCodeLocked: false,
-    stock: { XS: 0, S: 0, M: 0, L: 0, XL: 0 },
+    stock: Object.fromEntries(SIZES.map(sz => [sz, 0])),
     sales: Object.fromEntries(_platforms.map(pl => [pl, 0])),
     registDate: registDate || new Date().toISOString().slice(0,10),
-    logisticsDate: null
+    logisticsDate: logisticsDate || null
   }
 
   // 전체 데이터에 추가 (예약 해제 후 정식 등록)
@@ -130,7 +199,7 @@ function submitRegister(e) {
   renderSalesTable()
   renderDashboard()
 
-  closeRegisterModal()
+  closeRegisterModal(true)
   showToast(`"${nameKr}" 상품이 등록되었습니다.`, 'success')
   logActivity('create', '상품조회', `신규등록: ${productCode} ${nameKr}`)
 
@@ -140,13 +209,6 @@ function submitRegister(e) {
   document.getElementById('pSearchField').value = 'productCode'
   searchProduct()
 }
-
-// ESC 닫기
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && document.getElementById('registerModal').open) {
-    closeRegisterModal()
-  }
-})
 
 // ===== 신규등록 엑셀 업로드 =====
 
@@ -263,7 +325,7 @@ function confirmRegisterUpload() {
     const row = item.raw
     const sumUrls    = parseSumUrls(row[UPLOAD_COL.urlSum])
     const lemonUrls  = String(row[UPLOAD_COL.urlLemango]  || '').split(/[\n\r]+/).map(u => u.trim()).filter(u => u.startsWith('http'))
-    const noirUrls   = String(row[UPLOAD_COL.urlNoir]     || '').split(/[\n\r]+/).map(u => u.trim()).filter(u => u.startsWith('http'))
+    const extUrls    = UPLOAD_COL.urlExternal != null ? String(row[UPLOAD_COL.urlExternal] || '').split(/[\n\r]+/).map(u => u.trim()).filter(u => u.startsWith('http')) : []
 
     const product = {
       no:          State.allProducts.length + added + 1,
@@ -286,22 +348,22 @@ function confirmRegisterUpload() {
       material:    item.material,
       comment:     String(row[UPLOAD_COL.comment]    || '').trim(),
       washMethod:  String(row[UPLOAD_COL.washMethod] || '').trim(),
-      sizeSpec:    String(row[UPLOAD_COL.sizeSpec]   || '').trim(),
-      modelSize:   String(row[UPLOAD_COL.modelSize]  || '').trim(),
+      modelSize:   UPLOAD_COL.modelSize != null ? String(row[UPLOAD_COL.modelSize] || '').trim() : '',
       madeMonth:   String(row[UPLOAD_COL.madeMonth]  || '').trim(),
       madeBy:      String(row[UPLOAD_COL.madeBy]     || '').trim(),
       madeIn:      item.madeIn,
+      mainImage:   UPLOAD_COL.mainImage != null ? String(row[UPLOAD_COL.mainImage] || '').trim() : '',
       videoUrl:    String(row[UPLOAD_COL.videoUrl]   || '').trim(),
       chestLine:   '',
       transparency:'',
       lining:      '',
       capRing:     '',
-      bust:        '',
-      waist:       '',
-      hip:         '',
-      images:      { sum: sumUrls, lemango: lemonUrls, noir: noirUrls, external: [], design: null, shoot: null },
-      stock:       { XS: 0, S: 0, M: 0, L: 0, XL: 0 },
-      sales:       { 공홈: 0, GS: 0, '29cm': 0, W쇼핑: 0, 기타: 0 },
+      gender:      '',
+      sizeSpec:    { bust: Object.fromEntries(SIZES.map(sz=>[sz,''])), waist: Object.fromEntries(SIZES.map(sz=>[sz,''])), hip: Object.fromEntries(SIZES.map(sz=>[sz,''])), etc: Object.fromEntries(SIZES.map(sz=>[sz,''])) },
+      images:      { sum: sumUrls, lemango: lemonUrls, noir: [], external: extUrls, design: [], shoot: [] },
+      mallCodes:   {},
+      stock:       Object.fromEntries(SIZES.map(sz => [sz, 0])),
+      sales:       Object.fromEntries(_platforms.map(pl => [pl, 0])),
       registDate:  new Date().toISOString().slice(0, 10),
       logisticsDate: null
     }

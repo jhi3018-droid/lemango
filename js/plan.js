@@ -478,16 +478,21 @@ function openPlanDetailModal(no) {
   loadComments('plan', no)
 }
 
-function closePlanDetailModal() {
-  // 미확정 임시 예약 코드 해제
-  if (_pdPendingCode) {
-    const currentItem = State.planItems.find(p => p.no === _editingPlanNo)
-    if (!currentItem || currentItem.productCode !== _pdPendingCode) {
-      _reservedCodes.delete(_pdPendingCode)
+function closePlanDetailModal(force) {
+  const modal = document.getElementById('planDetailModal')
+  const doClose = () => {
+    if (modal.classList.contains('edit-mode')) modal.classList.remove('edit-mode')
+    if (_pdPendingCode) {
+      const currentItem = State.planItems.find(p => p.no === _editingPlanNo)
+      if (!currentItem || currentItem.productCode !== _pdPendingCode) {
+        _reservedCodes.delete(_pdPendingCode)
+      }
+      _pdPendingCode = null
     }
-    _pdPendingCode = null
+    modal.close()
   }
-  document.getElementById('planDetailModal').close()
+  if (force) { doClose(); return }
+  safeCloseModal(modal, () => modal.classList.contains('edit-mode'), doClose)
 }
 
 // ===== 기획 상세 모달 — 품번 인라인 생성 =====
@@ -724,7 +729,7 @@ async function confirmPlanToProduct() {
       design:   item.images?.design   || [],
       shoot:    item.images?.shoot    || []
     },
-    stock:       { XS: 0, S: 0, M: 0, L: 0, XL: 0 },
+    stock:       Object.fromEntries(SIZES.map(sz => [sz, 0])),
     sales:       salesInit,
     registDate:  new Date().toISOString().slice(0, 10),
     logisticsDate: '',
@@ -745,7 +750,7 @@ async function confirmPlanToProduct() {
   renderDashboard()
   renderPlanTable()
 
-  closePlanDetailModal()
+  closePlanDetailModal(true)
   switchTab('product')
 
   // 상세 모달 열기 (약간 지연: 탭 전환 후)

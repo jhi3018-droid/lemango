@@ -2,6 +2,18 @@
 // ===== 유틸 함수들 =====
 // =============================================
 
+// ===== 모달 안전 닫기 =====
+async function safeCloseModal(modal, isEditing, closeFn) {
+  if (modal._closingInProgress) return
+  if (isEditing()) {
+    modal._closingInProgress = true
+    const ok = await korConfirm('수정 중인 내용이 있습니다.\n종료하시겠습니까?', '종료', '계속 수정')
+    modal._closingInProgress = false
+    if (!ok) return
+  }
+  closeFn()
+}
+
 // ===== 다중 검색 키워드 파싱 =====
 // 쉼표 또는 줄바꿈으로 구분, 최대 200개, 빈값 제거
 function parseKeywords(raw) {
@@ -87,7 +99,8 @@ const getExhaustion = p => {
 }
 
 function getThumbUrl(p) {
-  if (p.images?.sum?.length)     return p.images.sum[0]       // 업로드된 SUM URL 우선
+  if (p.mainImage)               return p.mainImage            // 대표이미지 최우선
+  if (p.images?.sum?.length)     return p.images.sum[0]
   if (p.images?.lemango?.length) return p.images.lemango[0]
   if (p.images?.noir?.length)    return p.images.noir[0]
   if (p.images?.design)          return p.images.design
@@ -263,30 +276,36 @@ function initColumnResize(tableId) {
 // ===== 한글 확인 다이얼로그 =====
 function korConfirm(msg, okText = '확인', cancelText = '취소') {
   return new Promise(resolve => {
-    const overlay = document.createElement('div')
-    overlay.className = 'kor-confirm-overlay'
-    const box = document.createElement('div')
-    box.className = 'kor-confirm-box'
-    const msgEl = document.createElement('div')
-    msgEl.className = 'kor-confirm-msg'
-    msgEl.textContent = msg
-    const btnRow = document.createElement('div')
-    btnRow.className = 'kor-confirm-btns'
-    const okBtn = document.createElement('button')
-    okBtn.className = 'kor-confirm-ok'
-    okBtn.textContent = okText
-    const cancelBtn = document.createElement('button')
-    cancelBtn.className = 'kor-confirm-cancel'
-    cancelBtn.textContent = cancelText
-    const close = val => { overlay.remove(); resolve(val) }
-    okBtn.onclick = () => close(true)
-    cancelBtn.onclick = () => close(false)
-    overlay.onclick = e => { if (e.target === overlay) close(false) }
-    btnRow.append(cancelBtn, okBtn)
-    box.append(msgEl, btnRow)
-    overlay.appendChild(box)
-    document.body.appendChild(overlay)
-    okBtn.focus()
+    // 중복 방지
+    const existing = document.querySelector('.kor-confirm-dialog')
+    if (existing) { resolve(false); return }
+
+    const dlg = document.createElement('dialog')
+    dlg.className = 'kor-confirm-dialog'
+    dlg.innerHTML = `<div class="kor-confirm-box">
+      <div class="kor-confirm-msg">${msg.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
+      <div class="kor-confirm-btns">
+        <button class="kor-confirm-cancel" type="button">${cancelText}</button>
+        <button class="kor-confirm-ok" type="button">${okText}</button>
+      </div>
+    </div>`
+
+    let resolved = false
+    function cleanup(result) {
+      if (resolved) return
+      resolved = true
+      dlg.close()
+      dlg.remove()
+      resolve(result)
+    }
+
+    dlg.querySelector('.kor-confirm-ok').addEventListener('click', () => cleanup(true), { once: true })
+    dlg.querySelector('.kor-confirm-cancel').addEventListener('click', () => cleanup(false), { once: true })
+    dlg.addEventListener('cancel', e => { e.preventDefault(); cleanup(false) }, { once: true })
+
+    document.body.appendChild(dlg)
+    dlg.showModal()
+    dlg.querySelector('.kor-confirm-cancel').focus()
   })
 }
 
@@ -830,4 +849,73 @@ function parseExcelDate(val) {
   const s = String(val).trim()
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10)
   return s
+}
+
+// =============================================
+// ===== 알림 렌더링 =====
+// =============================================
+function renderNotifications() {
+  const badge = document.getElementById('notifBadge')
+  const list = document.getElementById('notifList')
+  const empty = document.getElementById('notifEmpty')
+  if (!badge || !list) return
+
+  const unread = _notifications.filter(n => !n.read).length
+  badge.textContent = unread > 99 ? '99+' : unread
+  badge.style.display = unread > 0 ? '' : 'none'
+
+  if (_notifications.length === 0) {
+    list.style.display = 'none'
+    if (empty) empty.style.display = ''
+    return
+  }
+  if (empty) empty.style.display = 'none'
+  list.style.display = ''
+
+  list.innerHTML = _notifications.slice(0, 30).map(n => {
+    const icon = NOTIF_ICONS[n.type] || '🔔'
+    const readCls = n.read ? ' notif-read' : ''
+    return `<div class="notif-item${readCls}" data-nid="${n.id}" onclick="clickNotification('${n.id}')">
+      <span class="notif-icon">${icon}</span>
+      <div class="notif-body">
+        <div class="notif-title">${esc(n.title)}</div>
+        <div class="notif-desc">${esc(n.body || '')}</div>
+        <div class="notif-time">${timeAgo(n.ts)}</div>
+      </div>
+      <button class="notif-dismiss" onclick="event.stopPropagation();dismissNotification('${n.id}')" title="삭제">&times;</button>
+    </div>`
+  }).join('')
+}
+
+function toggleNotifDropdown() {
+  const dd = document.getElementById('notifDropdown')
+  if (!dd) return
+  dd.style.display = dd.style.display === 'none' ? '' : 'none'
+}
+
+function clickNotification(id) {
+  const n = _notifications.find(x => x.id === id)
+  if (!n) return
+  n.read = true
+  saveNotifications()
+  renderNotifications()
+  document.getElementById('notifDropdown').style.display = 'none'
+  if (n.link) {
+    if (n.link.startsWith('#')) {
+      const tab = n.link.slice(1)
+      if (tab) openTab(tab)
+    }
+  }
+}
+
+function dismissNotification(id) {
+  _notifications = _notifications.filter(n => n.id !== id)
+  saveNotifications()
+  renderNotifications()
+}
+
+function clearAllNotifications() {
+  _notifications.forEach(n => n.read = true)
+  saveNotifications()
+  renderNotifications()
 }

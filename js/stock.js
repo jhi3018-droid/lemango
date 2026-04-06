@@ -93,6 +93,16 @@ function clearSipPanel() {
 // ===== 재고 등록 모달 =====
 let _stockUploadData = null
 
+function closeStockRegisterModal(force) {
+  const modal = document.getElementById('stockRegisterModal')
+  const doClose = () => { _stockUploadData = null; modal.close() }
+  if (force) { doClose(); return }
+  safeCloseModal(modal,
+    () => !document.getElementById('srmProductArea')?.textContent.includes('품번을 입력하세요'),
+    doClose
+  )
+}
+
 function openStockRegisterModal() {
   document.getElementById('srmKeyword').value = ''
   document.getElementById('srmProductArea').innerHTML = '<div class="srm-empty">품번을 입력하세요</div>'
@@ -210,7 +220,7 @@ function saveSrmStock(productCode) {
   if (total === 0) { showToast('입고 수량을 입력해주세요.', 'warning'); return }
 
   // 누적 추가
-  if (!p.stock) p.stock = { XS:0, S:0, M:0, L:0, XL:0 }
+  if (!p.stock) p.stock = Object.fromEntries(SIZES.map(sz => [sz, 0]))
   sizes.forEach(sz => { p.stock[sz] = (p.stock[sz]||0) + inQty[sz] })
 
   // 입고 이력 저장
@@ -312,7 +322,7 @@ function confirmStockUpload() {
   Object.values(groups).forEach(g => {
     const p = State.allProducts.find(x => x.productCode === g.code)
     if (!p) return
-    if (!p.stock)    p.stock    = { XS:0, S:0, M:0, L:0, XL:0 }
+    if (!p.stock)    p.stock    = Object.fromEntries(SIZES.map(sz => [sz, 0]))
     if (!p.barcodes) p.barcodes = {}
     if (!p.stockLog) p.stockLog = []
 
@@ -348,8 +358,13 @@ function openOutgoingModal() {
   centerModal(modal)
 }
 
-function closeOutgoingModal() {
-  document.getElementById('outgoingModal').close()
+function closeOutgoingModal(force) {
+  const modal = document.getElementById('outgoingModal')
+  if (force) { modal.close(); return }
+  safeCloseModal(modal,
+    () => !document.getElementById('ougProductArea')?.textContent.includes('품번을 입력하세요'),
+    () => modal.close()
+  )
 }
 
 function findOutgoingProduct() {
@@ -425,7 +440,7 @@ function submitOutgoing(productCode) {
   }
 
   // 누적 차감
-  if (!p.stock) p.stock = { XS:0, S:0, M:0, L:0, XL:0 }
+  if (!p.stock) p.stock = Object.fromEntries(SIZES.map(sz => [sz, 0]))
   sizes.forEach(sz => { p.stock[sz] = (p.stock[sz]||0) - outQty[sz] })
 
   // 출고 이력 저장
@@ -442,7 +457,7 @@ function submitOutgoing(productCode) {
   renderStockTable()
   showToast(`${p.nameKr} 출고 ${total}개 처리 완료`, 'success')
   logActivity('create', '재고관리', `출고: ${p.productCode} ${p.nameKr} ${total}개`)
-  closeOutgoingModal()
+  closeOutgoingModal(true)
 }
 
 function changeStockPageSize(val) {
@@ -521,4 +536,126 @@ function renderStockTable() {
   initTableFeatures('stockTable', 'stock', 'renderStockTable')
   bindColumnDragDrop('stockTable', 'stock', STOCK_FIXED_KEYS, 'renderStockTable')
   renderPagination('sPagination', 'stock', 'renderStockTable')
+}
+
+// =============================================
+// ===== 바코드 업로드 =====
+// =============================================
+let _bcUploadData = []
+
+function openBarcodeUploadModal() {
+  _bcUploadData = []
+  const input = document.getElementById('bcUploadFile')
+  if (input) input.value = ''
+  document.getElementById('bcPreviewArea').style.display = 'none'
+  const modal = document.getElementById('barcodeUploadModal')
+  modal.showModal()
+  centerModal(modal)
+}
+
+function closeBarcodeUploadModal(force) {
+  const modal = document.getElementById('barcodeUploadModal')
+  const doClose = () => { _bcUploadData = []; modal.close() }
+  if (force) { doClose(); return }
+  safeCloseModal(modal,
+    () => _bcUploadData && _bcUploadData.length > 0,
+    doClose
+  )
+}
+
+function downloadBarcodeSample() {
+  if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
+  const header = ['품번', '사이즈', '바코드']
+  const sample = [
+    ['LSWON16266707', 'XS', '8809100001001'],
+    ['LSWON16266707', 'S',  '8809100001002'],
+    ['LSWON16266707', 'M',  '8809100001003'],
+    ['LSWON16266707', 'L',  '8809100001004'],
+    ['LSWON16266707', 'XL', '8809100001005'],
+  ]
+  const ws = XLSX.utils.aoa_to_sheet([header, ...sample])
+  ws['!cols'] = [{ wch: 18 }, { wch: 8 }, { wch: 18 }]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '바코드')
+  XLSX.writeFile(wb, '르망고_바코드_샘플.xlsx')
+}
+
+function handleBarcodeUpload(input) {
+  const file = input.files?.[0]
+  if (!file) return
+  if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
+
+  const reader = new FileReader()
+  reader.onload = function(e) {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' })
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+
+      const dataRows = raw.slice(1).filter(r => String(r[0] || '').trim() && String(r[2] || '').trim())
+
+      _bcUploadData = dataRows.map(r => {
+        const code = String(r[0]).trim()
+        const size = String(r[1]).trim().toUpperCase()
+        const barcode = String(r[2]).trim()
+        const product = State.allProducts.find(p => p.productCode === code)
+        const existing = product?.barcodes?.[size] || ''
+
+        return {
+          code, size, barcode,
+          status: product ? (existing ? '덮어쓰기' : '신규') : '미등록',
+          existing,
+          product
+        }
+      })
+
+      renderBarcodePreview()
+    } catch (err) {
+      showToast('파일 읽기 오류: ' + err.message, 'error')
+    }
+  }
+  reader.readAsArrayBuffer(file)
+}
+
+function renderBarcodePreview() {
+  document.getElementById('bcPreviewArea').style.display = 'block'
+
+  const total = _bcUploadData.length
+  const matched = _bcUploadData.filter(d => d.status !== '미등록').length
+  document.getElementById('bcTotalCount').textContent = total
+  document.getElementById('bcMatchCount').textContent = matched
+  document.getElementById('bcMissCount').textContent = total - matched
+
+  document.getElementById('bcPreviewBody').innerHTML = _bcUploadData.map(d => {
+    const cls = d.status === '미등록' ? 'bc-row-miss' : d.status === '덮어쓰기' ? 'bc-row-overwrite' : 'bc-row-new'
+    const badge = d.status === '미등록' ? '<span class="badge-preview-err">미등록</span>'
+      : d.status === '덮어쓰기' ? '<span class="badge-preview-warn">덮어쓰기</span>'
+      : '<span class="badge-preview-ok">신규</span>'
+    return `<tr class="${cls}">
+      <td>${badge}</td>
+      <td>${esc(d.code)}</td>
+      <td style="text-align:center">${esc(d.size)}</td>
+      <td style="font-family:monospace">${esc(d.barcode)}</td>
+      <td style="font-family:monospace;color:var(--text-secondary)">${esc(d.existing) || '-'}</td>
+    </tr>`
+  }).join('')
+
+  document.getElementById('bcConfirmBtn').disabled = matched === 0
+}
+
+function confirmBarcodeUpload() {
+  const validData = _bcUploadData.filter(d => d.product && SIZES.includes(d.size))
+  if (!validData.length) { showToast('매칭되는 상품이 없습니다.', 'warning'); return }
+
+  let count = 0
+  validData.forEach(d => {
+    if (!d.product.barcodes) d.product.barcodes = Object.fromEntries(SIZES.map(sz => [sz, '']))
+    d.product.barcodes[d.size] = d.barcode
+    count++
+  })
+
+  showToast(`바코드 ${count}건 업로드 완료`, 'success')
+  logActivity('upload', '재고관리', `바코드 업로드 — ${count}건`)
+  closeBarcodeUploadModal(true)
+  renderStockTable()
 }

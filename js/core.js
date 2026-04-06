@@ -1,7 +1,27 @@
 // =============================================
 // ===== 공통 상수 =====
 // =============================================
-const SIZES = ['XS', 'S', 'M', 'L', 'XL']
+const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', 'F']
+const SPEC_ROWS = [
+  { key: 'bust', label: '가슴' },
+  { key: 'waist', label: '허리' },
+  { key: 'hip', label: '엉덩이' },
+  { key: 'etc', label: '기타' },
+]
+const GENDER_MAP = { W: '여성', M: '남성', U: '공용' }
+
+function ensureSizeSpec(p) {
+  if (!p.sizeSpec) {
+    const empty = () => Object.fromEntries(SIZES.map(sz => [sz, '']))
+    p.sizeSpec = { bust: empty(), waist: empty(), hip: empty(), etc: empty() }
+  }
+  // ensure all sizes exist in each row
+  SPEC_ROWS.forEach(r => {
+    if (!p.sizeSpec[r.key]) p.sizeSpec[r.key] = {}
+    SIZES.forEach(sz => { if (p.sizeSpec[r.key][sz] === undefined) p.sizeSpec[r.key][sz] = '' })
+  })
+  return p.sizeSpec
+}
 const SCHEDULE_DEFS = [
   { key: 'design',     label: '디자인' },
   { key: 'production', label: '생산' },
@@ -17,7 +37,7 @@ const SETTINGS_KEY = 'lemango_settings_v1'
 
 const DEFAULT_SETTINGS = {
   brands:         ['르망고', '르망고 느와'],
-  types:          [['onepiece','원피스'],['bikini','비키니'],['two piece','투피스']],
+  types:          [['onepiece','원피스'],['bikini','비키니'],['two piece','투피스'],['monokini','모노키니'],['tankini','탱키니'],['rashguard','래쉬가드'],['beachwear','비치웨어'],['cover-up','커버업'],['swim pants','수영팬츠'],['board shorts','보드숏'],['trunks','트렁크'],['leggings','레깅스'],['beach dress','비치드레스'],['sarong','사롱'],['accessories','악세서리']],
   saleStatuses:   ['판매중', '종료', '추가생산'],
   legCuts:        [['low cut','로우컷'],['normal cut','노멀컷'],['middle cut','미들컷'],['high cut','하이컷']],
   fabricTypes:    ['포일', '일반'],
@@ -270,4 +290,54 @@ function getWorkCatColor(cat) {
   const idx = _workCategories.indexOf(cat)
   if (idx >= 0) return WORK_CAT_PALETTE[idx % WORK_CAT_PALETTE.length]
   return { bg: '#78909c', text: '#fff' }
+}
+
+// =============================================
+// ===== 알림 시스템 =====
+// =============================================
+const NOTIF_KEY = 'lemango_notifications_v1'
+const NOTIF_MAX = 50
+const NOTIF_EXPIRE_DAYS = 30
+
+let _notifications = (() => {
+  try { return JSON.parse(localStorage.getItem(NOTIF_KEY)) || [] }
+  catch { return [] }
+})()
+
+function saveNotifications() {
+  localStorage.setItem(NOTIF_KEY, JSON.stringify(_notifications))
+}
+
+function addNotification(type, title, body, link) {
+  // 동일 type+title 중복 방지 (최근 1시간 이내)
+  const oneHourAgo = Date.now() - 3600000
+  if (_notifications.some(n => n.type === type && n.title === title && n.ts > oneHourAgo)) return
+  _notifications.unshift({ id: Date.now() + '_' + Math.random().toString(36).slice(2,6), type, title, body, link, ts: Date.now(), read: false })
+  if (_notifications.length > NOTIF_MAX) _notifications.length = NOTIF_MAX
+  saveNotifications()
+  renderNotifications()
+}
+
+function cleanOldNotifications() {
+  const cutoff = Date.now() - NOTIF_EXPIRE_DAYS * 86400000
+  const before = _notifications.length
+  _notifications = _notifications.filter(n => n.ts > cutoff)
+  if (_notifications.length !== before) saveNotifications()
+}
+
+function timeAgo(ts) {
+  const diff = Date.now() - ts
+  if (diff < 60000) return '방금'
+  if (diff < 3600000) return Math.floor(diff / 60000) + '분 전'
+  if (diff < 86400000) return Math.floor(diff / 3600000) + '시간 전'
+  if (diff < 604800000) return Math.floor(diff / 86400000) + '일 전'
+  return new Date(ts).toLocaleDateString('ko-KR')
+}
+
+const NOTIF_ICONS = {
+  event_start:  '📅',
+  event_end:    '📅',
+  plan_deadline:'📋',
+  board_notice: '📢',
+  member_pending:'👤'
 }

@@ -453,3 +453,14 @@ window.resetMemberPassword = async function() {
     _mpError('이메일 발송 실패: ' + err.message)
   }
 }
+
+// ===== 알림: 승인대기 회원 =====
+async function checkMemberAlerts() {
+  if (!db || !State.currentUser || State.currentUser.grade < 3) return
+  try {
+    const snap = await db.collection('users').where('status', '==', 'pending').get()
+    if (!snap.empty) {
+      addNotification('member_pending', `승인대기 회원 ${snap.size}명`, '회원관리에서 승인/거절해 주세요.', '#members')
+    }
+  } catch (e) { console.warn('checkMemberAlerts error:', e) }
+}

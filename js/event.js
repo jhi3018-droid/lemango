@@ -4,6 +4,7 @@
 
 let _evYear  = new Date().getFullYear()
 let _evMonth = new Date().getMonth() // 0-based
+let _editingEventNo = null
 
 // 행사별 색상 팔레트 (10색 — 진한 배경 + 흰 글자, 서로 보색 대비)
 const EV_COLORS = [
@@ -120,14 +121,14 @@ function renderEventCalendar() {
         html += `<div class="evcal-bar evcal-bar-mini"
           style="background:${color.bar};"
           title="${tooltip}"
-          onclick="editEvent(${ev.no})"
+          onclick="openEventDetailModal(${ev.no})"
         ></div>`
       } else {
         const label = esc(`${ev.channel || ''} ${ev.name}`.trim())
         html += `<div class="evcal-bar evcal-bar-fill"
           style="background:${color.bar}; color:${color.text};"
           title="${tooltip}"
-          onclick="editEvent(${ev.no})"
+          onclick="openEventDetailModal(${ev.no})"
         >${label}</div>`
       }
     }
@@ -220,91 +221,231 @@ function populateEventChannels() {}
 function searchEvent() { renderEventCalendar() }
 function resetEvent()  { renderEventCalendar() }
 
-/* ---------- 등록 모달 ---------- */
-function openEventRegisterModal() {
+/* ================================================================
+   행사 상세 모달 — 보기/수정 모드 분리
+   ================================================================ */
+
+function _evUpdateHeaderBtns(mode) {
+  // mode: 'view' | 'edit' | 'new'
   const modal = document.getElementById('eventRegisterModal')
-  if (!modal) return
-  document.getElementById('evRegForm').reset()
-  document.getElementById('evRegNo').value = ''
-  modal.querySelector('.rmodal-title').textContent = '행사 등록'
-  // 신규 등록 시 댓글 숨김
-  const commentArea = document.getElementById('evCommentArea')
-  if (commentArea) { commentArea.style.display = 'none'; commentArea.innerHTML = '' }
-  modal.showModal()
-  centerModal(modal)
+  modal.querySelectorAll('.ev-view-btn').forEach(b => b.style.display = mode === 'view' ? '' : 'none')
+  modal.querySelectorAll('.ev-edit-btn').forEach(b => b.style.display = mode === 'edit' ? '' : 'none')
+  modal.querySelectorAll('.ev-new-btn').forEach(b => b.style.display = mode === 'new' ? '' : 'none')
 }
 
-function closeEventRegisterModal() {
-  document.getElementById('eventRegisterModal')?.close()
-}
-
-function submitEvent(e) {
-  e.preventDefault()
-  const noField = document.getElementById('evRegNo')
-  const isEdit  = noField.value !== ''
-  const no      = isEdit ? Number(noField.value) : (_events.length ? Math.max(..._events.map(ev => ev.no)) + 1 : 1)
-
-  const ev = {
-    no,
-    name:      document.getElementById('evRegName').value.trim(),
-    channel:   document.getElementById('evRegChannel').value.trim(),
-    startDate: document.getElementById('evRegStart').value,
-    endDate:   document.getElementById('evRegEnd').value,
-    discount:  document.getElementById('evRegDiscount').value || '',
-    support:   document.getElementById('evRegSupport').value || '',
-    memo:      document.getElementById('evRegMemo').value.trim()
-  }
-
-  if (isEdit) {
-    const idx = _events.findIndex(x => x.no === no)
-    if (idx >= 0) _events[idx] = ev
-  } else {
-    _events.push(ev)
-  }
-
-  saveEvents()
-  closeEventRegisterModal()
-  renderEventCalendar()
-  showToast(isEdit ? '행사가 수정되었습니다.' : '행사가 등록되었습니다.', 'success')
-  logActivity(isEdit ? 'update' : 'create', '행사일정', `${isEdit ? '행사수정' : '행사등록'}: ${ev.name}`)
-}
-
-/* ---------- 수정 ---------- */
-function editEvent(no) {
-  const ev = _events.find(x => x.no === no)
+/* ---------- 보기 모드로 열기 (캘린더 바 클릭) ---------- */
+function openEventDetailModal(no) {
+  const ev = _events.find(e => e.no === no)
   if (!ev) return
-  document.getElementById('evRegNo').value       = ev.no
-  document.getElementById('evRegName').value      = ev.name || ''
-  document.getElementById('evRegChannel').value   = ev.channel || ''
-  document.getElementById('evRegStart').value     = ev.startDate || ''
-  document.getElementById('evRegEnd').value       = ev.endDate || ''
-  document.getElementById('evRegDiscount').value  = ev.discount || ''
-  document.getElementById('evRegSupport').value   = ev.support || ''
-  document.getElementById('evRegMemo').value      = ev.memo || ''
+  _editingEventNo = ev.no
 
   const modal = document.getElementById('eventRegisterModal')
-  modal.querySelector('.rmodal-title').textContent = '행사 수정'
-  // 댓글 영역 표시
-  const commentArea = document.getElementById('evCommentArea')
-  if (commentArea) {
-    commentArea.style.display = ''
-    commentArea.innerHTML = buildCommentSection('event', ev.no)
-  }
+  modal.querySelector('.rmodal-title').textContent = '행사일정'
+  modal.classList.remove('edit-mode')
+  _evUpdateHeaderBtns('view')
+  buildEventDetailContent(ev)
   modal.showModal()
   centerModal(modal)
   loadComments('event', ev.no)
+}
+
+/* ---------- 신규 등록 (빈 폼, 바로 편집 상태) ---------- */
+function openEventRegisterModal(dateStr) {
+  _editingEventNo = null
+  const modal = document.getElementById('eventRegisterModal')
+  modal.querySelector('.rmodal-title').textContent = '행사 등록'
+  modal.classList.add('edit-mode')
+  _evUpdateHeaderBtns('new')
+  buildEventNewForm(dateStr)
+  modal.showModal()
+  centerModal(modal)
+}
+
+/* ---------- 보기 모드 콘텐츠 생성 ---------- */
+function buildEventDetailContent(ev) {
+  const body = document.getElementById('eventModalBody')
+  const status = getEventStatus(ev)
+  const statusCls = { '예정': 'badge-warning', '진행중': 'badge-success', '종료': 'badge-muted' }
+
+  let html = '<div class="ev-detail-fields">'
+
+  // 행사명
+  html += `<div class="dfield"><span class="dfield-label">행사명</span>
+    <span class="dfield-value">${esc(ev.name)}</span>
+    <input type="text" id="evName" value="${esc(ev.name)}"></div>`
+
+  // 채널
+  html += `<div class="dfield"><span class="dfield-label">채널</span>
+    <span class="dfield-value">${esc(ev.channel || '-')}</span>
+    <input type="text" id="evChannel" value="${esc(ev.channel || '')}"></div>`
+
+  // 기간
+  html += `<div class="dfield"><span class="dfield-label">기간</span>
+    <span class="dfield-value">${ev.startDate} ~ ${ev.endDate} <span class="badge ${statusCls[status] || ''}" style="margin-left:6px">${status}</span></span>
+    <div class="ev-date-pair"><input type="date" id="evStart" value="${ev.startDate}"><span>~</span><input type="date" id="evEnd" value="${ev.endDate}"></div></div>`
+
+  // 할인율
+  html += `<div class="dfield"><span class="dfield-label">할인율</span>
+    <span class="dfield-value">${ev.discount ? ev.discount + '%' : '-'}</span>
+    <div class="ev-pct-field"><input type="number" id="evDiscount" value="${ev.discount || ''}" min="0" max="100"><span>%</span></div></div>`
+
+  // 당사지원
+  html += `<div class="dfield"><span class="dfield-label">당사지원</span>
+    <span class="dfield-value">${ev.support ? ev.support + '%' : '-'}</span>
+    <div class="ev-pct-field"><input type="number" id="evSupport" value="${ev.support || ''}" min="0" max="100"><span>%</span></div></div>`
+
+  // 메모
+  html += `<div class="dfield"><span class="dfield-label">메모</span>
+    <span class="dfield-value">${esc(ev.memo || '-')}</span>
+    <textarea id="evMemo" rows="3">${esc(ev.memo || '')}</textarea></div>`
+
+  html += '</div>'
+
+  // 삭제 버튼
+  html += `<div class="ev-detail-actions"><button class="btn btn-sm btn-danger" onclick="deleteEvent(${ev.no})">삭제</button></div>`
+
+  // 댓글 섹션
+  html += `<div class="ev-comment-area">${buildCommentSection('event', ev.no)}</div>`
+
+  body.innerHTML = html
+}
+
+/* ---------- 신규 등록 폼 ---------- */
+function buildEventNewForm(dateStr) {
+  const body = document.getElementById('eventModalBody')
+  const today = dateStr || new Date().toISOString().slice(0, 10)
+
+  let html = '<div class="ev-detail-fields">'
+
+  html += `<div class="dfield"><span class="dfield-label">행사명</span>
+    <span class="dfield-value"></span>
+    <input type="text" id="evName" value="" placeholder="행사명 입력" required></div>`
+
+  html += `<div class="dfield"><span class="dfield-label">채널</span>
+    <span class="dfield-value"></span>
+    <input type="text" id="evChannel" value="" placeholder="예: 공홈, GS"></div>`
+
+  html += `<div class="dfield"><span class="dfield-label">기간</span>
+    <span class="dfield-value"></span>
+    <div class="ev-date-pair"><input type="date" id="evStart" value="${today}" required><span>~</span><input type="date" id="evEnd" value="" required></div></div>`
+
+  html += `<div class="dfield"><span class="dfield-label">할인율</span>
+    <span class="dfield-value"></span>
+    <div class="ev-pct-field"><input type="number" id="evDiscount" value="" min="0" max="100"><span>%</span></div></div>`
+
+  html += `<div class="dfield"><span class="dfield-label">당사지원</span>
+    <span class="dfield-value"></span>
+    <div class="ev-pct-field"><input type="number" id="evSupport" value="" min="0" max="100"><span>%</span></div></div>`
+
+  html += `<div class="dfield"><span class="dfield-label">메모</span>
+    <span class="dfield-value"></span>
+    <textarea id="evMemo" rows="3" placeholder="행사 메모"></textarea></div>`
+
+  html += '</div>'
+  body.innerHTML = html
+}
+
+/* ---------- 수정 모드 토글 ---------- */
+function toggleEventEdit() {
+  const modal = document.getElementById('eventRegisterModal')
+  if (modal.classList.contains('edit-mode')) {
+    // 취소 → 보기 모드 복원
+    modal.classList.remove('edit-mode')
+    _evUpdateHeaderBtns('view')
+    const ev = _events.find(e => e.no === _editingEventNo)
+    if (ev) buildEventDetailContent(ev)
+    loadComments('event', _editingEventNo)
+  } else {
+    // 수정 모드 진입
+    modal.classList.add('edit-mode')
+    _evUpdateHeaderBtns('edit')
+  }
+}
+
+/* ---------- 수정 모드 저장 ---------- */
+function saveEventEdit() {
+  const name = document.getElementById('evName')?.value.trim()
+  const start = document.getElementById('evStart')?.value
+  const end = document.getElementById('evEnd')?.value
+  if (!name) { showToast('행사명을 입력해주세요.', 'warning'); return }
+  if (!start || !end) { showToast('기간을 입력해주세요.', 'warning'); return }
+
+  const ev = _events.find(e => e.no === _editingEventNo)
+  if (!ev) return
+
+  ev.name = name
+  ev.channel = document.getElementById('evChannel')?.value.trim() || ''
+  ev.startDate = start
+  ev.endDate = end
+  ev.discount = document.getElementById('evDiscount')?.value || ''
+  ev.support = document.getElementById('evSupport')?.value || ''
+  ev.memo = document.getElementById('evMemo')?.value.trim() || ''
+
+  saveEvents()
+  closeEventRegisterModal(true)
+  renderEventCalendar()
+  renderDashCalendar()
+  showToast('행사가 수정되었습니다.', 'success')
+  logActivity('update', '행사일정', `행사수정: ${ev.name}`)
+}
+
+/* ---------- 신규 등록 저장 ---------- */
+function submitEventNew() {
+  const name = document.getElementById('evName')?.value.trim()
+  const start = document.getElementById('evStart')?.value
+  const end = document.getElementById('evEnd')?.value
+  if (!name) { showToast('행사명을 입력해주세요.', 'warning'); return }
+  if (!start || !end) { showToast('기간을 입력해주세요.', 'warning'); return }
+
+  const no = _events.length ? Math.max(..._events.map(ev => ev.no)) + 1 : 1
+  const ev = {
+    no,
+    name,
+    channel: document.getElementById('evChannel')?.value.trim() || '',
+    startDate: start,
+    endDate: end,
+    discount: document.getElementById('evDiscount')?.value || '',
+    support: document.getElementById('evSupport')?.value || '',
+    memo: document.getElementById('evMemo')?.value.trim() || ''
+  }
+
+  _events.push(ev)
+  saveEvents()
+  closeEventRegisterModal(true)
+  renderEventCalendar()
+  renderDashCalendar()
+  showToast('행사가 등록되었습니다.', 'success')
+  logActivity('create', '행사일정', `행사등록: ${ev.name}`)
+}
+
+/* ---------- 닫기 ---------- */
+function closeEventRegisterModal(force) {
+  const modal = document.getElementById('eventRegisterModal')
+  if (!modal) return
+  if (force) { modal.close(); return }
+  safeCloseModal(modal,
+    () => modal.classList.contains('edit-mode'),
+    () => modal.close()
+  )
 }
 
 /* ---------- 삭제 ---------- */
 async function deleteEvent(no) {
   const ok = await korConfirm('이 행사를 삭제하시겠습니까?')
   if (!ok) return
+  const ev = _events.find(x => x.no === no)
   _events = _events.filter(x => x.no !== no)
   saveEvents()
+  closeEventRegisterModal(true)
   renderEventCalendar()
+  renderDashCalendar()
   showToast('행사가 삭제되었습니다.', 'success')
-  logActivity('delete', '행사일정', `행사삭제: no=${no}`)
+  logActivity('delete', '행사일정', `행사삭제: ${ev?.name || 'no=' + no}`)
 }
+
+/* ---------- 레거시 호환 ---------- */
+function editEvent(no) { openEventDetailModal(no) }
+function submitEvent(e) { if (e) e.preventDefault() }
 
 /* ---------- 초기 렌더 ---------- */
 function renderEventTable() {

@@ -214,8 +214,11 @@ function openWorkRegisterModal(dateStr) {
   centerModal(modal)
 }
 
-function closeWorkRegisterModal() {
-  document.getElementById('workRegisterModal')?.close()
+function closeWorkRegisterModal(force) {
+  const modal = document.getElementById('workRegisterModal')
+  if (!modal) return
+  if (force) { modal.close(); return }
+  safeCloseModal(modal, () => true, () => modal.close())
 }
 
 function submitWork(e) {
@@ -246,7 +249,7 @@ function submitWork(e) {
 
   _workItems = State.workItems
   saveWorkItems()
-  closeWorkRegisterModal()
+  closeWorkRegisterModal(true)
   renderWorkCalendar()
   showToast(isEdit ? '업무일정이 수정되었습니다.' : '업무일정이 등록되었습니다.', 'success')
   logActivity(isEdit ? 'update' : 'create', '업무일정', `${isEdit ? '업무수정' : '업무등록'}: ${item.title}`)

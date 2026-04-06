@@ -115,6 +115,19 @@
       <div class="header-user-area">
         <span id="headerUserGrade"></span>
         <span class="header-user-name header-user-clickable" id="headerUserName" onclick="openMyProfile()"></span>
+        <div class="notif-wrap" id="notifWrap">
+          <button class="notif-bell" id="notifBell" onclick="toggleNotifDropdown()">
+            🔔<span class="notif-badge" id="notifBadge" style="display:none">0</span>
+          </button>
+          <div class="notif-dropdown" id="notifDropdown" style="display:none">
+            <div class="notif-header">
+              <span class="notif-header-title">알림</span>
+              <button class="notif-clear-btn" onclick="clearAllNotifications()">모두 읽음</button>
+            </div>
+            <div class="notif-list" id="notifList"></div>
+            <div class="notif-empty" id="notifEmpty" style="display:none">알림이 없습니다</div>
+          </div>
+        </div>
         <button class="header-logout-btn" onclick="handleLogout()">로그아웃</button>
       </div>
     </div>
@@ -304,6 +317,7 @@
         <div class="action-btns">
           <button class="btn btn-new" onclick="openStockRegisterModal()">+ 신규입고</button>
           <button class="btn btn-outline" onclick="openOutgoingModal()" style="border-color:var(--danger);color:var(--danger)">− 개별출고</button>
+          <button class="btn btn-outline" onclick="openBarcodeUploadModal()">바코드 업로드</button>
           <button class="btn btn-accent" onclick="downloadExcel('stock')">⬇ 다운로드</button>
           <button class="btn btn-ghost" onclick="downloadSample('stock')">샘플</button>
         </div>
@@ -865,9 +879,9 @@
     <div class="rform-section">
       <div class="rform-section-title">기본 정보</div>
       <div class="rform-grid">
-        <div class="rform-field required">
+        <div class="rform-field">
           <label>브랜드</label>
-          <select id="rBrand" required></select>
+          <select id="rBrand"></select>
         </div>
         <div class="rform-field required" style="grid-column:span 4">
           <label>품번</label>
@@ -981,9 +995,9 @@
           <label>바코드</label>
           <input type="text" id="rBarcode" placeholder="예: 8809012345678" />
         </div>
-        <div class="rform-field required" style="grid-column:span 2">
+        <div class="rform-field" style="grid-column:span 2">
           <label>상품명 (한글)</label>
-          <input type="text" id="rNameKr" placeholder="예: 코트다쥐르 쉘" required />
+          <input type="text" id="rNameKr" placeholder="예: 코트다쥐르 쉘" />
         </div>
         <div class="rform-field" style="grid-column:span 2">
           <label>상품명 (영문)</label>
@@ -996,6 +1010,15 @@
         <div class="rform-field">
           <label>색상 (영문)</label>
           <input type="text" id="rColorEn" placeholder="예: Navy" />
+        </div>
+        <div class="rform-field">
+          <label>성별</label>
+          <select id="rGender">
+            <option value="">-</option>
+            <option value="W">여성</option>
+            <option value="M">남성</option>
+            <option value="U">공용</option>
+          </select>
         </div>
       </div>
     </div>
@@ -1052,22 +1075,11 @@
 
     <div class="rform-section">
       <div class="rform-section-title">사이즈 규격</div>
-      <div class="rform-grid">
-        <div class="rform-field">
-          <label>가슴(cm)</label>
-          <input type="text" id="rBust" placeholder="예: 30.5" />
-        </div>
-        <div class="rform-field">
-          <label>허리(cm)</label>
-          <input type="text" id="rWaist" placeholder="예: 26.0" />
-        </div>
-        <div class="rform-field">
-          <label>엉덩이(cm)</label>
-          <input type="text" id="rHip" placeholder="예: 34.0" />
-        </div>
-        <div class="rform-field">
+      <div style="padding:0 12px">
+        <div id="rSizeSpecGrid"></div>
+        <div class="rform-field" style="margin-top:8px">
           <label>모델 착용사이즈</label>
-          <input type="text" id="rModelSize" placeholder="예: S" />
+          <input type="text" id="rModelSize" placeholder="예: M(85)" />
         </div>
       </div>
     </div>
@@ -1095,13 +1107,48 @@
           <label>등록일</label>
           <input type="date" id="rRegistDate" />
         </div>
+        <div class="rform-field">
+          <label>물류입고일</label>
+          <input type="date" id="rLogisticsDate" />
+        </div>
       </div>
     </div>
 
+    <div class="rform-section">
+      <div class="rform-section-title">판매/생산 상태</div>
+      <div class="rform-grid">
+        <div class="rform-field">
+          <label>판매상태</label>
+          <select id="rSaleStatus">
+            <option value="판매중">판매중</option>
+            <option value="종료">종료</option>
+            <option value="추가생산">추가생산</option>
+          </select>
+        </div>
+        <div class="rform-field">
+          <label>생산상태</label>
+          <select id="rProductionStatus">
+            <option value="지속생산">지속생산</option>
+            <option value="생산중단">생산중단</option>
+            <option value="시즌한정">시즌한정</option>
+            <option value="샘플">샘플</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="rform-section" id="rMallCodesSection">
+      <div class="rform-section-title">쇼핑몰 코드</div>
+      <div class="rform-grid" id="rMallCodesGrid"></div>
+    </div>
 
     <div class="rform-section">
       <div class="rform-section-title">이미지 URL</div>
       <div class="rform-grid">
+        <div class="rform-field" style="grid-column:span 4">
+          <label>대표이미지 URL</label>
+          <input type="url" id="rMainImage" placeholder="https://... (목록/상세 썸네일 최우선)" />
+        </div>
         <div class="rform-field" style="grid-column:span 2">
           <label>자사몰 URL</label>
           <textarea id="rImgJasa" rows="3" placeholder="URL을 줄바꿈으로 구분"></textarea>
@@ -1162,8 +1209,11 @@
     <!-- 왼쪽: 이미지 -->
     <div class="dmodal-left">
       <div class="dimg-main-wrap">
+        <button class="dimg-nav-btn dimg-nav-prev" id="dImgPrev" onclick="detailImgPrev()">‹</button>
         <img id="dImgMain" src="" alt="" class="dimg-main" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%27200%27 height=%2760%27 viewBox=%270 0 200 60%27%3E%3Crect fill=%27%231a1a2e%27 width=%27200%27 height=%2760%27 rx=%278%27/%3E%3Ctext x=%27100%27 y=%2737%27 text-anchor=%27middle%27 fill=%27%23c9a96e%27 font-family=%27Inter,sans-serif%27 font-size=%2718%27 font-weight=%27700%27 letter-spacing=%273%27%3ELEMANGO%3C/text%3E%3C/svg%3E'" />
+        <button class="dimg-nav-btn dimg-nav-next" id="dImgNext" onclick="detailImgNext()">›</button>
         <div id="dImgNone" class="dimg-none" style="display:none">이미지 없음</div>
+        <div class="dimg-counter" id="dImgCounter"></div>
       </div>
       <div class="dimg-thumbs" id="dImgThumbs"></div>
       <div id="dVideoWrap" class="dvideo-wrap" style="display:none">
@@ -1530,7 +1580,7 @@
         엑셀 일괄 등록
         <input type="file" accept=".xlsx,.xls" style="display:none" onchange="handleStockRegisterUpload(this)" />
       </label>
-      <button class="modal-close" onclick="document.getElementById('stockRegisterModal').close()">✕</button>
+      <button class="modal-close" onclick="closeStockRegisterModal()">✕</button>
     </div>
   </div>
   <div class="srm-body">
@@ -1563,7 +1613,7 @@
 
   </div>
   <div class="srm-footer" id="srmFooter">
-    <button type="button" class="btn btn-outline" onclick="document.getElementById('stockRegisterModal').close()">닫기</button>
+    <button type="button" class="btn btn-outline" onclick="closeStockRegisterModal()">닫기</button>
     <button type="button" class="btn btn-new" id="srmConfirmBtn" onclick="confirmStockUpload()" style="display:none">업로드 저장</button>
   </div>
 </dialog>
@@ -1690,28 +1740,16 @@
 <!-- 행사일정 등록/수정 모달 -->
 <dialog id="eventRegisterModal" class="srm-modal">
   <div class="srm-header">
-    <span class="rmodal-title">행사 등록</span>
-    <button class="modal-close" onclick="closeEventRegisterModal()">✕</button>
+    <span class="rmodal-title">행사일정</span>
+    <div class="srm-header-btns">
+      <button class="btn btn-sm btn-primary ev-view-btn" onclick="toggleEventEdit()">수정</button>
+      <button class="btn btn-sm btn-primary ev-edit-btn" onclick="saveEventEdit()">저장</button>
+      <button class="btn btn-sm btn-outline ev-edit-btn" onclick="toggleEventEdit()">취소</button>
+      <button class="btn btn-sm btn-primary ev-new-btn" onclick="submitEventNew()">등록</button>
+      <button class="modal-close" onclick="closeEventRegisterModal()">✕</button>
+    </div>
   </div>
-  <form id="evRegForm" class="srm-body" onsubmit="submitEvent(event)" style="display:flex;flex-direction:column;gap:12px">
-    <input type="hidden" id="evRegNo" />
-    <div class="rform-field"><label>행사명</label><input type="text" id="evRegName" required /></div>
-    <div class="rform-field"><label>채널</label><input type="text" id="evRegChannel" /></div>
-    <div style="display:flex;gap:12px">
-      <div class="rform-field" style="flex:1"><label>시작일</label><input type="date" id="evRegStart" required /></div>
-      <div class="rform-field" style="flex:1"><label>종료일</label><input type="date" id="evRegEnd" required /></div>
-    </div>
-    <div style="display:flex;gap:12px">
-      <div class="rform-field" style="flex:1"><label>할인율(%)</label><input type="number" id="evRegDiscount" min="0" max="100" /></div>
-      <div class="rform-field" style="flex:1"><label>당사지원(%)</label><input type="number" id="evRegSupport" min="0" max="100" /></div>
-    </div>
-    <div class="rform-field"><label>메모</label><textarea id="evRegMemo" rows="3"></textarea></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button type="submit" class="btn btn-primary">저장</button>
-      <button type="button" class="btn btn-outline" onclick="closeEventRegisterModal()">취소</button>
-    </div>
-  </form>
-  <div id="evCommentArea" style="padding:0 20px 16px;display:none"></div>
+  <div class="srm-body" id="eventModalBody" style="display:flex;flex-direction:column;gap:0"></div>
 </dialog>
 
 <!-- 기획일정 조회 모달 -->
@@ -1754,6 +1792,77 @@
   <div class="srm-body" id="wkDetailBody"></div>
 </dialog>
 
+<!-- 다운로드 양식 선택 모달 -->
+<dialog id="downloadFormatModal" class="srm-modal" style="width:520px;max-height:80vh;padding:0;overflow:hidden">
+  <div class="srm-modal-header">
+    <span>상품 다운로드</span>
+    <button class="modal-close" onclick="closeDownloadFormatModal()">×</button>
+  </div>
+  <div class="srm-modal-body" style="padding:20px;overflow-y:auto">
+    <div class="dfs-label">다운로드 양식 선택</div>
+    <div class="dfs-preset-list" id="dfsPresetList"></div>
+    <button class="dfs-add-btn" onclick="openDownloadFormatEditor(null)">+ 새 양식 만들기</button>
+    <div class="dfs-preview">
+      <div class="dfs-preview-title">선택된 양식 미리보기</div>
+      <div class="dfs-preview-tags" id="dfsPreviewTags"></div>
+    </div>
+    <div class="dfs-footer">
+      <button class="btn btn-outline" onclick="closeDownloadFormatModal()">취소</button>
+      <button class="btn btn-accent" onclick="downloadWithSelectedFormat()">다운로드</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- 다운로드 양식관리 모달 (에디터) -->
+<dialog id="downloadFormatEditorModal" class="srm-modal" style="width:700px;max-height:85vh;padding:0;overflow:hidden">
+  <div class="srm-modal-header">
+    <span>다운로드 양식관리</span>
+    <button class="modal-close" onclick="closeDownloadFormatEditor()">×</button>
+  </div>
+  <div class="srm-modal-body" style="padding:20px;overflow-y:auto">
+    <div class="dfe-name-row">
+      <label>양식명</label>
+      <input type="text" id="dfeFormatName" placeholder="양식 이름 입력">
+    </div>
+    <div class="dfe-columns">
+      <div class="dfe-panel">
+        <div class="dfe-panel-title">다운로드 가능한 항목</div>
+        <input class="dfe-search" id="dfeSearchLeft" placeholder="항목 검색..." oninput="filterDfeLeft()">
+        <div class="dfe-list" id="dfeLeftList"></div>
+        <div class="dfe-count" id="dfeLeftCount"></div>
+      </div>
+      <div class="dfe-btns">
+        <button onclick="dfeAddSelected()" title="선택 추가">&gt;</button>
+        <button onclick="dfeRemoveSelected()" title="선택 제거">&lt;</button>
+        <button onclick="dfeAddAll()" title="전체 추가">전체</button>
+        <button onclick="dfeReset()" title="초기화">리셋</button>
+      </div>
+      <div class="dfe-panel">
+        <div class="dfe-panel-title">다운로드 설정한 항목</div>
+        <div class="dfe-right-header">
+          <input class="dfe-search" id="dfeSearchRight" placeholder="항목 검색..." oninput="filterDfeRight()">
+          <button onclick="dfeMoveUp()" title="위로">▲</button>
+          <button onclick="dfeMoveDown()" title="아래로">▼</button>
+        </div>
+        <div class="dfe-list" id="dfeRightList"></div>
+        <div class="dfe-count" id="dfeRightCount"></div>
+      </div>
+    </div>
+    <div class="dfe-sort">
+      <span>정렬기준</span>
+      <select id="dfeSortKey"><option value="">정렬항목 선택</option></select>
+      <select id="dfeSortOrder">
+        <option value="asc">오름차순 (A→Z)</option>
+        <option value="desc">내림차순 (Z→A)</option>
+      </select>
+    </div>
+    <div class="dfe-footer">
+      <button class="btn btn-outline" onclick="closeDownloadFormatEditor()">취소</button>
+      <button class="btn btn-accent" onclick="saveDownloadFormat()">저장</button>
+    </div>
+  </div>
+</dialog>
+
 <!-- /appContainer -->
 </div>
 
@@ -1787,6 +1896,40 @@
     <button class="modal-close" onclick="document.getElementById('dashDayModal').close()">×</button>
   </div>
   <div class="ddm-body" style="padding:14px 18px;overflow-y:auto;flex:1"></div>
+</dialog>
+
+<!-- 바코드 업로드 모달 -->
+<dialog id="barcodeUploadModal" class="srm-modal" style="width:640px;max-height:80vh;padding:0;overflow:hidden;border-radius:10px">
+  <div class="modal-header" style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+    <span style="font-size:15px;font-weight:700;color:var(--primary)">바코드 업로드</span>
+    <button class="modal-close" onclick="closeBarcodeUploadModal()">×</button>
+  </div>
+  <div style="padding:18px;overflow-y:auto;flex:1">
+    <div class="bc-upload-area">
+      <p style="margin:0 0 12px;font-size:13px;color:var(--text-secondary)">엑셀 파일을 선택하세요 (품번 / 사이즈 / 바코드)</p>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="file" id="bcUploadFile" accept=".xlsx,.xls,.csv" onchange="handleBarcodeUpload(this)" />
+        <button class="btn btn-outline" onclick="downloadBarcodeSample()" style="white-space:nowrap">샘플 다운로드</button>
+      </div>
+    </div>
+    <div id="bcPreviewArea" style="display:none;margin-top:16px">
+      <div class="bc-summary" style="display:flex;gap:16px;font-size:13px;margin-bottom:12px">
+        <span>총 <strong id="bcTotalCount">0</strong>건</span>
+        <span style="color:var(--success)">매칭 <strong id="bcMatchCount">0</strong>건</span>
+        <span style="color:var(--danger)">미등록 <strong id="bcMissCount">0</strong>건</span>
+      </div>
+      <div class="bc-preview-table-wrap" style="max-height:360px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">
+        <table class="data-table" style="margin:0;font-size:13px">
+          <thead><tr><th style="width:70px">상태</th><th>품번</th><th style="width:60px">사이즈</th><th>바코드</th><th>기존 바코드</th></tr></thead>
+          <tbody id="bcPreviewBody"></tbody>
+        </table>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+        <button class="btn btn-outline" onclick="closeBarcodeUploadModal()">취소</button>
+        <button class="btn btn-new" id="bcConfirmBtn" onclick="confirmBarcodeUpload()">확정</button>
+      </div>
+    </div>
+  </div>
 </dialog>
 <script src="js/event.js"></script>
 <script src="js/work.js"></script>
