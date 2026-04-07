@@ -283,7 +283,7 @@ function openWorkDetailModal(no, fromDash = false) {
   const hbtns = document.getElementById('wkDetailHeaderBtns')
   if (hbtns) {
     const actionBtns = fromDash
-      ? `<button class="btn btn-sm btn-primary" onclick="openTab('work');closeWorkDetailModal()">업무일정에서 수정</button>`
+      ? `<button class="btn btn-sm btn-primary" onclick="goToWorkEdit(${w.no})">업무일정에서 수정</button>`
       : `<button class="btn btn-sm btn-primary" onclick="editWorkFromDetail(${w.no})">수정</button>
          <button class="btn btn-sm btn-outline" style="color:var(--danger);border-color:var(--danger)" onclick="deleteWork(${w.no})">삭제</button>`
     hbtns.innerHTML = actionBtns + `<button class="modal-close" onclick="closeWorkDetailModal()">✕</button>`
@@ -315,6 +315,12 @@ function buildWorkDetailContent(w, fromDash = false) {
 function workCatBadge(cat) {
   const c = getWorkCatColor(cat)
   return `<span class="wk-cat-badge" style="background:${c.bg};color:${c.text}">${cat || '-'}</span>`
+}
+
+function goToWorkEdit(no) {
+  closeWorkDetailModal()
+  openTab('work')
+  setTimeout(() => editWorkFromDetail(no), 300)
 }
 
 function editWorkFromDetail(no) {
