@@ -5,19 +5,20 @@
 let _evYear  = new Date().getFullYear()
 let _evMonth = new Date().getMonth() // 0-based
 let _editingEventNo = null
+let _eventOpenedFromDash = false
 
 // 행사별 색상 팔레트 (10색 — 진한 배경 + 흰 글자, 서로 보색 대비)
 const EV_COLORS = [
-  { bar: '#1565c0', text: '#ffffff' },  // 진한 파랑
-  { bar: '#c62828', text: '#ffffff' },  // 진한 빨강
-  { bar: '#2e7d32', text: '#ffffff' },  // 진한 초록
-  { bar: '#e65100', text: '#ffffff' },  // 진한 오렌지
-  { bar: '#6a1b9a', text: '#ffffff' },  // 진한 보라
-  { bar: '#00838f', text: '#ffffff' },  // 진한 청록
-  { bar: '#ad1457', text: '#ffffff' },  // 진한 핑크
-  { bar: '#283593', text: '#ffffff' },  // 진한 남색
-  { bar: '#4e342e', text: '#ffffff' },  // 진한 갈색
-  { bar: '#37474f', text: '#ffffff' },  // 진한 그레이블루
+  { bar: '#2563EB', text: '#ffffff' },
+  { bar: '#DC2626', text: '#ffffff' },
+  { bar: '#16A34A', text: '#ffffff' },
+  { bar: '#EA580C', text: '#ffffff' },
+  { bar: '#7C3AED', text: '#ffffff' },
+  { bar: '#0891B2', text: '#ffffff' },
+  { bar: '#DB2777', text: '#ffffff' },
+  { bar: '#854D0E', text: '#ffffff' },
+  { bar: '#475569', text: '#ffffff' },
+  { bar: '#4F46E5', text: '#ffffff' },
 ]
 
 /* ---------- 네비게이션 ---------- */
@@ -100,7 +101,7 @@ function renderEventCalendar() {
     if (isPast) classes.push('evcal-past')
     if (!hasEvents) classes.push('evcal-empty')
 
-    html += `<div class="${classes.join(' ')}">`
+    html += `<div class="${classes.join(' ')}" data-date="${cell.date}">`
     html += `<div class="evcal-day">${cell.day}${holiday ? `<span class="dcal-hol-name">${esc(holiday)}</span>` : ''}</div>`
     html += '<div class="evcal-bars">'
 
@@ -144,6 +145,14 @@ function renderEventCalendar() {
 
   html += '</div>'
   container.innerHTML = html
+
+  // 빈 날짜 더블클릭 → 행사 등록 모달 (해당 날짜 프리셋)
+  container.querySelectorAll('.evcal-cell[data-date]').forEach(cell => {
+    cell.addEventListener('dblclick', e => {
+      if (e.target.closest('.evcal-bar-fill, .evcal-bar-mini, .evcal-more')) return
+      openEventRegisterModal(cell.dataset.date)
+    })
+  })
 }
 
 /* ---------- 이벤트 바 배치 알고리즘 ---------- */
@@ -226,18 +235,20 @@ function resetEvent()  { renderEventCalendar() }
    ================================================================ */
 
 function _evUpdateHeaderBtns(mode) {
-  // mode: 'view' | 'edit' | 'new'
   const modal = document.getElementById('eventRegisterModal')
-  modal.querySelectorAll('.ev-view-btn').forEach(b => b.style.display = mode === 'view' ? '' : 'none')
-  modal.querySelectorAll('.ev-edit-btn').forEach(b => b.style.display = mode === 'edit' ? '' : 'none')
-  modal.querySelectorAll('.ev-new-btn').forEach(b => b.style.display = mode === 'new' ? '' : 'none')
+  modal.querySelectorAll('.ev-view-btn').forEach(b => b.style.display = mode === 'view' ? 'inline-block' : 'none')
+  modal.querySelectorAll('.ev-edit-btn').forEach(b => b.style.display = mode === 'edit' ? 'inline-block' : 'none')
+  modal.querySelectorAll('.ev-new-btn').forEach(b => b.style.display = mode === 'new' ? 'inline-block' : 'none')
+  const backBtn = modal.querySelector('.ev-back-btn')
+  if (backBtn) backBtn.style.display = (mode === 'view' && _eventOpenedFromDash) ? 'inline-block' : 'none'
 }
 
 /* ---------- 보기 모드로 열기 (캘린더 바 클릭) ---------- */
-function openEventDetailModal(no) {
+function openEventDetailModal(no, fromDash) {
   const ev = _events.find(e => e.no === no)
   if (!ev) return
   _editingEventNo = ev.no
+  _eventOpenedFromDash = !!fromDash
 
   const modal = document.getElementById('eventRegisterModal')
   modal.querySelector('.rmodal-title').textContent = '행사일정'
@@ -301,8 +312,12 @@ function buildEventDetailContent(ev) {
 
   html += '</div>'
 
-  // 삭제 버튼
-  html += `<div class="ev-detail-actions"><button class="btn btn-sm btn-danger" onclick="deleteEvent(${ev.no})">삭제</button></div>`
+  if (canDeleteEvent(ev)) {
+    html += `<div class="ev-detail-actions"><button class="btn btn-sm btn-danger" onclick="deleteEvent(${ev.no})">삭제</button></div>`
+  }
+
+  // 작성/수정 정보
+  html += renderStampInfo(ev)
 
   // 댓글 섹션
   html += `<div class="ev-comment-area">${buildCommentSection('event', ev.no)}</div>`
@@ -327,7 +342,7 @@ function buildEventNewForm(dateStr) {
 
   html += `<div class="dfield"><span class="dfield-label">기간</span>
     <span class="dfield-value"></span>
-    <div class="ev-date-pair"><input type="date" id="evStart" value="${today}" required><span>~</span><input type="date" id="evEnd" value="" required></div></div>`
+    <div class="ev-date-pair"><input type="date" id="evStart" value="${today}" required><span>~</span><input type="date" id="evEnd" value="${today}" required></div></div>`
 
   html += `<div class="dfield"><span class="dfield-label">할인율</span>
     <span class="dfield-value"></span>
@@ -381,6 +396,7 @@ function saveEventEdit() {
   ev.support = document.getElementById('evSupport')?.value || ''
   ev.memo = document.getElementById('evMemo')?.value.trim() || ''
 
+  stampModified(ev)
   saveEvents()
   closeEventRegisterModal(true)
   renderEventCalendar()
@@ -408,6 +424,7 @@ function submitEventNew() {
     support: document.getElementById('evSupport')?.value || '',
     memo: document.getElementById('evMemo')?.value.trim() || ''
   }
+  stampCreated(ev)
 
   _events.push(ev)
   saveEvents()
@@ -416,6 +433,45 @@ function submitEventNew() {
   renderDashCalendar()
   showToast('행사가 등록되었습니다.', 'success')
   logActivity('create', '행사일정', `행사등록: ${ev.name}`)
+}
+
+/* ---------- 뒤로 (대시보드 행사 조회로 복귀) ---------- */
+function backToDashEvent() {
+  const no = _editingEventNo
+  closeEventRegisterModal(true)
+  openDashEventInfo(no)
+}
+
+/* ---------- 행사일정 탭에서 수정 ---------- */
+function goToEventEdit(no) {
+  closeEventRegisterModal(true)
+  openTab('event')
+  setTimeout(() => {
+    const ev = _events.find(e => e.no === no)
+    if (!ev) return
+    _editingEventNo = ev.no
+    _eventOpenedFromDash = false
+    const modal = document.getElementById('eventRegisterModal')
+    modal.querySelector('.rmodal-title').textContent = '행사일정'
+    modal.classList.add('edit-mode')
+    _evUpdateHeaderBtns('edit')
+    buildEventDetailContent(ev)
+    modal.showModal()
+    centerModal(modal)
+    loadComments('event', ev.no)
+  }, 300)
+}
+
+/* ---------- 삭제 권한 ---------- */
+function canDeleteEvent(ev) {
+  const user = typeof firebase !== 'undefined' && firebase.auth().currentUser
+  if (!user) return false
+  const cu = State.currentUser
+  const grade = cu?.grade || 1
+  if (grade >= 3) return true
+  if (ev.createdBy && ev.createdBy === user.uid) return true
+  if (!ev.createdBy) return grade >= 3
+  return false
 }
 
 /* ---------- 닫기 ---------- */

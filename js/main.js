@@ -134,6 +134,7 @@ async function init() {
 async function initApp() {
   renderDate()
   bindTabs()
+  loadAllUsers()
   makeDraggableResizable(document.getElementById('memberEditModal'))
   makeDraggableResizable(document.getElementById('memberAddModal'))
   makeDraggableResizable(document.getElementById('memberProfileModal'))
@@ -150,10 +151,12 @@ async function initApp() {
   makeDraggableResizable(document.getElementById('planScheduleModal'))
   makeDraggableResizable(document.getElementById('workRegisterModal'))
   makeDraggableResizable(document.getElementById('workDetailModal'))
+  makeDraggableResizable(document.getElementById('personalScheduleModal'), 440, 300)
   makeDraggableResizable(document.getElementById('dashDayModal'), 360, 200)
   makeDraggableResizable(document.getElementById('barcodeUploadModal'), 500, 300)
   makeDraggableResizable(document.getElementById('downloadFormatModal'), 400, 300)
   makeDraggableResizable(document.getElementById('downloadFormatEditorModal'), 600, 400)
+  makeDraggableResizable(document.getElementById('bulkScheduleModal'), 400, 300)
   document.getElementById('dashDayModal')?.addEventListener('click', e => {
     if (e.target === e.currentTarget) e.currentTarget.close()
   })
@@ -168,6 +171,8 @@ async function initApp() {
     outgoingModal: closeOutgoingModal,
     barcodeUploadModal: closeBarcodeUploadModal,
     workRegisterModal: closeWorkRegisterModal,
+    personalScheduleModal: closePersonalScheduleModal,
+    bulkScheduleModal: closeBulkScheduleModal,
   }
   document.querySelectorAll('dialog').forEach(modal => {
     modal.addEventListener('cancel', e => {

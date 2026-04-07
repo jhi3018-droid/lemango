@@ -9,6 +9,55 @@ const SPEC_ROWS = [
   { key: 'etc', label: '기타' },
 ]
 const GENDER_MAP = { W: '여성', M: '남성', U: '공용' }
+const POSITIONS = ['사원','주임','대리','과장','차장','실장','팀장','부장','이사','대표이사']
+let _currentUserPosition = ''
+let _personalSchedules = []
+let _allUsers = []
+let _currentUserDept = ''
+let _currentUserName = ''
+
+const PS_CATEGORIES = ['외근','거래처방문','연차','반차','교육','미팅','출장','기타']
+const PS_CAT_COLORS = {
+  '외근':       { bg: '#7C3AED', text: '#fff' },
+  '거래처방문': { bg: '#2563EB', text: '#fff' },
+  '연차':       { bg: '#DC2626', text: '#fff' },
+  '반차':       { bg: '#EA580C', text: '#fff' },
+  '교육':       { bg: '#16A34A', text: '#fff' },
+  '미팅':       { bg: '#0891B2', text: '#fff' },
+  '출장':       { bg: '#854D0E', text: '#fff' },
+  '기타':       { bg: '#475569', text: '#fff' },
+}
+
+function formatUserName(name, position) {
+  if (!name) return '알 수 없음'
+  if (!position || position === '사원') return name
+  return name + ' ' + position
+}
+
+function formatUserNameHonorific(name, position) {
+  if (!name) return '알 수 없음'
+  if (!position || position === '사원') return name + '님'
+  return name + ' ' + position + '님'
+}
+
+function stampCreated(obj) {
+  const user = firebase.auth().currentUser
+  obj.createdBy = user?.uid || ''
+  obj.createdByName = formatUserName(_currentUserName, _currentUserPosition)
+  obj.createdAt = new Date().toISOString()
+  obj.lastModifiedBy = obj.createdBy
+  obj.lastModifiedByName = obj.createdByName
+  obj.lastModifiedAt = obj.createdAt
+  return obj
+}
+
+function stampModified(obj) {
+  const user = firebase.auth().currentUser
+  obj.lastModifiedBy = user?.uid || ''
+  obj.lastModifiedByName = formatUserName(_currentUserName, _currentUserPosition)
+  obj.lastModifiedAt = new Date().toISOString()
+  return obj
+}
 
 function ensureSizeSpec(p) {
   if (!p.sizeSpec) {
@@ -158,6 +207,10 @@ function populateAllSelects() {
   populateSelect('meEditDept',   _depts, false, true)
   populateSelect('maDept',       _depts, false, true)
   populateSelect('mpDept',       _depts, false, true)
+  // 직급 select (회원수정·회원추가·프로필)
+  populateSelect('meEditPosition', POSITIONS, false, true)
+  populateSelect('maPosition',     POSITIONS)
+  populateSelect('mpPosition',     POSITIONS, false, true)
 }
 
 // ===== 전역 상태 =====
@@ -339,5 +392,6 @@ const NOTIF_ICONS = {
   event_end:    '📅',
   plan_deadline:'📋',
   board_notice: '📢',
-  member_pending:'👤'
+  member_pending:'👤',
+  personal_schedule:'📋'
 }

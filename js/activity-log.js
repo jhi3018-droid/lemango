@@ -29,6 +29,7 @@ async function logActivity(action, target, detail) {
       timestamp: new Date(),
       uid: auth.currentUser.uid,
       userName: user ? user.name : auth.currentUser.email,
+      userPosition: _currentUserPosition || '',
       action: action,
       target: target,
       detail: detail,
@@ -154,7 +155,7 @@ function renderActivityLogTable() {
     return `<tr${rowStyle}>
       <td style="text-align:center">${start + i + 1}</td>
       <td class="al-time">${dateStr}</td>
-      <td><span class="al-user-name">${esc(d.userName)}</span></td>
+      <td><span class="al-user-name clickable-author" onclick="event.stopPropagation();showUserProfile('${d.uid}',this)">${esc(formatUserName(d.userName, d.userPosition))}</span></td>
       <td style="text-align:center">${alActionBadge(d.action)}</td>
       <td style="text-align:center">${esc(d.target || '-')}</td>
       <td class="al-detail-cell">${esc(d.detail)}</td>
@@ -241,7 +242,7 @@ window.exportActivityLog = function() {
     return {
       'NO': i + 1,
       '일시': `${y}-${mo}-${day} ${h}:${mi}:${s}`,
-      '사용자': d.userName,
+      '사용자': formatUserName(d.userName, d.userPosition),
       '활동유형': d.action,
       '대상메뉴': d.target || '',
       '상세내용': d.detail,

@@ -829,8 +829,10 @@ function uploadProducts(raw) {
         productCodeLocked: existing.productCodeLocked,
         barcodes:   existing.barcodes
       }
+      stampModified(State.allProducts[idx])
       updated++
     } else {
+      stampCreated(product)
       State.allProducts.push(product)
       added++
     }

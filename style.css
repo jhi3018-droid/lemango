@@ -1113,7 +1113,7 @@ body.col-resize-active * { cursor: col-resize !important; }
 .size-spec-table td { padding: 6px 8px; border: 0.5px solid var(--border); }
 .size-spec-label { font-weight: 500; text-align: left !important; min-width: 55px; font-size: 12px; color: var(--text-sub); background: var(--bg-secondary, #f5f4f1); }
 .size-spec-val { font-size: 12px; }
-.size-spec-input { width: 100%; padding: 3px 4px; border: 1px solid var(--border); border-radius: 3px; font-size: 11px; text-align: center; box-sizing: border-box; }
+.size-spec-input { width: 100%; padding: 3px 4px; border: 1px solid var(--border); border-radius: 3px; font-size: 11px; text-align: center; box-sizing: border-box; display: none; }
 .detail-modal.edit-mode .size-spec-val { display: none !important; }
 .detail-modal.edit-mode .size-spec-input { display: block !important; }
 
@@ -1308,12 +1308,13 @@ body.col-resize-active * { cursor: col-resize !important; }
   width: 760px; max-width: 98vw; height: 88vh; max-height: 98vh;
   box-shadow: 0 20px 60px rgba(0,0,0,0.25);
   display: none; flex-direction: column; overflow: hidden;
+  background: #fff; color: var(--text-main);
 }
 .srm-modal[open] { display: flex; }
 .srm-modal::backdrop { background: rgba(0,0,0,0.55); }
 .srm-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 24px; background: var(--primary); flex-shrink: 0; gap: 12px;
+  padding: 16px 24px; background: var(--primary); color: #fff; flex-shrink: 0; gap: 12px;
   cursor: grab;
 }
 .srm-header:active { cursor: grabbing; }
@@ -2042,6 +2043,29 @@ body.col-resize-active * { cursor: col-resize !important; }
   color: var(--text);
   font-weight: 500;
 }
+
+/* ===== 신규기획 일괄 일정 설정 ===== */
+#planTable tr.np-selected { background: #FFF8E8; }
+.np-toolbar {
+  display:flex; align-items:center; gap:8px;
+  padding:8px 12px; margin-bottom:8px;
+  background:var(--bg-secondary, #f5f4f1); border-radius:8px;
+}
+.np-sel-count { font-size:12px; color:var(--text-sub); }
+.np-sel-count strong { color:var(--accent); font-weight:600; }
+.np-toolbar-btn {
+  padding:6px 14px; border:1px solid var(--border); border-radius:6px;
+  background:#fff; font-size:12px; cursor:pointer; color:#5f5e5a;
+}
+.np-toolbar-btn:hover { border-color:var(--accent); color:var(--accent); }
+.np-toolbar-primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+.np-toolbar-primary:hover { background:#b8924f; color:#fff; }
+.np-bulk-grid { display:grid; grid-template-columns:auto 1fr 1fr; gap:8px 12px; align-items:center; }
+.np-bulk-label { font-size:12px; font-weight:500; color:var(--text-sub); display:flex; align-items:center; gap:6px; }
+.np-bulk-dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+.np-bulk-input { padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:12px; width:100%; box-sizing:border-box; }
+.np-bulk-info { font-size:11px; color:var(--text-sub); margin-top:12px; }
+.np-bulk-footer { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; padding-top:12px; border-top:1px solid var(--border); }
 
 /* ===== 신규기획 이미지 업로드 ===== */
 .pl-img-upload-btn {
@@ -2872,6 +2896,7 @@ body.col-resize-active * { cursor: col-resize !important; }
 .ps-phase-table td {
   padding: 6px 12px;
   font-size: 12px;
+  color: var(--text-main);
   border-bottom: 1px solid var(--border-light);
 }
 .ps-phase-table tr.ps-active { background: #fffde7; font-weight: 600; }
@@ -2914,6 +2939,12 @@ body.col-resize-active * { cursor: col-resize !important; }
   margin-bottom: 12px;
 }
 .ps-ev-detail .ps-phase-table td { padding: 6px 12px; }
+.ps-group-header { display:flex; align-items:center; gap:6px; padding:8px 14px 4px; font-size:13px; font-weight:600; color:var(--text-main); border-bottom:1px solid var(--border-light); margin-top:8px; }
+.ps-group-header:first-child { margin-top:0; }
+.ps-group-count { font-size:11px; font-weight:400; color:var(--text-sub); }
+.ps-group-row { display:flex; align-items:center; gap:10px; padding:6px 14px 6px 28px; font-size:12px; }
+.ps-group-code { font-family:'Inter',monospace; font-weight:600; color:var(--accent); min-width:100px; }
+.ps-group-tag { color:var(--text-sub); flex:1; }
 
 /* ===== 공휴일 표기 ===== */
 .dcal-holiday { background: #fff5f5 !important; }
@@ -3788,3 +3819,76 @@ body.col-resize-active * { cursor: col-resize !important; }
 .notif-time { font-size:11px; color:#aaa; margin-top:3px; }
 .notif-dismiss { background:none; border:none; color:#ccc; font-size:16px; cursor:pointer; padding:0 2px; line-height:1; flex-shrink:0; }
 .notif-dismiss:hover { color:var(--danger); }
+
+/* ===== User Profile Popup ===== */
+.user-profile-popup {
+  position: absolute; z-index: 8000;
+  background: #fff; border: 1px solid #d3d1c7; border-radius: 10px;
+  padding: 14px 18px; min-width: 220px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  font-size: 13px;
+}
+.upp-name { font-size: 15px; font-weight: 600; color: var(--primary); }
+.upp-divider { height: 1px; background: #e8e6e0; margin: 8px 0; }
+.upp-row { display: flex; justify-content: space-between; padding: 3px 0; gap: 12px; }
+.upp-label { color: #888780; min-width: 40px; flex-shrink: 0; }
+.clickable-author { cursor: pointer; }
+.clickable-author:hover { text-decoration: underline; color: var(--accent); }
+
+/* ===== 업무일정 inner tabs ===== */
+.work-inner-tabs { display:flex; gap:0; margin-bottom:16px; border-bottom:2px solid var(--border-light); }
+.work-inner-tab { padding:10px 20px; font-size:13px; cursor:pointer; border:none; background:none; border-bottom:2px solid transparent; color:var(--text-sub); margin-bottom:-2px; transition: color 0.15s, border-color 0.15s; }
+.work-inner-tab:hover { color:var(--text-main); }
+.work-inner-tab.active { color:var(--primary); border-bottom-color:var(--accent); font-weight:600; }
+
+/* ===== 개인일정 멘션 ===== */
+/* 개인일정 폼 필드 (.dfield 와 독립 — display:none 충돌 회피) */
+.ps-field { display:flex; flex-direction:column; gap:3px; }
+.ps-field-label { font-size:11px; font-weight:600; color:var(--text-sub); }
+.ps-field input,
+.ps-field select,
+.ps-field textarea {
+  display:block; padding:5px 8px; border:1px solid var(--border);
+  border-radius:var(--radius-sm); font-size:13px; font-family:inherit;
+  width:100%; background:#fff; color:var(--text-main); box-sizing:border-box;
+}
+.ps-field input:focus,
+.ps-field select:focus,
+.ps-field textarea:focus { outline:none; border-color:var(--accent); }
+.ps-field textarea { resize:vertical; min-height:80px; }
+
+.ps-mention-area { border:1px solid var(--border); border-radius:6px; padding:6px 8px; min-height:36px; display:flex; flex-wrap:wrap; gap:4px; align-items:center; background:#fff; }
+.ps-mention-tag { display:inline-flex; align-items:center; gap:3px; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:500; }
+.ps-mention-user { background:#EEEDFE; color:#3C3489; }
+.ps-mention-dept { background:#E1F5EE; color:#085041; }
+.ps-mention-x { cursor:pointer; font-size:10px; opacity:0.5; margin-left:2px; }
+.ps-mention-x:hover { opacity:1; }
+.ps-mention-input { border:none; outline:none; font-size:12px; flex:1; min-width:80px; background:transparent; }
+.ps-mention-dropdown { border:1px solid var(--border); border-radius:6px; margin-top:4px; max-height:180px; overflow-y:auto; background:#fff; position:absolute; z-index:100; left:0; right:0; box-shadow:0 4px 12px rgba(0,0,0,0.1); }
+.ps-mention-item { padding:8px 12px; cursor:pointer; font-size:12px; display:flex; align-items:center; gap:6px; }
+.ps-mention-item:hover { background:var(--bg); }
+.ps-mention-icon { color:var(--accent); font-weight:600; }
+.ps-vis { font-size:11px; color:var(--text-sub); margin-top:6px; }
+
+/* ===== 개인일정 범례 ===== */
+.ps-legend { display:flex; gap:14px; font-size:11px; color:var(--text-sub); }
+.ps-legend-item { display:flex; align-items:center; gap:4px; }
+.ps-legend-dot { width:8px; height:8px; border-radius:2px; }
+
+/* ===== 개인일정 관리자 패널 ===== */
+.ps-admin-title { font-size:14px; font-weight:600; color:var(--primary); margin:0 0 10px; }
+.ps-admin-table { width:100%; border-collapse:collapse; font-size:12px; }
+.ps-admin-table th { background:var(--bg); padding:8px 12px; text-align:left; font-weight:500; font-size:11px; color:var(--text-sub); }
+.ps-admin-table td { padding:8px 12px; border-bottom:1px solid var(--border-light); }
+.ps-admin-avatar { width:28px; height:28px; border-radius:50%; background:#E6F1FB; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600; color:#0C447C; }
+.ps-admin-name { font-weight:500; }
+.ps-admin-view-btn { padding:4px 10px; border:1px solid var(--border); border-radius:4px; background:#fff; font-size:11px; cursor:pointer; }
+.ps-admin-view-btn:hover { border-color:var(--accent); color:var(--accent); }
+
+.stamp-info {
+  display: flex; flex-wrap: wrap; gap: 12px;
+  padding: 10px 0; margin-top: 12px;
+  border-top: 0.5px solid var(--border);
+  font-size: 11px; color: #b4b2a9;
+}
+.stamp-created, .stamp-modified { display: inline-flex; align-items: center; gap: 4px; }

@@ -6,6 +6,12 @@ let _wkYear  = new Date().getFullYear()
 let _wkMonth = new Date().getMonth() // 0-based
 let _wkCatFilter = 'all'
 
+let _psYear = new Date().getFullYear()
+let _psMonth = new Date().getMonth()
+let _editingPsId = null
+let _psFilterUser = ''
+let _psFilterDept = ''
+
 /* ---------- 네비게이션 ---------- */
 function wkPrevMonth() {
   _wkMonth--
@@ -242,8 +248,16 @@ function submitWork(e) {
 
   if (isEdit) {
     const idx = State.workItems.findIndex(w => w.no === no)
-    if (idx >= 0) State.workItems[idx] = item
+    if (idx >= 0) {
+      const old = State.workItems[idx]
+      item.createdBy = old.createdBy
+      item.createdByName = old.createdByName
+      item.createdAt = old.createdAt
+      stampModified(item)
+      State.workItems[idx] = item
+    }
   } else {
+    stampCreated(item)
     State.workItems.push(item)
   }
 
@@ -265,16 +279,21 @@ function openWorkDetailModal(no, fromDash = false) {
   const body = document.getElementById('wkDetailBody')
   body.innerHTML = buildWorkDetailContent(w, fromDash)
   modal.querySelector('.rmodal-title').textContent = '업무일정 상세'
+  // 헤더 액션 버튼 주입
+  const hbtns = document.getElementById('wkDetailHeaderBtns')
+  if (hbtns) {
+    const actionBtns = fromDash
+      ? `<button class="btn btn-sm btn-primary" onclick="openTab('work');closeWorkDetailModal()">업무일정에서 수정</button>`
+      : `<button class="btn btn-sm btn-primary" onclick="editWorkFromDetail(${w.no})">수정</button>
+         <button class="btn btn-sm btn-outline" style="color:var(--danger);border-color:var(--danger)" onclick="deleteWork(${w.no})">삭제</button>`
+    hbtns.innerHTML = actionBtns + `<button class="modal-close" onclick="closeWorkDetailModal()">✕</button>`
+  }
   modal.showModal()
   centerModal(modal)
   loadComments('work', no)
 }
 
 function buildWorkDetailContent(w, fromDash = false) {
-  const actionBtns = fromDash
-    ? `<button class="btn btn-primary btn-sm" onclick="openTab('work');document.getElementById('workDetailModal').close()">업무일정에서 수정</button>`
-    : `<button class="btn btn-primary btn-sm" onclick="editWorkFromDetail(${w.no})">수정</button>
-       <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="deleteWork(${w.no})">삭제</button>`
   return `
     <div class="wkd-view">
       <table class="ps-phase-table">
@@ -287,10 +306,8 @@ function buildWorkDetailContent(w, fromDash = false) {
           <tr><td class="ps-label">등록일</td><td>${w.registeredAt ? w.registeredAt.slice(0, 10) : '-'}</td></tr>
         </tbody>
       </table>
-      <div class="ps-actions" style="margin-top:16px">
-        ${actionBtns}
-      </div>
 
+      ${renderStampInfo(w)}
       ${buildCommentSection('work', w.no)}
     </div>`
 }
@@ -334,4 +351,536 @@ async function deleteWork(no) {
   renderWorkCalendar()
   showToast('업무일정이 삭제되었습니다.', 'success')
   logActivity('delete', '업무일정', `업무삭제: no=${no}`)
+}
+
+// =============================================
+// ===== 개인일정 — Inner Tab + Firestore =====
+// =============================================
+
+function switchWorkTab(tab) {
+  document.querySelectorAll('.work-inner-tab').forEach(t => t.classList.remove('active'))
+  document.querySelector(`.work-inner-tab[data-tab="${tab}"]`)?.classList.add('active')
+  document.getElementById('workCalendarArea').style.display = tab === 'work' ? '' : 'none'
+  document.getElementById('personalCalendarArea').style.display = tab === 'personal' ? '' : 'none'
+  if (tab === 'personal') {
+    loadAllUsers().then(() => loadPersonalSchedules().then(() => renderPersonalCalendar()))
+  }
+}
+
+async function loadPersonalSchedules() {
+  try {
+    const snapshot = await firebase.firestore().collection('personalSchedules').get()
+    _personalSchedules = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+  } catch(e) { console.error('loadPersonalSchedules error:', e) }
+}
+
+async function loadAllUsers() {
+  if (_allUsers.length > 0) return
+  try {
+    const snapshot = await firebase.firestore().collection('users').where('status', '==', 'approved').get()
+    _allUsers = snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }))
+  } catch(e) { console.error('loadAllUsers error:', e) }
+}
+
+function getVisibleSchedules() {
+  const uid = firebase.auth().currentUser?.uid
+  const grade = State.currentUser?.grade || 1
+  const dept = _currentUserDept || ''
+  return _personalSchedules.filter(ps => {
+    if (grade >= 4) return true
+    if (ps.createdBy === uid) return true
+    if (ps.mentions?.some(m => m.type === 'user' && m.uid === uid)) return true
+    if (ps.mentions?.some(m => m.type === 'dept' && m.dept === dept)) return true
+    return false
+  })
+}
+
+/* ---------- 개인일정 캘린더 ---------- */
+function psNavPrev() { _psMonth--; if (_psMonth < 0) { _psMonth = 11; _psYear-- } renderPersonalCalendar() }
+function psNavNext() { _psMonth++; if (_psMonth > 11) { _psMonth = 0; _psYear++ } renderPersonalCalendar() }
+function psNavToday() { _psYear = new Date().getFullYear(); _psMonth = new Date().getMonth(); renderPersonalCalendar() }
+
+function renderPersonalCalendar() {
+  const container = document.getElementById('personalCalendar')
+  const title = document.getElementById('psMonthTitle')
+  if (!container) return
+
+  title.textContent = `${_psYear}년 ${_psMonth + 1}월`
+  title.classList.add('cal-month-clickable')
+  title.onclick = () => openMonthPicker(title, _psYear, _psMonth, (y, m) => {
+    _psYear = y; _psMonth = m; renderPersonalCalendar()
+  })
+
+  const grade = State.currentUser?.grade || 1
+  const adminFilter = document.getElementById('psAdminFilter')
+  const adminPanel = document.getElementById('psAdminPanel')
+  if (grade >= 4) {
+    if (adminFilter) adminFilter.style.display = 'flex'
+    if (adminPanel) adminPanel.style.display = 'block'
+    populatePsAdminFilters()
+    renderPsAdminPanel()
+  } else {
+    if (adminFilter) adminFilter.style.display = 'none'
+    if (adminPanel) adminPanel.style.display = 'none'
+  }
+
+  let visible = getVisibleSchedules()
+  const uid = firebase.auth().currentUser?.uid
+  if (grade >= 4 && _psFilterUser) {
+    visible = visible.filter(ps => ps.createdBy === _psFilterUser)
+  } else if (grade >= 4 && _psFilterDept) {
+    visible = visible.filter(ps => ps.createdByDept === _psFilterDept)
+  }
+
+  const firstDay = new Date(_psYear, _psMonth, 1)
+  const startDow = firstDay.getDay()
+  const totalCells = 42
+  const cells = []
+  for (let i = 0; i < totalCells; i++) {
+    const d = new Date(_psYear, _psMonth, i - startDow + 1)
+    cells.push({
+      date: fmtDate(d),
+      day: d.getDate(),
+      inMonth: d.getMonth() === _psMonth,
+      isToday: fmtDate(d) === fmtDate(new Date()),
+      dow: i % 7
+    })
+  }
+
+  const MAX_ROWS = 10
+  const barRows = placePsBars(cells[0].date, cells[cells.length - 1].date, visible, MAX_ROWS)
+  const todayStr = fmtDate(new Date())
+
+  let html = '<div class="evcal-grid">'
+  const DOW = ['일','월','화','수','목','금','토']
+  DOW.forEach((d, i) => {
+    const cls = i === 0 ? ' evcal-sun' : i === 6 ? ' evcal-sat' : ''
+    html += `<div class="evcal-dow${cls}">${d}</div>`
+  })
+
+  cells.forEach(cell => {
+    const isPast = cell.date < todayStr
+    const cellBars = barRows[cell.date] || {}
+    let barCount = 0
+    for (let r = 0; r < MAX_ROWS; r++) { if (cellBars[r]) barCount++ }
+    const holiday = getHolidayName(cell.date)
+    const classes = ['evcal-cell']
+    if (!cell.inMonth) classes.push('evcal-other')
+    if (cell.isToday) classes.push('evcal-today')
+    if (cell.dow === 0) classes.push('evcal-sun')
+    if (cell.dow === 6) classes.push('evcal-sat')
+    if (holiday) classes.push('dcal-holiday')
+    if (isPast) classes.push('evcal-past')
+    if (!barCount) classes.push('evcal-empty')
+
+    html += `<div class="${classes.join(' ')}" data-date="${cell.date}">`
+    html += `<div class="evcal-day">${cell.day}${holiday ? `<span class="dcal-hol-name">${esc(holiday)}</span>` : ''}</div>`
+    html += '<div class="evcal-bars">'
+
+    for (let row = 0; row < MAX_ROWS; row++) {
+      const bar = cellBars[row]
+      if (!bar) { if (!isPast) html += '<div class="evcal-bar evcal-bar-empty"></div>'; continue }
+      const ps = bar.item
+      const isMine = ps.createdBy === uid
+      const catColor = PS_CAT_COLORS[ps.category] || PS_CAT_COLORS['기타']
+      const barColor = isMine ? catColor : { bg: '#0891B2', text: '#fff' }
+      const tooltip = `${esc(ps.category || '')} ${esc(ps.title)} (${esc(formatUserName(ps.createdByName, ps.createdByPosition))})`
+
+      if (isPast) {
+        html += `<div class="evcal-bar evcal-bar-mini" style="background:${barColor.bg};opacity:0.6" title="${tooltip}" onclick="event.stopPropagation();openPersonalDetailModal('${ps.id}')"></div>`
+      } else {
+        const label = esc(`${ps.category || ''} ${ps.title}`.trim())
+        html += `<div class="evcal-bar evcal-bar-fill" style="background:${barColor.bg};color:${barColor.text}" title="${tooltip}" onclick="event.stopPropagation();openPersonalDetailModal('${ps.id}')">${label}</div>`
+      }
+    }
+
+    const moreCount = cellBars._overflow || 0
+    if (moreCount > 0) html += `<div class="evcal-more">+${moreCount}건</div>`
+    html += '</div></div>'
+  })
+
+  html += '</div>'
+  container.innerHTML = html
+
+  container.querySelectorAll('.evcal-cell[data-date]').forEach(cell => {
+    cell.addEventListener('dblclick', () => openPersonalRegisterModal(cell.dataset.date))
+  })
+}
+
+function placePsBars(gridStart, gridEnd, items, maxRows) {
+  const result = {}
+  const visible = items.filter(ps =>
+    ps.startDate && (ps.endDate || ps.startDate) >= gridStart && ps.startDate <= gridEnd
+  ).sort((a, b) => {
+    if (a.startDate !== b.startDate) return a.startDate < b.startDate ? -1 : 1
+    return (a.endDate || a.startDate) < (b.endDate || b.startDate) ? -1 : 1
+  })
+
+  const rowEnd = []
+  visible.forEach(ps => {
+    const pEnd = ps.endDate || ps.startDate
+    const vStart = ps.startDate < gridStart ? gridStart : ps.startDate
+    const vEnd = pEnd > gridEnd ? gridEnd : pEnd
+    let assignedRow = -1
+    for (let r = 0; r < maxRows; r++) {
+      if (!rowEnd[r] || rowEnd[r] < vStart) { assignedRow = r; break }
+    }
+    const dates = getDateRange(vStart, vEnd)
+    if (assignedRow === -1) {
+      dates.forEach(d => { if (!result[d]) result[d] = {}; result[d]._overflow = (result[d]._overflow || 0) + 1 })
+      return
+    }
+    rowEnd[assignedRow] = vEnd
+    dates.forEach(d => { if (!result[d]) result[d] = {}; result[d][assignedRow] = { item: ps } })
+  })
+  return result
+}
+
+/* ---------- 등록/상세 모달 ---------- */
+function openPersonalRegisterModal(dateStr) {
+  _editingPsId = null
+  const modal = document.getElementById('personalScheduleModal')
+  if (!modal) { console.error('[ps] modal not found'); return }
+  const headerSpan = document.getElementById('psModalHeader')?.querySelector('span')
+  if (headerSpan) headerSpan.textContent = '개인일정 등록'
+  const body = document.getElementById('psModalBody')
+  if (!body) { console.error('[ps] psModalBody not found'); return }
+  const html = buildPsForm(null)
+  console.log('[ps] buildPsForm length:', html.length)
+  body.innerHTML = html
+  console.log('[ps] body children after set:', body.children.length)
+  if (dateStr) {
+    const s = document.getElementById('psStartDate'); if (s) s.value = dateStr
+    const e = document.getElementById('psEndDate');   if (e) e.value = dateStr
+  }
+  const btns = document.getElementById('psHeaderBtns')
+  if (btns) btns.innerHTML = '<button class="btn btn-primary btn-sm" onclick="savePersonalSchedule()">등록</button><button class="modal-close" onclick="closePersonalScheduleModal()">✕</button>'
+  loadAllUsers()
+  modal.showModal()
+  centerModal(modal)
+}
+
+function openPersonalDetailModal(id) {
+  const ps = _personalSchedules.find(p => p.id === id)
+  if (!ps) return
+  _editingPsId = ps.id
+  const modal = document.getElementById('personalScheduleModal')
+  const uid = firebase.auth().currentUser?.uid
+  const canEdit = (ps.createdBy === uid) || (State.currentUser?.grade >= 4)
+
+  document.getElementById('psModalHeader').querySelector('span').textContent = formatUserName(ps.createdByName, ps.createdByPosition) + '의 일정'
+  document.getElementById('psModalBody').innerHTML = buildPsView(ps)
+  modal.classList.remove('edit-mode')
+
+  const btns = document.getElementById('psHeaderBtns')
+  let btnHtml = ''
+  if (canEdit) btnHtml += '<button class="btn btn-outline btn-sm" onclick="togglePsEdit()">수정</button>'
+  if (canDeletePs(ps)) btnHtml += '<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="deletePersonalSchedule(\'' + ps.id + '\')">삭제</button>'
+  btnHtml += '<button class="modal-close" onclick="closePersonalScheduleModal()">✕</button>'
+  btns.innerHTML = btnHtml
+
+  modal.showModal()
+  centerModal(modal)
+}
+
+function closePersonalScheduleModal(force) {
+  const modal = document.getElementById('personalScheduleModal')
+  if (!modal) return
+  const doClose = () => { modal.classList.remove('edit-mode'); _editingPsId = null; modal.close() }
+  if (force) { doClose(); return }
+  safeCloseModal(modal, () => modal.classList.contains('edit-mode'), doClose)
+}
+
+function canDeletePs(ps) {
+  const uid = firebase.auth().currentUser?.uid
+  if (!uid) return false
+  if (State.currentUser?.grade >= 4) return true
+  if (ps.createdBy === uid) return true
+  return false
+}
+
+function togglePsEdit() {
+  const modal = document.getElementById('personalScheduleModal')
+  const ps = _personalSchedules.find(p => p.id === _editingPsId)
+  if (!ps) return
+
+  if (modal.classList.contains('edit-mode')) {
+    modal.classList.remove('edit-mode')
+    document.getElementById('psModalBody').innerHTML = buildPsView(ps)
+    const btns = document.getElementById('psHeaderBtns')
+    let btnHtml = '<button class="btn btn-outline btn-sm" onclick="togglePsEdit()">수정</button>'
+    if (canDeletePs(ps)) btnHtml += '<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="deletePersonalSchedule(\'' + ps.id + '\')">삭제</button>'
+    btnHtml += '<button class="modal-close" onclick="closePersonalScheduleModal()">✕</button>'
+    btns.innerHTML = btnHtml
+  } else {
+    modal.classList.add('edit-mode')
+    document.getElementById('psModalBody').innerHTML = buildPsForm(ps)
+    loadAllUsers()
+    const btns = document.getElementById('psHeaderBtns')
+    btns.innerHTML = '<button class="btn btn-primary btn-sm" onclick="savePersonalSchedule()">저장</button><button class="btn btn-outline btn-sm" onclick="togglePsEdit()">취소</button><button class="modal-close" onclick="closePersonalScheduleModal()">✕</button>'
+  }
+}
+
+/* ---------- View / Form HTML ---------- */
+function buildPsView(ps) {
+  const mentionHtml = (ps.mentions || []).map(m => {
+    if (m.type === 'user') return `<span class="ps-mention-tag ps-mention-user">@${esc(formatUserName(m.name, m.position))}</span>`
+    return `<span class="ps-mention-tag ps-mention-dept">@${esc(m.dept)}</span>`
+  }).join(' ') || '-'
+
+  return `<table class="ps-phase-table">
+    <tbody>
+      <tr><td class="ps-label">제목</td><td><strong>${esc(ps.title)}</strong></td></tr>
+      <tr><td class="ps-label">카테고리</td><td><span class="wk-cat-badge" style="background:${(PS_CAT_COLORS[ps.category]||PS_CAT_COLORS['기타']).bg};color:#fff">${esc(ps.category)}</span></td></tr>
+      <tr><td class="ps-label">시작일</td><td>${ps.startDate || '-'}</td></tr>
+      <tr><td class="ps-label">종료일</td><td>${ps.endDate || '-'}</td></tr>
+      <tr><td class="ps-label">참조</td><td>${mentionHtml}</td></tr>
+      <tr><td class="ps-label">메모</td><td style="white-space:pre-wrap">${esc(ps.memo || '-')}</td></tr>
+    </tbody>
+  </table>
+  ${renderStampInfo(ps)}`
+}
+
+function buildPsForm(ps) {
+  ps = ps || {}
+  const catOptions = PS_CATEGORIES.map(c => `<option value="${c}"${ps.category === c ? ' selected' : ''}>${c}</option>`).join('')
+
+  const mentionTags = (ps.mentions || []).map(m => {
+    if (m.type === 'user') {
+      return `<span class="ps-mention-tag ps-mention-user" data-type="user" data-uid="${m.uid}" data-name="${esc(m.name)}" data-position="${esc(m.position || '')}">@${esc(formatUserName(m.name, m.position))} <span class="ps-mention-x" onclick="this.parentElement.remove()">&#10005;</span></span>`
+    }
+    return `<span class="ps-mention-tag ps-mention-dept" data-type="dept" data-dept="${esc(m.dept)}">@${esc(m.dept)} <span class="ps-mention-x" onclick="this.parentElement.remove()">&#10005;</span></span>`
+  }).join('')
+
+  const FS = 'display:block !important;width:100%;padding:6px 10px;border:1px solid #d7d7e0;border-radius:6px;font-size:13px;font-family:inherit;background:#fff;color:#1a1a2e;box-sizing:border-box'
+  const LB = 'display:block;font-size:11px;font-weight:600;color:#6b6b7a;margin-bottom:4px'
+  const FD = 'display:block;margin-bottom:14px'
+
+  return `
+    <div style="${FD}"><label style="${LB}">제목</label>
+    <input type="text" id="psTitle" value="${esc(ps.title || '')}" placeholder="일정 제목" style="${FS}"></div>
+
+    <div style="display:flex;gap:10px;margin-bottom:14px">
+      <div style="flex:1"><label style="${LB}">시작일</label>
+      <input type="date" id="psStartDate" value="${ps.startDate || ''}" style="${FS}"></div>
+      <div style="flex:1"><label style="${LB}">종료일</label>
+      <input type="date" id="psEndDate" value="${ps.endDate || ''}" style="${FS}"></div>
+    </div>
+
+    <div style="${FD}"><label style="${LB}">카테고리</label>
+    <select id="psCategory" style="${FS}">${catOptions}</select></div>
+
+    <div style="${FD};position:relative"><label style="${LB}">참조 (@이름, @부서로 공유)</label>
+    <div class="ps-mention-area" id="psMentionArea" style="display:flex;flex-wrap:wrap;gap:6px;padding:6px;border:1px solid #d7d7e0;border-radius:6px;min-height:36px;background:#fff">
+      ${mentionTags}
+      <input class="ps-mention-input" id="psMentionInput" placeholder="@입력..." oninput="searchPsMention(this.value)" style="display:inline-block;flex:1;min-width:120px;border:none;outline:none;font-size:13px;padding:2px 4px;background:transparent">
+    </div>
+    <div class="ps-mention-dropdown" id="psMentionDropdown" style="display:none"></div>
+    <div style="font-size:11px;color:#6b6b7a;margin-top:6px">작성자 + 참조자 + 최종관리자만 볼 수 있습니다</div>
+    </div>
+
+    <div style="${FD}"><label style="${LB}">메모</label>
+    <textarea id="psMemo" rows="3" placeholder="메모" style="${FS};resize:vertical;min-height:70px">${esc(ps.memo || '')}</textarea></div>`
+}
+
+/* ---------- @Mention ---------- */
+function searchPsMention(query) {
+  const dropdown = document.getElementById('psMentionDropdown')
+  const q = query.replace(/^@/, '').toLowerCase().trim()
+  if (q.length < 1) { dropdown.style.display = 'none'; return }
+
+  let results = []
+  _allUsers.forEach(u => {
+    const name = formatUserName(u.name, u.position)
+    if (name.toLowerCase().includes(q) || (u.dept || '').toLowerCase().includes(q)) {
+      results.push({ type: 'user', uid: u.uid, name: u.name, position: u.position || '', dept: u.dept || '', display: name + (u.dept ? ' \u2014 ' + u.dept : '') })
+    }
+  })
+  const depts = [...new Set(_allUsers.map(u => u.dept).filter(Boolean))].sort()
+  depts.forEach(dept => {
+    if (dept.toLowerCase().includes(q)) {
+      results.push({ type: 'dept', dept, display: dept + ' (부서 전체)' })
+    }
+  })
+
+  if (!results.length) { dropdown.style.display = 'none'; return }
+  dropdown.style.display = 'block'
+  dropdown.innerHTML = results.slice(0, 8).map(r => {
+    if (r.type === 'user') {
+      return `<div class="ps-mention-item" onclick="addPsMention('user','${r.uid}','${esc(r.name)}','${esc(r.position)}')"><span class="ps-mention-icon">@</span>${esc(r.display)}</div>`
+    }
+    return `<div class="ps-mention-item" onclick="addPsMention('dept','','${esc(r.dept)}','')"><span class="ps-mention-icon">@</span>${esc(r.display)}</div>`
+  }).join('')
+}
+
+function addPsMention(type, uid, name, position) {
+  const area = document.getElementById('psMentionArea')
+  const input = document.getElementById('psMentionInput')
+  const dropdown = document.getElementById('psMentionDropdown')
+
+  const existing = area.querySelectorAll('.ps-mention-tag')
+  for (const tag of existing) {
+    if (type === 'user' && tag.dataset.uid === uid) return
+    if (type === 'dept' && tag.dataset.dept === name) return
+  }
+
+  const tag = document.createElement('span')
+  if (type === 'user') {
+    tag.className = 'ps-mention-tag ps-mention-user'
+    tag.dataset.type = 'user'
+    tag.dataset.uid = uid
+    tag.dataset.name = name
+    tag.dataset.position = position
+    tag.innerHTML = '@' + esc(formatUserName(name, position)) + ' <span class="ps-mention-x" onclick="this.parentElement.remove()">&#10005;</span>'
+  } else {
+    tag.className = 'ps-mention-tag ps-mention-dept'
+    tag.dataset.type = 'dept'
+    tag.dataset.dept = name
+    tag.innerHTML = '@' + esc(name) + ' <span class="ps-mention-x" onclick="this.parentElement.remove()">&#10005;</span>'
+  }
+  area.insertBefore(tag, input)
+  input.value = ''
+  dropdown.style.display = 'none'
+}
+
+function collectMentions() {
+  return Array.from(document.querySelectorAll('#psMentionArea .ps-mention-tag')).map(tag => {
+    if (tag.dataset.type === 'user') return { type: 'user', uid: tag.dataset.uid, name: tag.dataset.name, position: tag.dataset.position || '' }
+    return { type: 'dept', dept: tag.dataset.dept }
+  })
+}
+
+/* ---------- Save / Delete ---------- */
+async function savePersonalSchedule() {
+  const title = document.getElementById('psTitle').value.trim()
+  if (!title) { showToast('제목을 입력해주세요.', 'warning'); return }
+  const startDate = document.getElementById('psStartDate').value
+  if (!startDate) { showToast('시작일을 입력해주세요.', 'warning'); return }
+  const endDate = document.getElementById('psEndDate').value || startDate
+
+  const user = firebase.auth().currentUser
+  const mentions = collectMentions()
+  const data = {
+    title, startDate, endDate,
+    category: document.getElementById('psCategory').value,
+    memo: document.getElementById('psMemo').value.trim(),
+    mentions,
+    createdByPosition: _currentUserPosition || '',
+    createdByDept: _currentUserDept || '',
+  }
+
+  try {
+    if (_editingPsId) {
+      stampModified(data)
+      await firebase.firestore().collection('personalSchedules').doc(_editingPsId).update(data)
+      showToast('일정이 수정되었습니다.', 'success')
+      logActivity('update', '개인일정', `일정수정: ${title}`)
+    } else {
+      stampCreated(data)
+      await firebase.firestore().collection('personalSchedules').add(data)
+      showToast('일정이 등록되었습니다.', 'success')
+      logActivity('create', '개인일정', `일정등록: ${title}`)
+      mentions.forEach(m => {
+        if (m.type === 'user' && m.uid !== user.uid) {
+          addNotification('personal_schedule', '일정 참조', formatUserNameHonorific(_currentUserName, _currentUserPosition) + '이 일정을 공유했습니다: ' + title, 'work')
+        }
+      })
+    }
+    closePersonalScheduleModal(true)
+    await loadPersonalSchedules()
+    renderPersonalCalendar()
+  } catch(e) {
+    showToast('저장 실패: ' + e.message, 'error')
+  }
+}
+
+async function deletePersonalSchedule(id) {
+  if (!await korConfirm('이 일정을 삭제하시겠습니까?')) return
+  try {
+    await firebase.firestore().collection('personalSchedules').doc(id).delete()
+    showToast('일정이 삭제되었습니다.', 'success')
+    logActivity('delete', '개인일정', '일정삭제')
+    closePersonalScheduleModal(true)
+    await loadPersonalSchedules()
+    renderPersonalCalendar()
+  } catch(e) {
+    showToast('삭제 실패: ' + e.message, 'error')
+  }
+}
+
+/* ---------- Admin Filter / Panel ---------- */
+function filterPersonalSchedule() {
+  _psFilterDept = document.getElementById('psFilterDept')?.value || ''
+  _psFilterUser = document.getElementById('psFilterUser')?.value || ''
+  renderPersonalCalendar()
+}
+
+function populatePsAdminFilters() {
+  const deptSel = document.getElementById('psFilterDept')
+  const userSel = document.getElementById('psFilterUser')
+  if (!deptSel || !userSel) return
+
+  const depts = [...new Set(_allUsers.map(u => u.dept).filter(Boolean))].sort()
+  const currentDept = deptSel.value
+  deptSel.innerHTML = '<option value="">전체 부서</option>' + depts.map(d => `<option value="${d}"${d === currentDept ? ' selected' : ''}>${d}</option>`).join('')
+
+  let users = _allUsers.filter(u => u.status === 'approved')
+  if (_psFilterDept) users = users.filter(u => u.dept === _psFilterDept)
+  const currentUser = userSel.value
+  userSel.innerHTML = '<option value="">전체 직원</option>' + users.map(u => `<option value="${u.uid}"${u.uid === currentUser ? ' selected' : ''}>${formatUserName(u.name, u.position)}</option>`).join('')
+}
+
+function renderPsAdminPanel() {
+  const panel = document.getElementById('psAdminPanel')
+  if (!panel) return
+
+  let users = _allUsers.filter(u => u.status === 'approved')
+  if (_psFilterDept) users = users.filter(u => u.dept === _psFilterDept)
+
+  let html = '<div class="card" style="margin-top:16px;padding:16px"><div class="ps-admin-title">전체 직원 일정 현황</div>'
+  html += '<table class="ps-admin-table"><thead><tr><th></th><th>이름</th><th>부서</th><th>내 일정</th><th>참조됨</th><th></th></tr></thead><tbody>'
+
+  users.forEach(u => {
+    const myCount = _personalSchedules.filter(ps => ps.createdBy === u.uid).length
+    const refCount = _personalSchedules.filter(ps => ps.createdBy !== u.uid && (ps.mentions?.some(m => (m.type === 'user' && m.uid === u.uid) || (m.type === 'dept' && m.dept === u.dept)))).length
+    const initials = (u.name || '?')[0]
+    html += `<tr>
+      <td><div class="ps-admin-avatar">${initials}</div></td>
+      <td class="ps-admin-name">${esc(formatUserName(u.name, u.position))}</td>
+      <td>${esc(u.dept || '-')}</td>
+      <td style="text-align:center">${myCount}건</td>
+      <td style="text-align:center">${refCount}건</td>
+      <td><button class="ps-admin-view-btn" onclick="viewUserSchedule('${u.uid}','${esc(u.name)}')">일정보기</button></td>
+    </tr>`
+  })
+
+  html += '</tbody></table>'
+  html += '<div style="margin-top:12px;text-align:right"><button class="np-toolbar-btn" onclick="downloadPsExcel()">엑셀 다운로드</button></div>'
+  html += '</div>'
+  panel.innerHTML = html
+}
+
+function viewUserSchedule(uid, name) {
+  document.getElementById('psFilterUser').value = uid
+  _psFilterUser = uid
+  renderPersonalCalendar()
+  showToast(name + ' 일정 보기', 'info')
+}
+
+function downloadPsExcel() {
+  const data = _personalSchedules.map(ps => ({
+    '작성자': formatUserName(ps.createdByName, ps.createdByPosition),
+    '부서': ps.createdByDept || '',
+    '제목': ps.title,
+    '카테고리': ps.category,
+    '시작일': ps.startDate,
+    '종료일': ps.endDate,
+    '참조': (ps.mentions || []).map(m => m.type === 'user' ? '@' + m.name : '@' + m.dept).join(', '),
+    '메모': ps.memo || '',
+    '등록일': ps.createdAt ? ps.createdAt.slice(0, 10) : '',
+  }))
+  const ws = XLSX.utils.json_to_sheet(data)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '개인일정')
+  XLSX.writeFile(wb, '르망고_개인일정_전체.xlsx')
 }

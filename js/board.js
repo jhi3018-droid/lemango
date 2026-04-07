@@ -172,7 +172,7 @@ function buildBoardRow(post, isPinned, no) {
     <td class="brd-td-title">
       <span class="brd-title-text">${esc(post.title)}</span>${isNew ? '<span class="brd-new">N</span>' : ''}${post.commentCount > 0 ? '<span class="brd-cmt-count">[' + post.commentCount + ']</span>' : ''}
     </td>
-    <td class="brd-td-center">${esc(post.authorName)}</td>
+    <td class="brd-td-center"><span class="clickable-author" onclick="event.stopPropagation();showUserProfile('${post.authorUid}',this)">${esc(formatUserName(post.authorName, post.authorPosition))}</span></td>
     <td class="brd-td-center brd-td-date">${dateStr}</td>
     <td class="brd-td-center brd-td-muted">${post.views || 0}</td>
     <td class="brd-td-center brd-td-muted">${hasAttach ? '<span class="brd-file-badge">' + post.attachments.length + '</span>' : ''}</td>
@@ -303,7 +303,7 @@ function renderBoardDetail(post) {
         </div>
         <div class="brd-detail-title">${esc(post.title)}</div>
         <div class="brd-detail-meta">
-          <span class="brd-detail-meta-item">${esc(post.authorName)}</span>
+          <span class="brd-detail-meta-item clickable-author" onclick="event.stopPropagation();showUserProfile('${post.authorUid}',this)">${esc(formatUserName(post.authorName, post.authorPosition))}</span>
           <span class="brd-detail-meta-item">${dateStr}</span>
           <span class="brd-detail-meta-item">조회 ${post.views || 0}</span>
           ${editedStr}
@@ -321,6 +321,7 @@ function renderBoardDetail(post) {
         <button class="brd-btn brd-btn-list" onclick="boardBackToList()">목록으로</button>
       </div>
     </div>
+    ${renderStampInfo(post)}
     ${navHtml}
     <div style="margin-top:16px">
       ${buildCommentSection('board', post.id)}
@@ -453,6 +454,7 @@ window.submitBoardPost = async function() {
 
   try {
     if (State.editingPostId) {
+      stampModified(postData)
       await db.collection('posts').doc(State.editingPostId).update(postData)
       showToast('게시글이 수정되었습니다.', 'success')
       logActivity('update', '게시판', `게시글 수정: ${title}`)
@@ -460,9 +462,10 @@ window.submitBoardPost = async function() {
       postData.authorUid = auth.currentUser.uid
       postData.authorName = State.currentUser.name
       postData.authorGrade = State.currentUser.grade
+      postData.authorPosition = _currentUserPosition || ''
       postData.views = 0
       postData.commentCount = 0
-      postData.createdAt = new Date()
+      stampCreated(postData)
       await db.collection('posts').add(postData)
       showToast('게시글이 등록되었습니다.', 'success')
       logActivity('create', '게시판', `게시글 등록: ${title}`)

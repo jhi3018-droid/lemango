@@ -23,8 +23,12 @@ function checkEventAlerts() {
       const days = Math.ceil((new Date(ev.startDate) - new Date(today)) / 86400000)
       addNotification('event_start', `행사 D-${days}: ${ev.name}`, `${ev.channel || ''} ${ev.startDate} 시작`, '#event')
     }
+    // FIX: event_end D-3 알림 추가 (기존에는 당일만 체크, D-3 누락)
     if (ev.endDate === today) {
       addNotification('event_end', `행사 종료: ${ev.name}`, `${ev.channel || ''} 오늘 종료`, '#event')
+    } else if (ev.endDate > today && ev.endDate <= soon) {
+      const days = Math.ceil((new Date(ev.endDate) - new Date(today)) / 86400000)
+      addNotification('event_end', `행사 종료 D-${days}: ${ev.name}`, `${ev.channel || ''} ${ev.endDate} 종료`, '#event')
     }
   })
 }
@@ -310,7 +314,7 @@ function renderDashCalendar() {
   const gridEnd   = cells[cells.length - 1].date
 
   // 각 날짜에 해당하는 행사 + 기획 일정 수집
-  const dateItems = {} // { 'yyyy-mm-dd': { events: [], plans: [], works: [] } }
+  const dateItems = {} // { 'yyyy-mm-dd': { events: [], plans: [], works: [], personal: [] } }
 
   // 행사일정
   _events.forEach(ev => {
@@ -318,7 +322,7 @@ function renderDashCalendar() {
     const s = ev.startDate < gridStart ? gridStart : ev.startDate
     const e = ev.endDate > gridEnd ? gridEnd : ev.endDate
     getDateRange(s, e).forEach(d => {
-      if (!dateItems[d]) dateItems[d] = { events: [], plans: [], works: [] }
+      if (!dateItems[d]) dateItems[d] = { events: [], plans: [], works: [], personal: [] }
       // 중복 방지
       if (!dateItems[d].events.find(x => x.no === ev.no)) dateItems[d].events.push(ev)
     })
@@ -333,7 +337,7 @@ function renderDashCalendar() {
       const dates = [phase.start, phase.end]
       dates.forEach(d => {
         if (d < gridStart || d > gridEnd) return
-        if (!dateItems[d]) dateItems[d] = { events: [], plans: [], works: [] }
+        if (!dateItems[d]) dateItems[d] = { events: [], plans: [], works: [], personal: [] }
         const isStart = (d === phase.start)
         const tag = isStart ? '시작' : '완료'
         if (!dateItems[d].plans.find(x => x.item.no === item.no && x.phaseKey === def.key && x.tag === tag)) {
@@ -352,8 +356,22 @@ function renderDashCalendar() {
     const s = ws < gridStart ? gridStart : ws
     const e = we > gridEnd ? gridEnd : we
     getDateRange(s, e).forEach(d => {
-      if (!dateItems[d]) dateItems[d] = { events: [], plans: [], works: [] }
+      if (!dateItems[d]) dateItems[d] = { events: [], plans: [], works: [], personal: [] }
       if (!dateItems[d].works.find(x => x.no === w.no)) dateItems[d].works.push(w)
+    })
+  })
+
+  // 개인일정
+  const psVisible = typeof getVisibleSchedules === 'function' ? getVisibleSchedules() : []
+  psVisible.forEach(ps => {
+    if (!ps.startDate) return
+    const pEnd = ps.endDate || ps.startDate
+    if (pEnd < gridStart || ps.startDate > gridEnd) return
+    const s = ps.startDate < gridStart ? gridStart : ps.startDate
+    const e = pEnd > gridEnd ? gridEnd : pEnd
+    getDateRange(s, e).forEach(d => {
+      if (!dateItems[d]) dateItems[d] = { events: [], plans: [], works: [], personal: [] }
+      if (!dateItems[d].personal.find(x => x.id === ps.id)) dateItems[d].personal.push(ps)
     })
   })
 
@@ -368,9 +386,9 @@ function renderDashCalendar() {
   const todayStr = fmtDate(new Date())
 
   cells.forEach(cell => {
-    const di = dateItems[cell.date] || { events: [], plans: [], works: [] }
+    const di = dateItems[cell.date] || { events: [], plans: [], works: [], personal: [] }
     const isPast   = cell.date < todayStr
-    const hasItems = di.events.length > 0 || di.plans.length > 0 || di.works.length > 0
+    const hasItems = di.events.length > 0 || di.plans.length > 0 || di.works.length > 0 || (di.personal && di.personal.length > 0)
 
     const holiday = getHolidayName(cell.date)
 
@@ -435,8 +453,23 @@ function renderDashCalendar() {
       }
     })
 
+    // 개인일정 바
+    const psUid = firebase.auth().currentUser?.uid
+    if (di.personal) di.personal.forEach(ps => {
+      if (visibleCount >= MAX_VISIBLE) return
+      visibleCount++
+      const isMine = ps.createdBy === psUid
+      const barBg = isMine ? '#7C3AED' : '#0891B2'
+      const label = `${ps.category || ''} ${ps.title}`.trim()
+      if (isPast) {
+        html += `<div class="dcal-bar dcal-bar-mini" style="background:${barBg};opacity:0.6" title="${esc(label)}" onclick="openPersonalDetailModal('${ps.id}')"></div>`
+      } else {
+        html += `<div class="dcal-bar" style="background:${barBg};color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-bottom:1px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(label)}" onclick="openPersonalDetailModal('${ps.id}')">${esc(label)}</div>`
+      }
+    })
+
     // +N more
-    const totalCount = di.events.length + Object.keys(planLabels).length + di.works.length
+    const totalCount = di.events.length + Object.keys(planLabels).length + di.works.length + (di.personal ? di.personal.length : 0)
     if (totalCount > visibleCount) {
       html += `<div class="evcal-more" onclick="openDashDayModal('${cell.date}')">+${totalCount - visibleCount}건</div>`
     }
@@ -568,6 +601,27 @@ function openDashDayModal(dateStr) {
     </div>`)
   }
 
+  const psVisible = typeof getVisibleSchedules === 'function' ? getVisibleSchedules() : []
+  const personalHits = psVisible.filter(ps => {
+    const pEnd = ps.endDate || ps.startDate
+    return ps.startDate && ps.startDate <= dateStr && pEnd >= dateStr
+  })
+  if (personalHits.length) {
+    const psUid = firebase.auth().currentUser?.uid
+    sections.push(`<div class="ddm-section">
+      <div class="ddm-section-title">개인일정 <span class="ddm-count">${personalHits.length}</span></div>
+      ${personalHits.map(ps => {
+        const catColor = PS_CAT_COLORS[ps.category] || PS_CAT_COLORS['기타']
+        const isMine = ps.createdBy === psUid
+        return `<div class="ddm-row" onclick="openPersonalDetailModal('${ps.id}')">
+          <span class="ddm-badge" style="background:${catColor.bg};color:#fff">${esc(ps.category || '')}</span>
+          <span class="ddm-item-name">${esc(ps.title)}${!isMine ? ' <span style="color:var(--text-sub);font-size:10px">(' + esc(formatUserName(ps.createdByName, ps.createdByPosition)) + ')</span>' : ''}</span>
+          <span class="ddm-item-period">${ps.startDate} ~ ${ps.endDate || ps.startDate}</span>
+        </div>`
+      }).join('')}
+    </div>`)
+  }
+
   modal.querySelector('.ddm-date').textContent = fmtKo(dateStr)
   modal.querySelector('.ddm-body').innerHTML = sections.join('') || '<p style="color:var(--text-light);font-size:13px">일정 없음</p>'
 
@@ -599,48 +653,49 @@ function openDashDayModal(dateStr) {
 // =============================================
 function openPlanScheduleForDate(dateStr) {
   const modal = document.getElementById('planScheduleModal')
-  const title = document.getElementById('psModalTitle')
-  const body  = document.getElementById('psModalBody')
+  const title = document.getElementById('planSchedTitle')
+  const body  = document.getElementById('planSchedBody')
 
   title.textContent = `기획 일정 — ${dateStr}`
 
-  // 해당 날짜가 시작일 또는 완료일인 planItems 찾기
-  const matched = []
+  const phaseGroups = {}
+  SCHEDULE_DEFS.forEach(def => { phaseGroups[def.key] = [] })
+
   State.planItems.forEach(item => {
     if (!item.schedule) return
-    const phases = []
     SCHEDULE_DEFS.forEach(def => {
       const ph = item.schedule[def.key]
       if (!ph || !ph.start || !ph.end) return
       if (ph.start === dateStr || ph.end === dateStr) {
-        const tag = ph.start === dateStr ? '시작' : '완료'
-        phases.push({ key: def.key, label: def.label, start: ph.start, end: ph.end, tag })
+        const tags = []
+        if (ph.start === dateStr) tags.push('시작')
+        if (ph.end === dateStr) tags.push('완료')
+        phaseGroups[def.key].push({ item, tag: tags.join(' / '), start: ph.start, end: ph.end })
       }
     })
-    if (phases.length > 0) matched.push({ item, phases })
   })
 
-  if (!matched.length) {
+  const hasAny = SCHEDULE_DEFS.some(def => phaseGroups[def.key].length > 0)
+
+  if (!hasAny) {
     body.innerHTML = '<p style="padding:20px;color:var(--text-sub);">해당 날짜에 기획 일정이 없습니다.</p>'
   } else {
     let html = '<div class="ps-list">'
-    html += '<table class="ps-phase-table"><thead><tr><th>샘플번호</th><th>품번</th><th>해당 단계</th><th></th></tr></thead><tbody>'
-    matched.forEach(({ item, phases }) => {
-      const sample = item.sampleNo || '-'
-      const code   = item.productCode || '-'
-      const identifier = item.productCode || item.sampleNo || ''
-      const tags   = phases.map(p => {
-        const phColor = PLAN_PHASE_COLORS[p.key]
-        return `<span class="ps-dot" style="background:${phColor.bar}"></span>${p.label} ${p.tag}`
-      }).join(', ')
-      html += `<tr>
-        <td>${esc(sample)}</td>
-        <td>${esc(code)}</td>
-        <td>${tags}</td>
-        <td><button class="btn btn-outline btn-sm" onclick="goToPlanWithItem('${esc(identifier)}');document.getElementById('planScheduleModal').close()">보기</button></td>
-      </tr>`
+    SCHEDULE_DEFS.forEach(def => {
+      const items = phaseGroups[def.key]
+      if (!items.length) return
+      const phColor = PLAN_PHASE_COLORS[def.key] || { bar: '#999' }
+      html += `<div class="ps-group-header"><span class="ps-dot" style="background:${phColor.bar}"></span>${def.label} <span class="ps-group-count">${items.length}건</span></div>`
+      items.forEach(({ item, tag }) => {
+        const code = item.productCode || item.sampleNo || '-'
+        const identifier = item.productCode || item.sampleNo || ''
+        html += `<div class="ps-group-row">
+          <span class="ps-group-code">${esc(code)}</span>
+          <span class="ps-group-tag">${tag}</span>
+          <button class="btn btn-outline btn-sm" onclick="goToPlanWithItem('${esc(identifier)}');document.getElementById('planScheduleModal').close()">보기</button>
+        </div>`
+      })
     })
-    html += '</tbody></table>'
     html += `<div class="ps-actions">
       <button class="btn btn-primary btn-sm" onclick="goToPlanWithDate('${dateStr}')">날짜로 보기</button>
     </div>`
@@ -663,8 +718,8 @@ function openDashEventInfo(no) {
   const ev = _events.find(x => x.no === no)
   if (!ev) return
   const modal = document.getElementById('planScheduleModal')
-  const title = document.getElementById('psModalTitle')
-  const body  = document.getElementById('psModalBody')
+  const title = document.getElementById('planSchedTitle')
+  const body  = document.getElementById('planSchedBody')
 
   const status = getEventStatus(ev)
   const statusBadge = { '예정': 'badge-warning', '진행중': 'badge-success', '종료': 'badge-muted' }
@@ -684,7 +739,7 @@ function openDashEventInfo(no) {
           </tbody>
         </table>
         <div class="ps-actions" style="display:flex;gap:8px">
-          <button class="btn btn-primary btn-sm" onclick="closePlanScheduleModal(); openEventDetailModal(${ev.no})">상세보기</button>
+          <button class="btn btn-primary btn-sm" onclick="closePlanScheduleModal(); openEventDetailModal(${ev.no}, true)">상세보기</button>
           <button class="btn btn-outline btn-sm" onclick="closePlanScheduleModal(); openTab('event')">행사일정 탭</button>
         </div>
       </div>

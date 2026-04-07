@@ -52,7 +52,7 @@
 | 매출현황 | `tab-sales` | 플랫폼별 판매 테이블 + 판매 업로드 모달 (카페24/사방넷/면세점) |
 | 신규기획 | `tab-plan` | 기획 상품 관리, 일정(단계+날짜 필터), 상품조회 이전 |
 | 행사일정 | `tab-event` | 월간 캘린더 + 행사 등록/수정/삭제 (localStorage) |
-| 업무일정 | `tab-work` | 업무 일정 등록/조회/수정/삭제 (localStorage) |
+| 업무일정 | `tab-work` | 업무 일정 + 개인일정 (이너탭), 업무=localStorage, 개인=Firestore |
 | 게시판 | `tab-board` | 공지게시판+자유게시판 이너탭, 목록/상세/글쓰기 뷰, 댓글, 첨부파일 (Firestore) |
 | 설정 | `tab-settings` | 브랜드·타입·판매채널·업무카테고리 등 기본 옵션 관리 |
 | 회원관리 | `tab-members` | 회원 CRUD, 등급/상태 관리, KPI 카드 (Firebase Auth + Firestore) |
@@ -161,7 +161,7 @@ State.modal.images/idx     // 이미지 모달 상태
 | 카페24 주문 미리보기 | `gonghomPreviewModal` | `showGonghomPreview(rows)` |
 | 사방넷 주문 미리보기 | `sabangnetPreviewModal` | `showSabangnetPreview(rows)` |
 | 기획 상세 | `planDetailModal` | `openPlanDetailModal(no)` |
-| 행사 등록/수정 | `eventRegisterModal` | `openEventRegisterModal()` / `editEvent(no)` |
+| 행사 상세/등록/수정 | `eventRegisterModal` | `openEventDetailModal(no, fromDash)` / `openEventRegisterModal()` / `editEvent(no)` |
 | 기획일정 조회 | `planScheduleModal` | `openPlanScheduleForDate(dateStr)` / `openDashEventInfo(no)` |
 | 업무일정 등록 | `workRegisterModal` | `openWorkRegisterModal()` |
 | 업무일정 상세 | `workDetailModal` | `openWorkDetailModal(no)` |
@@ -169,6 +169,8 @@ State.modal.images/idx     // 이미지 모달 상태
 | 회원가입 | `signupModal` | `openSignupModal()` |
 | 회원 수정 | `memberEditModal` | `openMemberEditModal(uid)` |
 | 회원 추가 | `memberAddModal` | `openMemberAddModal()` |
+| 일괄 일정 설정 | `bulkScheduleModal` | `openBulkScheduleModal()` |
+| 개인일정 등록/상세 | `personalScheduleModal` | `openPersonalRegisterModal()` / `openPersonalDetailModal(id)` |
 
 > 모든 `.srm-modal` 다이얼로그는 `makeDraggableResizable()` 적용 — 드래그+8방향 리사이즈
 
@@ -341,7 +343,7 @@ State.modal.images/idx     // 이미지 모달 상태
 | `_settings` | `lemango_settings_v1` | 브랜드·타입·가슴선 등 SETTING_DEFS 기반 옵션 |
 | `_platforms` | `lemango_platforms_v1` | 판매 채널 목록 (공홈/GS/29cm/W쇼핑/기타) |
 | `_designCodes` | `lemango_design_codes_v1` | 디자인번호/백스타일 [code, en, kr] 배열 (단일 소스) |
-| `_events` | `lemango_events_v1` | 행사일정 배열 [{no, name, channel, startDate, endDate, discount, support, memo}] |
+| `_events` | `lemango_events_v1` | 행사일정 배열 [{no, name, channel, startDate, endDate, discount, support, memo, createdBy}] |
 | `_workCategories` | `lemango_work_categories_v1` | 업무일정 카테고리 목록 (연차/차량사용/미팅일정/기타) |
 | `_workItems` | `lemango_work_items_v1` | 업무일정 배열 [{no, category, title, startDate, endDate, memo, registeredAt}] |
 | `_reservedCodes` | (메모리) | 임시 예약 품번 Set |
@@ -349,8 +351,18 @@ State.modal.images/idx     // 이미지 모달 상태
 | `_detailPendingCode` | (메모리) | 상세 모달 품번 생성 패널 임시 예약 코드 |
 | `_editingPlanNo` | (메모리) | 현재 편집 중인 planItem.no |
 | `_pdPendingCode` | (메모리) | 기획 상세 모달 품번 생성 패널 임시 예약 코드 |
+| `_planSelected` | (메모리) | 신규기획 선택된 planItem.no Set |
+| `_personalSchedules` | (메모리) | Firestore 개인일정 배열 |
+| `_allUsers` | (메모리) | Firestore users(approved) 캐시 배열 |
+| `_currentUserDept` | (메모리) | 로그인 사용자 부서 |
+| `_currentUserName` | (메모리) | 로그인 사용자 이름 |
+| `_currentUserPosition` | (메모리) | 로그인 사용자 직급 |
+| `_editingPsId` | (메모리) | 현재 편집 중인 개인일정 doc ID |
+| `_currentUserPosition` | (메모리) | 현재 로그인 사용자 직급 (로그인 시 캐시) |
+| `_eventOpenedFromDash` | (메모리) | 행사 상세모달이 대시보드에서 열렸는지 여부 |
+| `POSITIONS` | (상수) | 직급 목록 ['사원','주임','대리','과장','차장','실장','팀장','부장','이사','대표이사'] |
 
-- `populateAllSelects()` — _settings + _platforms 기반으로 모든 select 동적 채움
+- `populateAllSelects()` — _settings + _platforms + POSITIONS 기반으로 모든 select 동적 채움
 - `DEFAULT_PLATFORMS` = `['공홈', 'GS', '29cm', 'W쇼핑', '기타']`
 
 ## 설정 탭 (`tab-settings`) 구조
@@ -475,6 +487,32 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - `parseCafe24Size(optStr)` — 상품옵션 → 사이즈 파싱 (SIZE=90(L)→L, Size=M→M, 빈값→F)
 - `_buildExistingOrderIndex()` — revenueLog 전체 주문번호 Set 구축 (중복 검출용)
 
+### 신규기획 일괄설정
+- `togglePlanCheckAll(checked)` — 전체선택/해제 (전체 필터 결과 대상)
+- `updatePlanSelection(no, checked)` — 개별 체크 토글
+- `updateCheckAllState()` — 헤더 체크박스 indeterminate 상태 갱신
+- `renderPlanToolbar()` — 선택 건수 + 액션 버튼 툴바
+- `openBulkScheduleModal()` / `closeBulkScheduleModal(force)` — 일괄 일정 모달
+- `applyBulkSchedule()` — 선택 항목에 일정 적용
+- `clearPlanSelection()` — 선택 초기화
+
+### 개인일정
+- `switchWorkTab(tab)` — 업무일정/개인일정 이너 탭 전환
+- `loadPersonalSchedules()` / `loadAllUsers()` — Firestore 데이터 로드
+- `getVisibleSchedules()` — 가시성 필터 (본인+멘션+관리자)
+- `renderPersonalCalendar()` — 6주 그리드 캘린더 렌더
+- `placePsBars(gridStart, gridEnd, items, maxRows)` — 바 배치 알고리즘
+- `openPersonalRegisterModal(dateStr?)` — 등록 모달 (날짜 프리셋)
+- `openPersonalDetailModal(id)` — 상세 모달 (보기 모드)
+- `closePersonalScheduleModal(force)` — 모달 닫기
+- `togglePsEdit()` — 보기↔수정 전환
+- `searchPsMention(query)` / `addPsMention(type, uid, name, position)` / `collectMentions()` — @멘션
+- `savePersonalSchedule()` / `deletePersonalSchedule(id)` — Firestore CRUD
+- `filterPersonalSchedule()` — 관리자 필터 적용
+- `populatePsAdminFilters()` / `renderPsAdminPanel()` — 관리자 패널
+- `viewUserSchedule(uid, name)` — 특정 사용자 일정 필터
+- `downloadPsExcel()` — 전체 일정 엑셀 다운로드
+
 ### 업무일정
 - `renderWorkCalendar()` — 업무일정 캘린더 렌더
 - `placeWorkBars(gridStart, gridEnd, items, maxRows)` — 바 배치 알고리즘
@@ -547,6 +585,20 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - `changePlanPageSize()` — 신규기획 페이지 사이즈 변경
 - `changeSalesPageSize()` — 매출현황 페이지 사이즈 변경
 - `fixStickySubRow(tableId)` — 2단 헤더 2행 `top` 동적 계산 적용
+- `showUserProfile(uid, anchorEl)` — 작성자 클릭 시 프로필 미니 팝업
+- `closeUserProfilePopup()` — 프로필 팝업 닫기
+- `formatUserName(name, position)` — "이름 직급" (사원이면 이름만)
+- `formatUserNameHonorific(name, position)` — "이름 직급님"
+- `showUserProfile(uid, anchorEl)` — Firestore 사용자 조회 → 미니 프로필 팝업
+- `closeUserProfilePopup()` — 프로필 팝업 닫기
+- `formatUserName(name, position)` — "이름 직급" (사원이면 이름만)
+- `formatUserNameHonorific(name, position)` — "이름 직급님"
+
+### 행사일정
+- `openEventDetailModal(no, fromDash)` — 보기 모드로 열기 (`fromDash=true` 시 뒤로 버튼)
+- `backToDashEvent()` — 행사상세 닫기 → 대시보드 행사조회 모달 재오픈
+- `goToEventEdit(no)` — 행사일정 탭 이동 + 편집모달 열기
+- `canDeleteEvent(ev)` — 삭제 권한 체크 (grade>=3 OR 작성자 본인)
 
 ## 에이전트 목록 (`.claude/agents/`)
 | 파일 | 역할 |
@@ -1783,6 +1835,155 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - `buildCommentSection('event', ev.no)` + `loadComments('event', ev.no)` — 행사 상세모달 하단
 - 대시보드 행사 조회 모달에도 동일 댓글 표시
 - `dashDayModal` 행사 행 클릭 → `openEventDetailModal()` (기존 `openDashEventInfo` 대체)
+
+---
+
+### 2026-04-07
+
+#### 작성자/수정자 스탬프 시스템
+- **`stampCreated(obj)` / `stampModified(obj)`** — `js/core.js` (formatUserName 근처)
+  - 필드: `createdBy`, `createdByName`, `createdAt`, `lastModifiedBy`, `lastModifiedByName`, `lastModifiedAt`
+  - `createdByName`은 `formatUserName(_currentUserName, _currentUserPosition)` 포맷 ("이름 직급")
+- **`formatDateTime(iso)` / `renderStampInfo(obj)`** — `js/utils.js`
+  - `renderStampInfo`: 스탬프 필드 없으면 빈 문자열 반환 (구 데이터 graceful)
+  - 출력: "작성: 이름 직급 (YYYY-MM-DD HH:MM) / 최종수정: ..." (수정일이 등록일과 같으면 수정 라인 생략)
+- **적용 엔티티**: 상품(register/upload/saveDetailEdit), 기획(submitPlanRegister/savePlanDetailEdit/confirmPlanToProduct), 행사(submitEventNew/saveEventEdit), 업무(submitWork), 개인일정(savePersonalSchedule), 게시글(submitBoardPost), 댓글(submitComment/saveCommentEdit)
+- **상세 모달 하단 표시**: buildDetailContent / buildPlanDetailContent / buildEventDetailContent / buildWorkDetailContent / buildPsView / renderBoardDetail 에 `renderStampInfo(item)` 추가
+- **기존 수동 설정 교체**: `savePersonalSchedule`의 수동 createdBy/createdByName/createdAt, `submitEventNew`의 `createdBy` 라인 → `stampCreated` 호출로 대체
+- **CSS**: `.stamp-info` (border-top, flex-wrap, 11px 회색), `.stamp-created`, `.stamp-modified` — style.css 말미
+
+#### 대시보드 캘린더 행사 색상 구분 개선
+- `EV_COLORS` 팔레트 업데이트: 기존 어두운 네이비 계열 → 밝은 10색 (파랑, 빨강, 초록, 오렌지, 보라, 청록, 핑크, 갈색, 슬레이트, 인디고)
+- 행사일정 탭 + 대시보드 캘린더 양쪽 동일 `EV_COLORS` 공유 — 같은 행사에 같은 색상
+
+#### 행사 상세 모달 — 뒤로가기 + 수정/삭제 권한
+- `openEventDetailModal(no, fromDash)` — `fromDash=true` 시 "← 뒤로" 버튼 표시
+- `backToDashEvent()` — 행사상세 닫기 → `openDashEventInfo()` 재오픈
+- "수정" 버튼 동작 변경: 모달 내 edit-mode 전환 → `goToEventEdit(no)` 행사일정 탭 이동 + 편집모달 열기
+- `canDeleteEvent(ev)` — 삭제 권한: grade >= 3 OR 작성자 본인 (`ev.createdBy === uid`)
+- `_events` item에 `createdBy` 필드 추가 (신규 등록 시 `firebase.auth().currentUser.uid`)
+- `_eventOpenedFromDash` 전역 플래그
+
+#### 알림 시스템 버그 수정
+- `checkEventAlerts()` — event_end D-3 알림 누락 수정 (종료일 접근 시 알림 미생성 → 추가)
+
+#### 직급 시스템 추가
+- `POSITIONS` 상수: 사원 ~ 대표이사 (10단계)
+- `_currentUserPosition` 전역 캐시 (로그인 시 Firestore에서 로드)
+- `formatUserName(name, position)` — "조현일 과장" (사원이면 이름만)
+- `formatUserNameHonorific(name, position)` — "조현일 과장님"
+- Firestore `users` 스키마에 `position` 필드 추가 (기본 '사원')
+- 적용: 헤더 사용자명, 댓글 작성자, 게시판 글쓴이, 활동로그 사용자명
+- 댓글/게시글/활동로그 저장 시 `authorPosition`/`userPosition` 함께 저장
+- 회원관리: 직급 컬럼 추가, 수정/추가 모달에 직급 select
+
+#### 작성자 클릭 → 프로필 팝업
+- `showUserProfile(uid, anchorEl)` — Firestore `users` 조회 → 미니 팝업 (이름, 이메일, 전화, 부서, 직급, 등급)
+- `closeUserProfilePopup()` — 바깥 클릭 닫기
+- `.user-profile-popup` — absolute, z-index:8000, 카드 스타일
+- `.clickable-author` — cursor:pointer, hover 밑줄+골드색
+- 적용: 댓글 작성자, 게시판 글쓴이, 활동로그 사용자명
+
+#### 신규기획 일괄 일정 설정
+- 테이블 체크박스 추가 (NO 앞, 전체선택 포함)
+- `_planSelected` Set: 선택된 planItem.no 집합, 페이지 넘겨도 유지
+- 상단 툴바 (`#npToolbar`): "선택 N건" + "일괄 일정 설정" + "선택 해제"
+- 하단 패널 (`#npBulkPanel`): 5단계(디자인~물류입고) × 시작일/종료일 date input
+- 빈 날짜는 기존 값 유지, 값 있으면 덮어쓰기
+- 적용 후 선택 해제 + 테이블/캘린더 갱신
+- 주요 함수: `togglePlanCheckAll()`, `updatePlanSelection()`, `renderPlanToolbar()`, `openBulkScheduleModal()`, `closeBulkScheduleModal()`, `applyBulkSchedule()`, `clearPlanSelection()`, `updateCheckAllState()`
+- 일괄설정: 인라인 패널 → `<dialog id="bulkScheduleModal">` 모달 변환
+- 전체선택: 현재 페이지 아닌 **전체 필터 결과** 대상, 헤더에 `<label>` 텍스트 + indeterminate 상태
+
+#### 사이즈 규격 그리드 CSS 버그 수정
+- `.size-spec-input` 기본 `display: none` 누락 → 보기값과 입력필드 동시 표시
+- 수정: `.size-spec-input { display: none }` base rule 추가
+
+#### 대시보드 행사정보 모달 글씨 안 보이는 버그 수정
+- `.srm-modal`에 `background: #fff; color: var(--text-main)` 추가
+- `.srm-header`에 `color: #fff` 추가
+
+#### 기획일정 조회 모달 — 단계별 그룹핑
+- `openPlanScheduleForDate()` 전면 재작성
+- flat 목록 → `SCHEDULE_DEFS` 기반 단계별 그룹 (디자인→생산→이미지→상품등록→물류입고)
+- 단계별 색상 도트 + 접기/펼치기 + 항목 수 뱃지
+
+#### 개인일정 시스템 (Firestore)
+
+**업무일정 탭 이너 탭 구조**
+- `#workInnerTabs`: 업무일정 | 개인일정
+- `#workCalendarArea`: 기존 업무일정 캘린더
+- `#personalCalendarArea`: 개인일정 캘린더 + 관리자 패널
+- `switchWorkTab(tab)` — 이너 탭 전환, 개인일정 진입 시 자동 로드
+
+**Firestore `personalSchedules` 컬렉션 스키마**
+```js
+{
+  title, startDate, endDate,
+  category,        // PS_CATEGORIES: 외근/거래처방문/연차/반차/교육/미팅/출장/기타
+  memo,
+  mentions: [{ type:'user'|'dept', uid?, name?, dept?, position? }],
+  createdBy, createdByName, createdByPosition, createdByDept,
+  createdAt, updatedAt
+}
+```
+
+**가시성 규칙 (`getVisibleSchedules()`)**
+| 조건 | 볼 수 있음 |
+|------|-----------|
+| grade >= 4 (최종관리자) | 전체 |
+| 본인 작성 | O |
+| @멘션 사용자 | O |
+| @멘션 부서 소속 | O |
+| 그 외 | X |
+
+**@멘션 시스템**
+- `searchPsMention(query)` — 사용자명/부서 실시간 검색 (Firestore `_allUsers` 캐시)
+- `addPsMention(type, uid, name, position)` — 태그 칩 추가 (중복 방지)
+- `collectMentions()` — 등록된 멘션 배열 수집
+- `.ps-mention-input` — 입력 트리거, `.ps-mention-dropdown` — 검색 결과
+- `.ps-mention-tags` — 선택된 멘션 칩 표시
+
+**관리자 패널 (grade >= 4)**
+- `populatePsAdminFilters()` — 사용자/부서/카테고리 필터 select 동적 생성
+- `renderPsAdminPanel()` — 전체 일정 테이블 (사용자/카테고리/기간/메모)
+- `viewUserSchedule(uid, name)` — 특정 사용자 일정만 필터
+- `downloadPsExcel()` — 전체 일정 엑셀 다운로드
+
+**대시보드 캘린더 연동**
+- `renderDashCalendar()` — 개인일정 바 표시 (visibility 필터 적용, 카테고리 색상)
+- `openDashDayModal()` — 개인일정 섹션 추가 (행사/기획/업무/개인 4섹션)
+- 범례에 "개인" 항목 추가
+
+**알림 연동**
+- 멘션된 사용자에게 알림 자동 생성 (`personal_schedule` 타입)
+- `NOTIF_ICONS.personal_schedule` — 📅
+
+**전역 변수**
+| 변수 | 설명 |
+|------|------|
+| `_personalSchedules` | Firestore 로드 전체 배열 |
+| `_allUsers` | Firestore users(approved) 캐시 |
+| `_currentUserDept` | 로그인 사용자 부서 |
+| `_currentUserName` | 로그인 사용자 이름 |
+| `PS_CATEGORIES` | 개인일정 카테고리 8종 |
+| `PS_CAT_COLORS` | 카테고리별 색상 (bg, text) |
+| `_editingPsId` | 현재 편집 중인 개인일정 doc ID |
+| `_psYear`, `_psMonth` | 개인일정 캘린더 현재 연/월 |
+
+**주요 함수**
+- `switchWorkTab(tab)` — 이너 탭 전환
+- `loadPersonalSchedules()` / `loadAllUsers()` — Firestore 데이터 로드
+- `getVisibleSchedules()` — 가시성 필터
+- `renderPersonalCalendar()` — 6주 그리드 캘린더 렌더
+- `placePsBars()` — 바 배치 알고리즘
+- `openPersonalRegisterModal(dateStr?)` / `openPersonalDetailModal(id)` — 등록/상세 모달
+- `closePersonalScheduleModal(force)` — 모달 닫기 (수정 중 확인)
+- `togglePsEdit()` — 보기↔수정 전환
+- `searchPsMention()` / `addPsMention()` / `collectMentions()` — @멘션 CRUD
+- `savePersonalSchedule()` / `deletePersonalSchedule(id)` — Firestore CRUD
+- `filterPersonalSchedule()` — 관리자 필터
+- `populatePsAdminFilters()` / `renderPsAdminPanel()` / `viewUserSchedule()` / `downloadPsExcel()` — 관리자 패널
 
 ---
 

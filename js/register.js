@@ -186,6 +186,8 @@ function submitRegister(e) {
     logisticsDate: logisticsDate || null
   }
 
+  stampCreated(newProduct)
+
   // 전체 데이터에 추가 (예약 해제 후 정식 등록)
   _reservedCodes.delete(newProduct.productCode)
   State.allProducts.push(newProduct)
@@ -373,9 +375,14 @@ function confirmRegisterUpload() {
       // 중복 → 기본정보·이미지 업데이트, 재고·판매 유지
       State.allProducts[idx] = { ...State.allProducts[idx], ...product,
         stock: State.allProducts[idx].stock,
-        sales: State.allProducts[idx].sales }
+        sales: State.allProducts[idx].sales,
+        createdBy: State.allProducts[idx].createdBy,
+        createdByName: State.allProducts[idx].createdByName,
+        createdAt: State.allProducts[idx].createdAt }
+      stampModified(State.allProducts[idx])
       updated++
     } else {
+      stampCreated(product)
       State.allProducts.push(product)
       added++
     }

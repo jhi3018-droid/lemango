@@ -161,6 +161,7 @@
             <span class="dash-cal-leg-item"><span class="dash-cal-leg-dot" style="background:var(--primary)"></span>행사</span>
             <span class="dash-cal-leg-item"><span class="dash-cal-leg-dot" style="background:var(--accent)"></span>기획</span>
             <span class="dash-cal-leg-item"><span class="dash-cal-leg-dot" style="background:#6a1b9a"></span>업무</span>
+            <span class="dash-cal-leg-item"><span class="dash-cal-leg-dot" style="background:#7C3AED"></span>개인</span>
           </div>
         </div>
         <div id="dashCalendar"></div>
@@ -507,6 +508,12 @@
         </select>
       </div>
     </div>
+    <div class="np-toolbar" id="npToolbar" style="display:none">
+      <span class="np-sel-count">선택 <strong id="npSelCount">0</strong>건</span>
+      <div style="flex:1"></div>
+      <button class="np-toolbar-btn np-toolbar-primary" onclick="openBulkScheduleModal()">일괄 일정 설정</button>
+      <button class="np-toolbar-btn" onclick="clearPlanSelection()">선택 해제</button>
+    </div>
     <div class="col-inactive-area" id="npInactiveArea" style="display:none">
       <span class="col-inactive-label">컬럼을 여기로 드래그하여 숨기기</span>
       <div class="col-inactive-tags" id="npInactiveTags"></div>
@@ -537,23 +544,56 @@
 
   <!-- ===== 업무일정 탭 ===== -->
   <section class="tab-content" id="tab-work">
-    <div class="search-bar card" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <h2 style="margin:0;font-size:16px;font-weight:700">업무일정 캘린더</h2>
-      <div class="search-group" style="margin:0">
-        <label style="font-size:12px">카테고리</label>
-        <select id="wkCategory" onchange="wkFilterCategory(this.value)"><option value="all">전체</option></select>
-      </div>
-      <span style="flex:1"></span>
-      <button class="btn btn-new" onclick="openWorkRegisterModal()">＋ 업무일정 등록</button>
+    <div class="work-inner-tabs" id="workInnerTabs">
+      <button class="work-inner-tab active" data-tab="work" onclick="switchWorkTab('work')">업무일정</button>
+      <button class="work-inner-tab" data-tab="personal" onclick="switchWorkTab('personal')">개인일정</button>
     </div>
-    <div class="card" style="margin-top:12px">
-      <div class="evcal-header">
-        <button class="btn btn-ghost btn-sm" onclick="wkPrevMonth()">◀</button>
-        <h3 id="wkMonthTitle" style="margin:0;min-width:120px;text-align:center"></h3>
-        <button class="btn btn-ghost btn-sm" onclick="wkNextMonth()">▶</button>
-        <button class="btn btn-outline btn-sm" onclick="wkToday()" style="margin-left:8px">오늘</button>
+
+    <div id="workCalendarArea">
+      <div class="search-bar card" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <h2 style="margin:0;font-size:16px;font-weight:700">업무일정 캘린더</h2>
+        <div class="search-group" style="margin:0">
+          <label style="font-size:12px">카테고리</label>
+          <select id="wkCategory" onchange="wkFilterCategory(this.value)"><option value="all">전체</option></select>
+        </div>
+        <span style="flex:1"></span>
+        <button class="btn btn-new" onclick="openWorkRegisterModal()">＋ 업무일정 등록</button>
       </div>
-      <div id="wkCalendar"></div>
+      <div class="card" style="margin-top:12px">
+        <div class="evcal-header">
+          <button class="btn btn-ghost btn-sm" onclick="wkPrevMonth()">◀</button>
+          <h3 id="wkMonthTitle" style="margin:0;min-width:120px;text-align:center"></h3>
+          <button class="btn btn-ghost btn-sm" onclick="wkNextMonth()">▶</button>
+          <button class="btn btn-outline btn-sm" onclick="wkToday()" style="margin-left:8px">오늘</button>
+        </div>
+        <div id="wkCalendar"></div>
+      </div>
+    </div>
+
+    <div id="personalCalendarArea" style="display:none">
+      <div class="search-bar card" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <h2 style="margin:0;font-size:16px;font-weight:700">개인일정 캘린더</h2>
+        <div class="ps-legend">
+          <span class="ps-legend-item"><span class="ps-legend-dot" style="background:#7C3AED"></span>내 일정</span>
+          <span class="ps-legend-item"><span class="ps-legend-dot" style="background:#0891B2"></span>참조된 일정</span>
+        </div>
+        <span style="flex:1"></span>
+        <div id="psAdminFilter" style="display:none;gap:8px;align-items:center">
+          <select id="psFilterDept" onchange="filterPersonalSchedule()" class="search-select" style="font-size:12px"><option value="">전체 부서</option></select>
+          <select id="psFilterUser" onchange="filterPersonalSchedule()" class="search-select" style="font-size:12px"><option value="">전체 직원</option></select>
+        </div>
+        <button class="btn btn-new" onclick="openPersonalRegisterModal()">＋ 개인일정 등록</button>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <div class="evcal-header">
+          <button class="btn btn-ghost btn-sm" onclick="psNavPrev()">◀</button>
+          <h3 id="psMonthTitle" style="margin:0;min-width:120px;text-align:center"></h3>
+          <button class="btn btn-ghost btn-sm" onclick="psNavNext()">▶</button>
+          <button class="btn btn-outline btn-sm" onclick="psNavToday()" style="margin-left:8px">오늘</button>
+        </div>
+        <div id="personalCalendar"></div>
+      </div>
+      <div id="psAdminPanel" style="display:none"></div>
     </div>
   </section>
 
@@ -644,6 +684,7 @@
               <th style="width:100px">상태</th>
               <th>이메일</th>
               <th style="width:100px">이름</th>
+              <th style="width:80px">직급</th>
               <th style="width:100px">부서</th>
               <th style="width:110px">등급</th>
               <th style="width:140px">최종로그인</th>
@@ -752,6 +793,12 @@
     <div class="rform-field"><label>이름</label><input type="text" id="meEditName"></div>
     <div class="rform-field"><label>전화번호</label><input type="tel" id="meEditPhone"></div>
     <div class="rform-field">
+      <label>직급</label>
+      <select id="meEditPosition">
+        <option value="">선택</option>
+      </select>
+    </div>
+    <div class="rform-field">
       <label>부서</label>
       <select id="meEditDept">
         <option value="">선택</option>
@@ -784,6 +831,12 @@
     <div class="rform-field"><label>이름 *</label><input type="text" id="maName" placeholder="홍길동"></div>
     <div class="rform-field"><label>초기 비밀번호 *</label><input type="text" id="maPassword" placeholder="초기 비밀번호"></div>
     <div class="rform-field"><label>전화번호</label><input type="tel" id="maPhone" placeholder="010-0000-0000"></div>
+    <div class="rform-field">
+      <label>직급</label>
+      <select id="maPosition">
+        <option value="사원">사원</option>
+      </select>
+    </div>
     <div class="rform-field">
       <label>부서 *</label>
       <select id="maDept">
@@ -822,9 +875,15 @@
     </div>
     <div class="mp-row">
       <div class="rform-field" style="flex:1">
+        <label>직급</label>
+        <select id="mpPosition"><option value="">선택</option></select>
+      </div>
+      <div class="rform-field" style="flex:1">
         <label>부서</label>
         <select id="mpDept"><option value="">선택</option></select>
       </div>
+    </div>
+    <div class="mp-row">
       <div class="rform-field" style="flex:1">
         <label>등급</label>
         <select id="mpGrade" disabled>
@@ -1198,10 +1257,11 @@
       <span class="dmodal-code" id="dCode"></span>
     </div>
     <div class="dmodal-header-actions">
-      <button class="btn btn-new" id="dEditBtn" onclick="toggleDetailEdit()">✏️ 수정</button>
-      <button class="btn btn-accent" id="dSaveBtn" onclick="saveDetailEdit()">💾 저장</button>
-      <button class="btn" id="dLockCodeBtn" onclick="lockProductCode()" style="background:var(--primary);color:white;font-size:12px;padding:4px 12px">🔒 품번 확정</button>
-      <button class="btn btn-delete-product" id="dDeleteBtn" onclick="deleteProduct()" style="display:none">삭제</button>
+      <button class="btn btn-sm btn-primary d-view-btn" id="dEditBtn" onclick="toggleDetailEdit()">수정</button>
+      <button class="btn btn-sm btn-primary d-edit-btn" id="dSaveBtn" onclick="saveDetailEdit()" style="display:none">저장</button>
+      <button class="btn btn-sm btn-outline d-edit-btn" id="dCancelBtn" onclick="toggleDetailEdit()" style="display:none">취소</button>
+      <button class="btn btn-sm btn-outline" id="dLockCodeBtn" onclick="lockProductCode()" style="color:var(--primary);border-color:var(--primary)">🔒 품번 확정</button>
+      <button class="btn btn-sm btn-outline d-view-btn" id="dDeleteBtn" onclick="deleteProduct()" style="display:none;color:var(--danger);border-color:var(--danger)">삭제</button>
       <button class="modal-close" onclick="closeDetailModal()">✕</button>
     </div>
   </div>
@@ -1289,9 +1349,10 @@
       <span class="dmodal-code" id="pdSampleNo"></span>
     </div>
     <div class="rmodal-header-actions">
-      <button class="btn btn-accent" id="pdEditBtn" onclick="togglePlanDetailEdit()" style="padding:4px 14px;font-size:12px">수정</button>
-      <button class="btn btn-primary" id="pdSaveBtn" onclick="savePlanDetailEdit()" style="padding:4px 14px;font-size:12px;display:none">저장</button>
-      <button class="btn btn-new" id="pdConfirmBtn" onclick="confirmPlanToProduct()" style="padding:4px 14px;font-size:12px">상품확정 →</button>
+      <button class="btn btn-sm btn-primary pd-view-btn" id="pdEditBtn" onclick="togglePlanDetailEdit()">수정</button>
+      <button class="btn btn-sm btn-primary pd-edit-btn" id="pdSaveBtn" onclick="savePlanDetailEdit()" style="display:none">저장</button>
+      <button class="btn btn-sm btn-outline pd-edit-btn" id="pdCancelBtn" onclick="togglePlanDetailEdit()" style="display:none">취소</button>
+      <button class="btn btn-sm btn-primary pd-view-btn" id="pdConfirmBtn" onclick="confirmPlanToProduct()">상품확정 →</button>
       <button class="modal-close" onclick="closePlanDetailModal()">✕</button>
     </div>
   </div>
@@ -1742,7 +1803,8 @@
   <div class="srm-header">
     <span class="rmodal-title">행사일정</span>
     <div class="srm-header-btns">
-      <button class="btn btn-sm btn-primary ev-view-btn" onclick="toggleEventEdit()">수정</button>
+      <button class="btn btn-sm btn-outline ev-back-btn" onclick="backToDashEvent()" style="display:none">&larr; 뒤로</button>
+      <button class="btn btn-sm btn-primary ev-view-btn" onclick="goToEventEdit(_editingEventNo)">수정</button>
       <button class="btn btn-sm btn-primary ev-edit-btn" onclick="saveEventEdit()">저장</button>
       <button class="btn btn-sm btn-outline ev-edit-btn" onclick="toggleEventEdit()">취소</button>
       <button class="btn btn-sm btn-primary ev-new-btn" onclick="submitEventNew()">등록</button>
@@ -1755,17 +1817,53 @@
 <!-- 기획일정 조회 모달 -->
 <dialog id="planScheduleModal" class="srm-modal" style="width:640px;max-width:96vw">
   <div class="srm-header">
-    <span id="psModalTitle">기획 일정</span>
+    <span id="planSchedTitle">기획 일정</span>
     <button class="modal-close" onclick="closePlanScheduleModal()">✕</button>
   </div>
-  <div class="srm-body" id="psModalBody"></div>
+  <div class="srm-body" id="planSchedBody"></div>
+</dialog>
+
+<!-- 일괄 일정 설정 모달 -->
+<dialog id="bulkScheduleModal" class="srm-modal" style="width:480px;height:auto;max-height:90vh">
+  <div class="srm-header">
+    <span>일괄 일정 설정 (<span id="npBulkCount">0</span>건)</span>
+    <button class="modal-close" onclick="closeBulkScheduleModal()">✕</button>
+  </div>
+  <div class="srm-body">
+    <div class="np-bulk-grid">
+      <div class="np-bulk-label"><span class="np-bulk-dot" style="background:#c9a96e"></span>디자인</div>
+      <input type="date" id="npBulkDesignStart" class="np-bulk-input">
+      <input type="date" id="npBulkDesignEnd" class="np-bulk-input">
+      <div class="np-bulk-label"><span class="np-bulk-dot" style="background:#4caf7d"></span>생산</div>
+      <input type="date" id="npBulkProductionStart" class="np-bulk-input">
+      <input type="date" id="npBulkProductionEnd" class="np-bulk-input">
+      <div class="np-bulk-label"><span class="np-bulk-dot" style="background:#7C3AED"></span>이미지</div>
+      <input type="date" id="npBulkImageStart" class="np-bulk-input">
+      <input type="date" id="npBulkImageEnd" class="np-bulk-input">
+      <div class="np-bulk-label"><span class="np-bulk-dot" style="background:#f0a500"></span>상품등록</div>
+      <input type="date" id="npBulkRegisterStart" class="np-bulk-input">
+      <input type="date" id="npBulkRegisterEnd" class="np-bulk-input">
+      <div class="np-bulk-label"><span class="np-bulk-dot" style="background:#0891B2"></span>물류입고</div>
+      <input type="date" id="npBulkLogisticsStart" class="np-bulk-input">
+      <input type="date" id="npBulkLogisticsEnd" class="np-bulk-input">
+    </div>
+    <div class="np-bulk-info">빈 날짜는 기존 값을 유지합니다.</div>
+    <div class="np-bulk-footer">
+      <button class="np-toolbar-btn" onclick="closeBulkScheduleModal()">취소</button>
+      <button class="np-toolbar-btn np-toolbar-primary" onclick="applyBulkSchedule()">일괄 적용</button>
+    </div>
+  </div>
 </dialog>
 
 <!-- 업무일정 등록/수정 모달 -->
 <dialog id="workRegisterModal" class="srm-modal">
   <div class="srm-header">
     <span class="rmodal-title">업무일정 등록</span>
-    <button class="modal-close" onclick="closeWorkRegisterModal()">✕</button>
+    <div class="srm-header-btns">
+      <button type="button" class="btn btn-sm btn-primary" onclick="document.getElementById('wkRegForm').requestSubmit()">등록</button>
+      <button type="button" class="btn btn-sm btn-outline" onclick="closeWorkRegisterModal()">취소</button>
+      <button class="modal-close" onclick="closeWorkRegisterModal()">✕</button>
+    </div>
   </div>
   <form id="wkRegForm" class="srm-body" onsubmit="submitWork(event)" style="display:flex;flex-direction:column;gap:12px">
     <input type="hidden" id="wkRegNo" />
@@ -1776,10 +1874,6 @@
       <div class="rform-field" style="flex:1"><label>종료일</label><input type="date" id="wkRegEnd" /></div>
     </div>
     <div class="rform-field"><label>메모</label><textarea id="wkRegMemo" rows="3" placeholder="상세 내용"></textarea></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button type="submit" class="btn btn-primary">저장</button>
-      <button type="button" class="btn btn-outline" onclick="closeWorkRegisterModal()">취소</button>
-    </div>
   </form>
 </dialog>
 
@@ -1787,9 +1881,22 @@
 <dialog id="workDetailModal" class="srm-modal" style="width:500px;max-width:96vw">
   <div class="srm-header">
     <span class="rmodal-title">업무일정 상세</span>
-    <button class="modal-close" onclick="closeWorkDetailModal()">✕</button>
+    <div class="srm-header-btns" id="wkDetailHeaderBtns">
+      <button class="modal-close" onclick="closeWorkDetailModal()">✕</button>
+    </div>
   </div>
   <div class="srm-body" id="wkDetailBody"></div>
+</dialog>
+
+<!-- 개인일정 등록/상세 모달 -->
+<dialog id="personalScheduleModal" class="srm-modal" style="width:520px;height:auto;max-height:90vh">
+  <div class="srm-header" id="psModalHeader">
+    <span>개인일정</span>
+    <div class="srm-header-btns" id="psHeaderBtns">
+      <button class="modal-close" onclick="closePersonalScheduleModal()">&#10005;</button>
+    </div>
+  </div>
+  <div class="srm-body" id="psModalBody"></div>
 </dialog>
 
 <!-- 다운로드 양식 선택 모달 -->

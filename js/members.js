@@ -63,7 +63,7 @@ function renderMembersTable() {
   const members = State.members || []
 
   if (!members.length) {
-    tbody.innerHTML = '<tr><td colspan="9" class="empty-row">등록된 회원이 없습니다.</td></tr>'
+    tbody.innerHTML = '<tr><td colspan="10" class="empty-row">등록된 회원이 없습니다.</td></tr>'
     return
   }
 
@@ -94,6 +94,7 @@ function renderMembersTable() {
       <td><span class="${st.dotClass}"></span> ${st.label}</td>
       <td><span class="member-email-link" onclick="openMemberProfileModal('${m.uid}')">${esc(m.email || '')}</span></td>
       <td>${esc(m.name || '')}</td>
+      <td>${esc(m.position || '')}</td>
       <td>${esc(m.dept || '')}</td>
       <td>${gradeBadgeHtml(m.grade)}</td>
       <td>${lastLogin}</td>
@@ -164,6 +165,7 @@ window.openMemberEditModal = function(uid) {
 
   document.getElementById('meEditName').value = member.name || ''
   document.getElementById('meEditPhone').value = member.phone || ''
+  document.getElementById('meEditPosition').value = member.position || ''
   document.getElementById('meEditDept').value = member.dept || ''
   document.getElementById('meEditGrade').value = member.grade || 1
 
@@ -183,19 +185,25 @@ window.closeMemberEditModal = function() {
 
 window.saveMemberEdit = async function() {
   if (!_editingMemberUid) return
-  const name  = document.getElementById('meEditName').value.trim()
-  const phone = document.getElementById('meEditPhone').value.trim()
-  const dept  = document.getElementById('meEditDept').value
-  const grade = parseInt(document.getElementById('meEditGrade').value)
+  const name     = document.getElementById('meEditName').value.trim()
+  const phone    = document.getElementById('meEditPhone').value.trim()
+  const position = document.getElementById('meEditPosition').value
+  const dept     = document.getElementById('meEditDept').value
+  const grade    = parseInt(document.getElementById('meEditGrade').value)
 
   if (!name) return showToast('이름을 입력해주세요.', 'warning')
 
-  const updates = { name, phone, dept }
+  const updates = { name, phone, position, dept }
   if (State.currentUser && State.currentUser.grade === 4) {
     updates.grade = grade
   }
 
   await db.collection('users').doc(_editingMemberUid).update(updates)
+  if (State.currentUser && State.currentUser.uid === _editingMemberUid) {
+    State.currentUser = { ...State.currentUser, ...updates }
+    _currentUserPosition = position
+    updateHeaderUser(State.currentUser)
+  }
   showToast('회원 정보가 수정되었습니다.')
   logActivity('update', '회원관리', `회원수정: uid=${_editingMemberUid}`)
   closeMemberEditModal()
@@ -207,6 +215,7 @@ window.openMemberAddModal = function() {
   ;['maEmail','maName','maPhone','maPassword'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = ''
   })
+  const pos = document.getElementById('maPosition'); if (pos) pos.value = '사원'
   const dept = document.getElementById('maDept'); if (dept) dept.value = ''
   const grade = document.getElementById('maGrade'); if (grade) grade.value = '1'
 
@@ -220,12 +229,13 @@ window.closeMemberAddModal = function() {
 }
 
 window.saveMemberAdd = async function() {
-  const email = document.getElementById('maEmail').value.trim()
-  const name  = document.getElementById('maName').value.trim()
-  const phone = document.getElementById('maPhone').value.trim()
-  const pw    = document.getElementById('maPassword').value
-  const dept  = document.getElementById('maDept').value
-  const grade = parseInt(document.getElementById('maGrade').value)
+  const email    = document.getElementById('maEmail').value.trim()
+  const name     = document.getElementById('maName').value.trim()
+  const phone    = document.getElementById('maPhone').value.trim()
+  const pw       = document.getElementById('maPassword').value
+  const position = document.getElementById('maPosition')?.value || '사원'
+  const dept     = document.getElementById('maDept').value
+  const grade    = parseInt(document.getElementById('maGrade').value)
 
   if (!email || !name || !pw || !dept) return showToast('필수 항목을 입력해주세요.', 'warning')
   if (pw.length < 6) return showToast('비밀번호는 6자 이상이어야 합니다.', 'warning')
@@ -242,6 +252,7 @@ window.saveMemberAdd = async function() {
       email: email,
       name: name,
       phone: phone,
+      position: position,
       dept: dept,
       grade: grade,
       status: 'approved',
@@ -312,6 +323,8 @@ window.openMemberProfileModal = async function(uid) {
   document.getElementById('mpName').readOnly = !canEditInfo
   document.getElementById('mpPhone').value = member.phone || ''
   document.getElementById('mpPhone').readOnly = !canEditInfo
+  const posSel = document.getElementById('mpPosition')
+  if (posSel) { posSel.value = member.position || ''; posSel.disabled = !canEditInfo }
   const deptSel = document.getElementById('mpDept')
   deptSel.value = member.dept || ''
   deptSel.disabled = !canEditInfo
@@ -364,11 +377,12 @@ window.saveMemberProfile = async function() {
   const isTopAdmin = cu && cu.grade === 4
   if (!isSelf && !isTopAdmin) { _mpError('수정 권한이 없습니다.'); return }
 
-  const email = document.getElementById('mpEmail').value.trim()
-  const name  = document.getElementById('mpName').value.trim()
-  const phone = document.getElementById('mpPhone').value.trim()
-  const dept  = document.getElementById('mpDept').value
-  const grade = parseInt(document.getElementById('mpGrade').value)
+  const email    = document.getElementById('mpEmail').value.trim()
+  const name     = document.getElementById('mpName').value.trim()
+  const phone    = document.getElementById('mpPhone').value.trim()
+  const position = document.getElementById('mpPosition')?.value || ''
+  const dept     = document.getElementById('mpDept').value
+  const grade    = parseInt(document.getElementById('mpGrade').value)
 
   if (!name) { _mpError('이름을 입력해주세요.'); return }
   if (!email) { _mpError('이메일을 입력해주세요.'); return }
@@ -385,13 +399,14 @@ window.saveMemberProfile = async function() {
     }
 
     // Firestore 업데이트
-    const updates = { email, name, phone, dept }
+    const updates = { email, name, phone, position, dept }
     if (isTopAdmin) updates.grade = grade
     await db.collection('users').doc(_profileUid).update(updates)
 
-    // 본인 정보 변경 시 헤더 갱신
+    // 본인 정보 변경 시 헤더 갱신 + position 캐시
     if (isSelf) {
       State.currentUser = { ...State.currentUser, ...updates }
+      _currentUserPosition = position
       updateHeaderUser(State.currentUser)
     }
 

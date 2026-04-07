@@ -191,7 +191,7 @@ async function loadComments(modalType, targetId) {
 
       return `<div class="comment-item" data-comment-id="${c.id}">
         <div class="comment-meta">
-          <span class="comment-author">${esc(c.userName)}</span>
+          <span class="comment-author clickable-author" onclick="event.stopPropagation();showUserProfile('${c.uid}',this)">${esc(formatUserName(c.userName, c.authorPosition))}</span>
           <span class="comment-grade-badge comment-grade-${c.userGrade}">${commentGradeName(c.userGrade)}</span>
           <span class="comment-date">${dateStr}${isEdited ? ' (수정됨)' : ''}</span>
           ${canEdit ? `<span class="comment-actions">
@@ -220,16 +220,17 @@ window.submitComment = async function(modalType, targetId) {
   if (!db) { _showCommentError(key, 'Firestore가 초기화되지 않았습니다.'); return }
 
   try {
-    await db.collection('comments').add({
+    const commentData = {
       modalType,
       targetId: String(targetId),
       uid: auth.currentUser.uid,
       userName: State.currentUser.name,
       userGrade: State.currentUser.grade,
-      content,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    })
+      authorPosition: _currentUserPosition || '',
+      content
+    }
+    stampCreated(commentData)
+    await db.collection('comments').add(commentData)
     input.value = ''
     loadComments(modalType, targetId)
     logActivity('create', '댓글', `댓글 등록 — ${modalType}/${targetId}`)
@@ -267,10 +268,9 @@ window.saveCommentEdit = async function(commentId, modalType, targetId) {
   if (!content) return
 
   try {
-    await db.collection('comments').doc(commentId).update({
-      content,
-      updatedAt: new Date()
-    })
+    const updateData = { content }
+    stampModified(updateData)
+    await db.collection('comments').doc(commentId).update(updateData)
     loadComments(modalType, targetId)
     logActivity('update', '댓글', `댓글 수정 — ${modalType}/${targetId}`)
   } catch (e) {

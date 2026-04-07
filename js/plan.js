@@ -2,6 +2,7 @@
 // ===== 신규기획 =====
 // =============================================
 let _plLocalImgUrls = []
+let _planSelected = new Set()
 
 function openPlanRegisterModal() {
   const modal = document.getElementById('planRegisterModal')
@@ -56,6 +57,7 @@ function submitPlanRegister(e) {
     }
   }
   if (item.productCode) _reservedCodes.delete(item.productCode)
+  stampCreated(item)
   State.planItems.push(item)
   State.plan.filtered = State.planItems.filter(p => !p.confirmed)
   _plLocalImgUrls = []
@@ -369,6 +371,8 @@ function resetPlan() {
   State.plan.activeColumns = null
   State.plan.inactiveColumns = []
   State.plan.filtered = State.planItems.filter(p => !p.confirmed)
+  _planSelected.clear()
+  closeBulkScheduleModal(true)
   renderPlanTable()
 }
 
@@ -421,8 +425,9 @@ function renderPlanTable() {
   const activeRegular  = PLAN_REGULAR_COLS.filter(c => activeKeys.includes(c.key))
   const activeSchedule = PLAN_SCHEDULE_COLS.filter(c => activeKeys.includes(c.key))
 
-  // 1행: regular cols (rowspan=2) + active schedule groups (colspan=2)
+  // 1행: checkbox + regular cols (rowspan=2) + active schedule groups (colspan=2)
   const row1 = [
+    `<th rowspan="2" style="width:70px" data-no-sort data-no-filter><label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;white-space:nowrap"><input type="checkbox" id="npCheckAll" onchange="togglePlanCheckAll(this.checked)">전체선택</label></th>`,
     ...activeRegular.map(c => `<th rowspan="2" ${c.thAttr} data-col-key="${c.key}">${c.label}</th>`),
     ...activeSchedule.map(c => `<th colspan="2" ${c.thAttr} data-col-key="${c.key}">${c.label}</th>`)
   ].join('')
@@ -434,13 +439,15 @@ function renderPlanTable() {
   ).join('')
 
   const tbodyHtml = pageData.map(p => {
+    const isChecked = _planSelected.has(p.no)
     const regTds = activeRegular.map(c => c.td(p)).join('')
     const schTds = activeSchedule.map(c => {
       const sch = p.schedule?.[c.scheduleKey] || {}
       return `<td class="schedule-date-cell${sch.start?' has-date':''}">${fmtD(sch.start)}</td>` +
              `<td class="schedule-date-cell${sch.end?' has-date':''}">${fmtD(sch.end)}</td>`
     }).join('')
-    return `<tr${p.confirmed?' style="opacity:0.6"':''}>${regTds}${schTds}</tr>`
+    const cls = [isChecked ? 'np-selected' : '', p.confirmed ? '' : ''].filter(Boolean).join(' ')
+    return `<tr class="${cls}"${p.confirmed?' style="opacity:0.6"':''}><td><input type="checkbox" class="np-check" data-no="${p.no}" ${isChecked?'checked':''} onchange="updatePlanSelection()"></td>${regTds}${schTds}</tr>`
   }).join('')
 
   document.getElementById('npTableWrap').innerHTML = `
@@ -451,6 +458,9 @@ function renderPlanTable() {
       </thead>
       <tbody>${tbodyHtml}</tbody>
     </table>`
+
+  renderPlanToolbar()
+  updateCheckAllState()
 
   initTableFeatures('planTable', 'plan', 'renderPlanTable')
   // fixStickySubRow 불필요 — .plan-table thead { position: sticky } CSS로 처리
@@ -469,10 +479,9 @@ function openPlanDetailModal(no) {
   // 뷰 모드로 초기화
   const modal = document.getElementById('planDetailModal')
   modal.classList.remove('edit-mode')
-  document.getElementById('pdEditBtn').style.display = ''
-  document.getElementById('pdSaveBtn').style.display = 'none'
+  _pdUpdateHeaderBtns('view')
   const confirmBtn = document.getElementById('pdConfirmBtn')
-  if (confirmBtn) confirmBtn.style.display = item.confirmed ? 'none' : ''
+  if (confirmBtn && item.confirmed) confirmBtn.style.display = 'none'
   modal.showModal()
   centerModal(modal)
   loadComments('plan', no)
@@ -614,11 +623,26 @@ function applyPdGeneratedCode() {
   showToast(`품번 "${code}" 적용됐습니다.`, 'success')
 }
 
+function _pdUpdateHeaderBtns(mode) {
+  // mode: 'view' | 'edit'
+  document.querySelectorAll('#planDetailModal .pd-view-btn').forEach(b => {
+    b.style.display = mode === 'view' ? 'inline-block' : 'none'
+  })
+  document.querySelectorAll('#planDetailModal .pd-edit-btn').forEach(b => {
+    b.style.display = mode === 'edit' ? 'inline-block' : 'none'
+  })
+  // confirmBtn 숨김 상태(confirmed) 유지
+  const item = State.planItems.find(p => p.no === _editingPlanNo)
+  if (item && item.confirmed) {
+    const cb = document.getElementById('pdConfirmBtn')
+    if (cb) cb.style.display = 'none'
+  }
+}
+
 function togglePlanDetailEdit() {
   const modal = document.getElementById('planDetailModal')
   const isEdit = modal.classList.toggle('edit-mode')
-  document.getElementById('pdEditBtn').style.display = isEdit ? 'none' : ''
-  document.getElementById('pdSaveBtn').style.display = isEdit ? '' : 'none'
+  _pdUpdateHeaderBtns(isEdit ? 'edit' : 'view')
 }
 
 function savePlanDetailEdit() {
@@ -658,10 +682,11 @@ function savePlanDetailEdit() {
   document.getElementById('pdNameKr').textContent = item.nameKr || '(상품명 없음)'
   document.getElementById('pdSampleNo').textContent = item.sampleNo
 
+  stampModified(item)
+
   buildPlanDetailContent(item)
   modal.classList.remove('edit-mode')
-  document.getElementById('pdEditBtn').style.display = ''
-  document.getElementById('pdSaveBtn').style.display = 'none'
+  _pdUpdateHeaderBtns('view')
   renderPlanTable()
   showToast('저장됐습니다.', 'success')
   logActivity('update', '신규기획', `기획수정: ${item.sampleNo || item.productCode}`)
@@ -739,8 +764,10 @@ async function confirmPlanToProduct() {
       : []
   }
 
+  stampCreated(newProduct)
   State.allProducts.push(newProduct)
   item.confirmed = true
+  stampModified(item)
 
   // 상품조회 필터 갱신
   State.product.filtered = [...State.allProducts]
@@ -903,5 +930,112 @@ function buildPlanDetailContent(item) {
       </table>
     </div>
 
+    ${renderStampInfo(item)}
     ${buildCommentSection('plan', item.no)}`
+}
+
+// ===== 일괄 일정 설정 =====
+function togglePlanCheckAll(checked) {
+  const data = applyColFilters(State.plan.filtered, State.plan.columnFilters)
+  data.forEach(item => {
+    if (checked) _planSelected.add(item.no)
+    else _planSelected.delete(item.no)
+  })
+  renderPlanTable()
+}
+
+function updatePlanSelection() {
+  document.querySelectorAll('.np-check').forEach(cb => {
+    const no = parseInt(cb.dataset.no)
+    if (cb.checked) _planSelected.add(no)
+    else _planSelected.delete(no)
+  })
+  renderPlanToolbar()
+  updateCheckAllState()
+}
+
+function updateCheckAllState() {
+  const cb = document.getElementById('npCheckAll')
+  if (!cb) return
+  const data = applyColFilters(State.plan.filtered, State.plan.columnFilters)
+  const count = data.filter(item => _planSelected.has(item.no)).length
+  cb.checked = count === data.length && data.length > 0
+  cb.indeterminate = count > 0 && count < data.length
+}
+
+function renderPlanToolbar() {
+  const toolbar = document.getElementById('npToolbar')
+  if (!toolbar) return
+  const count = _planSelected.size
+  if (count > 0) {
+    toolbar.style.display = 'flex'
+    document.getElementById('npSelCount').textContent = count
+  } else {
+    toolbar.style.display = 'none'
+  }
+}
+
+function clearPlanSelection() {
+  _planSelected.clear()
+  renderPlanToolbar()
+  renderPlanTable()
+}
+
+function _bulkHasInput() {
+  const modal = document.getElementById('bulkScheduleModal')
+  return modal ? Array.from(modal.querySelectorAll('.np-bulk-input')).some(i => i.value) : false
+}
+
+function openBulkScheduleModal() {
+  if (_planSelected.size === 0) { showToast('상품을 먼저 선택해주세요.', 'warning'); return }
+  const modal = document.getElementById('bulkScheduleModal')
+  document.getElementById('npBulkCount').textContent = _planSelected.size
+  modal.querySelectorAll('.np-bulk-input').forEach(input => { input.value = '' })
+  modal.showModal()
+  centerModal(modal)
+}
+
+function closeBulkScheduleModal(force) {
+  const modal = document.getElementById('bulkScheduleModal')
+  if (!modal) return
+  const doClose = () => { modal.close() }
+  if (force) { doClose(); return }
+  safeCloseModal(modal, _bulkHasInput, doClose)
+}
+
+function applyBulkSchedule() {
+  const phases = ['Design', 'Production', 'Image', 'Register', 'Logistics']
+  const keys   = ['design', 'production', 'image', 'register', 'logistics']
+
+  const scheduleInput = {}
+  let hasAny = false
+  keys.forEach((key, i) => {
+    const start = document.getElementById('npBulk' + phases[i] + 'Start').value
+    const end   = document.getElementById('npBulk' + phases[i] + 'End').value
+    scheduleInput[key] = { start, end }
+    if (start || end) hasAny = true
+  })
+
+  if (!hasAny) { showToast('최소 1개 단계의 날짜를 입력해주세요.', 'warning'); return }
+
+  let count = 0
+  State.planItems.forEach(item => {
+    if (!_planSelected.has(item.no)) return
+    if (!item.schedule) item.schedule = {}
+    keys.forEach(key => {
+      const input = scheduleInput[key]
+      if (!item.schedule[key]) item.schedule[key] = { start: '', end: '' }
+      if (input.start) item.schedule[key].start = input.start
+      if (input.end) item.schedule[key].end = input.end
+    })
+    count++
+  })
+
+  showToast(`${count}건 일정 일괄 적용 완료`, 'success')
+  logActivity('update', '신규기획', `일괄 일정 설정 — ${count}건`)
+
+  closeBulkScheduleModal(true)
+  clearPlanSelection()
+  renderPlanTable()
+  if (typeof renderDashCalendar === 'function') renderDashCalendar()
 }

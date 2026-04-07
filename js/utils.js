@@ -919,3 +919,88 @@ function clearAllNotifications() {
   saveNotifications()
   renderNotifications()
 }
+
+// =============================================
+// ===== 사용자 프로필 팝업 =====
+// =============================================
+
+function _onProfileOutsideClick(e) {
+  const popup = document.getElementById('userProfilePopup')
+  if (popup && !popup.contains(e.target)) {
+    closeUserProfilePopup()
+  }
+}
+
+function closeUserProfilePopup() {
+  document.removeEventListener('click', _onProfileOutsideClick)
+  const popup = document.getElementById('userProfilePopup')
+  if (popup) popup.remove()
+}
+
+window.showUserProfile = async function(uid, anchorEl) {
+  if (!uid || !anchorEl) return
+  closeUserProfilePopup()
+
+  try {
+    const doc = await firebase.firestore().collection('users').doc(uid).get()
+    if (!doc.exists) return
+    const u = doc.data()
+
+    const popup = document.createElement('div')
+    popup.className = 'user-profile-popup'
+    popup.id = 'userProfilePopup'
+    popup.innerHTML = `
+      <div class="upp-name">${esc(formatUserName(u.name, u.position))}</div>
+      <div class="upp-divider"></div>
+      <div class="upp-row"><span class="upp-label">이메일</span><span>${esc(u.email || '-')}</span></div>
+      <div class="upp-row"><span class="upp-label">전화</span><span>${esc(u.phone || '-')}</span></div>
+      <div class="upp-row"><span class="upp-label">부서</span><span>${esc(u.dept || '-')}</span></div>
+      <div class="upp-row"><span class="upp-label">직급</span><span>${esc(u.position || '-')}</span></div>
+      <div class="upp-row"><span class="upp-label">등급</span><span>${gradeBadgeHtml(u.grade)}</span></div>
+    `
+
+    const rect = anchorEl.getBoundingClientRect()
+    popup.style.top = (rect.bottom + window.scrollY + 4) + 'px'
+    popup.style.left = rect.left + 'px'
+
+    document.body.appendChild(popup)
+
+    // Adjust if off-screen right
+    const popRect = popup.getBoundingClientRect()
+    if (popRect.right > window.innerWidth) {
+      popup.style.left = (window.innerWidth - popRect.width - 8) + 'px'
+    }
+    // Adjust if off-screen bottom
+    if (popRect.bottom > window.innerHeight) {
+      popup.style.top = (rect.top + window.scrollY - popRect.height - 4) + 'px'
+    }
+
+    setTimeout(() => {
+      document.addEventListener('click', _onProfileOutsideClick)
+    }, 50)
+  } catch(e) {
+    console.error('showUserProfile error:', e)
+  }
+}
+
+window.closeUserProfilePopup = closeUserProfilePopup
+
+function formatDateTime(isoStr) {
+  if (!isoStr) return ''
+  return isoStr.slice(0, 10) + ' ' + isoStr.slice(11, 16)
+}
+
+function renderStampInfo(obj) {
+  if (!obj || (!obj.createdByName && !obj.createdAt)) return ''
+  const escFn = (typeof esc === 'function') ? esc : (s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'))
+  let html = '<div class="stamp-info">'
+  html += '<span class="stamp-created">작성: ' + escFn(obj.createdByName || '알 수 없음') + ' (' + formatDateTime(obj.createdAt) + ')</span>'
+  if (obj.lastModifiedAt && obj.lastModifiedAt !== obj.createdAt) {
+    html += '<span class="stamp-modified">최종수정: ' + escFn(obj.lastModifiedByName || '알 수 없음') + ' (' + formatDateTime(obj.lastModifiedAt) + ')</span>'
+  }
+  html += '</div>'
+  return html
+}
+
+window.formatDateTime = formatDateTime
+window.renderStampInfo = renderStampInfo

@@ -225,13 +225,15 @@ function saveSrmStock(productCode) {
 
   // 입고 이력 저장
   if (!p.stockLog) p.stockLog = []
-  p.stockLog.push({
+  const _inLog = {
     type: 'in',
     date: document.getElementById('srmDate')?.value || new Date().toISOString().slice(0,10),
     memo: document.getElementById('srmMemo')?.value.trim() || '',
     ...inQty,
     registeredAt: new Date().toISOString()
-  })
+  }
+  stampCreated(_inLog)
+  p.stockLog.push(_inLog)
 
   State.stock.filtered = State.stock.filtered.map(x => x.productCode === productCode ? p : x)
   renderStockTable()
@@ -331,8 +333,10 @@ function confirmStockUpload() {
     // 바코드 업데이트
     Object.entries(g.barcodes).forEach(([sz, bc]) => { p.barcodes[sz] = bc })
     // 이력
-    p.stockLog.push({ type:'in', date: g.date, memo: g.memo || '엑셀 일괄 입고',
-      ...g.sizes, barcodes: g.barcodes, registeredAt: new Date().toISOString() })
+    const _bulkLog = { type:'in', date: g.date, memo: g.memo || '엑셀 일괄 입고',
+      ...g.sizes, barcodes: g.barcodes, registeredAt: new Date().toISOString() }
+    stampCreated(_bulkLog)
+    p.stockLog.push(_bulkLog)
     cnt++
   })
 
@@ -445,13 +449,15 @@ function submitOutgoing(productCode) {
 
   // 출고 이력 저장
   if (!p.stockLog) p.stockLog = []
-  p.stockLog.push({
+  const _outLog = {
     type: 'out',
     date: document.getElementById('ougDate')?.value || new Date().toISOString().slice(0,10),
     memo: document.getElementById('ougMemo')?.value.trim() || '',
     ...outQty,
     registeredAt: new Date().toISOString()
-  })
+  }
+  stampCreated(_outLog)
+  p.stockLog.push(_outLog)
 
   State.stock.filtered = State.stock.filtered.map(x => x.productCode === productCode ? p : x)
   renderStockTable()

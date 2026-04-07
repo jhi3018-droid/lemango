@@ -151,17 +151,19 @@ function openDetailModal(productCode) {
 
   const modal = document.getElementById('detailModal')
   modal.classList.remove('edit-mode')
-  document.getElementById('dEditBtn').textContent = '✏️ 수정'
+  _dUpdateHeaderBtns('view')
   // 품번확정 버튼 상태
   const lockBtn = document.getElementById('dLockCodeBtn')
   if (lockBtn) {
-    lockBtn.style.display = p.productCodeLocked ? 'none' : ''
+    lockBtn.style.display = p.productCodeLocked ? 'none' : 'inline-block'
     lockBtn.textContent = '🔒 품번 확정'
   }
   // 삭제 버튼 (grade 3+ only)
   const deleteBtn = document.getElementById('dDeleteBtn')
-  if (deleteBtn) {
-    deleteBtn.style.display = (State.currentUser && State.currentUser.grade >= 3) ? '' : 'none'
+  if (deleteBtn && !(State.currentUser && State.currentUser.grade >= 3)) {
+    deleteBtn.dataset.hidden = '1'
+  } else if (deleteBtn) {
+    delete deleteBtn.dataset.hidden
   }
   // 위치 초기화 (매번 열릴 때 중앙으로)
   modal.style.left = ''
@@ -689,6 +691,7 @@ function buildDetailContent(p) {
       <button type="button" class="btn btn-new" onclick="saveDetailEdit()">저장</button>
     </div>
 
+    ${renderStampInfo(p)}
     ${buildCommentSection('product', p.productCode)}
   `
 }
@@ -771,10 +774,21 @@ async function deleteProduct() {
   showToast('상품이 삭제되었습니다.', 'success')
 }
 
+function _dUpdateHeaderBtns(mode) {
+  // mode: 'view' | 'edit'
+  document.querySelectorAll('#detailModal .d-view-btn').forEach(b => {
+    if (b.id === 'dDeleteBtn' && b.dataset.hidden === '1') { b.style.display = 'none'; return }
+    b.style.display = mode === 'view' ? 'inline-block' : 'none'
+  })
+  document.querySelectorAll('#detailModal .d-edit-btn').forEach(b => {
+    b.style.display = mode === 'edit' ? 'inline-block' : 'none'
+  })
+}
+
 function toggleDetailEdit() {
   const modal = document.getElementById('detailModal')
   const isEdit = modal.classList.toggle('edit-mode')
-  document.getElementById('dEditBtn').textContent = isEdit ? '❌ 취소' : '✏️ 수정'
+  _dUpdateHeaderBtns(isEdit ? 'edit' : 'view')
 
   // 취소 시 임시 예약 코드 해제
   if (!isEdit && _detailPendingCode) {
@@ -834,6 +848,8 @@ function saveDetailEdit() {
     if (sz) p.barcodes[sz] = inp.value.trim()
   })
 
+  stampModified(p)
+
   // 테이블 갱신
   State.product.filtered = [...State.allProducts]
   State.stock.filtered   = [...State.allProducts]
@@ -846,7 +862,7 @@ function saveDetailEdit() {
 
   // 모달 뷰모드로 전환 후 재렌더
   document.getElementById('detailModal').classList.remove('edit-mode')
-  document.getElementById('dEditBtn').textContent = '✏️ 수정'
+  _dUpdateHeaderBtns('view')
   openDetailModal(_detailCode)
   showToast('상품 정보가 수정되었습니다.', 'success')
   logActivity('update', '상품조회', `상품수정: ${_detailCode}`)

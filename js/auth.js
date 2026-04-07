@@ -140,6 +140,9 @@ function showApp(userData) {
   document.getElementById('loginPage').style.display = 'none'
   document.getElementById('appContainer').style.display = ''
   State.currentUser = userData
+  _currentUserPosition = userData.position || ''
+  _currentUserDept = userData.dept || ''
+  _currentUserName = userData.name || ''
   updateHeaderUser(userData)
   applyGradeAccess(userData.grade)
   // 첫 로그인 시 앱 초기화 (init에서 return된 경우)
@@ -163,7 +166,7 @@ function showLogin() {
 
 function updateHeaderUser(userData) {
   const el = document.getElementById('headerUserName')
-  if (el) el.textContent = userData.name + '님'
+  if (el) el.textContent = formatUserNameHonorific(userData.name, userData.position)
   const badge = document.getElementById('headerUserGrade')
   if (badge) badge.innerHTML = gradeBadgeHtml(userData.grade)
 }
@@ -241,6 +244,7 @@ window.handleSignup = async function() {
       name: name,
       phone: phone,
       dept: dept,
+      position: '사원',
       grade: 1,
       status: 'pending',
       createdAt: new Date(),
