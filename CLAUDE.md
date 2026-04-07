@@ -1987,6 +1987,29 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 ---
 
+### 2026-04-07 (추가)
+
+#### 로고 이미지 시스템 + 로딩 스크린
+- `assets/르망고_송부용_로고데이터_240402.ai` → PyMuPDF + Pillow로 PNG 3종 생성
+  - `assets/logo-white.png` (헤더/로딩 스크린, 다크 배경용 — 흰색 처리)
+  - `assets/logo-black.png` (로그인 페이지, 라이트 배경용)
+  - `assets/logo-placeholder.png` (상품 이미지 폴백, 회색 반투명)
+- 헤더 텍스트 "LEMANGO" → `<img src="assets/logo-white.png" class="header-logo-img">`
+- 로그인 페이지 텍스트 → `<img src="assets/logo-black.png" class="login-logo-img">`
+- `#loadingScreen` 추가 (`position:fixed; inset:0; background:#1a1a2e; z-index:99999`) — logo-white.png 표시
+- 상품 이미지 폴백: SVG data URI → `PLACEHOLDER_IMG = 'assets/logo-placeholder.png'` (core.js)
+- 적용: modals.js FALLBACK_LOGO, dImgMain onerror, utils.js renderThumb, dashboard.js best-thumb, plan.js pd-thumb
+
+#### 로그아웃/로그인 플로우 정리
+- `handleLogout()` (auth.js): 모든 `dialog[open]` 닫기 → `resetTabs()` → `signOut()` → 전역 변수 초기화 (_currentUserName/Position/Dept, _notifications) → `showLogin()`
+- `showApp()` 끝에 `openTab('dashboard')` 호출
+- `showApp()` / `showLogin()` 양쪽에서 loadingScreen 숨김
+
+#### 캐시 버전 코멘트
+- `index.html` 상단 `<!-- v2026-04-07-final -->` 추가
+
+---
+
 ## 다음 작업 후보 (미구현)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 데이터 영속성 (localStorage 또는 서버 연동)
