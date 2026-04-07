@@ -16,6 +16,42 @@ function openPlanRegisterModal() {
         <td><input type="date" class="pst-date-input pl-sched-input" data-pkey="${esc(ph.key)}" data-ptype="end" /></td>
       </tr>`).join('')
   }
+
+  // 설정 기반 select 옵션 채우기 (_settings 기반)
+  const fillSel = (id, list, withBlank = true) => {
+    const el = document.getElementById(id)
+    if (!el) return
+    const opts = (list || []).map(v => {
+      if (Array.isArray(v)) return `<option value="${v[0]}">${v[1] || v[0]}</option>`
+      return `<option value="${v}">${v}</option>`
+    }).join('')
+    el.innerHTML = (withBlank ? '<option value="">선택</option>' : '') + opts
+  }
+  fillSel('plFabricType',   _settings?.fabricTypes)
+  fillSel('plLegCut',       _settings?.legCuts)
+  fillSel('plChestLine',    _settings?.chestLines)
+  fillSel('plTransparency', _settings?.transparencies)
+  fillSel('plLining',       _settings?.linings)
+  fillSel('plCapRing',      _settings?.capRings)
+
+  // 사이즈 규격 그리드 동적 생성
+  const specWrap = document.getElementById('plSizeSpecGrid')
+  if (specWrap) {
+    let h = '<table class="size-spec-table"><thead><tr><th></th>'
+    SIZES.forEach(sz => { h += `<th>${sz}</th>` })
+    h += '</tr></thead><tbody>'
+    SPEC_ROWS.forEach(r => {
+      h += '<tr>'
+      h += `<td class="size-spec-label">${r.label}</td>`
+      SIZES.forEach(sz => {
+        h += `<td><input type="text" class="size-spec-input" id="plSpec_${r.key}_${sz}" style="display:block" /></td>`
+      })
+      h += '</tr>'
+    })
+    h += '</tbody></table>'
+    specWrap.innerHTML = h
+  }
+
   modal.showModal()
   centerModal(modal)
   initPlPcodePanel()
@@ -36,27 +72,70 @@ function submitPlanRegister(e) {
   const sampleNo = document.getElementById('plSampleNo').value.trim()
   if (!sampleNo) { showToast('샘플번호는 필수입니다.', 'error'); return }
 
-  const sumUrls = (document.getElementById('plImgSum').value || '').split('\n').map(u => u.trim()).filter(Boolean)
+  const splitLines = (id) => (document.getElementById(id)?.value || '').split('\n').map(u => u.trim()).filter(Boolean)
+  const sumUrls     = splitLines('plImgSum')
+  const lemangoUrls = splitLines('plImgLemango')
+  const noirUrls    = splitLines('plImgNoir')
+  const extUrls     = splitLines('plImgExternal')
+
+  // sizeSpec 수집
+  const sizeSpec = {}
+  SPEC_ROWS.forEach(r => {
+    sizeSpec[r.key] = {}
+    SIZES.forEach(sz => {
+      const inp = document.getElementById('plSpec_' + r.key + '_' + sz)
+      sizeSpec[r.key][sz] = inp ? inp.value.trim() : ''
+    })
+  })
+
+  const val = (id) => document.getElementById(id)?.value.trim() || ''
   const item = {
     no:          State.planItems.length + 1,
     sampleNo,
     productCode: document.getElementById('plProductCode').value.trim() || '',
     brand:       document.getElementById('plBrand').value,
-    nameKr:      document.getElementById('plNameKr').value.trim(),
-    nameEn:      document.getElementById('plNameEn').value.trim(),
-    colorKr:     document.getElementById('plColorKr').value.trim(),
-    colorEn:     document.getElementById('plColorEn').value.trim(),
+    nameKr:      val('plNameKr'),
+    nameEn:      val('plNameEn'),
+    colorKr:     val('plColorKr'),
+    colorEn:     val('plColorEn'),
     salePrice:   Number(document.getElementById('plSalePrice').value) || 0,
     costPrice:   Number(document.getElementById('plCostPrice').value) || 0,
     type:        document.getElementById('plType').value,
     year:        document.getElementById('plYear').value,
     season:      document.getElementById('plSeason').value,
     gender:      document.getElementById('plGender').value,
-    memo:        document.getElementById('plMemo').value.trim(),
+    // 디자인 속성
+    fabricType:   val('plFabricType'),
+    backStyle:    val('plBackStyle'),
+    legCut:       val('plLegCut'),
+    guide:        val('plGuide'),
+    chestLine:    val('plChestLine'),
+    transparency: val('plTransparency'),
+    lining:       val('plLining'),
+    capRing:      val('plCapRing'),
+    // 소재
+    material:    val('plMaterial'),
+    comment:     val('plComment'),
+    washMethod:  val('plWashMethod'),
+    // 사이즈 규격
+    sizeSpec,
+    modelSize:   val('plModelSize'),
+    // 제조 정보
+    madeMonth:   val('plMadeMonth'),
+    madeBy:      val('plMadeBy'),
+    madeIn:      val('plMadeIn'),
+    // 메모
+    memo:        val('plMemo'),
+    // 이미지
+    mainImage:   val('plMainImage'),
+    videoUrl:    val('plVideoUrl'),
     images: {
-      sum:     [...sumUrls, ..._plLocalImgUrls],
-      lemango: document.getElementById('plImgLemango').value.trim(),
-      noir:    document.getElementById('plImgNoir').value.trim()
+      sum:      [...sumUrls, ..._plLocalImgUrls],
+      lemango:  lemangoUrls,
+      noir:     noirUrls,
+      external: extUrls,
+      design:   val('plImgDesign'),
+      shoot:    val('plImgShoot')
     },
     schedule: (() => {
       const sch = {}
@@ -521,6 +600,29 @@ function closePlanDetailModal(force) {
   safeCloseModal(modal, () => modal.classList.contains('edit-mode'), doClose)
 }
 
+async function clonePlanItem(no) {
+  const original = State.planItems.find(item => item.no === no)
+  if (!original) return
+  const ok = await korConfirm('이 기획 상품을 복제하시겠습니까?\n동일한 정보로 새 기획이 생성됩니다.', '복제', '취소')
+  if (!ok) return
+  const cloned = JSON.parse(JSON.stringify(original))
+  const maxNo = State.planItems.reduce((max, item) => Math.max(max, item.no || 0), 0)
+  cloned.no = maxNo + 1
+  if (cloned.sampleNo) cloned.sampleNo = cloned.sampleNo + '_copy'
+  cloned.productCode = ''
+  cloned.confirmed = false
+  cloned.confirmedAt = ''
+  if (typeof stampCreated === 'function') stampCreated(cloned)
+  State.planItems.push(cloned)
+  localStorage.setItem('lemango_plan_items_v1', JSON.stringify(State.planItems))
+  closePlanDetailModal(true)
+  if (typeof renderPlanTable === 'function') renderPlanTable()
+  setTimeout(() => { openPlanDetailModal(cloned.no) }, 300)
+  showToast('기획 상품이 복제되었습니다.')
+  if (typeof logActivity === 'function') logActivity('create', '신규기획', '기획 복제 — ' + (original.sampleNo || original.productCode || 'NO.' + original.no))
+}
+window.clonePlanItem = clonePlanItem
+
 // ===== 기획 상세 모달 — 품번 인라인 생성 =====
 function togglePdCodeGenPanel() {
   const panel = document.getElementById('pdCodeGenPanel')
@@ -686,11 +788,39 @@ function savePlanDetailEdit() {
     return
   }
 
+  // 이미지 URL pseudo 키 매핑
+  const IMG_KEYS = {
+    imgLemango:  'lemango',
+    imgNoir:     'noir',
+    imgExternal: 'external',
+    imgSum:      'sum',
+    imgDesign:   'design',
+    imgShoot:    'shoot'
+  }
+  if (!item.images) item.images = {}
+
   // 일반 input/select/textarea
   modal.querySelectorAll('[data-pkey]').forEach(el => {
     const key = el.dataset.pkey
+    if (IMG_KEYS[key]) {
+      const imgKey = IMG_KEYS[key]
+      if (imgKey === 'design' || imgKey === 'shoot') {
+        item.images[imgKey] = el.value.trim() || null
+      } else {
+        item.images[imgKey] = (el.value || '').split('\n').map(u => u.trim()).filter(Boolean)
+      }
+      return
+    }
     const val = el.tagName === 'INPUT' && el.type === 'number' ? (parseFloat(el.value) || 0) : el.value
     item[key] = val
+  })
+
+  // 사이즈 규격 수집
+  ensureSizeSpec(item)
+  modal.querySelectorAll('.size-spec-input[data-spec]').forEach(inp => {
+    const specKey = inp.dataset.spec
+    const sz = inp.dataset.size
+    if (specKey && sz) item.sizeSpec[specKey][sz] = inp.value.trim()
   })
   // 일정 date inputs (dynamic phases)
   const scheduleKeys = getPlanPhases().map(p => p.key)
@@ -734,56 +864,45 @@ async function confirmPlanToProduct() {
 
   if (!await korConfirm(`신규기획 항목을 상품조회로 이전합니다.\n품번: ${item.productCode}\n상품명: ${item.nameKr || '(없음)'}\n\n계속하시겠습니까?`)) return
 
-  // 플랜 아이템 → 상품 객체 생성
+  // 플랜 아이템 → 상품 객체 생성 (기획 필드 전체 복사)
   const salesInit = {}
   _platforms.forEach(pl => { salesInit[pl] = 0 })
 
+  const cloned = JSON.parse(JSON.stringify(item))
+  delete cloned.no
+  delete cloned.schedule
+  delete cloned.confirmed
+  delete cloned.confirmedAt
+  delete cloned.createdBy
+  delete cloned.createdByName
+  delete cloned.createdAt
+  delete cloned.lastModifiedBy
+  delete cloned.lastModifiedByName
+  delete cloned.lastModifiedAt
+
   const newProduct = {
-    no:          State.allProducts.length + 1,
-    brand:       item.brand       || '',
-    productCode: item.productCode,
-    sampleNo:    item.sampleNo    || '',
-    cafe24Code:  item.cafe24Code  || '',
-    barcode:     item.barcode     || '',
-    nameKr:      item.nameKr      || '',
-    nameEn:      item.nameEn      || '',
-    colorKr:     item.colorKr     || '',
-    colorEn:     item.colorEn     || '',
-    salePrice:   item.salePrice   || 0,
-    costPrice:   item.costPrice   || 0,
-    type:        item.type        || '',
-    backStyle:   item.backStyle   || '',
-    legCut:      item.legCut      || '',
-    guide:       item.guide       || '',
-    fabricType:  item.fabricType  || '',
-    chestLine:   item.chestLine   || '',
-    transparency:item.transparency|| '',
-    lining:      item.lining      || '',
-    capRing:     item.capRing     || '',
-    material:    item.material    || '',
-    comment:     item.comment     || '',
-    washMethod:  item.washMethod  || '',
-    bust:        item.bust        || '',
-    waist:       item.waist       || '',
-    hip:         item.hip         || '',
-    modelSize:   item.modelSize   || '',
-    madeMonth:   item.madeMonth   || '',
-    madeBy:      item.madeBy      || '',
-    madeIn:      item.madeIn      || '',
-    videoUrl:    item.videoUrl    || null,
-    saleStatus:  item.saleStatus  || '판매중',
+    ...cloned,
+    no:            State.allProducts.length + 1,
+    productCode:   item.productCode,
+    saleStatus:    item.saleStatus || '판매대기',
+    productionStatus: item.productionStatus || '지속생산',
+    productCodeLocked: false,
+    stock:         Object.fromEntries(SIZES.map(sz => [sz, 0])),
+    barcodes:      Object.fromEntries(SIZES.map(sz => [sz, ''])),
+    mallCodes:     {},
+    stockLog:      [],
+    sales:         salesInit,
+    revenueLog:    [],
+    registDate:    new Date().toISOString().slice(0, 10),
+    logisticsDate: '',
     images: {
       sum:      item.images?.sum      || [],
-      lemango:  item.images?.lemango  || [],
-      noir:     item.images?.noir     || [],
+      lemango:  Array.isArray(item.images?.lemango) ? item.images.lemango : (item.images?.lemango ? [item.images.lemango] : []),
+      noir:     Array.isArray(item.images?.noir)    ? item.images.noir    : (item.images?.noir    ? [item.images.noir]    : []),
       external: item.images?.external || [],
-      design:   item.images?.design   || [],
-      shoot:    item.images?.shoot    || []
+      design:   item.images?.design   || null,
+      shoot:    item.images?.shoot    || null
     },
-    stock:       Object.fromEntries(SIZES.map(sz => [sz, 0])),
-    sales:       salesInit,
-    registDate:  new Date().toISOString().slice(0, 10),
-    logisticsDate: '',
     // 기획 일정 이력 (상품조회 하단에 표시)
     scheduleLog: item.schedule && Object.keys(item.schedule).length
       ? [{ confirmedAt: new Date().toISOString().slice(0, 10), schedule: JSON.parse(JSON.stringify(item.schedule)) }]
@@ -855,6 +974,16 @@ function buildPlanDetailContent(item) {
   const typeOpts   = _settings.types.map(([v,l]) => `<option value="${v}"${item.type===v?' selected':''}>${l}</option>`).join('')
   const genderOpts = [['W','여성'],['M','남성'],['G','걸즈'],['B','보이즈'],['N','공용'],['K','키즈']]
     .map(([v,l]) => `<option value="${v}"${item.gender===v?' selected':''}>${l}</option>`).join('')
+  const mkOptsCur = (list, cur) => '<option value="">-</option>' + (list||[]).map(v => {
+    const [val, lbl] = Array.isArray(v) ? v : [v, v]
+    return `<option value="${val}"${cur===val?' selected':''}>${lbl}</option>`
+  }).join('')
+  const fabricOpts       = mkOptsCur(_settings?.fabricTypes,    item.fabricType || '')
+  const legCutOpts       = mkOptsCur(_settings?.legCuts,        item.legCut || '')
+  const chestLineOpts    = mkOptsCur(_settings?.chestLines,     item.chestLine || '')
+  const transparencyOpts = mkOptsCur(_settings?.transparencies, item.transparency || '')
+  const liningOpts       = mkOptsCur(_settings?.linings,        item.lining || '')
+  const capRingOpts      = mkOptsCur(_settings?.capRings,       item.capRing || '')
 
   // 품번 생성 패널용 옵션 (item 데이터로 기본값 추측)
   const clsGuess    = item.brand?.includes('느와') ? 'NS' : 'LS'
@@ -918,7 +1047,7 @@ function buildPlanDetailContent(item) {
       </div>
     </div>
     <div class="pd-section">
-      <div class="pd-section-title">가격 / 타입</div>
+      <div class="pd-section-title">가격 / 디자인</div>
       <div class="dfields-grid">
         ${pf('판매가', 'salePrice', item.salePrice, 'number')}
         ${pf('원가',   'costPrice', item.costPrice, 'number')}
@@ -926,6 +1055,68 @@ function buildPlanDetailContent(item) {
         ${pf('연도',   'year',      item.year)}
         ${pf('시즌',   'season',    item.season)}
         ${pf('성별',   'gender',    item.gender, 'select', genderOpts, '', genderLabel[item.gender] || item.gender)}
+        ${pf('원단타입', 'fabricType', item.fabricType, 'select', fabricOpts)}
+        ${pf('백스타일', 'backStyle',  item.backStyle)}
+        ${pf('다리파임', 'legCut',     item.legCut, 'select', legCutOpts)}
+        ${pf('가이드',   'guide',      item.guide)}
+        ${pf('가슴선',   'chestLine',  item.chestLine, 'select', chestLineOpts)}
+        ${pf('비침',     'transparency', item.transparency, 'select', transparencyOpts)}
+        ${pf('안감',     'lining',     item.lining, 'select', liningOpts)}
+        ${pf('캡고리',   'capRing',    item.capRing, 'select', capRingOpts)}
+      </div>
+    </div>
+    <div class="pd-section">
+      <div class="pd-section-title">소재</div>
+      <div class="dfields-grid">
+        ${pf('소재',            'material',   item.material,   'textarea', '', 'dfield-span2')}
+        ${pf('디자이너 코멘트', 'comment',    item.comment,    'textarea', '', 'dfield-span2')}
+        ${pf('세탁방법',        'washMethod', item.washMethod, 'textarea', '', 'dfield-span2')}
+      </div>
+    </div>
+    <div class="pd-section">
+      <div class="pd-section-title">사이즈 규격</div>
+      <div style="padding:10px 12px">
+        ${(() => {
+          const spec = ensureSizeSpec(item)
+          let h = '<div class="size-spec-table-wrap"><table class="size-spec-table"><thead><tr><th></th>'
+          SIZES.forEach(sz => { h += `<th>${sz}</th>` })
+          h += '</tr></thead><tbody>'
+          SPEC_ROWS.forEach(r => {
+            h += '<tr>'
+            h += `<td class="size-spec-label">${r.label}</td>`
+            SIZES.forEach(sz => {
+              const v = (spec[r.key] && spec[r.key][sz]) || ''
+              h += `<td><span class="dfield-value size-spec-val">${esc(v) || '-'}</span><input type="text" class="size-spec-input" data-spec="${r.key}" data-size="${sz}" value="${(v||'').replace(/"/g,'&quot;')}" /></td>`
+            })
+            h += '</tr>'
+          })
+          h += '</tbody></table></div>'
+          return h
+        })()}
+        <div style="margin-top:10px">
+          ${pf('모델착용사이즈', 'modelSize', item.modelSize)}
+        </div>
+      </div>
+    </div>
+    <div class="pd-section">
+      <div class="pd-section-title">제조 정보</div>
+      <div class="dfields-grid">
+        ${pf('제조년월', 'madeMonth', item.madeMonth)}
+        ${pf('제조사',   'madeBy',    item.madeBy)}
+        ${pf('제조국',   'madeIn',    item.madeIn)}
+      </div>
+    </div>
+    <div class="pd-section">
+      <div class="pd-section-title">이미지 URL</div>
+      <div class="dfields-grid">
+        ${pf('대표이미지', 'mainImage', item.mainImage, 'text', '', 'dfield-span2')}
+        ${pf('자사몰',     'imgLemango', Array.isArray(item.images?.lemango) ? (item.images.lemango||[]).join('\n') : (item.images?.lemango||''), 'textarea', '', 'dfield-span2')}
+        ${pf('느와',       'imgNoir',    Array.isArray(item.images?.noir)    ? (item.images.noir||[]).join('\n')    : (item.images?.noir||''),    'textarea', '', 'dfield-span2')}
+        ${pf('외부몰',     'imgExternal',(item.images?.external||[]).join('\n'), 'textarea', '', 'dfield-span2')}
+        ${pf('SUM',        'imgSum',     (item.images?.sum||[]).join('\n'),      'textarea', '', 'dfield-span2')}
+        ${pf('디자인',     'imgDesign',  item.images?.design || '',              'text',     '', 'dfield-span2')}
+        ${pf('촬영',       'imgShoot',   item.images?.shoot  || '',              'text',     '', 'dfield-span2')}
+        ${pf('영상 URL',   'videoUrl',   item.videoUrl || '',                    'text',     '', 'dfield-span2')}
       </div>
     </div>
     <div class="pd-section">

@@ -1350,6 +1350,7 @@
       <span class="dmodal-code" id="pdSampleNo"></span>
     </div>
     <div class="rmodal-header-actions">
+      <button class="btn btn-sm btn-outline" id="pdCloneBtn" onclick="clonePlanItem(_editingPlanNo)">복제</button>
       <button class="btn btn-sm btn-primary pd-view-btn" id="pdEditBtn" onclick="togglePlanDetailEdit()">수정</button>
       <button class="btn btn-sm btn-primary pd-edit-btn" id="pdSaveBtn" onclick="savePlanDetailEdit()" style="display:none">저장</button>
       <button class="btn btn-sm btn-outline pd-edit-btn" id="pdCancelBtn" onclick="togglePlanDetailEdit()" style="display:none">취소</button>
@@ -1500,9 +1501,9 @@
       </div>
     </div>
 
-    <!-- 가격 / 타입 -->
+    <!-- 가격 / 디자인 -->
     <div class="rform-section">
-      <div class="rform-section-title">가격 / 타입</div>
+      <div class="rform-section-title">가격 / 디자인</div>
       <div class="rform-grid">
         <div class="rform-field">
           <label>판매가 (원)</label>
@@ -1549,9 +1550,93 @@
             <option value="K">K - 키즈</option>
           </select>
         </div>
+        <div class="rform-field">
+          <label>원단타입</label>
+          <select id="plFabricType"></select>
+        </div>
+        <div class="rform-field">
+          <label>백스타일</label>
+          <input type="text" id="plBackStyle" placeholder="예: U넥" />
+        </div>
+        <div class="rform-field">
+          <label>다리파임</label>
+          <select id="plLegCut"></select>
+        </div>
+        <div class="rform-field">
+          <label>가이드</label>
+          <input type="text" id="plGuide" />
+        </div>
+        <div class="rform-field">
+          <label>가슴선</label>
+          <select id="plChestLine"></select>
+        </div>
+        <div class="rform-field">
+          <label>비침</label>
+          <select id="plTransparency"></select>
+        </div>
+        <div class="rform-field">
+          <label>안감</label>
+          <select id="plLining"></select>
+        </div>
+        <div class="rform-field">
+          <label>캡고리</label>
+          <select id="plCapRing"></select>
+        </div>
         <div class="rform-field" style="grid-column:span 4">
           <label>메모</label>
           <textarea id="plMemo" rows="2" placeholder="기획 메모를 입력하세요"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- 소재 -->
+    <div class="rform-section">
+      <div class="rform-section-title">소재</div>
+      <div class="rform-grid">
+        <div class="rform-field" style="grid-column:span 4">
+          <label>소재</label>
+          <textarea id="plMaterial" rows="2"></textarea>
+        </div>
+        <div class="rform-field" style="grid-column:span 4">
+          <label>디자이너 코멘트</label>
+          <textarea id="plComment" rows="2"></textarea>
+        </div>
+        <div class="rform-field" style="grid-column:span 4">
+          <label>세탁방법</label>
+          <textarea id="plWashMethod" rows="2"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- 사이즈 규격 -->
+    <div class="rform-section">
+      <div class="rform-section-title">사이즈 규격</div>
+      <div class="rform-grid">
+        <div class="rform-field" style="grid-column:span 4">
+          <div id="plSizeSpecGrid"></div>
+        </div>
+        <div class="rform-field" style="grid-column:span 4">
+          <label>모델착용사이즈</label>
+          <input type="text" id="plModelSize" />
+        </div>
+      </div>
+    </div>
+
+    <!-- 제조 정보 -->
+    <div class="rform-section">
+      <div class="rform-section-title">제조 정보</div>
+      <div class="rform-grid">
+        <div class="rform-field">
+          <label>제조년월</label>
+          <input type="text" id="plMadeMonth" placeholder="예: 2026-03" />
+        </div>
+        <div class="rform-field">
+          <label>제조사</label>
+          <input type="text" id="plMadeBy" />
+        </div>
+        <div class="rform-field">
+          <label>제조국</label>
+          <input type="text" id="plMadeIn" placeholder="예: 대한민국" />
         </div>
       </div>
     </div>
@@ -1561,16 +1646,36 @@
       <div class="rform-section-title">이미지</div>
       <div class="rform-grid">
         <div class="rform-field" style="grid-column:span 4">
-          <label>이미지 URL (줄바꿈으로 여러 개 입력)</label>
-          <textarea id="plImgSum" rows="3" placeholder="https://example.com/image1.jpg&#10;https://example.com/image2.jpg"></textarea>
+          <label>대표이미지 URL</label>
+          <input type="text" id="plMainImage" placeholder="https://..." />
         </div>
         <div class="rform-field" style="grid-column:span 2">
-          <label>르망고 이미지 URL</label>
-          <input type="text" id="plImgLemango" placeholder="https://..." />
+          <label>자사몰 이미지 URL (줄바꿈 다중)</label>
+          <textarea id="plImgLemango" rows="2" placeholder="https://..."></textarea>
         </div>
         <div class="rform-field" style="grid-column:span 2">
-          <label>느와 이미지 URL</label>
-          <input type="text" id="plImgNoir" placeholder="https://..." />
+          <label>느와 이미지 URL (줄바꿈 다중)</label>
+          <textarea id="plImgNoir" rows="2" placeholder="https://..."></textarea>
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>외부몰 이미지 URL (줄바꿈 다중)</label>
+          <textarea id="plImgExternal" rows="2"></textarea>
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>SUM 이미지 URL (줄바꿈 다중)</label>
+          <textarea id="plImgSum" rows="2"></textarea>
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>디자인 이미지 URL</label>
+          <input type="text" id="plImgDesign" placeholder="https://..." />
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>촬영 이미지 URL</label>
+          <input type="text" id="plImgShoot" placeholder="https://..." />
+        </div>
+        <div class="rform-field" style="grid-column:span 4">
+          <label>영상 URL</label>
+          <input type="text" id="plVideoUrl" placeholder="https://..." />
         </div>
         <div class="rform-field" style="grid-column:span 4">
           <label>로컬 파일 업로드</label>

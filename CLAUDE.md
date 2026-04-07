@@ -1989,6 +1989,19 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 ### 2026-04-07 (추가)
 
+#### 기획 필드 = 상품 필드 동일화
+- 신규기획 등록/상세 모달 입력 항목을 상품 스키마와 동일하게 확장 (`js/plan.js`, `index.html`)
+- 추가 필드: nameEn, colorEn, costPrice, fabricType, backStyle, legCut, guide, chestLine, transparency, lining, capRing, material, comment, washMethod, sizeSpec(7×4 그리드, ensureSizeSpec/SPEC_ROWS 재사용), modelSize, madeMonth/madeBy/madeIn, mainImage, images.{lemango,noir,external,sum,design,shoot}, videoUrl
+- 등록 모달 신규 섹션: 소재 / 사이즈 규격 / 제조 정보 + 가격→가격/디자인 + 이미지 확장
+- `openPlanRegisterModal()` — `_settings` 기반 select 채우기 + sizeSpec 그리드 동적 생성
+- `submitPlanRegister()` / `savePlanDetailEdit()` — sizeSpec + 이미지 textarea 멀티 URL 수집
+- `confirmPlanToProduct()` — spread 방식으로 기획 전체 필드 → 상품에 복사, 상품 전용 필드(productCode, saleStatus, stock/barcodes/mallCodes/sales/registDate)만 추가, schedule/confirmed 등 제거
+- 호환성: 기존 기획 항목의 신규 필드는 빈값/undefined여도 정상 동작 (`item.xxx || ''`)
+
+#### 기획 상품 복제 기능
+- 신규기획 상세 모달 헤더에 "복제" 버튼 추가 (보기/수정 모드 모두 표시)
+- `clonePlanItem(no)` — `js/plan.js`: 동일 데이터로 새 planItem 생성, sampleNo에 `_copy` 접미사, productCode/confirmed 초기화, stampCreated 적용 후 모달 닫고 새 항목 상세 모달 자동 오픈
+
 #### 로고 이미지 시스템 + 로딩 스크린
 - `assets/르망고_송부용_로고데이터_240402.ai` → PyMuPDF + Pillow로 PNG 3종 생성
   - `assets/logo-white.png` (헤더/로딩 스크린, 다크 배경용 — 흰색 처리)
