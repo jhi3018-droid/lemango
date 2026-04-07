@@ -311,7 +311,39 @@ function renderSettings() {
     </div>
   </div>`
 
-  // 부서 카드 (최종관리자 grade 4만 표시)
+  // 기획 일정 단계 카드
+  const phases = getPlanPhases()
+  const curGrade = (State.currentUser && State.currentUser.grade) || 1
+  const canEditPhases = curGrade >= 4
+  const phListHtml = phases.map((ph, idx) => `
+    <div class="plan-phase-item" id="phItem_${idx}">
+      <div class="set-item-view" style="display:flex;align-items:center;gap:10px;width:100%">
+        <span class="plan-phase-dot" style="display:inline-block;width:14px;height:14px;border-radius:3px;background:${ph.color || '#888'};flex:none"></span>
+        <span class="plan-phase-label" style="flex:1;font-weight:600">${esc(ph.label)}</span>
+        <span class="plan-phase-key" style="font-family:monospace;font-size:11px;color:var(--text-light);background:#f5f4f1;padding:2px 6px;border-radius:3px">${esc(ph.key)}</span>
+        ${canEditPhases ? `
+          <button class="set-item-action set-item-edit" onclick="editPlanPhase(${idx})" title="수정">&#9998;</button>
+          <button class="set-item-action set-item-del" onclick="deletePlanPhase(${idx})" title="삭제">&#10005;</button>
+        ` : ''}
+      </div>
+    </div>`).join('') || '<div class="set-empty">항목 없음</div>'
+
+  const phAddRow = canEditPhases ? `
+    <div class="set-add-row">
+      <button class="btn btn-new set-add-btn" onclick="addPlanPhase()">+ 단계 추가</button>
+      <span style="flex:1;font-size:11px;color:var(--text-light);padding-left:8px">단계 추가/삭제는 시스템 관리자만 가능</span>
+    </div>` : `<div style="padding:8px 12px;font-size:11px;color:var(--text-light)">단계 추가/삭제는 시스템 관리자만 가능합니다.</div>`
+
+  const phCard = `<div class="set-card set-card-wide">
+    <div class="set-card-header">
+      <span class="set-card-title">📅 기획 일정 단계</span>
+      <span class="set-card-count">${phases.length}</span>
+    </div>
+    <div class="set-list set-list-scroll">${phListHtml}</div>
+    ${phAddRow}
+  </div>`
+
+  // 부서 카드 (시스템 관리자 grade 4만 표시)
   const isTopAdmin = State.currentUser && State.currentUser.grade === 4
   let deptSection = ''
   if (isTopAdmin) {
@@ -399,6 +431,17 @@ function renderSettings() {
       <div class="set-section-body">
         <div class="set-grid">
           ${wkCatCard}
+        </div>
+      </div>
+    </div>
+
+    <div class="set-section">
+      <button class="set-section-btn" onclick="toggleSetSection(this)">
+        <span>기획 일정 단계</span><span class="set-section-arrow">▼</span>
+      </button>
+      <div class="set-section-body">
+        <div class="set-grid">
+          ${phCard}
         </div>
       </div>
     </div>
@@ -787,7 +830,7 @@ async function removeWorkCategorySetting(idx) {
 }
 
 // =============================================
-// ===== 부서 CRUD (최종관리자 전용) =====
+// ===== 부서 CRUD (시스템 관리자 전용) =====
 // =============================================
 function addDeptSetting() {
   const name = document.getElementById('setDeptName')?.value.trim()
@@ -835,3 +878,84 @@ async function removeDeptSetting(idx) {
   showToast('삭제됐습니다.', 'success')
   logActivity('setting', '설정', `부서 삭제: ${name}`)
 }
+
+// ===== 기획 일정 단계 CRUD =====
+function _phAdminCheck() {
+  const g = (State.currentUser && State.currentUser.grade) || 1
+  if (g < 4) { showToast('시스템 관리자만 변경할 수 있습니다.', 'error'); return false }
+  return true
+}
+
+function _phRandomColor() {
+  const palette = ['#c9a96e','#4caf7d','#7C3AED','#f0a500','#0891B2','#e05252','#3b82f6','#ec4899','#14b8a6','#f59e0b','#8b5cf6','#10b981']
+  return palette[Math.floor(Math.random() * palette.length)]
+}
+
+async function addPlanPhase() {
+  if (!_phAdminCheck()) return
+  const label = prompt('새 단계 표시명 (예: 검수):')
+  if (!label || !label.trim()) return
+  const labelTrim = label.trim()
+  const phases = getPlanPhases()
+  if (phases.some(p => p.label === labelTrim)) { showToast('이미 존재하는 단계명입니다.', 'error'); return }
+  // key 자동 생성: 영문 소문자만 추출, 없으면 phase_N
+  let key = labelTrim.toLowerCase().replace(/[^a-z0-9]/g, '')
+  if (!key) key = 'phase_' + (phases.length + 1)
+  // key 중복 방지
+  let base = key, n = 2
+  while (phases.some(p => p.key === key)) { key = base + n; n++ }
+  const color = prompt('색상 (HEX, 예: #c9a96e):', _phRandomColor()) || _phRandomColor()
+  phases.push({ key, label: labelTrim, color: color.trim() || _phRandomColor() })
+  savePlanPhases()
+  if (typeof populateAllSelects === 'function') populateAllSelects()
+  renderSettings()
+  showToast(`"${labelTrim}" 단계 추가됨`, 'success')
+  logActivity('setting', '설정', `기획 일정 단계 추가: ${labelTrim} (${key})`)
+}
+
+async function editPlanPhase(idx) {
+  if (!_phAdminCheck()) return
+  const phases = getPlanPhases()
+  const ph = phases[idx]; if (!ph) return
+  const newLabel = prompt('표시명 수정:', ph.label)
+  if (newLabel === null) return
+  const lbl = newLabel.trim()
+  if (!lbl) { showToast('표시명이 비어 있습니다.', 'error'); return }
+  if (phases.some((p, i) => i !== idx && p.label === lbl)) { showToast('이미 존재하는 표시명입니다.', 'error'); return }
+  const newColor = prompt('색상 (HEX):', ph.color || _phRandomColor())
+  if (newColor === null) return
+  const oldLabel = ph.label
+  ph.label = lbl
+  ph.color = (newColor.trim() || ph.color || _phRandomColor())
+  savePlanPhases()
+  if (typeof populateAllSelects === 'function') populateAllSelects()
+  renderSettings()
+  if (typeof renderDashCalendar === 'function') renderDashCalendar()
+  if (typeof renderPlanTable === 'function') renderPlanTable()
+  showToast('수정됨', 'success')
+  logActivity('setting', '설정', `기획 일정 단계 수정: ${oldLabel} → ${lbl}`)
+}
+
+async function deletePlanPhase(idx) {
+  if (!_phAdminCheck()) return
+  const phases = getPlanPhases()
+  const ph = phases[idx]; if (!ph) return
+  if (phases.length <= 1) { showToast('최소 1개 단계는 유지해야 합니다.', 'error'); return }
+  // 사용 중인지 확인
+  const inUse = (State.planItems || []).some(item => item.schedule && item.schedule[ph.key] && (item.schedule[ph.key].start || item.schedule[ph.key].end))
+  let msg = `"${ph.label}" 단계를 삭제하시겠습니까?`
+  if (inUse) msg += '\n\n⚠️ 이미 이 단계를 사용 중인 기획 항목이 있습니다. 저장된 일정 데이터는 유지되지만 UI에서 표시되지 않습니다.'
+  if (!await korConfirm(msg)) return
+  phases.splice(idx, 1)
+  savePlanPhases()
+  if (typeof populateAllSelects === 'function') populateAllSelects()
+  renderSettings()
+  if (typeof renderDashCalendar === 'function') renderDashCalendar()
+  if (typeof renderPlanTable === 'function') renderPlanTable()
+  showToast('삭제됨', 'success')
+  logActivity('setting', '설정', `기획 일정 단계 삭제: ${ph.label}`)
+}
+
+window.addPlanPhase = addPlanPhase
+window.editPlanPhase = editPlanPhase
+window.deletePlanPhase = deletePlanPhase

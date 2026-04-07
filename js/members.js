@@ -41,7 +41,7 @@ function renderMembersKPI() {
     <div class="kpi-card">
       <div class="kpi-icon">${gradeBadgeHtml(4)}</div>
       <div class="kpi-value">${lv4}</div>
-      <div class="kpi-label">최종관리자</div>
+      <div class="kpi-label">시스템 관리자</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-icon">${gradeBadgeHtml(3)}</div>
@@ -51,7 +51,7 @@ function renderMembersKPI() {
     <div class="kpi-card">
       <div class="kpi-icon">📋</div>
       <div class="kpi-value">${lv12}</div>
-      <div class="kpi-label">담당자 / 일반</div>
+      <div class="kpi-label">부서장 / 담당자</div>
     </div>
   `
 }
@@ -73,20 +73,25 @@ function renderMembersTable() {
     const createdAt = m.createdAt ? formatTimestamp(m.createdAt) : '-'
     const isSelf = State.currentUser && State.currentUser.uid === m.uid
 
+    const myGrade = (State.currentUser && State.currentUser.grade) || 0
+    const canApprove = myGrade >= 2
+    const canManage = myGrade >= 3
     let actions = ''
-    if (m.status === 'pending') {
+    if (m.status === 'pending' && canApprove) {
       actions += `<button class="btn btn-sm btn-primary" onclick="approveMember('${m.uid}')">승인</button> `
       actions += `<button class="btn btn-sm btn-outline" onclick="rejectMember('${m.uid}')">거절</button> `
     }
-    if (m.status === 'suspended') {
+    if (m.status === 'suspended' && canManage) {
       actions += `<button class="btn btn-sm btn-outline" onclick="unsuspendMember('${m.uid}')">해제</button> `
     }
-    if (m.status === 'approved' && !isSelf) {
+    if (m.status === 'approved' && !isSelf && canManage) {
       actions += `<button class="btn btn-sm btn-outline" onclick="suspendMember('${m.uid}')">정지</button> `
     }
-    actions += `<button class="btn btn-sm btn-ghost" onclick="openMemberEditModal('${m.uid}')">수정</button>`
-    if (!isSelf) {
-      actions += ` <button class="btn btn-sm btn-ghost" style="color:var(--danger)" onclick="deleteMember('${m.uid}')">삭제</button>`
+    if (canManage) {
+      actions += `<button class="btn btn-sm btn-ghost" onclick="openMemberEditModal('${m.uid}')">수정</button>`
+      if (!isSelf) {
+        actions += ` <button class="btn btn-sm btn-ghost" style="color:var(--danger)" onclick="deleteMember('${m.uid}')">삭제</button>`
+      }
     }
 
     return `<tr>
@@ -117,6 +122,7 @@ function formatTimestamp(ts) {
 
 // ===== Approve / Reject / Suspend =====
 window.approveMember = async function(uid) {
+  if (!State.currentUser || State.currentUser.grade < 2) return showToast('권한이 없습니다.', 'warning')
   await db.collection('users').doc(uid).update({ status: 'approved' })
   showToast('회원이 승인되었습니다.')
   logActivity('approve', '회원관리', `회원승인: uid=${uid}`)
@@ -124,6 +130,7 @@ window.approveMember = async function(uid) {
 }
 
 window.rejectMember = async function(uid) {
+  if (!State.currentUser || State.currentUser.grade < 2) return showToast('권한이 없습니다.', 'warning')
   const ok = await korConfirm('이 회원의 가입을 거절하시겠습니까?')
   if (!ok) return
   await db.collection('users').doc(uid).update({ status: 'rejected' })
@@ -169,7 +176,7 @@ window.openMemberEditModal = function(uid) {
   document.getElementById('meEditDept').value = member.dept || ''
   document.getElementById('meEditGrade').value = member.grade || 1
 
-  // 최종관리자만 등급 변경 가능
+  // 시스템 관리자만 등급 변경 가능
   const gradeSelect = document.getElementById('meEditGrade')
   gradeSelect.disabled = !(State.currentUser && State.currentUser.grade === 4)
 
@@ -394,7 +401,7 @@ window.saveMemberProfile = async function() {
       // 본인 이메일 변경 — reauthenticate 필요할 수 있음
       await currentAuthUser.updateEmail(email)
     } else if (isTopAdmin && !isSelf) {
-      // 최종관리자가 다른 회원 이메일 변경 — Firestore만 업데이트 (Admin SDK 없이 Auth email은 변경 불가)
+      // 시스템 관리자가 다른 회원 이메일 변경 — Firestore만 업데이트 (Admin SDK 없이 Auth email은 변경 불가)
       // Firestore 기록만 업데이트
     }
 
@@ -471,7 +478,7 @@ window.resetMemberPassword = async function() {
 
 // ===== 알림: 승인대기 회원 =====
 async function checkMemberAlerts() {
-  if (!db || !State.currentUser || State.currentUser.grade < 3) return
+  if (!db || !State.currentUser || State.currentUser.grade < 2) return
   try {
     const snap = await db.collection('users').where('status', '==', 'pending').get()
     if (!snap.empty) {

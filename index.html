@@ -12,10 +12,15 @@
 </head>
 <body>
 
+<!-- ===== 로딩 스크린 (인증 확인 중 깜빡임 방지) ===== -->
+<div id="loadingScreen" style="position:fixed;inset:0;background:#1a1a2e;display:flex;align-items:center;justify-content:center;z-index:99999">
+  <img src="assets/logo-white.png" alt="LEMANGO" style="height:48px;object-fit:contain" onerror="this.style.display='none'">
+</div>
+
 <!-- ===== 로그인 페이지 ===== -->
-<div id="loginPage" class="login-page">
+<div id="loginPage" class="login-page" style="display:none">
   <div class="login-card">
-    <div class="login-logo">LEMANGO</div>
+    <div class="login-logo"><img src="assets/logo-black.png" alt="LEMANGO" class="login-logo-img" onerror="this.style.display='none'"></div>
     <div class="login-sub">관리 시스템</div>
     <div id="loginError" class="login-error" style="display:none"></div>
     <div class="login-field">
@@ -35,7 +40,7 @@
 </div>
 
 <!-- ===== 회원가입 모달 ===== -->
-<dialog id="signupModal" class="signup-modal">
+<dialog id="signupModal" class="signup-modal srm-modal">
   <div class="signup-header">
     <span>회원가입</span>
     <button class="modal-close" onclick="closeSignupModal()">&times;</button>
@@ -45,33 +50,33 @@
       가입 신청 후 관리자 승인이 완료되면 로그인할 수 있습니다.
     </div>
     <div id="signupError" class="signup-error" style="display:none"></div>
-    <div class="signup-field">
+    <div class="signup-field srm-field">
       <label>이메일 <span class="req">*</span></label>
       <input type="email" id="signupEmail" placeholder="email@example.com">
     </div>
     <div class="signup-row">
-      <div class="signup-field">
+      <div class="signup-field srm-field">
         <label>비밀번호 <span class="req">*</span></label>
         <input type="password" id="signupPassword" placeholder="8자 이상">
         <span class="signup-hint">영문, 숫자 포함 8자 이상</span>
       </div>
-      <div class="signup-field">
+      <div class="signup-field srm-field">
         <label>비밀번호 확인 <span class="req">*</span></label>
         <input type="password" id="signupPasswordConfirm" placeholder="비밀번호 재입력">
         <span id="pwMatchMsg"></span>
       </div>
     </div>
     <div class="signup-row">
-      <div class="signup-field">
+      <div class="signup-field srm-field">
         <label>이름 <span class="req">*</span></label>
         <input type="text" id="signupName" placeholder="홍길동">
       </div>
-      <div class="signup-field">
+      <div class="signup-field srm-field">
         <label>전화번호</label>
         <input type="tel" id="signupPhone" placeholder="010-0000-0000">
       </div>
     </div>
-    <div class="signup-field">
+    <div class="signup-field srm-field">
       <label>부서 <span class="req">*</span></label>
       <select id="signupDept">
         <option value="">부서를 선택하세요</option>
@@ -95,7 +100,7 @@
 <header class="header">
   <div class="header-inner">
     <div class="logo">
-      <span class="logo-main">LEMANGO</span>
+      <img src="assets/logo-white.png" alt="LEMANGO" class="header-logo-img" onerror="this.style.display='none'">
       <span class="logo-sub">관리 시스템</span>
     </div>
     <nav class="tab-nav">
@@ -470,11 +475,6 @@
           <label>일정 단계</label>
           <select id="npPhase" onchange="searchPlan()">
             <option value="all">전체</option>
-            <option value="design">디자인</option>
-            <option value="production">생산</option>
-            <option value="image">이미지</option>
-            <option value="register">상품등록</option>
-            <option value="logistics">물류입고</option>
           </select>
         </div>
         <div class="search-group">
@@ -807,10 +807,10 @@
     <div class="rform-field">
       <label>등급</label>
       <select id="meEditGrade">
-        <option value="1">일반사용자 (Lv.1)</option>
-        <option value="2">담당자 (Lv.2)</option>
+        <option value="1">담당자 (Lv.1)</option>
+        <option value="2">부서장 (Lv.2)</option>
         <option value="3">관리자 (Lv.3)</option>
-        <option value="4">최종관리자 (Lv.4)</option>
+        <option value="4">시스템 관리자 (Lv.4)</option>
       </select>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
@@ -846,10 +846,10 @@
     <div class="rform-field">
       <label>등급</label>
       <select id="maGrade">
-        <option value="1">일반사용자 (Lv.1)</option>
-        <option value="2">담당자 (Lv.2)</option>
+        <option value="1">담당자 (Lv.1)</option>
+        <option value="2">부서장 (Lv.2)</option>
         <option value="3">관리자 (Lv.3)</option>
-        <option value="4">최종관리자 (Lv.4)</option>
+        <option value="4">시스템 관리자 (Lv.4)</option>
       </select>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
@@ -887,10 +887,10 @@
       <div class="rform-field" style="flex:1">
         <label>등급</label>
         <select id="mpGrade" disabled>
-          <option value="1">일반사용자 (Lv.1)</option>
-          <option value="2">담당자 (Lv.2)</option>
+          <option value="1">담당자 (Lv.1)</option>
+          <option value="2">부서장 (Lv.2)</option>
           <option value="3">관리자 (Lv.3)</option>
-          <option value="4">최종관리자 (Lv.4)</option>
+          <option value="4">시스템 관리자 (Lv.4)</option>
         </select>
       </div>
     </div>
@@ -1270,7 +1270,7 @@
     <div class="dmodal-left">
       <div class="dimg-main-wrap">
         <button class="dimg-nav-btn dimg-nav-prev" id="dImgPrev" onclick="detailImgPrev()">‹</button>
-        <img id="dImgMain" src="" alt="" class="dimg-main" onerror="this.onerror=null;this.src='data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%27200%27 height=%2760%27 viewBox=%270 0 200 60%27%3E%3Crect fill=%27%231a1a2e%27 width=%27200%27 height=%2760%27 rx=%278%27/%3E%3Ctext x=%27100%27 y=%2737%27 text-anchor=%27middle%27 fill=%27%23c9a96e%27 font-family=%27Inter,sans-serif%27 font-size=%2718%27 font-weight=%27700%27 letter-spacing=%273%27%3ELEMANGO%3C/text%3E%3C/svg%3E'" />
+        <img id="dImgMain" src="" alt="" class="dimg-main" onerror="this.onerror=null;this.src='assets/logo-placeholder.png'" />
         <button class="dimg-nav-btn dimg-nav-next" id="dImgNext" onclick="detailImgNext()">›</button>
         <div id="dImgNone" class="dimg-none" style="display:none">이미지 없음</div>
         <div class="dimg-counter" id="dImgCounter"></div>
@@ -1352,7 +1352,6 @@
       <button class="btn btn-sm btn-primary pd-view-btn" id="pdEditBtn" onclick="togglePlanDetailEdit()">수정</button>
       <button class="btn btn-sm btn-primary pd-edit-btn" id="pdSaveBtn" onclick="savePlanDetailEdit()" style="display:none">저장</button>
       <button class="btn btn-sm btn-outline pd-edit-btn" id="pdCancelBtn" onclick="togglePlanDetailEdit()" style="display:none">취소</button>
-      <button class="btn btn-sm btn-primary pd-view-btn" id="pdConfirmBtn" onclick="confirmPlanToProduct()">상품확정 →</button>
       <button class="modal-close" onclick="closePlanDetailModal()">✕</button>
     </div>
   </div>
@@ -1594,33 +1593,7 @@
             <th class="pst-date-th">완료예정일</th>
           </tr>
         </thead>
-        <tbody>
-          <tr>
-            <td class="pst-label">디자인</td>
-            <td><input type="date" id="plDesignStart" class="pst-date-input" /></td>
-            <td><input type="date" id="plDesignEnd" class="pst-date-input" /></td>
-          </tr>
-          <tr>
-            <td class="pst-label">생산</td>
-            <td><input type="date" id="plProductionStart" class="pst-date-input" /></td>
-            <td><input type="date" id="plProductionEnd" class="pst-date-input" /></td>
-          </tr>
-          <tr>
-            <td class="pst-label">이미지</td>
-            <td><input type="date" id="plImageStart" class="pst-date-input" /></td>
-            <td><input type="date" id="plImageEnd" class="pst-date-input" /></td>
-          </tr>
-          <tr>
-            <td class="pst-label">상품등록</td>
-            <td><input type="date" id="plRegisterStart" class="pst-date-input" /></td>
-            <td><input type="date" id="plRegisterEnd" class="pst-date-input" /></td>
-          </tr>
-          <tr>
-            <td class="pst-label">물류입고</td>
-            <td><input type="date" id="plLogisticsStart" class="pst-date-input" /></td>
-            <td><input type="date" id="plLogisticsEnd" class="pst-date-input" /></td>
-          </tr>
-        </tbody>
+        <tbody><!-- 동적으로 채워짐 (openPlanRegisterModal) --></tbody>
       </table>
     </div>
 
@@ -1800,15 +1773,15 @@
 
 <!-- 행사일정 등록/수정 모달 -->
 <dialog id="eventRegisterModal" class="srm-modal">
-  <div class="srm-header">
-    <span class="rmodal-title">행사일정</span>
+  <div class="srm-modal-header">
+    <div class="srm-header-title"><span class="srm-header-dot" style="background:#c9a96e"></span><span class="rmodal-title">행사일정</span></div>
     <div class="srm-header-btns">
-      <button class="btn btn-sm btn-outline ev-back-btn" onclick="backToDashEvent()" style="display:none">&larr; 뒤로</button>
-      <button class="btn btn-sm btn-primary ev-view-btn" onclick="goToEventEdit(_editingEventNo)">수정</button>
-      <button class="btn btn-sm btn-primary ev-edit-btn" onclick="saveEventEdit()">저장</button>
-      <button class="btn btn-sm btn-outline ev-edit-btn" onclick="toggleEventEdit()">취소</button>
-      <button class="btn btn-sm btn-primary ev-new-btn" onclick="submitEventNew()">등록</button>
-      <button class="modal-close" onclick="closeEventRegisterModal()">✕</button>
+      <button class="srm-btn-outline ev-back-btn" onclick="backToDashEvent()" style="display:none">&larr; 뒤로</button>
+      <button class="srm-btn-gold ev-view-btn" onclick="goToEventEdit(_editingEventNo)">수정</button>
+      <button class="srm-btn-gold ev-edit-btn" onclick="saveEventEdit()">저장</button>
+      <button class="srm-btn-outline ev-edit-btn" onclick="toggleEventEdit()">취소</button>
+      <button class="srm-btn-gold ev-new-btn" onclick="submitEventNew()">등록</button>
+      <button class="srm-btn-close" onclick="closeEventRegisterModal()">✕</button>
     </div>
   </div>
   <div class="srm-body" id="eventModalBody" style="display:flex;flex-direction:column;gap:0"></div>
@@ -1830,23 +1803,7 @@
     <button class="modal-close" onclick="closeBulkScheduleModal()">✕</button>
   </div>
   <div class="srm-body">
-    <div class="np-bulk-grid">
-      <div class="np-bulk-label"><span class="np-bulk-dot" style="background:#c9a96e"></span>디자인</div>
-      <input type="date" id="npBulkDesignStart" class="np-bulk-input">
-      <input type="date" id="npBulkDesignEnd" class="np-bulk-input">
-      <div class="np-bulk-label"><span class="np-bulk-dot" style="background:#4caf7d"></span>생산</div>
-      <input type="date" id="npBulkProductionStart" class="np-bulk-input">
-      <input type="date" id="npBulkProductionEnd" class="np-bulk-input">
-      <div class="np-bulk-label"><span class="np-bulk-dot" style="background:#7C3AED"></span>이미지</div>
-      <input type="date" id="npBulkImageStart" class="np-bulk-input">
-      <input type="date" id="npBulkImageEnd" class="np-bulk-input">
-      <div class="np-bulk-label"><span class="np-bulk-dot" style="background:#f0a500"></span>상품등록</div>
-      <input type="date" id="npBulkRegisterStart" class="np-bulk-input">
-      <input type="date" id="npBulkRegisterEnd" class="np-bulk-input">
-      <div class="np-bulk-label"><span class="np-bulk-dot" style="background:#0891B2"></span>물류입고</div>
-      <input type="date" id="npBulkLogisticsStart" class="np-bulk-input">
-      <input type="date" id="npBulkLogisticsEnd" class="np-bulk-input">
-    </div>
+    <div class="np-bulk-grid"><!-- 동적으로 채워짐 (openBulkScheduleModal) --></div>
     <div class="np-bulk-info">빈 날짜는 기존 값을 유지합니다.</div>
     <div class="np-bulk-footer">
       <button class="np-toolbar-btn" onclick="closeBulkScheduleModal()">취소</button>

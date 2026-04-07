@@ -273,53 +273,68 @@ function openEventRegisterModal(dateStr) {
 }
 
 /* ---------- 보기 모드 콘텐츠 생성 ---------- */
+function calcTimelineProgress(start, end) {
+  const s = new Date(start), e = new Date(end), t = new Date()
+  if (t < s) return 0
+  if (t > e) return 100
+  const span = e - s
+  return span <= 0 ? 100 : Math.round((t - s) / span * 100)
+}
+window.calcTimelineProgress = calcTimelineProgress
+
 function buildEventDetailContent(ev) {
   const body = document.getElementById('eventModalBody')
   const status = getEventStatus(ev)
-  const statusCls = { '예정': 'badge-warning', '진행중': 'badge-success', '종료': 'badge-muted' }
+  const progress = calcTimelineProgress(ev.startDate, ev.endDate)
+  const days = Math.max(1, Math.round((new Date(ev.endDate) - new Date(ev.startDate)) / 86400000) + 1)
 
-  let html = '<div class="ev-detail-fields">'
+  let html = ''
 
-  // 행사명
-  html += `<div class="dfield"><span class="dfield-label">행사명</span>
-    <span class="dfield-value">${esc(ev.name)}</span>
-    <input type="text" id="evName" value="${esc(ev.name)}"></div>`
+  // ===== 보기 모드 (.dview) =====
+  html += '<div class="dview">'
+  html += `<span class="srm-cat-tag">${esc(ev.channel || '채널')}</span>`
+  html += `<div class="srm-view-value-lg" style="margin-bottom:14px">${esc(ev.name)} <span class="srm-header-badge" style="margin-left:8px">${status}</span></div>`
 
-  // 채널
-  html += `<div class="dfield"><span class="dfield-label">채널</span>
-    <span class="dfield-value">${esc(ev.channel || '-')}</span>
-    <input type="text" id="evChannel" value="${esc(ev.channel || '')}"></div>`
+  // 타임라인
+  html += `<div class="srm-timeline">
+    <span class="srm-tl-dot"></span>
+    <span class="srm-tl-date">${ev.startDate}</span>
+    <div class="srm-tl-line"><div class="srm-tl-fill" style="width:${progress}%"></div><span class="srm-tl-days">${days}일간</span></div>
+    <span class="srm-tl-date">${ev.endDate}</span>
+    <span class="srm-tl-dot"></span>
+  </div>`
 
-  // 기간
-  html += `<div class="dfield"><span class="dfield-label">기간</span>
-    <span class="dfield-value">${ev.startDate} ~ ${ev.endDate} <span class="badge ${statusCls[status] || ''}" style="margin-left:6px">${status}</span></span>
-    <div class="ev-date-pair"><input type="date" id="evStart" value="${ev.startDate}"><span>~</span><input type="date" id="evEnd" value="${ev.endDate}"></div></div>`
+  // 정보카드
+  html += `<div class="srm-info-cards">
+    <div class="srm-info-card"><div class="srm-info-card-label">할인율</div><div class="srm-info-card-value">${ev.discount || 0}<span class="srm-info-card-unit">%</span></div></div>
+    <div class="srm-info-card"><div class="srm-info-card-label">당사지원</div><div class="srm-info-card-value">${ev.support || 0}<span class="srm-info-card-unit">%</span></div></div>
+  </div>`
 
-  // 할인율
-  html += `<div class="dfield"><span class="dfield-label">할인율</span>
-    <span class="dfield-value">${ev.discount ? ev.discount + '%' : '-'}</span>
-    <div class="ev-pct-field"><input type="number" id="evDiscount" value="${ev.discount || ''}" min="0" max="100"><span>%</span></div></div>`
+  if (ev.memo) {
+    html += `<div class="srm-divider"></div><div class="srm-memo-label">메모</div><div class="srm-memo-text">${esc(ev.memo)}</div>`
+  }
+  html += '</div>'
 
-  // 당사지원
-  html += `<div class="dfield"><span class="dfield-label">당사지원</span>
-    <span class="dfield-value">${ev.support ? ev.support + '%' : '-'}</span>
-    <div class="ev-pct-field"><input type="number" id="evSupport" value="${ev.support || ''}" min="0" max="100"><span>%</span></div></div>`
-
-  // 메모
-  html += `<div class="dfield"><span class="dfield-label">메모</span>
-    <span class="dfield-value">${esc(ev.memo || '-')}</span>
-    <textarea id="evMemo" rows="3">${esc(ev.memo || '')}</textarea></div>`
-
+  // ===== 수정 모드 (.dedit) =====
+  html += '<div class="dedit ev-detail-fields" style="display:none">'
+  html += `<div class="srm-field"><label class="srm-field-label">행사명</label><input type="text" id="evName" value="${esc(ev.name)}"></div>`
+  html += `<div class="srm-field"><label class="srm-field-label">채널</label><input type="text" id="evChannel" value="${esc(ev.channel || '')}"></div>`
+  html += `<div class="srm-field-row">
+    <div class="srm-field"><label class="srm-field-label">시작일</label><input type="date" id="evStart" value="${ev.startDate}"></div>
+    <div class="srm-field"><label class="srm-field-label">종료일</label><input type="date" id="evEnd" value="${ev.endDate}"></div>
+  </div>`
+  html += `<div class="srm-field-row">
+    <div class="srm-field"><label class="srm-field-label">할인율 (%)</label><input type="number" id="evDiscount" value="${ev.discount || ''}" min="0" max="100"></div>
+    <div class="srm-field"><label class="srm-field-label">당사지원 (%)</label><input type="number" id="evSupport" value="${ev.support || ''}" min="0" max="100"></div>
+  </div>`
+  html += `<div class="srm-field"><label class="srm-field-label">메모</label><textarea id="evMemo">${esc(ev.memo || '')}</textarea></div>`
   html += '</div>'
 
   if (canDeleteEvent(ev)) {
-    html += `<div class="ev-detail-actions"><button class="btn btn-sm btn-danger" onclick="deleteEvent(${ev.no})">삭제</button></div>`
+    html += `<div class="ev-detail-actions" style="margin-top:12px"><button class="srm-btn-danger" onclick="deleteEvent(${ev.no})">삭제</button></div>`
   }
 
-  // 작성/수정 정보
   html += renderStampInfo(ev)
-
-  // 댓글 섹션
   html += `<div class="ev-comment-area">${buildCommentSection('event', ev.no)}</div>`
 
   body.innerHTML = html

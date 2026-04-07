@@ -294,19 +294,29 @@ function openWorkDetailModal(no, fromDash = false) {
 }
 
 function buildWorkDetailContent(w, fromDash = false) {
+  const c = getWorkCatColor(w.category)
+  const start = w.startDate || ''
+  const end = w.endDate || start
+  let progress = 0, days = 1
+  if (start && end) {
+    const s = new Date(start), e = new Date(end), t = new Date()
+    days = Math.max(1, Math.round((e - s) / 86400000) + 1)
+    if (t < s) progress = 0
+    else if (t > e) progress = 100
+    else { const span = e - s; progress = span <= 0 ? 100 : Math.round((t - s) / span * 100) }
+  }
   return `
     <div class="wkd-view">
-      <table class="ps-phase-table">
-        <tbody>
-          <tr><td class="ps-label">카테고리</td><td>${workCatBadge(w.category)}</td></tr>
-          <tr><td class="ps-label">제목</td><td><strong>${w.title || '-'}</strong></td></tr>
-          <tr><td class="ps-label">시작일</td><td>${w.startDate || '-'}</td></tr>
-          <tr><td class="ps-label">종료일</td><td>${w.endDate || '-'}</td></tr>
-          <tr><td class="ps-label">메모</td><td style="white-space:pre-wrap">${w.memo || '-'}</td></tr>
-          <tr><td class="ps-label">등록일</td><td>${w.registeredAt ? w.registeredAt.slice(0, 10) : '-'}</td></tr>
-        </tbody>
-      </table>
-
+      <span class="srm-cat-tag" style="background:${c.bg};color:${c.text};border-color:${c.bg}">${w.category || '-'}</span>
+      <div class="srm-view-value-lg" style="margin-bottom:14px">${w.title || '-'}</div>
+      ${start ? `<div class="srm-timeline">
+        <span class="srm-tl-dot" style="background:${c.bg}"></span>
+        <span class="srm-tl-date">${start}</span>
+        <div class="srm-tl-line"><div class="srm-tl-fill" style="width:${progress}%;background:${c.bg}"></div><span class="srm-tl-days" style="color:${c.bg}">${days}일간</span></div>
+        <span class="srm-tl-date">${end}</span>
+        <span class="srm-tl-dot" style="background:${c.bg}"></span>
+      </div>` : ''}
+      ${w.memo ? `<div class="srm-divider"></div><div class="srm-memo-label">메모</div><div class="srm-memo-text">${w.memo}</div>` : ''}
       ${renderStampInfo(w)}
       ${buildCommentSection('work', w.no)}
     </div>`
@@ -394,6 +404,7 @@ function getVisibleSchedules() {
   const dept = _currentUserDept || ''
   return _personalSchedules.filter(ps => {
     if (grade >= 4) return true
+    if (grade >= 2 && dept && ps.createdByDept === dept) return true
     if (ps.createdBy === uid) return true
     if (ps.mentions?.some(m => m.type === 'user' && m.uid === uid)) return true
     if (ps.mentions?.some(m => m.type === 'dept' && m.dept === dept)) return true
@@ -420,7 +431,7 @@ function renderPersonalCalendar() {
   const grade = State.currentUser?.grade || 1
   const adminFilter = document.getElementById('psAdminFilter')
   const adminPanel = document.getElementById('psAdminPanel')
-  if (grade >= 4) {
+  if (grade >= 2) {
     if (adminFilter) adminFilter.style.display = 'flex'
     if (adminPanel) adminPanel.style.display = 'block'
     populatePsAdminFilters()
@@ -432,9 +443,9 @@ function renderPersonalCalendar() {
 
   let visible = getVisibleSchedules()
   const uid = firebase.auth().currentUser?.uid
-  if (grade >= 4 && _psFilterUser) {
+  if (grade >= 2 && _psFilterUser) {
     visible = visible.filter(ps => ps.createdBy === _psFilterUser)
-  } else if (grade >= 4 && _psFilterDept) {
+  } else if (grade >= 2 && _psFilterDept) {
     visible = visible.filter(ps => ps.createdByDept === _psFilterDept)
   }
 
@@ -634,17 +645,27 @@ function buildPsView(ps) {
     return `<span class="ps-mention-tag ps-mention-dept">@${esc(m.dept)}</span>`
   }).join(' ') || '-'
 
-  return `<table class="ps-phase-table">
-    <tbody>
-      <tr><td class="ps-label">제목</td><td><strong>${esc(ps.title)}</strong></td></tr>
-      <tr><td class="ps-label">카테고리</td><td><span class="wk-cat-badge" style="background:${(PS_CAT_COLORS[ps.category]||PS_CAT_COLORS['기타']).bg};color:#fff">${esc(ps.category)}</span></td></tr>
-      <tr><td class="ps-label">시작일</td><td>${ps.startDate || '-'}</td></tr>
-      <tr><td class="ps-label">종료일</td><td>${ps.endDate || '-'}</td></tr>
-      <tr><td class="ps-label">참조</td><td>${mentionHtml}</td></tr>
-      <tr><td class="ps-label">메모</td><td style="white-space:pre-wrap">${esc(ps.memo || '-')}</td></tr>
-    </tbody>
-  </table>
-  ${renderStampInfo(ps)}`
+  const catColor = (PS_CAT_COLORS[ps.category] || PS_CAT_COLORS['기타']).bg
+  const days = ps.startDate && ps.endDate ? Math.max(1, Math.round((new Date(ps.endDate) - new Date(ps.startDate)) / 86400000) + 1) : 1
+  const progress = ps.startDate && ps.endDate ? (window.calcTimelineProgress ? window.calcTimelineProgress(ps.startDate, ps.endDate) : 0) : 0
+  let html = ''
+  html += `<span class="srm-cat-tag" style="background:${catColor};color:#fff;border-color:${catColor}">${esc(ps.category)}</span>`
+  html += `<div class="srm-view-value-lg" style="margin-bottom:14px">${esc(ps.title)}</div>`
+  if (ps.startDate && ps.endDate) {
+    html += `<div class="srm-timeline">
+      <span class="srm-tl-dot"></span>
+      <span class="srm-tl-date">${ps.startDate}</span>
+      <div class="srm-tl-line"><div class="srm-tl-fill" style="width:${progress}%"></div><span class="srm-tl-days">${days}일간</span></div>
+      <span class="srm-tl-date">${ps.endDate}</span>
+      <span class="srm-tl-dot"></span>
+    </div>`
+  }
+  html += `<div class="srm-view-field"><div class="srm-view-label">참조</div><div class="srm-view-value">${mentionHtml}</div></div>`
+  if (ps.memo) {
+    html += `<div class="srm-divider"></div><div class="srm-memo-label">메모</div><div class="srm-memo-text">${esc(ps.memo)}</div>`
+  }
+  html += renderStampInfo(ps)
+  return html
 }
 
 function buildPsForm(ps) {
@@ -658,35 +679,31 @@ function buildPsForm(ps) {
     return `<span class="ps-mention-tag ps-mention-dept" data-type="dept" data-dept="${esc(m.dept)}">@${esc(m.dept)} <span class="ps-mention-x" onclick="this.parentElement.remove()">&#10005;</span></span>`
   }).join('')
 
-  const FS = 'display:block !important;width:100%;padding:6px 10px;border:1px solid #d7d7e0;border-radius:6px;font-size:13px;font-family:inherit;background:#fff;color:#1a1a2e;box-sizing:border-box'
-  const LB = 'display:block;font-size:11px;font-weight:600;color:#6b6b7a;margin-bottom:4px'
-  const FD = 'display:block;margin-bottom:14px'
-
   return `
-    <div style="${FD}"><label style="${LB}">제목</label>
-    <input type="text" id="psTitle" value="${esc(ps.title || '')}" placeholder="일정 제목" style="${FS}"></div>
+    <div class="srm-field"><label class="srm-field-label">제목</label>
+    <input type="text" id="psTitle" value="${esc(ps.title || '')}" placeholder="일정 제목"></div>
 
-    <div style="display:flex;gap:10px;margin-bottom:14px">
-      <div style="flex:1"><label style="${LB}">시작일</label>
-      <input type="date" id="psStartDate" value="${ps.startDate || ''}" style="${FS}"></div>
-      <div style="flex:1"><label style="${LB}">종료일</label>
-      <input type="date" id="psEndDate" value="${ps.endDate || ''}" style="${FS}"></div>
+    <div class="srm-field-row">
+      <div class="srm-field"><label class="srm-field-label">시작일</label>
+      <input type="date" id="psStartDate" value="${ps.startDate || ''}"></div>
+      <div class="srm-field"><label class="srm-field-label">종료일</label>
+      <input type="date" id="psEndDate" value="${ps.endDate || ''}"></div>
     </div>
 
-    <div style="${FD}"><label style="${LB}">카테고리</label>
-    <select id="psCategory" style="${FS}">${catOptions}</select></div>
+    <div class="srm-field"><label class="srm-field-label">카테고리</label>
+    <select id="psCategory">${catOptions}</select></div>
 
-    <div style="${FD};position:relative"><label style="${LB}">참조 (@이름, @부서로 공유)</label>
-    <div class="ps-mention-area" id="psMentionArea" style="display:flex;flex-wrap:wrap;gap:6px;padding:6px;border:1px solid #d7d7e0;border-radius:6px;min-height:36px;background:#fff">
+    <div class="srm-field" style="position:relative"><label class="srm-field-label">참조 (@이름, @부서로 공유)</label>
+    <div class="ps-mention-area" id="psMentionArea" style="display:flex;flex-wrap:wrap;gap:6px;padding:6px;border:0.5px solid #e8e6e0;border-radius:6px;min-height:36px;background:#fff">
       ${mentionTags}
       <input class="ps-mention-input" id="psMentionInput" placeholder="@입력..." oninput="searchPsMention(this.value)" style="display:inline-block;flex:1;min-width:120px;border:none;outline:none;font-size:13px;padding:2px 4px;background:transparent">
     </div>
     <div class="ps-mention-dropdown" id="psMentionDropdown" style="display:none"></div>
-    <div style="font-size:11px;color:#6b6b7a;margin-top:6px">작성자 + 참조자 + 최종관리자만 볼 수 있습니다</div>
+    <div style="font-size:11px;color:#b4b2a9;margin-top:6px">작성자 + 참조자 + 시스템 관리자만 볼 수 있습니다</div>
     </div>
 
-    <div style="${FD}"><label style="${LB}">메모</label>
-    <textarea id="psMemo" rows="3" placeholder="메모" style="${FS};resize:vertical;min-height:70px">${esc(ps.memo || '')}</textarea></div>`
+    <div class="srm-field"><label class="srm-field-label">메모</label>
+    <textarea id="psMemo" rows="3" placeholder="메모">${esc(ps.memo || '')}</textarea></div>`
 }
 
 /* ---------- @Mention ---------- */
@@ -826,11 +843,22 @@ function populatePsAdminFilters() {
   const userSel = document.getElementById('psFilterUser')
   if (!deptSel || !userSel) return
 
-  const depts = [...new Set(_allUsers.map(u => u.dept).filter(Boolean))].sort()
+  const grade = State.currentUser?.grade || 1
+  const myDept = _currentUserDept || ''
+  let depts = [...new Set(_allUsers.map(u => u.dept).filter(Boolean))].sort()
+  if (grade === 2 && myDept) depts = depts.filter(d => d === myDept)
   const currentDept = deptSel.value
   deptSel.innerHTML = '<option value="">전체 부서</option>' + depts.map(d => `<option value="${d}"${d === currentDept ? ' selected' : ''}>${d}</option>`).join('')
+  if (grade === 2 && myDept) {
+    deptSel.value = myDept
+    _psFilterDept = myDept
+    deptSel.disabled = true
+  } else {
+    deptSel.disabled = false
+  }
 
   let users = _allUsers.filter(u => u.status === 'approved')
+  if (grade === 2 && myDept) users = users.filter(u => u.dept === myDept)
   if (_psFilterDept) users = users.filter(u => u.dept === _psFilterDept)
   const currentUser = userSel.value
   userSel.innerHTML = '<option value="">전체 직원</option>' + users.map(u => `<option value="${u.uid}"${u.uid === currentUser ? ' selected' : ''}>${formatUserName(u.name, u.position)}</option>`).join('')
@@ -840,7 +868,10 @@ function renderPsAdminPanel() {
   const panel = document.getElementById('psAdminPanel')
   if (!panel) return
 
+  const grade = State.currentUser?.grade || 1
+  const myDept = _currentUserDept || ''
   let users = _allUsers.filter(u => u.status === 'approved')
+  if (grade === 2 && myDept) users = users.filter(u => u.dept === myDept)
   if (_psFilterDept) users = users.filter(u => u.dept === _psFilterDept)
 
   let html = '<div class="card" style="margin-top:16px;padding:16px"><div class="ps-admin-title">전체 직원 일정 현황</div>'

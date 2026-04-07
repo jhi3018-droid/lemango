@@ -123,7 +123,7 @@ function _clearCommentError(key) {
 
 // 등급명 변환
 function commentGradeName(grade) {
-  return { 4: '최종관리자', 3: '관리자', 2: '담당자', 1: '일반사용자' }[grade] || ''
+  return { 4: '시스템 관리자', 3: '관리자', 2: '부서장', 1: '담당자' }[grade] || ''
 }
 
 // 댓글 섹션 HTML 생성

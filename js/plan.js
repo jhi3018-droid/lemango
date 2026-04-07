@@ -6,6 +6,16 @@ let _planSelected = new Set()
 
 function openPlanRegisterModal() {
   const modal = document.getElementById('planRegisterModal')
+  // Populate schedule rows dynamically from plan phases
+  const tbody = modal.querySelector('.plan-schedule-table tbody')
+  if (tbody) {
+    tbody.innerHTML = getPlanPhases().map(ph => `
+      <tr>
+        <td class="pst-label"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${ph.color || '#888'};margin-right:6px;vertical-align:middle"></span>${esc(ph.label)}</td>
+        <td><input type="date" class="pst-date-input pl-sched-input" data-pkey="${esc(ph.key)}" data-ptype="start" /></td>
+        <td><input type="date" class="pst-date-input pl-sched-input" data-pkey="${esc(ph.key)}" data-ptype="end" /></td>
+      </tr>`).join('')
+  }
   modal.showModal()
   centerModal(modal)
   initPlPcodePanel()
@@ -48,13 +58,15 @@ function submitPlanRegister(e) {
       lemango: document.getElementById('plImgLemango').value.trim(),
       noir:    document.getElementById('plImgNoir').value.trim()
     },
-    schedule: {
-      design:     { start: document.getElementById('plDesignStart').value,     end: document.getElementById('plDesignEnd').value },
-      production: { start: document.getElementById('plProductionStart').value, end: document.getElementById('plProductionEnd').value },
-      image:      { start: document.getElementById('plImageStart').value,      end: document.getElementById('plImageEnd').value },
-      register:   { start: document.getElementById('plRegisterStart').value,   end: document.getElementById('plRegisterEnd').value },
-      logistics:  { start: document.getElementById('plLogisticsStart').value,  end: document.getElementById('plLogisticsEnd').value }
-    }
+    schedule: (() => {
+      const sch = {}
+      document.querySelectorAll('#planRegisterModal .pl-sched-input').forEach(el => {
+        const k = el.dataset.pkey
+        if (!sch[k]) sch[k] = { start: '', end: '' }
+        sch[k][el.dataset.ptype] = el.value || ''
+      })
+      return sch
+    })()
   }
   if (item.productCode) _reservedCodes.delete(item.productCode)
   stampCreated(item)
@@ -397,14 +409,19 @@ const PLAN_REGULAR_COLS = [
   { key:'salePrice',  label:'판매가', fixed:false, thAttr:'data-key="salePrice" style="text-align:right"',
     td: p=>`<td style="text-align:right"><span class="price">${fmtPrice(p.salePrice)}</span></td>` },
 ]
-const PLAN_SCHEDULE_COLS = SCHEDULE_DEFS.map(s => ({
-  key: `schedule_${s.key}`, label: s.label, fixed:false, isSchedule:true, scheduleKey: s.key,
-  thAttr: `class="schedule-group-th"`,
-}))
-const PLAN_ALL_COLS = [...PLAN_REGULAR_COLS, ...PLAN_SCHEDULE_COLS]
-const PLAN_FIXED_KEYS = PLAN_ALL_COLS.filter(c=>c.fixed).map(c=>c.key)
+function _getPlanScheduleCols() {
+  return getPlanPhases().map(s => ({
+    key: `schedule_${s.key}`, label: s.label, fixed:false, isSchedule:true, scheduleKey: s.key,
+    thAttr: `class="schedule-group-th"`,
+  }))
+}
+function _getPlanAllCols() { return [...PLAN_REGULAR_COLS, ..._getPlanScheduleCols()] }
+function _getPlanFixedKeys() { return _getPlanAllCols().filter(c=>c.fixed).map(c=>c.key) }
 
 function renderPlanTable() {
+  const PLAN_ALL_COLS = _getPlanAllCols()
+  const PLAN_SCHEDULE_COLS = _getPlanScheduleCols()
+  const PLAN_FIXED_KEYS = _getPlanFixedKeys()
   initColumnState('plan', PLAN_ALL_COLS.map(c=>c.key))
   renderColInactiveArea('npInactiveArea','npInactiveTags','plan',PLAN_ALL_COLS,PLAN_FIXED_KEYS,'renderPlanTable')
 
@@ -643,7 +660,16 @@ function togglePlanDetailEdit() {
   const modal = document.getElementById('planDetailModal')
   const isEdit = modal.classList.toggle('edit-mode')
   _pdUpdateHeaderBtns(isEdit ? 'edit' : 'view')
+  const cb = document.getElementById('pdConfirmBtn')
+  if (cb && !cb.dataset.hidden) cb.disabled = !isEdit
 }
+
+async function confirmPlanWithCheck() {
+  const ok = await korConfirm('상품을 확정하시겠습니까?\n확정 후 상품조회로 이전됩니다.', '확정', '취소')
+  if (!ok) return
+  confirmPlanToProduct()
+}
+window.confirmPlanWithCheck = confirmPlanWithCheck
 
 function savePlanDetailEdit() {
   const item = State.planItems.find(p => p.no === _editingPlanNo)
@@ -666,8 +692,8 @@ function savePlanDetailEdit() {
     const val = el.tagName === 'INPUT' && el.type === 'number' ? (parseFloat(el.value) || 0) : el.value
     item[key] = val
   })
-  // 일정 date inputs
-  const scheduleKeys = ['design', 'production', 'image', 'register', 'logistics']
+  // 일정 date inputs (dynamic phases)
+  const scheduleKeys = getPlanPhases().map(p => p.key)
   scheduleKeys.forEach(k => {
     if (!item.schedule) item.schedule = {}
     if (!item.schedule[k]) item.schedule[k] = {}
@@ -802,7 +828,7 @@ function buildPlanDetailContent(item) {
 
   const imgHtml = allImgs.length
     ? allImgs.map((url, i) =>
-        `<img src="${url}" class="pd-thumb" onclick="openModal(${i}, ${JSON.stringify(allImgs).replace(/"/g, '&quot;')})" onerror="this.style.display='none'" />`
+        `<img src="${url}" class="pd-thumb" onclick="openModal(${i}, ${JSON.stringify(allImgs).replace(/"/g, '&quot;')})" onerror="this.onerror=null;this.src=PLACEHOLDER_IMG" />`
       ).join('')
     : '<span class="pd-no-img">이미지 없음</span>'
 
@@ -877,6 +903,7 @@ function buildPlanDetailContent(item) {
     <div class="pd-section">
       <div class="pd-section-title">이미지</div>
       <div class="pd-img-row">${imgHtml}</div>
+      ${item.confirmed ? '' : `<div style="margin-top:12px;text-align:right"><button class="srm-btn-gold" id="pdConfirmBtn" disabled onclick="confirmPlanWithCheck()">상품확정 →</button></div>`}
     </div>
     <div class="pd-section">
       <div class="pd-section-title">기본 정보</div>
@@ -990,6 +1017,15 @@ function openBulkScheduleModal() {
   if (_planSelected.size === 0) { showToast('상품을 먼저 선택해주세요.', 'warning'); return }
   const modal = document.getElementById('bulkScheduleModal')
   document.getElementById('npBulkCount').textContent = _planSelected.size
+  // Dynamically render phase rows
+  const grid = modal.querySelector('.np-bulk-grid')
+  if (grid) {
+    grid.innerHTML = getPlanPhases().map(ph => `
+      <div class="np-bulk-label"><span class="np-bulk-dot" style="background:${ph.color || '#888'}"></span>${esc(ph.label)}</div>
+      <input type="date" class="np-bulk-input" data-pkey="${esc(ph.key)}" data-ptype="start">
+      <input type="date" class="np-bulk-input" data-pkey="${esc(ph.key)}" data-ptype="end">
+    `).join('')
+  }
   modal.querySelectorAll('.np-bulk-input').forEach(input => { input.value = '' })
   modal.showModal()
   centerModal(modal)
@@ -1004,16 +1040,17 @@ function closeBulkScheduleModal(force) {
 }
 
 function applyBulkSchedule() {
-  const phases = ['Design', 'Production', 'Image', 'Register', 'Logistics']
-  const keys   = ['design', 'production', 'image', 'register', 'logistics']
+  const keys = getPlanPhases().map(p => p.key)
 
   const scheduleInput = {}
   let hasAny = false
-  keys.forEach((key, i) => {
-    const start = document.getElementById('npBulk' + phases[i] + 'Start').value
-    const end   = document.getElementById('npBulk' + phases[i] + 'End').value
-    scheduleInput[key] = { start, end }
-    if (start || end) hasAny = true
+  keys.forEach(key => { scheduleInput[key] = { start: '', end: '' } })
+  document.querySelectorAll('#bulkScheduleModal .np-bulk-input').forEach(el => {
+    const k = el.dataset.pkey
+    if (!k || !scheduleInput[k]) return
+    const v = el.value || ''
+    scheduleInput[k][el.dataset.ptype] = v
+    if (v) hasAny = true
   })
 
   if (!hasAny) { showToast('최소 1개 단계의 날짜를 입력해주세요.', 'warning'); return }

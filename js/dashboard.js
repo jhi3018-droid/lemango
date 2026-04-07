@@ -166,14 +166,11 @@ function renderBestList() {
     .slice(0,10)
 
   document.getElementById('bestList').innerHTML = top10.map((p,i) => {
-    const thumb = getThumbUrl(p)
+    const thumb = getThumbUrl(p) || PLACEHOLDER_IMG
     const rankClass = i < 3 ? `rank-${i+1}` : ''
     return `<div class="best-item" onclick="goToSales('${p.productCode}')">
       <span class="rank ${rankClass}">${i+1}</span>
-      ${thumb
-        ? `<img src="${thumb}" class="best-thumb" onerror="this.style.display='none'" />`
-        : `<div class="best-thumb" style="background:var(--border-light);border-radius:3px;border:1px solid var(--border)"></div>`
-      }
+      <img src="${thumb}" class="best-thumb" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'" />
       <div class="best-info">
         <span class="best-brand">${p.brand}</span>
         <span class="best-code">${p.productCode}</span>
@@ -274,14 +271,15 @@ function dashCalToday() {
   renderDashCalendar()
 }
 
-// 기획 일정 단계별 색상
-const PLAN_PHASE_COLORS = {
-  design:     { bar: '#c9a96e', text: '#fff' },  // 골드
-  production: { bar: '#4caf7d', text: '#fff' },  // 초록
-  image:      { bar: '#7b68ee', text: '#fff' },  // 보라
-  register:   { bar: '#f0a500', text: '#fff' },  // 노랑
-  logistics:  { bar: '#20b2aa', text: '#fff' },  // 청록
+// 기획 일정 단계별 색상 — 동적 (getPlanPhases 기준)
+function _getPlanPhaseColor(phaseKey) {
+  const ph = getPlanPhases().find(p => p.key === phaseKey)
+  return { bar: (ph && ph.color) || '#999', text: '#fff' }
 }
+// 이전 호환용 (코드에서 `PLAN_PHASE_COLORS[key]` 접근 시)
+const PLAN_PHASE_COLORS = new Proxy({}, {
+  get: (_, phaseKey) => _getPlanPhaseColor(phaseKey)
+})
 
 function renderDashCalendar() {
   const container = document.getElementById('dashCalendar')
@@ -515,7 +513,7 @@ function openDashDayModal(dateStr) {
   // Sort: events by startDate asc
   events.sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''))
   // Sort: planHits — primary: productCode/sampleNo asc, secondary: phase order
-  const PHASE_ORDER = ['design','production','image','register','logistics']
+  const PHASE_ORDER = getPlanPhases().map(p => p.key)
   planHits.sort((a, b) => {
     const codeA = a.item.productCode || a.item.sampleNo || ''
     const codeB = b.item.productCode || b.item.sampleNo || ''
@@ -543,13 +541,7 @@ function openDashDayModal(dateStr) {
     </div>`)
   }
   if (planHits.length) {
-    const PHASE_ORDER_LABELS = [
-      { key: 'design',     label: '디자인' },
-      { key: 'production', label: '생산' },
-      { key: 'image',      label: '이미지' },
-      { key: 'register',   label: '상품등록' },
-      { key: 'logistics',  label: '물류입고' },
-    ]
+    const PHASE_ORDER_LABELS = getPlanPhases().map(p => ({ key: p.key, label: p.label }))
     const phaseGroups = {}
     PHASE_ORDER_LABELS.forEach(ph => { phaseGroups[ph.key] = [] })
     planHits.forEach(hit => {
@@ -680,26 +672,44 @@ function openPlanScheduleForDate(dateStr) {
   if (!hasAny) {
     body.innerHTML = '<p style="padding:20px;color:var(--text-sub);">해당 날짜에 기획 일정이 없습니다.</p>'
   } else {
-    let html = '<div class="ps-list">'
+    const today = new Date(); today.setHours(0,0,0,0)
+    const fmtMD = s => s ? s.slice(5).replace('-', '.') : '-'
+    const statusOf = (start, end) => {
+      const s = new Date(start), e = new Date(end)
+      if (today > e) return { cls:'ps-phase-status-done', txt:'완료' }
+      if (today >= s) return { cls:'ps-phase-status-ing', txt:'진행' }
+      return { cls:'ps-phase-status-wait', txt:'대기' }
+    }
+    let html = '<div class="ps-phase-table-header"><span style="width:110px">품번</span><span style="width:42px;text-align:center">상태</span><span style="width:120px;margin:0 6px">품명</span><span style="width:46px;text-align:center">시작</span><span style="width:46px;text-align:center">완료</span></div>'
     SCHEDULE_DEFS.forEach(def => {
       const items = phaseGroups[def.key]
       if (!items.length) return
-      const phColor = PLAN_PHASE_COLORS[def.key] || { bar: '#999' }
-      html += `<div class="ps-group-header"><span class="ps-dot" style="background:${phColor.bar}"></span>${def.label} <span class="ps-group-count">${items.length}건</span></div>`
-      items.forEach(({ item, tag }) => {
+      const phColor = PLAN_PHASE_COLORS[def.key] || { bar:'#999' }
+      html += `<div class="ps-phase-group">
+        <div class="ps-phase-group-header">
+          <span class="ps-phase-group-dot" style="background:${phColor.bar}"></span>
+          <span class="ps-phase-group-name">${esc(def.label)}</span>
+          <span class="ps-phase-group-count">${items.length}건</span>
+        </div>
+        <div class="ps-phase-items">`
+      items.forEach(({ item, start, end }) => {
         const code = item.productCode || item.sampleNo || '-'
         const identifier = item.productCode || item.sampleNo || ''
-        html += `<div class="ps-group-row">
-          <span class="ps-group-code">${esc(code)}</span>
-          <span class="ps-group-tag">${tag}</span>
-          <button class="btn btn-outline btn-sm" onclick="goToPlanWithItem('${esc(identifier)}');document.getElementById('planScheduleModal').close()">보기</button>
+        const name = item.nameKr || item.nameEn || ''
+        const st = statusOf(start, end)
+        html += `<div class="ps-phase-row">
+          <span class="ps-phase-code" title="${esc(code)}">${esc(code)}</span>
+          <span class="ps-phase-status ${st.cls}">${st.txt}</span>
+          <span class="ps-phase-name" title="${esc(name)}">${esc(name)}</span>
+          <span class="ps-phase-date">${fmtMD(start)}</span>
+          <span class="ps-phase-date">${fmtMD(end)}</span>
+          <span class="ps-phase-spacer"></span>
+          <button class="ps-phase-view-btn" onclick="goToPlanWithItem('${esc(identifier)}');document.getElementById('planScheduleModal').close()">보기</button>
         </div>`
       })
+      html += `</div></div>`
     })
-    html += `<div class="ps-actions">
-      <button class="btn btn-primary btn-sm" onclick="goToPlanWithDate('${dateStr}')">날짜로 보기</button>
-    </div>`
-    html += '</div>'
+    html += `<div class="ps-actions" style="margin-top:8px"><button class="btn btn-primary btn-sm" onclick="goToPlanWithDate('${dateStr}')">날짜로 보기</button></div>`
     body.innerHTML = html
   }
 

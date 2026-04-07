@@ -195,7 +195,7 @@ function openDetailModal(productCode) {
 }
 
 // ===== 상세 모달 이미지 네비게이션 =====
-const FALLBACK_LOGO = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='60' viewBox='0 0 200 60'%3E%3Crect fill='%231a1a2e' width='200' height='60' rx='8'/%3E%3Ctext x='100' y='37' text-anchor='middle' fill='%23c9a96e' font-family='Inter,sans-serif' font-size='18' font-weight='700' letter-spacing='3'%3ELEMANGO%3C/text%3E%3C/svg%3E"
+const FALLBACK_LOGO = (typeof PLACEHOLDER_IMG !== 'undefined') ? PLACEHOLDER_IMG : 'assets/logo-placeholder.png'
 let _detailImgList = []
 let _detailImgIdx = 0
 
@@ -278,7 +278,7 @@ function renderDetailThumbs() {
   if (!container) return
   if (_detailImgList.length <= 1) { container.innerHTML = ''; return }
   container.innerHTML = _detailImgList.map((url, i) =>
-    `<img class="dimg-thumb${i === _detailImgIdx ? ' active' : ''}" src="${url}" draggable="false" onmouseup="if(_thumbMoved<5)detailImgGoTo(${i})" onerror="this.style.display='none'" />`
+    `<img class="dimg-thumb${i === _detailImgIdx ? ' active' : ''}" src="${url}" draggable="false" onmouseup="if(_thumbMoved<5)detailImgGoTo(${i})" onerror="this.onerror=null;this.src=PLACEHOLDER_IMG" />`
   ).join('')
   _initThumbDragScroll(container)
 }

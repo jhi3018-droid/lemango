@@ -257,6 +257,20 @@ async function initApp() {
   cleanOldNotifications()
   renderNotifications()
   checkMemberAlerts()
+  if (typeof checkEventAlerts === 'function') checkEventAlerts()
+  if (typeof checkPlanAlerts === 'function') checkPlanAlerts()
+  // 로그인 직후 미읽은 알림 있으면 드롭다운 자동 표시
+  setTimeout(() => {
+    const unread = (_notifications || []).filter(n => !n.dismissed && !n.read).length
+    if (unread > 0) {
+      const dd = document.getElementById('notifDropdown')
+      if (dd) {
+        renderNotifications()
+        dd.style.display = 'block'
+        setTimeout(() => { dd.style.display = 'none' }, 5000)
+      }
+    }
+  }, 2000)
   // 알림 드롭다운 외부 클릭 닫기
   document.addEventListener('click', e => {
     const wrap = document.getElementById('notifWrap')

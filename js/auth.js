@@ -30,10 +30,10 @@ function getLastEmail() { return localStorage.getItem(_EMAIL_KEY) || '' }
 
 // 등급 정의
 const GRADE_DEFS = {
-  4: { name: '최종관리자', bg: '#1a1a2e', color: '#c9a96e' },
+  4: { name: '시스템 관리자', bg: '#1a1a2e', color: '#c9a96e' },
   3: { name: '관리자',     bg: '#c9a96e', color: '#fff' },
-  2: { name: '담당자',     bg: '#E6F1FB', color: '#0C447C' },
-  1: { name: '일반사용자', bg: '#F1EFE8', color: '#5F5E5A' }
+  2: { name: '부서장',     bg: '#E6F1FB', color: '#0C447C' },
+  1: { name: '담당자',     bg: '#F1EFE8', color: '#5F5E5A' }
 }
 
 function gradeBadgeHtml(grade) {
@@ -106,7 +106,7 @@ async function checkApproval(user) {
       name: user.email.split('@')[0],
       phone: '',
       dept: '',
-      grade: 4,          // 직접 생성 = 최종관리자
+      grade: 4,          // 직접 생성 = 시스템 관리자
       status: 'approved',
       createdAt: new Date(),
       lastLogin: new Date()
@@ -137,6 +137,7 @@ async function checkApproval(user) {
 let _appInitialized = false
 
 function showApp(userData) {
+  const ls = document.getElementById('loadingScreen'); if (ls) ls.style.display = 'none'
   document.getElementById('loginPage').style.display = 'none'
   document.getElementById('appContainer').style.display = ''
   State.currentUser = userData
@@ -150,15 +151,18 @@ function showApp(userData) {
     _appInitialized = true
     initApp()
   }
+  // URL 해시 무시하고 무조건 대시보드로
+  try { if (typeof openTab === 'function') openTab('dashboard') } catch(e){}
 }
 
 function applyGradeAccess(grade) {
-  // 회원관리 탭: grade 3(관리자), 4(최종관리자)만 접근 가능
+  // 회원관리 탭: grade 3(관리자), 4(시스템 관리자)만 접근 가능
   const membersBtn = document.querySelector('.tab-btn[data-tab="members"]')
   if (membersBtn) membersBtn.style.display = grade >= 3 ? '' : 'none'
 }
 
 function showLogin() {
+  const ls = document.getElementById('loadingScreen'); if (ls) ls.style.display = 'none'
   document.getElementById('loginPage').style.display = ''
   document.getElementById('appContainer').style.display = 'none'
   State.currentUser = null
@@ -173,7 +177,24 @@ function updateHeaderUser(userData) {
 
 window.handleLogout = function() {
   logActivity('logout', '', '로그아웃')
-  auth.signOut()
+  // 1) 열린 모든 dialog 닫기
+  try { document.querySelectorAll('dialog[open]').forEach(d => { try { d.close() } catch(e){} }) } catch(e){}
+  // 2) 대시보드로 리셋
+  try {
+    if (typeof resetTabs === 'function') resetTabs()
+    else if (typeof openTab === 'function') openTab('dashboard')
+  } catch(e){}
+  // 3) Firebase 로그아웃
+  try { auth.signOut() } catch(e){}
+  // 4) 전역 캐시 초기화
+  try {
+    _currentUserName = ''
+    _currentUserPosition = ''
+    _currentUserDept = ''
+    if (typeof _notifications !== 'undefined') { _notifications = []; if (typeof saveNotifications === 'function') saveNotifications() }
+  } catch(e){}
+  // 5) 로그인 화면 표시
+  try { showLogin() } catch(e){}
 }
 
 window.handleForgotPassword = function() {
@@ -273,7 +294,7 @@ async function initAdminAccount() {
     await db.collection('users').doc(cred.user.uid).set({
       uid: cred.user.uid,
       email: 'jhi3018@gmail.com',
-      name: '최종관리자',
+      name: '시스템 관리자',
       phone: '',
       dept: '경영지원',
       grade: 4,

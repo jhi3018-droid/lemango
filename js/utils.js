@@ -119,12 +119,11 @@ function getAllImages(p) {
 }
 
 function renderThumb(p) {
-  const url = getThumbUrl(p)
-  if (!url) return `<div class="no-image">없음</div>`
+  const url = getThumbUrl(p) || PLACEHOLDER_IMG
   const all = getAllImages(p)
   const allJson = JSON.stringify(all).replace(/"/g, '&quot;')
   return `<img src="${url}" class="thumb" loading="lazy"
-    onerror="this.style.display='none'"
+    onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'"
     onclick='openModal(0, ${allJson})' />`
 }
 
@@ -991,15 +990,18 @@ function formatDateTime(isoStr) {
 }
 
 function renderStampInfo(obj) {
-  if (!obj || (!obj.createdByName && !obj.createdAt)) return ''
+  obj = obj || {}
   const escFn = (typeof esc === 'function') ? esc : (s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'))
-  let html = '<div class="stamp-info">'
-  html += '<span class="stamp-created">작성: ' + escFn(obj.createdByName || '알 수 없음') + ' (' + formatDateTime(obj.createdAt) + ')</span>'
-  if (obj.lastModifiedAt && obj.lastModifiedAt !== obj.createdAt) {
-    html += '<span class="stamp-modified">최종수정: ' + escFn(obj.lastModifiedByName || '알 수 없음') + ' (' + formatDateTime(obj.lastModifiedAt) + ')</span>'
-  }
-  html += '</div>'
-  return html
+  const cName = obj.createdByName || '-'
+  const cDate = obj.createdAt ? formatDateTime(obj.createdAt) : '-'
+  const hasMod = obj.lastModifiedAt && obj.lastModifiedAt !== obj.createdAt
+  const mName = hasMod ? (obj.lastModifiedByName || '-') : '-'
+  const mDate = hasMod ? formatDateTime(obj.lastModifiedAt) : '-'
+  return '<div class="stamp-info">'
+    + '<span class="stamp-created">작성자: ' + escFn(cName) + ' (' + cDate + ')</span>'
+    + '<span class="stamp-separator">/</span>'
+    + '<span class="stamp-modified">최종수정자: ' + escFn(mName) + ' (' + mDate + ')</span>'
+    + '</div>'
 }
 
 window.formatDateTime = formatDateTime

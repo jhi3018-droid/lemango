@@ -1,6 +1,8 @@
 // =============================================
 // ===== 공통 상수 =====
 // =============================================
+const PLACEHOLDER_IMG = 'assets/logo-placeholder.png'
+window.PLACEHOLDER_IMG = PLACEHOLDER_IMG
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', 'F']
 const SPEC_ROWS = [
   { key: 'bust', label: '가슴' },
@@ -71,13 +73,42 @@ function ensureSizeSpec(p) {
   })
   return p.sizeSpec
 }
-const SCHEDULE_DEFS = [
-  { key: 'design',     label: '디자인' },
-  { key: 'production', label: '생산' },
-  { key: 'image',      label: '이미지' },
-  { key: 'register',   label: '상품등록' },
-  { key: 'logistics',  label: '물류입고' }
+// ===== 기획 일정 단계 (동적 관리) =====
+const DEFAULT_PLAN_PHASES = [
+  { key: 'design',     label: '디자인',   color: '#c9a96e' },
+  { key: 'production', label: '생산',     color: '#4caf7d' },
+  { key: 'image',      label: '이미지',   color: '#7C3AED' },
+  { key: 'register',   label: '상품등록', color: '#f0a500' },
+  { key: 'logistics',  label: '물류입고', color: '#0891B2' },
 ]
+const PLAN_PHASES_KEY = 'lemango_plan_phases_v1'
+let _planPhases = null
+function getPlanPhases() {
+  if (!_planPhases) {
+    try {
+      const saved = JSON.parse(localStorage.getItem(PLAN_PHASES_KEY))
+      if (Array.isArray(saved) && saved.length) _planPhases = saved
+    } catch (e) {}
+    if (!Array.isArray(_planPhases) || !_planPhases.length) {
+      _planPhases = DEFAULT_PLAN_PHASES.map(p => ({ ...p }))
+      savePlanPhases()
+    }
+    // Backfill missing colors for saved data
+    _planPhases.forEach(p => { if (!p.color) p.color = '#888' })
+  }
+  return _planPhases
+}
+function savePlanPhases() {
+  localStorage.setItem(PLAN_PHASES_KEY, JSON.stringify(_planPhases || []))
+}
+// SCHEDULE_DEFS: dynamic proxy — always returns current phases via getPlanPhases()
+// Kept as a "variable" name for backward compatibility. Use as Array.
+Object.defineProperty(window, 'SCHEDULE_DEFS', {
+  get: () => getPlanPhases(),
+  configurable: true
+})
+window.getPlanPhases = getPlanPhases
+window.savePlanPhases = savePlanPhases
 
 // =============================================
 // ===== 설정 관리 =====
@@ -185,6 +216,14 @@ function populateAllSelects() {
   // 신규기획 검색
   populateSelect('npBrand',      s.brands,          true)
   populateSelect('npType',       s.types,           true)
+  // 신규기획 일정 단계 필터 (동적)
+  const npPhaseSel = document.getElementById('npPhase')
+  if (npPhaseSel) {
+    const curVal = npPhaseSel.value || 'all'
+    npPhaseSel.innerHTML = '<option value="all">전체</option>' +
+      getPlanPhases().map(p => `<option value="${p.key}">${p.label}</option>`).join('')
+    npPhaseSel.value = curVal
+  }
   // 신규등록 모달 폼
   populateSelect('rBrand',       s.brands)
   populateSelect('rType',        s.types)

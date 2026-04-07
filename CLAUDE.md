@@ -1529,17 +1529,17 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 **회원가입 모달 (`#signupModal`)**
 - `auth.createUserWithEmailAndPassword()` + Firestore `users` doc 생성
-- 가입 후 `status: 'pending'`, `grade: 1` (일반사용자)
+- 가입 후 `status: 'pending'`, `grade: 1` (담당자)
 - 즉시 로그아웃 → "승인 후 로그인 가능" 안내
 - 비밀번호 일치 실시간 체크 (`pw-match-ok/no`)
 
 **회원 등급 (4단계)**
 | Lv | 이름 | 배지 |
 |----|------|------|
-| 4 | 최종관리자 | 네이비 bg + 골드 text |
+| 4 | 시스템 관리자 | 네이비 bg + 골드 text |
 | 3 | 관리자 | 골드 bg + 흰 text |
-| 2 | 담당자 | 연파랑 bg + 남색 text |
-| 1 | 일반사용자 | 베이지 bg + 회색 text |
+| 2 | 부서장 | 연파랑 bg + 남색 text |
+| 1 | 담당자 | 베이지 bg + 회색 text |
 
 **Firestore `users` 컬렉션 스키마**
 ```js
@@ -1547,11 +1547,11 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 ```
 
 **회원관리 탭 (`tab-members`)**
-- KPI 카드 4개: 전체/최종관리자/관리자/담당자+일반
+- KPI 카드 4개: 전체/시스템 관리자/관리자/담당자+일반
 - 회원 테이블: NO/상태(dot)/이메일/이름/부서/등급(배지)/최종로그인/가입일/관리
 - 상태: active(초록)/pending(주황)/suspended(빨강)
 - 승인/거절/정지/해제/수정/삭제 버튼
-- 수정 모달(`memberEditModal`): 이름, 전화번호, 부서, 등급(최종관리자만 변경)
+- 수정 모달(`memberEditModal`): 이름, 전화번호, 부서, 등급(시스템 관리자만 변경)
 - 추가 모달(`memberAddModal`): 이메일, 이름, 비밀번호, 부서, 등급 → 바로 `approved`
 
 **헤더 사용자 영역**
@@ -1703,7 +1703,7 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
   | 업무 상세 (`workDetailModal`) | `'work'` | workItem.no | buildWorkDetailContent 하단 |
   | 회원 프로필 (`memberProfileModal`) | `'member'` | uid | `#mpCommentArea` div |
 
-- **권한**: 수정/삭제 = 작성자 본인 + grade 3(관리자) + grade 4(최종관리자)
+- **권한**: 수정/삭제 = 작성자 본인 + grade 3(관리자) + grade 4(시스템 관리자)
 - **CSS**: `.comment-section`, `.comment-item`, `.comment-meta`, `.comment-grade-badge`, `.comment-input-area`, `.comment-edit-input`
 - `logActivity` 연동: 댓글 등록/수정/삭제 시 활동 로그 기록
 
@@ -1931,7 +1931,7 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 **가시성 규칙 (`getVisibleSchedules()`)**
 | 조건 | 볼 수 있음 |
 |------|-----------|
-| grade >= 4 (최종관리자) | 전체 |
+| grade >= 4 (시스템 관리자) | 전체 |
 | 본인 작성 | O |
 | @멘션 사용자 | O |
 | @멘션 부서 소속 | O |
