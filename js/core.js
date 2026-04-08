@@ -497,11 +497,12 @@ function saveNotifications() {
   localStorage.setItem(NOTIF_KEY, JSON.stringify(_notifications))
 }
 
-function addNotification(type, title, body, link) {
+function addNotification(type, title, body, link, opts) {
   // 동일 type+title 중복 방지 (최근 1시간 이내)
   const oneHourAgo = Date.now() - 3600000
   if (_notifications.some(n => n.type === type && n.title === title && n.ts > oneHourAgo)) return
-  _notifications.unshift({ id: Date.now() + '_' + Math.random().toString(36).slice(2,6), type, title, body, link, ts: Date.now(), read: false })
+  const priority = (opts && opts.priority) || ''
+  _notifications.unshift({ id: Date.now() + '_' + Math.random().toString(36).slice(2,6), type, title, body, link, priority, ts: Date.now(), read: false })
   if (_notifications.length > NOTIF_MAX) _notifications.length = NOTIF_MAX
   saveNotifications()
   renderNotifications()
@@ -529,6 +530,7 @@ const NOTIF_ICONS = {
   plan_deadline:'📋',
   board_notice: '📢',
   member_pending:'👤',
+  member_pending_urgent:'🔴',
   personal_schedule:'📋',
   work_mention: '📋',
   work_start: '⏰',

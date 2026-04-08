@@ -4290,6 +4290,10 @@ td[data-editable]:hover { background: #FAEEDA; }
 .ddm-row.deadline-today { border-left: 3px solid #e65100; }
 .ddm-row.deadline-urgent { border-left: 3px solid #f57c00; }
 
+/* ===== Urgent Notification (member signup) ===== */
+.notif-item-urgent { background: #FFF5F5 !important; border-left: 3px solid #A32D2D !important; }
+.notif-item-urgent .notif-title { color: #A32D2D !important; font-weight: 600 !important; }
+
 /* ===== Feature 3: Daily Team Summary ===== */
 .daily-summary { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; }
 .daily-summary-title { font-weight: 600; margin-bottom: 8px; font-size: 14px; color: var(--primary); }

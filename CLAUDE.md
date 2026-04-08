@@ -2117,6 +2117,18 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 ---
 
+### 2026-04-08 (session 2 — urgent member signup notification)
+
+#### 신규 가입 최우선 알림 (Grade 2+)
+- `addNotification(type, title, body, link, opts)` — 5번째 파라미터 `opts.priority` 추가, 알림 객체에 `priority` 필드 저장 (core.js)
+- `NOTIF_ICONS.member_pending_urgent = '🔴'` 추가
+- `checkMemberAlerts()` (members.js) — 알림 타입을 `member_pending_urgent`로 변경, `priority:'urgent'` 부여, 제목 "🔴 신규 가입 승인 대기 N명"
+- `renderNotifications()` (utils.js) — 정렬 변경: urgent first → ts desc, urgent 알림에 `notif-item-urgent` 클래스 부여
+- 자동 드롭다운 (main.js) — urgent 있으면 1초/5초 유지, 아니면 2초/3초 유지
+- CSS — `.notif-item-urgent` (배경 #FFF5F5 + 좌측 #A32D2D 라인), `.notif-item-urgent .notif-title` (#A32D2D 600)
+
+---
+
 ## 다음 작업 후보 (미구현)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 데이터 영속성 (localStorage 또는 서버 연동)

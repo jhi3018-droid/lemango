@@ -275,7 +275,8 @@ async function initApp() {
   if (typeof checkEventAlerts === 'function') checkEventAlerts()
   if (typeof checkPlanAlerts === 'function') checkPlanAlerts()
   if (typeof checkWorkMentionAlerts === 'function') checkWorkMentionAlerts()
-  // 로그인 직후 미읽은 알림 있으면 드롭다운 자동 표시
+  // 로그인 직후 미읽은 알림 있으면 드롭다운 자동 표시 (urgent: 1초/5초유지, normal: 2초/3초유지)
+  const hasUrgent = (_notifications || []).some(n => !n.dismissed && !n.read && n.priority === 'urgent')
   setTimeout(() => {
     const unread = (_notifications || []).filter(n => !n.dismissed && !n.read).length
     if (unread > 0) {
@@ -283,10 +284,10 @@ async function initApp() {
       if (dd) {
         renderNotifications()
         dd.style.display = 'block'
-        setTimeout(() => { dd.style.display = 'none' }, 5000)
+        setTimeout(() => { dd.style.display = 'none' }, hasUrgent ? 5000 : 3000)
       }
     }
-  }, 2000)
+  }, hasUrgent ? 1000 : 2000)
   // 알림 드롭다운 외부 클릭 닫기
   document.addEventListener('click', e => {
     const wrap = document.getElementById('notifWrap')

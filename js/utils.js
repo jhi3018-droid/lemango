@@ -1024,10 +1024,18 @@ function renderNotifications() {
   if (empty) empty.style.display = 'none'
   list.style.display = ''
 
-  list.innerHTML = _notifications.slice(0, 30).map(n => {
+  // Sort: urgent first, then by timestamp desc
+  const sorted = _notifications.slice().sort((a, b) => {
+    const au = a.priority === 'urgent' ? 1 : 0
+    const bu = b.priority === 'urgent' ? 1 : 0
+    if (au !== bu) return bu - au
+    return (b.ts || 0) - (a.ts || 0)
+  })
+  list.innerHTML = sorted.slice(0, 30).map(n => {
     const icon = NOTIF_ICONS[n.type] || '🔔'
     const readCls = n.read ? ' notif-read' : ''
-    return `<div class="notif-item${readCls}" data-nid="${n.id}" onclick="clickNotification('${n.id}')">
+    const urgentCls = n.priority === 'urgent' ? ' notif-item-urgent' : ''
+    return `<div class="notif-item${readCls}${urgentCls}" data-nid="${n.id}" onclick="clickNotification('${n.id}')">
       <span class="notif-icon">${icon}</span>
       <div class="notif-body">
         <div class="notif-title">${esc(n.title)}</div>

@@ -482,7 +482,7 @@ async function checkMemberAlerts() {
   try {
     const snap = await db.collection('users').where('status', '==', 'pending').get()
     if (!snap.empty) {
-      addNotification('member_pending', `승인대기 회원 ${snap.size}명`, '회원관리에서 승인/거절해 주세요.', '#members')
+      addNotification('member_pending_urgent', `🔴 신규 가입 승인 대기 ${snap.size}명`, '회원관리에서 즉시 승인/거절해 주세요.', '#members', { priority: 'urgent' })
     }
   } catch (e) { console.warn('checkMemberAlerts error:', e) }
 }
