@@ -245,39 +245,44 @@ function renderSettings() {
 
   const infoCards = SETTING_DEFS.filter(d => d.group === 'info').map(_renderSetCard).join('')
 
-  // 판매 채널 카드
-  const platListHtml = _platforms.map((pl, idx) => `
-    <div class="set-item" id="platItem_${idx}">
+  // 판매 채널 통합 카드 (이름 + 수수료율 + 비고)
+  const curGradeCh = (State.currentUser && State.currentUser.grade) || 1
+  const canEditCh = curGradeCh >= 3
+  const chListHtml = _channels.map((c, idx) => {
+    const rate = Number(c.feeRate) || 0
+    const note = c.note || ''
+    return `<div class="set-item" id="chItem_${idx}">
       <div class="set-item-view">
-        <span class="set-item-label" style="font-weight:600">${pl}</span>
-        <button class="set-item-action set-item-edit" onclick="editPlatformSetting(${idx})" title="수정">&#9998;</button>
-        <button class="set-item-action set-item-del" onclick="removePlatformSetting(${idx})" title="삭제">&#10005;</button>
+        <span class="set-item-label" style="font-weight:600">${esc(c.name)}</span>
+        <span class="set-item-label set-item-sub" style="font-family:monospace;color:var(--accent);font-weight:600">${rate}%</span>
+        <span class="set-item-label set-item-sub" style="flex:1;color:var(--text-light)">${esc(note)}</span>
+        ${canEditCh ? `
+          <button class="set-item-action set-item-edit" onclick="editChannel(${idx})" title="수정">&#9998;</button>
+          <button class="set-item-action set-item-del" onclick="removeChannel(${idx})" title="삭제">&#10005;</button>
+        ` : ''}
       </div>
-      <div class="set-item-editrow" id="platEdit_${idx}" style="display:none">
-        <div class="set-ac-wrap" style="flex:1;position:relative">
-          <input type="text" class="set-edit-input" id="platEditInput_${idx}" value="${pl}" style="width:100%"
-            oninput="_acPlatform(this)" onblur="_acBlur(this)"
-            onkeydown="if(event.key==='Enter')savePlatformEdit(${idx})" />
-        </div>
-        <button class="set-edit-save" onclick="savePlatformEdit(${idx})">저장</button>
-        <button class="set-edit-cancel" onclick="renderSettings()">취소</button>
+      <div class="set-item-editrow" style="display:none">
+        <input type="text" class="set-edit-input" value="${esc(c.name)}" data-field="name" placeholder="채널명" style="flex:1" />
+        <input type="number" class="set-edit-input" value="${rate}" data-field="rate" placeholder="수수료%" min="0" max="100" step="0.1" style="width:90px" />
+        <input type="text" class="set-edit-input" value="${esc(note)}" data-field="note" placeholder="비고" style="flex:1" />
+        <button class="set-edit-save" onclick="saveChannelEdit(${idx})">저장</button>
+        <button class="set-edit-cancel" onclick="cancelChannelEdit(${idx})">취소</button>
       </div>
-    </div>`).join('') || '<div class="set-empty">항목 없음</div>'
+    </div>`
+  }).join('') || '<div class="set-empty">항목 없음</div>'
 
   const platCard = `<div class="set-card set-card-wide">
     <div class="set-card-header">
       <span class="set-card-title">온라인 쇼핑몰 (판매 채널)</span>
-      <span class="set-card-count">${_platforms.length}</span>
+      <span class="set-card-count">${_channels.length}</span>
     </div>
-    <div class="set-list set-list-scroll">${platListHtml}</div>
-    <div class="set-add-row">
-      <div class="set-ac-wrap" style="flex:1;position:relative">
-        <input type="text" id="setPlatName" placeholder="쇼핑몰명 (예: 무신사)" class="set-add-input" style="width:100%"
-          oninput="_acPlatform(this)" onblur="_acBlur(this)"
-          onkeydown="if(event.key==='Enter')addPlatformSetting()" />
-      </div>
-      <button class="btn btn-new set-add-btn" onclick="addPlatformSetting()">+ 추가</button>
-    </div>
+    <div class="set-list set-list-scroll">${chListHtml}</div>
+    ${canEditCh ? `<div class="set-add-row">
+      <input type="text" id="setAddChName" placeholder="채널명 (예: 무신사)" class="set-add-input" style="flex:1" />
+      <input type="number" id="setAddChRate" placeholder="수수료%" class="set-add-input" min="0" max="100" step="0.1" style="width:90px" />
+      <input type="text" id="setAddChNote" placeholder="비고" class="set-add-input" style="flex:1" />
+      <button class="btn btn-new set-add-btn" onclick="addChannel()">+ 채널 추가</button>
+    </div>` : ''}
   </div>`
 
   // 업무일정 카테고리 카드
@@ -311,28 +316,32 @@ function renderSettings() {
     </div>
   </div>`
 
-  // 기획 일정 단계 카드
+  // 기획 일정 단계 카드 (판매 채널과 동일한 인라인 에디트 패턴)
   const phases = getPlanPhases()
-  const curGrade = (State.currentUser && State.currentUser.grade) || 1
-  const canEditPhases = curGrade >= 4
-  const phListHtml = phases.map((ph, idx) => `
-    <div class="plan-phase-item" id="phItem_${idx}">
-      <div class="set-item-view" style="display:flex;align-items:center;gap:10px;width:100%">
-        <span class="plan-phase-dot" style="display:inline-block;width:14px;height:14px;border-radius:3px;background:${ph.color || '#888'};flex:none"></span>
-        <span class="plan-phase-label" style="flex:1;font-weight:600">${esc(ph.label)}</span>
-        <span class="plan-phase-key" style="font-family:monospace;font-size:11px;color:var(--text-light);background:#f5f4f1;padding:2px 6px;border-radius:3px">${esc(ph.key)}</span>
+  const curGradePh = (State.currentUser && State.currentUser.grade) || 1
+  const canEditPhases = curGradePh >= 3
+  const phListHtml = phases.map((ph, idx) => {
+    const color = ph.color || '#888'
+    const isDef = !!ph.isDefault
+    return `<div class="set-item" id="phItem_${idx}">
+      <div class="set-item-view">
+        <span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:${color};flex:none;box-shadow:0 0 0 1px rgba(0,0,0,0.1)"></span>
+        <span class="set-item-label" style="font-weight:600">${esc(ph.label)}</span>
+        <span class="set-item-label set-item-sub" style="font-family:monospace;color:var(--text-light);background:#f5f4f1;padding:2px 6px;border-radius:3px">${esc(ph.key)}</span>
+        <span style="flex:1"></span>
         ${canEditPhases ? `
           <button class="set-item-action set-item-edit" onclick="editPlanPhase(${idx})" title="수정">&#9998;</button>
-          <button class="set-item-action set-item-del" onclick="deletePlanPhase(${idx})" title="삭제">&#10005;</button>
+          ${isDef ? '' : `<button class="set-item-action set-item-del" onclick="deletePlanPhase(${idx})" title="삭제">&#10005;</button>`}
         ` : ''}
       </div>
-    </div>`).join('') || '<div class="set-empty">항목 없음</div>'
-
-  const phAddRow = canEditPhases ? `
-    <div class="set-add-row">
-      <button class="btn btn-new set-add-btn" onclick="addPlanPhase()">+ 단계 추가</button>
-      <span style="flex:1;font-size:11px;color:var(--text-light);padding-left:8px">단계 추가/삭제는 시스템 관리자만 가능</span>
-    </div>` : `<div style="padding:8px 12px;font-size:11px;color:var(--text-light)">단계 추가/삭제는 시스템 관리자만 가능합니다.</div>`
+      <div class="set-item-editrow" style="display:none">
+        <input type="text" class="set-edit-input" value="${esc(ph.label)}" data-field="label" placeholder="단계명" style="flex:1" />
+        <input type="color" class="set-edit-input" value="${color}" data-field="color" style="width:50px;padding:2px" />
+        <button class="set-edit-save" onclick="savePlanPhaseEdit(${idx})">저장</button>
+        <button class="set-edit-cancel" onclick="cancelPlanPhaseEdit(${idx})">취소</button>
+      </div>
+    </div>`
+  }).join('') || '<div class="set-empty">항목 없음</div>'
 
   const phCard = `<div class="set-card set-card-wide">
     <div class="set-card-header">
@@ -340,7 +349,12 @@ function renderSettings() {
       <span class="set-card-count">${phases.length}</span>
     </div>
     <div class="set-list set-list-scroll">${phListHtml}</div>
-    ${phAddRow}
+    ${canEditPhases ? `<div class="set-add-row">
+      <input type="text" id="setAddPhLabel" placeholder="단계명 (예: 검수)" class="set-add-input" style="flex:1"
+        onkeydown="if(event.key==='Enter')addPlanPhase()" />
+      <input type="color" id="setAddPhColor" value="#c9a96e" class="set-add-input" style="width:50px;padding:2px" />
+      <button class="btn btn-new set-add-btn" onclick="addPlanPhase()">+ 단계 추가</button>
+    </div>` : ''}
   </div>`
 
   // 부서 카드 (시스템 관리자 grade 4만 표시)
@@ -615,57 +629,106 @@ async function removeSettingItem(key, idx) {
   logActivity('setting', '설정', `설정항목 삭제: ${key} "${label}"`)
 }
 
-// ===== 판매 채널 CRUD =====
-function addPlatformSetting() {
-  const name = document.getElementById('setPlatName')?.value.trim()
-  if (!name) { showToast('쇼핑몰명을 입력해주세요.', 'warning'); return }
-  if (_platforms.includes(name)) { showToast(`"${name}"은 이미 존재하는 쇼핑몰입니다.`, 'error'); return }
-  _platforms.push(name)
-  savePlatforms()
-  renderSettings()
-  showToast(`"${name}" 추가됐습니다.`, 'success')
-  logActivity('setting', '설정', `판매채널 추가: ${name}`)
+// ===== 판매 채널(통합) CRUD =====
+function _checkChAdmin() {
+  const g = (State.currentUser && State.currentUser.grade) || 1
+  if (g < 3) { showToast('권한이 없습니다.', 'error'); return false }
+  return true
 }
 
-function editPlatformSetting(idx) {
-  const el = document.getElementById('platItem_' + idx)
+function addChannel() {
+  if (!_checkChAdmin()) return
+  const nameEl = document.getElementById('setAddChName')
+  const rateEl = document.getElementById('setAddChRate')
+  const noteEl = document.getElementById('setAddChNote')
+  const name = (nameEl?.value || '').trim()
+  if (!name) { showToast('채널명을 입력해주세요.', 'warning'); nameEl?.focus(); return }
+  if (_channels.some(c => c.name === name)) { showToast(`"${name}"은 이미 존재하는 채널입니다.`, 'error'); return }
+  const rateStr = (rateEl?.value || '0').trim()
+  const rate = Number(rateStr)
+  if (isNaN(rate) || rate < 0 || rate > 100) { showToast('수수료율은 0~100 사이 숫자여야 합니다.', 'error'); return }
+  const note = (noteEl?.value || '').trim()
+  _channels.push({ name, feeRate: rate, note, active: true })
+  // 기존 상품에 sales 키 초기화
+  State.allProducts.forEach(p => {
+    if (!p.sales) p.sales = {}
+    if (!(name in p.sales)) p.sales[name] = 0
+  })
+  saveChannels()
+  populateAllSelects()
+  renderSettings()
+  if (typeof renderSalesTable === 'function') renderSalesTable()
+  if (typeof renderDashboard === 'function') renderDashboard()
+  showToast(`"${name}" 추가됐습니다.`, 'success')
+  if (typeof logActivity === 'function') logActivity('setting', '설정', `판매채널 추가: ${name} (수수료 ${rate}%)`)
+}
+
+function editChannel(idx) {
+  if (!_checkChAdmin()) return
+  const el = document.getElementById('chItem_' + idx)
   if (!el) return
   el.querySelector('.set-item-view').style.display = 'none'
   el.querySelector('.set-item-editrow').style.display = ''
-  document.getElementById('platEditInput_' + idx)?.focus()
+  el.querySelector('[data-field="name"]')?.focus()
 }
 
-function savePlatformEdit(idx) {
-  const newName = document.getElementById('platEditInput_' + idx)?.value.trim()
-  const oldName = _platforms[idx]
-  if (!newName) { showToast('쇼핑몰명을 입력해주세요.', 'warning'); return }
-  if (newName === oldName) { renderSettings(); return }
-  if (_platforms.includes(newName)) { showToast(`"${newName}"은 이미 존재하는 쇼핑몰입니다.`, 'error'); return }
+function cancelChannelEdit(idx) {
+  const el = document.getElementById('chItem_' + idx)
+  if (!el) return
+  el.querySelector('.set-item-view').style.display = ''
+  el.querySelector('.set-item-editrow').style.display = 'none'
+}
+
+function saveChannelEdit(idx) {
+  if (!_checkChAdmin()) return
+  const cur = _channels[idx]
+  if (!cur) return
+  const el = document.getElementById('chItem_' + idx)
+  if (!el) return
+  const oldName = cur.name
+  const name = (el.querySelector('[data-field="name"]')?.value || '').trim()
+  const rateStr = (el.querySelector('[data-field="rate"]')?.value || '').trim()
+  const note = (el.querySelector('[data-field="note"]')?.value || '').trim()
+  if (!name) { showToast('채널명을 입력해주세요.', 'warning'); return }
+  if (_channels.some((c, i) => i !== idx && c.name === name)) { showToast(`"${name}"은 이미 존재하는 채널입니다.`, 'error'); return }
+  const rate = Number(rateStr)
+  if (isNaN(rate) || rate < 0 || rate > 100) { showToast('수수료율은 0~100 사이 숫자여야 합니다.', 'error'); return }
+  // 이름 변경 시 sales 키 이전
+  if (name !== oldName) {
+    State.allProducts.forEach(p => {
+      if (p.sales && oldName in p.sales) {
+        p.sales[name] = p.sales[oldName]
+        delete p.sales[oldName]
+      }
+    })
+  }
+  _channels[idx] = { ...cur, name, feeRate: rate, note }
+  saveChannels()
+  populateAllSelects()
+  renderSettings()
+  if (typeof renderSalesTable === 'function') renderSalesTable()
+  if (typeof renderDashboard === 'function') renderDashboard()
+  showToast(`"${oldName}" 수정됐습니다.`, 'success')
+  if (typeof logActivity === 'function') logActivity('setting', '설정', `판매채널 수정: ${oldName} → ${name} (수수료 ${rate}%)`)
+}
+
+async function removeChannel(idx) {
+  if (!_checkChAdmin()) return
+  const cur = _channels[idx]
+  if (!cur) return
+  if (!await korConfirm(`"${cur.name}" 채널을 삭제하시겠습니까?\n기존 판매 데이터는 유지되지만 목록에서 제거됩니다.`)) return
+  // 기존 상품 sales 키 삭제
   State.allProducts.forEach(p => {
-    if (p.sales && oldName in p.sales) {
-      p.sales[newName] = p.sales[oldName]
-      delete p.sales[oldName]
-    }
+    if (p.sales && cur.name in p.sales) delete p.sales[cur.name]
   })
-  _platforms[idx] = newName
-  savePlatforms()
-  renderSalesTable()
-  renderDashboard()
+  _channels.splice(idx, 1)
+  saveChannels()
+  populateAllSelects()
   renderSettings()
-  showToast(`"${oldName}" → "${newName}" 변경됐습니다.`, 'success')
-  logActivity('setting', '설정', `판매채널 수정: ${oldName} → ${newName}`)
-}
-
-async function removePlatformSetting(idx) {
-  const name = _platforms[idx]
-  if (!await korConfirm(`"${name}" 쇼핑몰을 목록에서 제거하시겠습니까?\n기존 판매 데이터는 유지됩니다.`)) return
-  _platforms.splice(idx, 1)
-  savePlatforms()
-  renderSalesTable()
-  renderDashboard()
-  renderSettings()
+  if (typeof renderSalesTable === 'function') renderSalesTable()
+  if (typeof renderDashboard === 'function') renderDashboard()
   showToast('삭제됐습니다.', 'success')
-  logActivity('setting', '설정', `판매채널 삭제: ${name}`)
+  if (typeof logActivity === 'function') logActivity('setting', '설정', `판매채널 삭제: ${cur.name}`)
 }
 
 // ===== 디자인번호 엑셀 다운로드 =====
@@ -879,59 +942,91 @@ async function removeDeptSetting(idx) {
   logActivity('setting', '설정', `부서 삭제: ${name}`)
 }
 
-// ===== 기획 일정 단계 CRUD =====
+// ===== 기획 일정 단계 CRUD (인라인 에디트) =====
 function _phAdminCheck() {
   const g = (State.currentUser && State.currentUser.grade) || 1
-  if (g < 4) { showToast('시스템 관리자만 변경할 수 있습니다.', 'error'); return false }
+  if (g < 3) { showToast('관리자만 변경할 수 있습니다.', 'error'); return false }
   return true
 }
 
-function _phRandomColor() {
-  const palette = ['#c9a96e','#4caf7d','#7C3AED','#f0a500','#0891B2','#e05252','#3b82f6','#ec4899','#14b8a6','#f59e0b','#8b5cf6','#10b981']
-  return palette[Math.floor(Math.random() * palette.length)]
-}
-
-async function addPlanPhase() {
-  if (!_phAdminCheck()) return
-  const label = prompt('새 단계 표시명 (예: 검수):')
-  if (!label || !label.trim()) return
-  const labelTrim = label.trim()
-  const phases = getPlanPhases()
-  if (phases.some(p => p.label === labelTrim)) { showToast('이미 존재하는 단계명입니다.', 'error'); return }
-  // key 자동 생성: 영문 소문자만 추출, 없으면 phase_N
-  let key = labelTrim.toLowerCase().replace(/[^a-z0-9]/g, '')
-  if (!key) key = 'phase_' + (phases.length + 1)
-  // key 중복 방지
-  let base = key, n = 2
-  while (phases.some(p => p.key === key)) { key = base + n; n++ }
-  const color = prompt('색상 (HEX, 예: #c9a96e):', _phRandomColor()) || _phRandomColor()
-  phases.push({ key, label: labelTrim, color: color.trim() || _phRandomColor() })
-  savePlanPhases()
-  if (typeof populateAllSelects === 'function') populateAllSelects()
-  renderSettings()
-  showToast(`"${labelTrim}" 단계 추가됨`, 'success')
-  logActivity('setting', '설정', `기획 일정 단계 추가: ${labelTrim} (${key})`)
-}
-
-async function editPlanPhase(idx) {
-  if (!_phAdminCheck()) return
-  const phases = getPlanPhases()
-  const ph = phases[idx]; if (!ph) return
-  const newLabel = prompt('표시명 수정:', ph.label)
-  if (newLabel === null) return
-  const lbl = newLabel.trim()
-  if (!lbl) { showToast('표시명이 비어 있습니다.', 'error'); return }
-  if (phases.some((p, i) => i !== idx && p.label === lbl)) { showToast('이미 존재하는 표시명입니다.', 'error'); return }
-  const newColor = prompt('색상 (HEX):', ph.color || _phRandomColor())
-  if (newColor === null) return
-  const oldLabel = ph.label
-  ph.label = lbl
-  ph.color = (newColor.trim() || ph.color || _phRandomColor())
-  savePlanPhases()
+function _phRerender() {
   if (typeof populateAllSelects === 'function') populateAllSelects()
   renderSettings()
   if (typeof renderDashCalendar === 'function') renderDashCalendar()
   if (typeof renderPlanTable === 'function') renderPlanTable()
+}
+
+function addPlanPhase() {
+  if (!_phAdminCheck()) return
+  const labelEl = document.getElementById('setAddPhLabel')
+  const colorEl = document.getElementById('setAddPhColor')
+  if (!labelEl) return
+  const label = (labelEl.value || '').trim()
+  const color = (colorEl && colorEl.value) ? colorEl.value : '#888'
+  if (!label) { showToast('단계명을 입력하세요.', 'error'); labelEl.focus(); return }
+  const phases = getPlanPhases()
+  if (phases.some(p => p.label === label)) { showToast('이미 존재하는 단계명입니다.', 'error'); return }
+  // key 자동 생성
+  let key = label.toLowerCase().replace(/[^a-z0-9]/g, '')
+  if (!key) key = 'phase_' + (phases.length + 1)
+  let base = key, n = 2
+  while (phases.some(p => p.key === key)) { key = base + n; n++ }
+  phases.push({ key, label, color })
+  savePlanPhases()
+  _phRerender()
+  showToast(`"${label}" 단계 추가됨`, 'success')
+  logActivity('setting', '설정', `기획 일정 단계 추가: ${label} (${key})`)
+}
+
+function editPlanPhase(idx) {
+  if (!_phAdminCheck()) return
+  const item = document.getElementById('phItem_' + idx)
+  if (!item) return
+  // 다른 열린 에디트 모두 닫기
+  document.querySelectorAll('[id^="phItem_"]').forEach(el => {
+    const v = el.querySelector('.set-item-view')
+    const e = el.querySelector('.set-item-editrow')
+    if (v) v.style.display = ''
+    if (e) e.style.display = 'none'
+  })
+  const view = item.querySelector('.set-item-view')
+  const edit = item.querySelector('.set-item-editrow')
+  if (view) view.style.display = 'none'
+  if (edit) {
+    edit.style.display = 'flex'
+    const inp = edit.querySelector('input[data-field="label"]')
+    if (inp) { inp.focus(); inp.select && inp.select() }
+  }
+}
+
+function cancelPlanPhaseEdit(idx) {
+  const item = document.getElementById('phItem_' + idx)
+  if (!item) return
+  const view = item.querySelector('.set-item-view')
+  const edit = item.querySelector('.set-item-editrow')
+  if (view) view.style.display = ''
+  if (edit) edit.style.display = 'none'
+}
+
+function savePlanPhaseEdit(idx) {
+  if (!_phAdminCheck()) return
+  const phases = getPlanPhases()
+  const ph = phases[idx]; if (!ph) return
+  const item = document.getElementById('phItem_' + idx)
+  if (!item) return
+  const labelInp = item.querySelector('input[data-field="label"]')
+  const colorInp = item.querySelector('input[data-field="color"]')
+  const lbl = (labelInp && labelInp.value || '').trim()
+  const col = (colorInp && colorInp.value) || ph.color || '#888'
+  if (!lbl) { showToast('단계명이 비어 있습니다.', 'error'); return }
+  if (phases.some((p, i) => i !== idx && p.label === lbl)) {
+    showToast('이미 존재하는 단계명입니다.', 'error'); return
+  }
+  const oldLabel = ph.label
+  ph.label = lbl
+  ph.color = col
+  savePlanPhases()
+  _phRerender()
   showToast('수정됨', 'success')
   logActivity('setting', '설정', `기획 일정 단계 수정: ${oldLabel} → ${lbl}`)
 }
@@ -940,22 +1035,21 @@ async function deletePlanPhase(idx) {
   if (!_phAdminCheck()) return
   const phases = getPlanPhases()
   const ph = phases[idx]; if (!ph) return
+  if (ph.isDefault) { showToast('기본 단계는 삭제할 수 없습니다.', 'error'); return }
   if (phases.length <= 1) { showToast('최소 1개 단계는 유지해야 합니다.', 'error'); return }
-  // 사용 중인지 확인
   const inUse = (State.planItems || []).some(item => item.schedule && item.schedule[ph.key] && (item.schedule[ph.key].start || item.schedule[ph.key].end))
   let msg = `"${ph.label}" 단계를 삭제하시겠습니까?`
   if (inUse) msg += '\n\n⚠️ 이미 이 단계를 사용 중인 기획 항목이 있습니다. 저장된 일정 데이터는 유지되지만 UI에서 표시되지 않습니다.'
   if (!await korConfirm(msg)) return
   phases.splice(idx, 1)
   savePlanPhases()
-  if (typeof populateAllSelects === 'function') populateAllSelects()
-  renderSettings()
-  if (typeof renderDashCalendar === 'function') renderDashCalendar()
-  if (typeof renderPlanTable === 'function') renderPlanTable()
+  _phRerender()
   showToast('삭제됨', 'success')
   logActivity('setting', '설정', `기획 일정 단계 삭제: ${ph.label}`)
 }
 
 window.addPlanPhase = addPlanPhase
 window.editPlanPhase = editPlanPhase
+window.savePlanPhaseEdit = savePlanPhaseEdit
+window.cancelPlanPhaseEdit = cancelPlanPhaseEdit
 window.deletePlanPhase = deletePlanPhase

@@ -45,6 +45,13 @@ const ALL_DOWNLOAD_COLUMNS = [
   { key:'images.design', label:'이미지URL(디자인)' },
   { key:'images.shoot', label:'이미지URL(촬영)' },
   { key:'videoUrl', label:'영상URL' },
+  { key:'images.sum.html', label:'이미지HTML(합본)' },
+  { key:'images.lemango.html', label:'이미지HTML(자사몰)' },
+  { key:'images.noir.html', label:'이미지HTML(느와)' },
+  { key:'images.external.html', label:'이미지HTML(외부몰)' },
+  { key:'images.design.html', label:'이미지HTML(디자인)' },
+  { key:'images.shoot.html', label:'이미지HTML(촬영)' },
+  { key:'images.all.html', label:'이미지HTML(전체)' },
   { key:'registDate', label:'등록일' },
   { key:'lastInDate', label:'최종입고일' },
   { key:'stock.XS', label:'재고_XS' },
@@ -138,6 +145,23 @@ function _getProductValue(p, key, idx) {
   if (key.startsWith('stock.')) return p.stock ? (p.stock[key.split('.')[1]]||0) : 0
   if (key.startsWith('sales.')) return p.sales ? (p.sales[key.split('.')[1]]||0) : 0
   if (key.startsWith('mallCodes.')) return p.mallCodes ? (p.mallCodes[key.split('.')[1]]||'') : ''
+  if (key.endsWith('.html') && key.startsWith('images.')) {
+    const baseKey = key.replace('.html', '')
+    if (baseKey === 'images.all') {
+      const sections = ['sum', 'lemango', 'noir', 'external', 'design', 'shoot']
+      let all = ''
+      sections.forEach(s => {
+        const arr = p.images?.[s]
+        const u = Array.isArray(arr) ? arr.join('\n') : (arr || '')
+        if (u.trim()) all += u.trim() + '\n'
+      })
+      return convertUrlsToHtml(all)
+    }
+    const section = baseKey.split('.')[1]
+    const arr = p.images?.[section]
+    const u = Array.isArray(arr) ? arr.join('\n') : (arr || '')
+    return u.trim() ? convertUrlsToHtml(u) : ''
+  }
   if (key.startsWith('images.')) {
     const arr = p.images ? (p.images[key.split('.')[1]]||[]) : []
     return Array.isArray(arr) ? arr.join('\n') : String(arr||'')

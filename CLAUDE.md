@@ -341,7 +341,8 @@ State.modal.images/idx     // 이미지 모달 상태
 | 변수 | localStorage 키 | 설명 |
 |------|----------------|------|
 | `_settings` | `lemango_settings_v1` | 브랜드·타입·가슴선 등 SETTING_DEFS 기반 옵션 |
-| `_platforms` | `lemango_platforms_v1` | 판매 채널 목록 (공홈/GS/29cm/W쇼핑/기타) |
+| `_channels` | `lemango_channels_v1` | 판매 채널 통합 배열 [{name, feeRate, note, active}] — 기존 _platforms+_channelFees 병합 |
+| `_platforms` | `lemango_platforms_v1` | 판매 채널 활성 이름 목록 — `_channels`에서 자동 동기화 (saveChannels 호출 시 갱신, 기존 호환용) |
 | `_designCodes` | `lemango_design_codes_v1` | 디자인번호/백스타일 [code, en, kr] 배열 (단일 소스) |
 | `_events` | `lemango_events_v1` | 행사일정 배열 [{no, name, channel, startDate, endDate, discount, support, memo, createdBy}] |
 | `_workCategories` | `lemango_work_categories_v1` | 업무일정 카테고리 목록 (연차/차량사용/미팅일정/기타) |
@@ -526,7 +527,7 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 ### 설정
 - `renderSettings()` — 설정 탭 전체 렌더
-- `addPlatformSetting()` / `editPlatformSetting(idx)` / `savePlatformEdit(idx)` / `removePlatformSetting(idx)` — 판매 채널 CRUD
+- `addChannel()` / `editChannel(idx)` / `removeChannel(idx)` — 판매 채널 통합 CRUD (이름+수수료율+비고, _channels)
 - `addWorkCategorySetting()` / `editWorkCategorySetting(idx)` / `saveWorkCategoryEdit(idx)` / `removeWorkCategorySetting(idx)` — 업무 카테고리 CRUD
 
 ### 매출현황 플랫폼 관리
@@ -2020,6 +2021,90 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 #### 캐시 버전 코멘트
 - `index.html` 상단 `<!-- v2026-04-07-final -->` 추가
+
+---
+
+### 2026-04-08
+
+#### 매출 업로드 시 새 채널 자동 감지
+- `detectNewChannels(uploadedChannels)` / `promptNewChannels(newChannels)` — `js/core.js`: 업로드 파일에서 채널명 추출 → 기존 `_channels`에 없으면 사용자에게 추가 prompt → 수수료율 입력 → `saveChannels()` + `State.allProducts[].sales` 키 0 초기화 + `populateAllSelects()` + `logActivity('setting')`
+- `extractCafe24Channels(rows)` — `js/gonghom.js`: I열(shopName) → cafe24Channel 매핑 (LEMANGOKOREA→공홈, LEMANGO PARTNER→파트너)
+- `extractSabangnetChannels(rows)` — `js/sabangnet.js`: B열(shopName, SABANGNET.shopName=1) 추출
+- `handleGonghomUpload` / `handleSabangnetUpload` reader.onload async 변환, 미리보기 렌더 전 `await promptNewChannels()` 삽입
+- 매칭 규칙: 대소문자 무시 + 부분일치(includes 양방향) — 유사 채널 중복 방지
+
+### 2026-04-08
+
+#### 기획 이미지 업로드 개편 + 대표이미지 URL → base64 파일 삭제
+- **기획 등록/상세 모달 이미지 관리 일원화**: 기존 텍스트에어리어(자사몰/느와/외부몰/SUM/디자인/촬영) + 로컬파일 프리뷰 → 단일 썸네일 그리드로 통합
+- `_planImages: [{url, type:'url'|'file', name, size?}]` 통합 상태 배열
+- 신규: `addPlanImageUrl()`, `handlePlanImageUpload()` (FileReader base64), `renderPlanImageGrid()`, `removePlanImage()`, `buildPlanImageSection()`, `updatePlanMainImage()` (async)
+- `openPlanRegisterModal(item)` — 신규/편집/복제 지원, `item._imageList` → `item.mainImage` fallback
+- `submitPlanRegister()` — 대표이미지(select idx/첫번째), `_imageList` 저장, `images.lemango`=URL모음, `images.design`=파일 base64
+- `buildPlanDetailContent()` — `_imageList` 우선, 없으면 mainImage, 없으면 기존 images, 없으면 "등록된 이미지 없음"
+- `clonePlanItem()` JSON deep-clone으로 `_imageList` 자동 복제
+- 제거: `_plLocalImgUrls`, `handlePlImgUpload`, `plImgSum/Lemango/Noir/External/Design/Shoot/Preview` 필드
+- **상품 상세 mainImage URL 설정 시 base64 자동 삭제**:
+  - `saveDetailEdit()` — mainImage http(s) 시 `p._imageList` + `p.images[*]`에서 `data:` 엔트리/라인 제거
+  - `onProductMainImageChange(input)` — input onchange 핸들러, `_imageList`에 base64 있으면 korConfirm → 취소 시 복원, 확인 시 즉시 삭제
+- **CSS**: `.plan-img-actions/btn/upload-label/grid/thumb/thumb img/thumb-name/thumb-x` — 80×80 썸네일, 골드 버튼, hover ✕
+
+#### 기획 이미지 분리 — tempImages(참고) + images(상품)
+- 이전 `_planImages` / `_imageList` 통합 접근 폐기 → 두 섹션으로 완전 분리
+- 기획 아이템: `tempImages:[{url,type,name}]` (참고) + `mainImage/images{sum,lemango,noir,external,design,shoot}/videoUrl` (상품)
+- 상품 확정 시 `tempImages`에 `fromPlan:true` 플래그 추가하여 상품조회로 이전
+- 상품조회 상세 모달에서 임시 이미지 개별/전체 삭제 가능 (`deleteProductTempImage`, `deleteAllProductTempImages`)
+- 기획/상품 테이블 썸네일에 임시 뱃지 (`plan-table-thumb-temp`, `table-thumb-temp`) 표시
+- 신규 함수: `addPlanTempImageUrl`, `handlePlanTempImageUpload`, `renderPlanTempImageGrid`, `removePlanTempImage`, `buildPlanTempImageSection`, `buildPlanProductImageSection`, `getPlanThumbUrl`, `getProductThumbUrl`
+- 제거: `_planImages`, `_imageList`, `buildPlanImageSection`, `updatePlanMainImage`, `onProductMainImageChange`, `planImgGrid/npMainImageSelect/plMainImage/planImageSection/npVideoUrlVisible`
+
+---
+
+### 2026-04-08
+
+#### 9 features across batches 1-3
+1. **Product row hover highlight** — `.data-table tbody tr:hover` light beige background (`#FAF7F1`); product/stock rows show pointer cursor.
+2. **Product multi-select + bulk actions** — `.prod-check` checkboxes on product/stock tables, `State.selectedProducts` Set, bulk toolbar wired to multi-delete / export.
+3. **Inline quick edit on product table** — double-click selected cells to edit in place, Enter to save, Esc to cancel.
+4. **Stock low-stock highlight** — cells below threshold receive warning style; dashboard KPI shows low-stock count.
+5. **Sales channel quick-filter chips** — chip row above sales table toggles `_platforms` filter without opening the column filter drop-down.
+6. **Plan drag reorder** — HTML5 drag-drop on plan rows updates `State.planItems` order and persists.
+7. **Global shortcut keys** — `?` opens help, `/` focuses current tab search input, `Esc` closes top modal.
+8. **Dashboard quick filters** — period chips (today/week/month/custom) filter KPI cards and charts.
+9. **Calendar week/day view + work checklist** (batch 3):
+   - `js/utils.js` — new `getStartOfWeek(date)` returns Sunday 00:00 of the week containing `date`.
+   - `js/work.js` — adds `State.workCalView` / `State.eventCalView` (`'month'|'week'|'day'`), `_wkCursor`, shared `switchCalView(scope, mode)`, `_calViewBtnsHtml`, `_calItemsInRange`, `_calItemColor`, `_calItemLabel`, `_calItemClick`, and shared `renderWeekView(scope, baseDate)` / `renderDayView(scope, date)`.
+   - Week view: 7-day Sun~Sat grid, all-day row + hourly rows 08:00~22:00, full-day items at top, timed work items placed by `startTime` hour.
+   - Day view: single-day hourly list 08:00~22:00 + 종일 row.
+   - `renderWorkCalendar` / `renderEventCalendar` branch on view mode; month title re-formats as range for week and full date for day; toggle buttons injected into `.evcal-header`.
+   - `wkPrevMonth/wkNextMonth/wkToday` (and `evPrev/Next/Today`) step by week or day depending on mode.
+   - Existing bar click handlers reused (`openWorkDetailModal` / `openEventDetailModal`). Personal calendar skipped for this batch.
+   - **Checklist (Feature 11)** — workItem schema gains `checklist:[{id,text,done}]`.
+     - `buildChecklistHtml(checklist, isEdit)` renders the `.checklist-section` card (view: checkboxes + text; edit: text inputs, remove button, add-row field).
+     - `toggleChecklistItem(id)` works in view mode — mutates `_currentWorkItem.checklist`, persists via `State.workItems` + `saveWorkItems()`, updates `.checklist-count` inline.
+     - `addChecklistItem()` reads `#newChecklistInput`, pushes a new item, re-renders `#wkRegChecklistArea`. `removeChecklistItem(id)` filters it out.
+     - `submitWork` merges `_currentWorkItem.checklist` (done state) with `.checklist-text-input[data-chk-id]` values before saving.
+     - `_currentWorkItem` tracked on `openWorkDetailModal`, `openWorkRegisterModal`, and `editWorkFromDetail`.
+     - Register modal HTML: new `#wkRegChecklistArea` container under memo field; same builder reused in edit mode.
+   - CSS (style.css): `.cal-view-btns`, `.cal-view-btn[.active]`, `.week-view`, `.week-header`, `.week-day-header`, `.week-row`, `.week-time`, `.week-cell`, `.day-view`, `.day-title`, `.day-row`, `.day-time`, `.day-content`, `.checklist-section`, `.checklist-title`, `.checklist-count`, `.checklist-item[.checklist-done]`, `.checklist-cb`, `.checklist-text`, `.checklist-text-input`, `.checklist-del`, `.checklist-add`, `.checklist-add-input`, `.checklist-add-btn`.
+
+---
+
+### 2026-04-08 (session 2)
+
+#### 10가지 팀 협업 기능 (신규, 이전 4-08 batch와 별개)
+- **F1 상품 히스토리 타임라인** — `addProductHistory/getProductHistory` (core.js, localStorage `lemango_product_history_v1`, 50건 cap). 상세모달에 timeline 섹션. 훅: register/saveDetailEdit/confirmPlanToProduct/saveSrmStock/submitOutgoing/confirmGonghomUpload/confirmSabangnetUpload.
+- **F2 변경 감시(Watch)** — `_watches` (localStorage `lemango_watches_v1`), `isWatching/toggleWatch/notifyWatchers` (→ addNotification 'watch_change'). 👁 버튼: dWatchBtn/pdWatchBtn/evWatchBtn/wkWatchBtn. 저장 시 notifyWatchers 호출.
+- **F3 오늘의 팀 활동** — `buildDailyTeamSummary()` (dashboard.js), 활동로그를 사용자별 그룹핑. 대시보드 `#dailySummaryArea`.
+- **F4 댓글 @멘션 알림** — `checkCommentMentions(content,type,id)` (comments.js), `_allUsers` 매칭 → `addNotification('comment_mention',...)`. NOTIF_ICONS.comment_mention='💬'.
+- **F5 담당자 지정 + "내 담당" 필터** — product/plan 스키마에 `assignee/assigneeName/assigneePosition`. 상세모달 기본정보에 담당자 select. `filterMyAssigned(tabKey)` (utils.js). 검색바에 '내 담당' 버튼.
+- **F6 칸반 보드** — workItem `kanbanStatus` (예정/진행중/완료, 날짜 기반 자동 derive). work 탭 이너탭 '현황보드' + `#kanbanArea`. `renderKanbanBoard/kanbanDragStart/kanbanDragOver/kanbanDrop` (work.js). HTML5 DnD.
+- **F7 주간 리포트** — `generateWeeklyReport/openWeeklyReportModal/closeWeeklyReportModal` (work.js). `<dialog id="weeklyReportModal">` + work 탭 '📊 주간 리포트' 버튼.
+- **F8 마감 컬러/알림 강화** — `getDeadlineClass(endDate)` → overdue/today/urgent/soon (dashboard.js). 캘린더 바 + dashDayModal 행 적용. checkPlanAlerts/checkEventAlerts에 D-1/D-day/overdue 알림 추가. CSS `.deadline-*` !important.
+- **F9 편집 잠금** — `acquireEditLock/releaseEditLock/getEditLockInfo` (core.js, 5분 timeout, localStorage `lemango_edit_locks_v1`). toggleDetailEdit/togglePlanDetailEdit/toggleEventEdit 진입 시 체크 → 타인 편집 중이면 토스트 + return. 저장/취소/닫기 시 release.
+- **F11 고정 메모** — product/plan에 `pinnedMemo`. `buildPinnedMemoHtml(item)` 노란 노트, 상세모달 최상단. 보기/수정 토글 CSS `.pinned-memo/.pinned-memo-edit` !important.
+
+수정 파일: core.js, modals.js, plan.js, event.js, work.js, register.js, stock.js, gonghom.js, sabangnet.js, dashboard.js, comments.js, utils.js, main.js, index.html, style.css. 전체 `node -c` 검증 통과.
 
 ---
 

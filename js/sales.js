@@ -97,6 +97,10 @@ function searchSales() {
   })
   State.sales.page = 1
   State.sales.filtered = sortData(result, State.sales.sort.key, State.sales.sort.dir)
+  saveFilterDefault('sales', {
+    slKeyword: document.getElementById('slKeyword').value,
+    slDateFrom: dateFrom, slDateTo: dateTo, slPlatform: platform
+  })
   renderSalesTable()
 }
 
@@ -117,6 +121,7 @@ function resetSales() {
 function changeSalesPageSize(val) {
   State.sales.pageSize = parseInt(val) || 0
   State.sales.page = 1
+  saveTableCustom('sales')
   renderSalesTable()
 }
 
@@ -124,6 +129,7 @@ function changeSalesPageSize(val) {
 function removeSalesPlatform(pl) {
   State.sales.activePlatforms = State.sales.activePlatforms.filter(x => x !== pl)
   State.sales.inactivePlatforms.push(pl)
+  saveTableCustom('sales')
   renderSalesTable()
 }
 
@@ -134,6 +140,7 @@ function activateSalesPlatform(pl, insertIdx) {
   } else {
     State.sales.activePlatforms.splice(insertIdx, 0, pl)
   }
+  saveTableCustom('sales')
   renderSalesTable()
 }
 
@@ -144,6 +151,7 @@ function reorderSalesPlatform(fromPl, toIdx) {
   arr.splice(fromIdx, 1)
   const insertAt = toIdx > fromIdx ? toIdx - 1 : toIdx
   arr.splice(insertAt < 0 ? 0 : insertAt, 0, fromPl)
+  saveTableCustom('sales')
   renderSalesTable()
 }
 
@@ -195,6 +203,7 @@ function renderInactiveArea() {
 // ===== 메인 렌더 =====
 function renderSalesTable() {
   initSalesPlatforms()
+  applyTableCustom('sales')
   renderInactiveArea()
 
   const data = applyColFilters(State.sales.filtered, State.sales.columnFilters)
@@ -279,6 +288,7 @@ function renderSalesTable() {
     </table>`
 
   initTableFeatures('salesTable', 'sales', 'renderSalesTable')
+  applyColWidthsToHeader('salesTable', 'sales')
   if (ps > 0) {
     renderPagination('slPagination', 'sales', 'renderSalesTable')
   } else {

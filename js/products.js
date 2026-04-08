@@ -82,12 +82,18 @@ function searchProduct() {
   })
   State.product.page = 1
   State.product.filtered = sortData(result, State.product.sort.key, State.product.sort.dir)
+  saveFilterDefault('product', {
+    pKeyword: raw, pSearchField: field, pDateType: dateType, pDateFrom: dateFrom, pDateTo: dateTo,
+    pBrand: brand, pGender: gender, pType: type, pLegCut: legCut,
+    pSaleStatus: document.getElementById('pSaleStatus').value
+  })
   renderProductTable()
 }
 
 function changeProductPageSize(val) {
   State.product.pageSize = parseInt(val) || 0
   State.product.page = 1
+  saveTableCustom('product')
   renderProductTable()
 }
 
@@ -110,18 +116,35 @@ function resetProduct() {
   renderProductTable()
 }
 
+function getProductThumbUrl(p) {
+  const real = getThumbUrl(p)
+  if (real) return { url: real, isTemp: false }
+  if (p?.tempImages && p.tempImages.length) return { url: p.tempImages[0].url, isTemp: true }
+  return { url: PLACEHOLDER_IMG, isTemp: false }
+}
+window.getProductThumbUrl = getProductThumbUrl
+
 // 상품조회 컬럼 정의
 const PRODUCT_COLUMNS = [
+  { key:'_check',     label:'<input type="checkbox" onchange="toggleAllProdCheck(this)">', fixed:true, thAttr:'data-no-sort data-no-filter style="width:36px;text-align:center"',
+    td:p=>`<td style="text-align:center"><input type="checkbox" class="prod-check" data-code="${p.productCode}" onclick="event.stopPropagation()"></td>` },
   { key:'no',         label:'No.',       fixed:false, thAttr:'data-key="no" data-no-filter style="width:45px;text-align:center"', td:p=>`<td style="text-align:center">${p.no}</td>` },
-  { key:'_image',     label:'이미지',    fixed:true,  thAttr:'data-no-sort data-no-filter style="width:60px"', td:p=>`<td>${renderThumb(p)}</td>` },
+  { key:'_image',     label:'이미지',    fixed:true,  thAttr:'data-no-sort data-no-filter style="width:60px"', td:p=>{
+    const t = getProductThumbUrl(p)
+    const all = getAllImages(p)
+    const allJson = JSON.stringify(all).replace(/"/g, '&quot;')
+    const cls = t.isTemp ? 'table-thumb table-thumb-temp' : 'table-thumb'
+    const tag = t.isTemp ? '<span class="table-thumb-tag">임시</span>' : ''
+    return `<td><div class="${cls}"><img src="${t.url}" class="thumb" loading="lazy" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'" onclick='openModal(0, ${allJson})' />${tag}</div></td>`
+  } },
   { key:'brand',      label:'브랜드',    fixed:false, thAttr:'data-key="brand"', td:p=>`<td><span style="font-size:12px">${p.brand}</span></td>` },
   { key:'productCode',label:'품번',      fixed:true,  thAttr:'data-key="productCode" style="width:145px"', td:p=>`<td><span class="code-link" onclick="openDetailModal('${p.productCode}')">${p.productCode}</span></td>` },
-  { key:'nameKr',     label:'상품명',    fixed:false, thAttr:'data-key="nameKr"', td:p=>`<td style="max-width:160px;overflow:hidden;text-overflow:ellipsis" title="${p.nameKr}">${p.nameKr}</td>` },
+  { key:'nameKr',     label:'상품명',    fixed:false, thAttr:'data-key="nameKr"', td:p=>`<td data-editable="nameKr" style="max-width:160px;overflow:hidden;text-overflow:ellipsis" title="${p.nameKr}">${p.nameKr}</td>` },
   { key:'colorKr',    label:'색상',      fixed:false, thAttr:'data-key="colorKr"', td:p=>`<td>${p.colorKr||'-'}</td>` },
-  { key:'salePrice',  label:'판매가',    fixed:false, thAttr:'data-key="salePrice" style="text-align:right"', td:p=>`<td style="text-align:right"><span class="price">${fmtPrice(p.salePrice)}</span></td>` },
-  { key:'costPrice',  label:'원가',      fixed:false, thAttr:'data-key="costPrice" style="text-align:right"', td:p=>`<td style="text-align:right"><span class="price">${fmtPrice(p.costPrice)}</span></td>` },
-  { key:'type',       label:'타입',      fixed:false, thAttr:'data-key="type"', td:p=>`<td>${typeBadge(p.type)}</td>` },
-  { key:'productionStatus', label:'생산상태', fixed:false, thAttr:'data-key="productionStatus" style="width:80px"', td:p=>`<td>${prodStatusBadge(p.productionStatus)}</td>` },
+  { key:'salePrice',  label:'판매가',    fixed:false, thAttr:'data-key="salePrice" style="text-align:right"', td:p=>`<td data-editable="salePrice" style="text-align:right"><span class="price">${fmtPrice(p.salePrice)}</span></td>` },
+  { key:'costPrice',  label:'원가',      fixed:false, thAttr:'data-key="costPrice" style="text-align:right"', td:p=>`<td data-editable="costPrice" style="text-align:right"><span class="price">${fmtPrice(p.costPrice)}</span></td>` },
+  { key:'type',       label:'타입',      fixed:false, thAttr:'data-key="type"', td:p=>`<td data-editable="type">${typeBadge(p.type)}</td>` },
+  { key:'productionStatus', label:'생산상태', fixed:false, thAttr:'data-key="productionStatus" style="width:80px"', td:p=>`<td data-editable="saleStatus">${prodStatusBadge(p.productionStatus)}</td>` },
   { key:'backStyle',  label:'백스타일',  fixed:false, thAttr:'data-key="backStyle"', td:p=>`<td style="font-size:12px;max-width:120px;overflow:hidden;text-overflow:ellipsis">${p.backStyle||'-'}</td>` },
   { key:'legCut',     label:'레그컷',    fixed:false, thAttr:'data-key="legCut"', td:p=>`<td style="font-size:12px">${p.legCut||'-'}</td>` },
   { key:'madeMonth',  label:'제조년월',  fixed:false, thAttr:'data-key="madeMonth"', td:p=>`<td style="font-size:12px">${p.madeMonth||'-'}</td>` },
@@ -134,8 +157,17 @@ const PRODUCT_COLUMNS = [
 const PRODUCT_FIXED_KEYS = PRODUCT_COLUMNS.filter(c=>c.fixed).map(c=>c.key)
 
 function renderProductTable() {
+  const _favArea = document.getElementById('productFavArea')
+  if (_favArea && typeof renderFavoritesBar === 'function') _favArea.innerHTML = renderFavoritesBar('product')
   const allKeys = PRODUCT_COLUMNS.map(c=>c.key)
   initColumnState('product', allKeys)
+  applyTableCustom('product')
+  // re-sync newly added columns after restore
+  allKeys.forEach(k => {
+    if (!State.product.activeColumns.includes(k) && !State.product.inactiveColumns.includes(k)) State.product.activeColumns.push(k)
+  })
+  State.product.activeColumns = State.product.activeColumns.filter(k => allKeys.includes(k))
+  State.product.inactiveColumns = State.product.inactiveColumns.filter(k => allKeys.includes(k))
   renderColInactiveArea('pInactiveArea','pInactiveTags','product',PRODUCT_COLUMNS,PRODUCT_FIXED_KEYS,'renderProductTable')
 
   const data = applyColFilters(State.product.filtered, State.product.columnFilters)
@@ -155,7 +187,7 @@ function renderProductTable() {
   const totSales = data.reduce((s,p) => s + getTotalSales(p), 0)
 
   const thHtml = activeCols.map(c => `<th ${c.thAttr} data-col-key="${c.key}">${c.label}</th>`).join('')
-  const tbodyHtml = pageData.map(p => `<tr>${activeCols.map(c => c.td(p)).join('')}</tr>`).join('')
+  const tbodyHtml = pageData.map(p => `<tr data-code="${p.productCode}">${activeCols.map(c => c.td(p)).join('')}</tr>`).join('')
 
   // tfoot: 합계 행
   const tfootCols = activeCols.map(c => {
@@ -186,5 +218,18 @@ function renderProductTable() {
 
   initTableFeatures('productTable', 'product', 'renderProductTable')
   bindColumnDragDrop('productTable', 'product', PRODUCT_FIXED_KEYS, 'renderProductTable')
+  applyColWidthsToHeader('productTable', 'product')
   renderPagination('pPagination', 'product', 'renderProductTable')
+  // Feature 6: inline edit
+  initInlineEdit('productTable', 'product')
+  // Feature 12: row double-click → detail
+  initRowDblClick('productTable', (tr) => {
+    const code = tr.getAttribute('data-code')
+    if (code) openDetailModal(code)
+  })
 }
+
+function toggleAllProdCheck(cb) {
+  document.querySelectorAll('#productTable .prod-check').forEach(el => { el.checked = cb.checked })
+}
+window.toggleAllProdCheck = toggleAllProdCheck

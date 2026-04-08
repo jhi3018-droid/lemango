@@ -4,13 +4,70 @@
 function renderDashboard() {
   renderDashNotice()
   renderDashActivity()
+  if (typeof renderFavoritesList === 'function') renderFavoritesList()
   renderBestList()
   renderSalesSummary()
   renderMiniChart()
   renderDashCalendar()
   checkEventAlerts()
   checkPlanAlerts()
+  try { buildDailyTeamSummary() } catch(e) { console.warn(e) }
 }
+
+/* ===== Feature 3: Daily Team Summary ===== */
+function buildDailyTeamSummary() {
+  const area = document.getElementById('dailySummaryArea')
+  if (!area) return
+  let logs = []
+  try {
+    if (Array.isArray(window._activityLog)) logs = window._activityLog
+    else if (State.activityLog && Array.isArray(State.activityLog.all)) logs = State.activityLog.all
+    else {
+      const raw = localStorage.getItem('lemango_activity_log_v1')
+      if (raw) logs = JSON.parse(raw)
+    }
+  } catch(e) { logs = [] }
+  if (!Array.isArray(logs)) logs = []
+  const today = new Date().toISOString().slice(0, 10)
+  const todayLogs = logs.filter(l => {
+    const ts = l.timestamp || l.ts || l.createdAt || ''
+    const d = (ts && ts.toDate) ? ts.toDate().toISOString().slice(0,10) : String(ts).slice(0,10)
+    return d === today
+  })
+  const byUser = {}
+  todayLogs.forEach(l => {
+    const name = l.userName || l.user || '익명'
+    if (!byUser[name]) byUser[name] = {}
+    const act = l.action || '기타'
+    byUser[name][act] = (byUser[name][act] || 0) + 1
+  })
+  const names = Object.keys(byUser)
+  if (!names.length) {
+    area.innerHTML = `<div class="daily-summary"><div class="daily-summary-title">📊 오늘의 팀 활동</div><div class="daily-summary-user" style="color:#999">오늘 기록된 활동이 없습니다.</div></div>`
+    return
+  }
+  const rows = names.map(n => {
+    const acts = Object.entries(byUser[n]).map(([a,c]) => `<span class="daily-summary-action">${esc(a)} ${c}</span>`).join(' · ')
+    return `<div class="daily-summary-user"><strong>${esc(n)}</strong> ${acts}</div>`
+  }).join('')
+  area.innerHTML = `<div class="daily-summary"><div class="daily-summary-title">📊 오늘의 팀 활동 (${today})</div>${rows}</div>`
+}
+window.buildDailyTeamSummary = buildDailyTeamSummary
+
+/* ===== Feature 8: Deadline CSS class helper ===== */
+function getDeadlineClass(endDate) {
+  if (!endDate) return ''
+  const today = new Date(); today.setHours(0,0,0,0)
+  const end = new Date(endDate); end.setHours(0,0,0,0)
+  if (isNaN(end.getTime())) return ''
+  const diff = Math.round((end - today) / 86400000)
+  if (diff < 0) return 'deadline-overdue'
+  if (diff === 0) return 'deadline-today'
+  if (diff <= 2) return 'deadline-urgent'
+  if (diff <= 5) return 'deadline-soon'
+  return ''
+}
+window.getDeadlineClass = getDeadlineClass
 
 // ===== 알림 자동 생성: 행사일정 =====
 function checkEventAlerts() {
@@ -24,7 +81,9 @@ function checkEventAlerts() {
       addNotification('event_start', `행사 D-${days}: ${ev.name}`, `${ev.channel || ''} ${ev.startDate} 시작`, '#event')
     }
     // FIX: event_end D-3 알림 추가 (기존에는 당일만 체크, D-3 누락)
-    if (ev.endDate === today) {
+    if (ev.endDate < today) {
+      // 지난 행사는 알림 생성 생략 (노이즈 방지)
+    } else if (ev.endDate === today) {
       addNotification('event_end', `행사 종료: ${ev.name}`, `${ev.channel || ''} 오늘 종료`, '#event')
     } else if (ev.endDate > today && ev.endDate <= soon) {
       const days = Math.ceil((new Date(ev.endDate) - new Date(today)) / 86400000)
@@ -42,8 +101,10 @@ function checkPlanAlerts() {
     SCHEDULE_DEFS.forEach(def => {
       const sch = it.schedule[def.key]
       if (!sch || !sch.end) return
-      if (sch.end === today) {
-        addNotification('plan_deadline', `기획 마감: ${def.label}`, `${it.productCode || it.nameKr || ''} ${def.label} 오늘 마감`, '#plan')
+      if (sch.end < today) {
+        addNotification('plan_deadline', `기획 지연: ${def.label}`, `${it.productCode || it.nameKr || ''} ${def.label} ${sch.end} 지연`, '#plan')
+      } else if (sch.end === today) {
+        addNotification('plan_deadline', `기획 D-Day: ${def.label}`, `${it.productCode || it.nameKr || ''} ${def.label} 오늘 마감`, '#plan')
       } else if (sch.end > today && sch.end <= soon) {
         const days = Math.ceil((new Date(sch.end) - new Date(today)) / 86400000)
         addNotification('plan_deadline', `기획 D-${days}: ${def.label}`, `${it.productCode || it.nameKr || ''} ${def.label} ${sch.end} 마감`, '#plan')
@@ -414,10 +475,11 @@ function renderDashCalendar() {
       const isVacation = w.category === '연차' || w.category === '반차'
       const authorSuffix = (isVacation && w.createdByName) ? ' ' + (typeof formatUserName === 'function' ? formatUserName(w.createdByName, w.createdByPosition) : w.createdByName) : ''
       const label = `${timePrefix}${w.category} ${w.title || ''}${authorSuffix}`.trim()
+      const wDlc = (typeof getDeadlineClass === 'function') ? getDeadlineClass(w.endDate) : ''
       if (isPast) {
-        html += `<div class="dcal-bar dcal-bar-mini" style="background:${wColor.bg};" title="${esc(label)}" onclick="openWorkDetailModal(${w.no}, true)"></div>`
+        html += `<div class="dcal-bar dcal-bar-mini ${wDlc}" style="background:${wColor.bg};" title="${esc(label)}" onclick="openWorkDetailModal(${w.no}, true)"></div>`
       } else {
-        html += `<div class="dcal-bar dcal-bar-work" style="background:${wColor.bg}; color:${wColor.text};" title="${esc(label)}" onclick="openWorkDetailModal(${w.no}, true)">${esc(label)}</div>`
+        html += `<div class="dcal-bar dcal-bar-work ${wDlc}" style="background:${wColor.bg}; color:${wColor.text};" title="${esc(label)}" onclick="openWorkDetailModal(${w.no}, true)">${esc(label)}</div>`
       }
     })
 
@@ -427,10 +489,11 @@ function renderDashCalendar() {
       visibleCount++
       const color = EV_COLORS[ev.no % EV_COLORS.length]
       const label = esc(`${ev.channel || ''} ${ev.name}`.trim())
+      const evDlc = (typeof getDeadlineClass === 'function') ? getDeadlineClass(ev.endDate) : ''
       if (isPast) {
-        html += `<div class="dcal-bar dcal-bar-mini" style="background:${color.bar};" title="${label}" onclick="openDashEventInfo(${ev.no})"></div>`
+        html += `<div class="dcal-bar dcal-bar-mini ${evDlc}" style="background:${color.bar};" title="${label}" onclick="openDashEventInfo(${ev.no})"></div>`
       } else {
-        html += `<div class="dcal-bar dcal-bar-ev" style="background:${color.bar}; color:${color.text};" title="${label} (${ev.startDate}~${ev.endDate})" onclick="openDashEventInfo(${ev.no})">${label}</div>`
+        html += `<div class="dcal-bar dcal-bar-ev ${evDlc}" style="background:${color.bar}; color:${color.text};" title="${label} (${ev.startDate}~${ev.endDate})" onclick="openDashEventInfo(${ev.no})">${label}</div>`
       }
     })
 
@@ -447,10 +510,11 @@ function renderDashCalendar() {
       const barLabel = p.phaseLabel
       const identifier = p.item.productCode || p.item.sampleNo || ''
       const tooltip = `${identifier} ${p.phaseLabel} ${p.phase.start || ''}~${p.phase.end || ''}`
+      const pDlc = (typeof getDeadlineClass === 'function') ? getDeadlineClass(p.phase && p.phase.end) : ''
       if (isPast) {
-        html += `<div class="dcal-bar dcal-bar-mini" style="background:${phaseColor.bar};" title="${esc(tooltip)}" onclick="openPlanScheduleForDate('${cell.date}')"></div>`
+        html += `<div class="dcal-bar dcal-bar-mini ${pDlc}" style="background:${phaseColor.bar};" title="${esc(tooltip)}" onclick="openPlanScheduleForDate('${cell.date}')"></div>`
       } else {
-        html += `<div class="dcal-bar dcal-bar-plan" style="background:${phaseColor.bar}; color:${phaseColor.text};" title="${esc(tooltip)}" onclick="openPlanScheduleForDate('${cell.date}')">${esc(barLabel)}</div>`
+        html += `<div class="dcal-bar dcal-bar-plan ${pDlc}" style="background:${phaseColor.bar}; color:${phaseColor.text};" title="${esc(tooltip)}" onclick="openPlanScheduleForDate('${cell.date}')">${esc(barLabel)}</div>`
       }
     })
 

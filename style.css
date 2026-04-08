@@ -1327,7 +1327,12 @@ body.col-resize-active * { cursor: col-resize !important; }
   font-size: 11px; padding: 2px 8px; border-radius: 4px;
   background: rgba(201,169,110,0.2); color: #c9a96e; font-weight: 500;
 }
-.srm-header-actions { display: flex; align-items: center; gap: 8px; }
+.srm-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.srm-header-actions .btn,
+.srm-header-actions .srm-btn-gold,
+.srm-header-actions .srm-btn-outline,
+.srm-header-actions .srm-btn-danger { white-space: nowrap; flex-shrink: 0; }
+.srm-title, .srm-header-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .srm-header .modal-close, .srm-modal-header .modal-close { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); position: static; transform: none; width: 28px; height: 28px; border-radius: 6px; border: none; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .srm-header .modal-close:hover, .srm-modal-header .modal-close:hover { background: rgba(255,255,255,0.2); color: #fff; }
 
@@ -1386,9 +1391,9 @@ body.col-resize-active * { cursor: col-resize !important; }
 .srm-modal-footer { padding: 12px 22px; border-top: 0.5px solid #f0efe9; display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0; }
 
 /* dview/dedit 토글 (srm-modal 공통) */
-.srm-modal .dedit { display: none; }
-.srm-modal.edit-mode .dview { display: none; }
-.srm-modal.edit-mode .dedit { display: block; }
+.srm-modal .dedit { display: none !important; }
+.srm-modal.edit-mode .dview { display: none !important; }
+.srm-modal.edit-mode .dedit { display: block !important; }
 .srm-body { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; }
 .srm-body::-webkit-scrollbar { width: 5px; }
 .srm-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -1903,7 +1908,9 @@ body.col-resize-active * { cursor: col-resize !important; }
 /* .btn-accent 는 기존 공통 버튼 스타일(254번줄)에서 이미 정의 */
 
 /* 신규등록 헤더 버튼 */
-.rmodal-header-actions { display: flex; align-items: center; gap: 8px; }
+.rmodal-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.rmodal-header-actions .btn { white-space: nowrap; flex-shrink: 0; }
+.rmodal-header-actions .modal-close { margin-left: 8px; }
 .rmodal-btn-sm { padding: 6px 12px !important; font-size: 12px !important; }
 
 /* ===== 업로드 미리보기 모달 ===== */
@@ -2377,6 +2384,12 @@ body.col-resize-active * { cursor: col-resize !important; }
 .plan-detail-modal.edit-mode .pst-view { display: none; }
 .plan-detail-modal.edit-mode .pst-edit { display: block; }
 
+/* 기획 상세 — 임시 이미지 편집 액션 */
+.plan-edit-img-actions { display: none; gap: 8px; margin-top: 10px; }
+#planDetailModal.edit-mode .plan-edit-img-actions { display: flex !important; }
+#planDetailModal .temp-del-btn { display: none !important; }
+#planDetailModal.edit-mode .plan-img-thumb:hover .temp-del-btn { display: flex !important; }
+
 /* ===== 설정 탭 ===== */
 .settings-page {
   padding: 24px;
@@ -2525,15 +2538,7 @@ body.col-resize-active * { cursor: col-resize !important; }
   opacity: 0;
   transition: opacity 0.15s, background 0.15s;
 }
-.set-item:hover .set-item-action,
-.plan-phase-item .set-item-action { opacity: 1; }
-.plan-phase-item .set-item-action {
-  color: #5f5e5a;
-  border: 1px solid #d3d1c7;
-  padding: 3px 8px;
-  font-size: 12px;
-}
-.plan-phase-item .set-item-del { color: #A32D2D; border-color: #F09595; }
+.set-item:hover .set-item-action { opacity: 1; }
 .set-item-edit:hover { background: var(--accent); color: white; border-color: var(--accent); }
 .set-item-del:hover  { background: var(--danger); color: white; border-color: var(--danger); }
 .set-edit-input {
@@ -2753,7 +2758,7 @@ body.col-resize-active * { cursor: col-resize !important; }
 
 /* 날짜 셀 — 최소 3줄(~80px), 내용만큼 자동 늘어남 */
 .evcal-cell {
-  min-height: 80px;
+  min-height: 160px;
   border-right: 1px solid var(--border-light);
   border-bottom: 1px solid var(--border-light);
   padding: 2px;
@@ -3863,8 +3868,10 @@ body.col-resize-active * { cursor: col-resize !important; }
 .ev-comment-area { margin-top:12px; border-top:1px solid var(--border); padding-top:12px; }
 /* 헤더 버튼 — 모드별 표시 */
 .ev-view-btn, .ev-edit-btn, .ev-new-btn { display:none; }
-.srm-header-btns { display:flex; align-items:center; gap:6px; }
-.srm-header-btns .btn { padding:4px 12px; font-size:12px; border-radius:4px; cursor:pointer; }
+.srm-header-btns { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.srm-header-btns + .modal-close,
+.srm-header-btns + .srm-btn-close { margin-left:8px; }
+.srm-header-btns .btn { padding:6px 14px; font-size:12px; border-radius:6px; cursor:pointer; white-space:nowrap; flex-shrink:0; }
 .srm-header-btns .btn-primary { background:var(--accent); color:#fff; border:none; }
 .srm-header-btns .btn-primary:hover { opacity:0.85; }
 .srm-header-btns .btn-outline { background:transparent; color:rgba(255,255,255,0.8); border:1px solid rgba(255,255,255,0.3); }
@@ -4040,12 +4047,6 @@ body.col-resize-active * { cursor: col-resize !important; }
 }
 
 
-/* 기획 일정 단계 설정 카드 */
-.plan-phase-item { display:flex; align-items:center; padding:8px 12px; border-bottom:0.5px solid var(--border) }
-.plan-phase-item:last-child { border-bottom:none }
-.plan-phase-item .set-item-view { padding:0 }
-.plan-phase-dot { box-shadow:0 0 0 1px rgba(0,0,0,0.1) }
-
 /* 대시보드 기획일정 모달 (openPlanScheduleForDate) — 컴팩트 카드형 */
 .ps-phase-table-header { display:flex; align-items:center; padding:2px 10px; margin-bottom:2px; }
 .ps-phase-table-header span { font-size:13px; color:#b4b2a9; font-weight:500; }
@@ -4085,3 +4086,224 @@ body.col-resize-active * { cursor: col-resize !important; }
 .mention-item-active { background:#f0efe9 !important; color:#1a1a2e; font-weight:500; }
 .mention-icon { font-size:11px; color:#888780; width:14px; text-align:center; }
 .mention-vis { font-size:11px; color:#888; margin-top:6px; }
+
+.img-html-btn { padding:1px 6px; border-radius:3px; font-size:9px; border:1px solid #c9a96e; background:transparent; color:#c9a96e; cursor:pointer; margin-left:8px; font-weight:500; vertical-align:middle; }
+.img-html-btn:hover { background:#c9a96e; color:#fff; }
+.img-html-btn-all { padding:2px 8px; border-radius:4px; font-size:10px; border:1px solid #c9a96e; background:transparent; color:#c9a96e; cursor:pointer; margin-left:8px; font-weight:500; }
+.img-html-btn-all:hover { background:#c9a96e; color:#fff; }
+
+/* Table layout reset button */
+.table-reset-btn { font-size:10px; color:#b4b2a9; background:none; border:none; cursor:pointer; text-decoration:underline; padding:0 4px; margin-left:8px; }
+.table-reset-btn:hover { color:#5f5e5a; }
+
+/* Plan image upload section */
+.plan-img-actions { display:flex; gap:8px; margin-bottom:12px; }
+.plan-img-btn { padding:6px 14px; border:1px solid #c9a96e; background:#c9a96e; color:#fff; border-radius:4px; cursor:pointer; font-size:12px; font-weight:500; }
+.plan-img-btn:hover { background:#b8985d; border-color:#b8985d; }
+.plan-img-upload-label { display:inline-flex; align-items:center; cursor:pointer; }
+.plan-img-grid { display:flex; flex-wrap:wrap; gap:8px; min-height:90px; padding:8px; border:1px dashed #ddd; border-radius:4px; }
+.plan-img-thumb { position:relative; width:80px; height:80px; border:1px solid #e0e0e0; border-radius:4px; overflow:hidden; background:#f5f5f5; }
+.plan-img-thumb img { width:100%; height:100%; object-fit:cover; cursor:pointer; display:block; }
+.plan-img-thumb-name { position:absolute; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); color:#fff; font-size:9px; padding:2px 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.plan-img-thumb-x { position:absolute; top:2px; right:2px; width:18px; height:18px; border-radius:50%; background:rgba(224,82,82,0.9); color:#fff; border:none; font-size:10px; cursor:pointer; display:none; align-items:center; justify-content:center; padding:0; line-height:1; }
+.plan-img-thumb:hover .plan-img-thumb-x { display:flex; }
+
+/* ===== Plan images: temp vs product split ===== */
+.plan-img-badge { display:inline-block; font-size:10px; padding:2px 8px; border-radius:10px; margin-left:8px; font-weight:500; vertical-align:middle; }
+.plan-img-badge-temp { background:#fff3e0; color:#e65100; border:1px solid #ffcc80; }
+.plan-img-badge-prod { background:#e8f5e9; color:#1b5e20; border:1px solid #a5d6a7; }
+.plan-img-desc { font-size:11px; color:var(--text-muted); margin:0 0 8px; padding:0 2px; }
+.plan-img-thumb-temp { border:2px dashed #ff9800 !important; background:#fff8e1 !important; }
+.plan-img-thumb-tag-temp { position:absolute; top:2px; left:2px; background:#ff9800; color:#fff; font-size:8px; padding:1px 5px; border-radius:3px; z-index:2; font-weight:600; }
+.temp-img-bar { display:flex; align-items:center; justify-content:space-between; background:#fff3e0; border:1px solid #ffcc80; border-radius:4px; padding:8px 12px; margin-bottom:10px; }
+.temp-img-bar-text { font-size:12px; color:#e65100; font-weight:500; }
+.temp-img-del-all { background:#e05252; color:#fff; border:none; border-radius:3px; padding:4px 12px; font-size:11px; cursor:pointer; font-weight:500; }
+.temp-img-del-all:hover { background:#c73e3e; }
+.detail-modal .temp-del-btn { display:none !important; }
+.detail-modal.edit-mode .plan-img-thumb:hover .temp-del-btn { display:flex !important; }
+.plan-table-thumb { position:relative; display:inline-block; width:48px; height:48px; }
+.plan-table-thumb img { width:100%; height:100%; object-fit:cover; border-radius:3px; }
+.plan-table-thumb-temp { border:2px dashed #ff9800; border-radius:4px; }
+.plan-table-thumb-tag { position:absolute; bottom:0; left:0; right:0; background:rgba(255,152,0,0.9); color:#fff; font-size:8px; text-align:center; padding:1px 0; font-weight:600; }
+.table-thumb { position:relative; display:inline-block; }
+.table-thumb-temp { border:2px dashed #ff9800; border-radius:4px; padding:1px; }
+.table-thumb-tag { position:absolute; bottom:0; left:0; right:0; background:rgba(255,152,0,0.9); color:#fff; font-size:8px; text-align:center; padding:1px 0; font-weight:600; pointer-events:none; }
+
+
+/* ===== Feature 1: Global Search ===== */
+.gsearch-wrap { position:relative; margin-right:12px; }
+.gsearch-input { width:280px; padding:6px 12px; border-radius:18px; border:1px solid rgba(255,255,255,0.3); background:rgba(255,255,255,0.1); color:#fff; font-size:13px; outline:none; }
+.gsearch-input::placeholder { color:rgba(255,255,255,0.6); }
+.gsearch-input:focus { background:rgba(255,255,255,0.18); border-color:var(--accent); }
+.gsearch-dropdown { position:absolute; top:calc(100% + 6px); left:0; right:0; background:#fff; color:#222; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.2); max-height:420px; overflow-y:auto; z-index:9000; min-width:320px; }
+.gsearch-empty { padding:14px; text-align:center; color:#888; font-size:13px; }
+.gsearch-item { display:flex; align-items:center; gap:10px; padding:9px 12px; cursor:pointer; border-bottom:1px solid #f0f0f0; }
+.gsearch-item:hover, .gsearch-item.gsearch-active { background:#f5f4f1; }
+.gsearch-icon { font-size:16px; }
+.gsearch-body { display:flex; flex-direction:column; min-width:0; flex:1; }
+.gsearch-title { font-size:13px; font-weight:600; color:#222; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.gsearch-sub { font-size:11px; color:#888; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* ===== Feature 3: Favorites ===== */
+.fav-star { background:none; border:none; font-size:20px; cursor:pointer; color:#bbb; padding:2px 6px; line-height:1; transition:color 0.15s, transform 0.15s; }
+.fav-star:hover { transform:scale(1.15); color:#f5b400; }
+.fav-star.fav-on { color:#f5b400; }
+.fav-star-inline { color:#bbb; font-size:13px; }
+.fav-star-inline.fav-on { color:#f5b400; }
+.fav-bar { margin: 8px 0 12px; }
+.fav-bar-title { font-size:12px; font-weight:500; color:#c9a96e; margin-bottom:6px; }
+.fav-bar-list { display:flex; flex-wrap:wrap; gap:6px; }
+.fav-bar-item { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border-radius:6px; background:#faf9f7; border:0.5px solid #f0efe9; cursor:pointer; font-size:11px; white-space:nowrap; color:#1a1a2e; }
+.fav-bar-item:hover { border-color:#c9a96e; background:#FAEEDA; }
+.fav-bar-icon { font-size:12px; }
+.fav-bar-x { margin-left:4px; color:#aaa; font-size:10px; padding:0 2px; }
+.fav-bar-x:hover { color:#e05252; }
+
+/* ===== Feature 13: Modal back navigation ===== */
+.modal-back-btn { background:none; border:1px solid #ddd; border-radius:6px; padding:4px 10px; font-size:14px; cursor:pointer; color:#444; margin-right:6px; }
+.modal-back-btn:hover { background:#f0f0f0; border-color:#bbb; }
+
+/* ===== Feature 5: Plan row drag sort ===== */
+#planTable tbody tr { cursor: move; }
+#planTable tbody tr.drag-row { opacity: 0.4; }
+#planTable tbody tr.drag-over { border-top: 2px solid #c9a96e !important; }
+
+/* ===== Feature 6: Inline cell edit ===== */
+td[data-editable] { cursor: cell; }
+td[data-editable]:hover { background: #FAEEDA; }
+.inline-edit-input {
+  width: 100%; box-sizing: border-box;
+  padding: 3px 6px; font-size: 13px;
+  border: 2px solid var(--accent, #c9a96e);
+  border-radius: 4px; outline: none;
+  background: #fff; font-family: inherit;
+}
+.inline-edit-input:focus { box-shadow: 0 0 0 2px rgba(201,169,110,0.25); }
+
+/* ===== Feature 8: Product compare modal ===== */
+#compareModal { width: min(960px, 96vw); max-width: 960px; }
+.compare-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.compare-table th, .compare-table td {
+  border: 1px solid #e0e0e0; padding: 8px 10px; text-align: left; vertical-align: middle;
+}
+.compare-table thead th.compare-th {
+  background: var(--primary, #1a1a2e); color: #fff; text-align: center; font-weight: 500;
+}
+.compare-table .compare-label {
+  background: #f5f4f1; font-weight: 600; width: 120px; color: #333;
+}
+.compare-thumb { width: 100px; height: 100px; margin: 0 auto 4px; background: #fafafa; border: 1px solid #eee; border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.compare-thumb img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.compare-code { font-family: Inter, monospace; font-size: 12px; color: #fff; }
+.compare-diff { background: #fff7d6 !important; font-weight: 600; color: #8a6d00; }
+
+/* ===== Feature 12: Row hover highlight ===== */
+.data-table tbody tr:hover { background: #FAF7F1; }
+#productTable tbody tr, #stockTable tbody tr { cursor: pointer; }
+.prod-check { cursor: pointer; }
+
+/* ===== Calendar view toggle (Feature 9) ===== */
+.cal-view-btns { display: inline-flex; gap: 4px; margin-left: 12px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.cal-view-btn { background: #fff; border: none; padding: 4px 12px; font-size: 12px; cursor: pointer; color: var(--text-main); }
+.cal-view-btn + .cal-view-btn { border-left: 1px solid var(--border); }
+.cal-view-btn:hover { background: #f5f4f1; }
+.cal-view-btn.active { background: var(--primary); color: #fff; }
+
+/* Week view */
+.week-view { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: #fff; }
+.week-header { display: grid; grid-template-columns: 60px repeat(7, 1fr); background: #f5f4f1; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 12px; }
+.week-day-header { padding: 8px 6px; text-align: center; border-left: 1px solid var(--border); }
+.week-day-header.week-today { background: #FFF4D9; color: var(--accent); }
+.week-row { display: grid; grid-template-columns: 60px repeat(7, 1fr); border-bottom: 1px solid #eee; min-height: 40px; }
+.week-row:last-child { border-bottom: none; }
+.week-row.week-allday { background: #fafaf8; min-height: 44px; }
+.week-time { padding: 6px 8px; font-size: 11px; color: #777; background: #fafaf8; border-right: 1px solid var(--border); text-align: right; }
+.week-cell { border-left: 1px solid #eee; padding: 3px; display: flex; flex-direction: column; gap: 2px; min-height: 40px; }
+
+/* Day view */
+.day-view { border: 1px solid var(--border); border-radius: 6px; background: #fff; overflow: hidden; }
+.day-title { padding: 10px 14px; background: var(--primary); color: #fff; font-weight: 700; font-size: 14px; }
+.day-row { display: grid; grid-template-columns: 80px 1fr; border-bottom: 1px solid #eee; min-height: 42px; }
+.day-row:last-child { border-bottom: none; }
+.day-time { padding: 8px 10px; font-size: 12px; color: #777; background: #fafaf8; border-right: 1px solid var(--border); text-align: right; }
+.day-content { padding: 6px 10px; display: flex; flex-direction: column; gap: 3px; }
+
+/* ===== Checklist (Feature 11) ===== */
+.checklist-section { margin-top: 12px; padding: 10px 12px; background: #fafaf8; border: 1px solid var(--border); border-radius: 6px; }
+.checklist-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--text-main); display: flex; align-items: center; gap: 8px; }
+.checklist-count { background: var(--accent); color: #fff; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 10px; }
+.checklist-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
+.checklist-item.checklist-done .checklist-text { text-decoration: line-through; color: #999; }
+.checklist-cb { width: 16px; height: 16px; cursor: pointer; flex-shrink: 0; }
+.checklist-text { flex: 1; min-width: 0; word-break: break-all; }
+.checklist-text-input { flex: 1; border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; font-size: 13px; }
+.checklist-edit, .checklist-save, .checklist-cancel { background: none; border: none; color: #999; cursor: pointer; font-size: 12px; padding: 2px 6px; }
+.checklist-edit:hover { color: var(--accent); }
+.checklist-save { color: var(--accent); font-weight: 600; }
+.checklist-cancel:hover { color: var(--danger); }
+.checklist-del { background: none; border: none; color: #999; cursor: pointer; font-size: 14px; padding: 2px 6px; }
+.checklist-del:hover { color: var(--danger); }
+.checklist-add { display: flex; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.checklist-add-input { flex: 1; border: 1px solid var(--border); border-radius: 4px; padding: 5px 8px; font-size: 13px; }
+.checklist-add-btn { background: var(--primary); color: #fff; border: none; border-radius: 4px; padding: 5px 12px; font-size: 12px; cursor: pointer; }
+.checklist-add-btn:hover { background: var(--accent); }
+
+/* ===== Feature 1: Product History ===== */
+.prod-history-section { margin-top: 16px; padding: 10px 12px; background: #fafaf8; border: 1px solid var(--border); border-radius: 6px; }
+.prod-history-section .phs-title { font-weight: 600; font-size: 12px; margin-bottom: 6px; color: var(--primary); }
+.prod-history-section .phs-list { max-height: 200px; overflow-y: auto; }
+.phs-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 11px; border-bottom: 1px dashed #eee; }
+.phs-item:last-child { border-bottom: none; }
+.phs-action { display: inline-block; padding: 1px 6px; background: var(--accent); color: #fff; border-radius: 3px; font-size: 10px; font-weight: 600; flex-shrink: 0; }
+.phs-detail { flex: 1; color: #333; }
+.phs-meta { color: #888; font-size: 10px; flex-shrink: 0; }
+.phs-empty { font-size: 11px; color: #999; padding: 4px 0; }
+
+/* ===== Feature 2: Watch Button ===== */
+.watch-btn { font-size: 13px !important; }
+.watch-btn.active { background: var(--accent) !important; color: #fff !important; border-color: var(--accent) !important; }
+
+/* ===== Feature 9: Edit Lock Warning ===== */
+.edit-lock-warn { color: var(--danger); font-size: 11px; margin: 0 6px; font-weight: 600; }
+
+/* ===== Feature 5: My Assigned Filter ===== */
+.filter-my-btn { background: #fff; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 6px 12px; font-size: 12px; cursor: pointer; margin-left: 4px; }
+.filter-my-btn:hover { background: var(--accent); color: #fff; }
+
+/* ===== Feature 11: Pinned Memo ===== */
+.pinned-memo { display: block !important; background: #fff8d6 !important; border-left: 3px solid #f0a500 !important; padding: 8px 12px !important; margin-bottom: 12px !important; font-size: 13px; color: #5d4a00; border-radius: 4px; }
+.pinned-memo:empty { display: none !important; }
+.pinned-memo-edit { display: none !important; }
+.pinned-memo-edit textarea { width: 100%; border: 1px solid #f0a500; border-radius: 4px; padding: 6px 10px; background: #fff8d6; font-size: 13px; font-family: inherit; resize: vertical; }
+.srm-modal.edit-mode .pinned-memo { display: none !important; }
+.srm-modal.edit-mode .pinned-memo-edit { display: block !important; margin-bottom: 12px; }
+.detail-modal.edit-mode .pinned-memo { display: none !important; }
+.detail-modal.edit-mode .pinned-memo-edit { display: block !important; margin-bottom: 12px; }
+.plan-detail-modal.edit-mode .pinned-memo { display: none !important; }
+.plan-detail-modal.edit-mode .pinned-memo-edit { display: block !important; margin-bottom: 12px; }
+
+/* ===== Feature 8: Deadline Classes ===== */
+.deadline-overdue { background: #ffcdd2 !important; color: #b71c1c !important; }
+.deadline-today { background: #ffe0b2 !important; color: #e65100 !important; }
+.deadline-urgent { background: #fff9c4 !important; }
+.deadline-soon { background: #f0f4c3 !important; }
+
+/* ===== Feature 3: Daily Team Summary ===== */
+.daily-summary { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; }
+.daily-summary-title { font-weight: 600; margin-bottom: 8px; font-size: 14px; color: var(--primary); }
+.daily-summary-user { display: inline-block; margin-right: 16px; margin-bottom: 4px; font-size: 12px; }
+.daily-summary-user strong { color: var(--accent); margin-right: 6px; }
+.daily-summary-action { color: #666; margin-right: 4px; }
+
+/* ===== Feature 6: Kanban Board ===== */
+.kanban-board { display: flex; gap: 12px; padding: 12px; }
+.kanban-col { flex: 1; background: #f5f4f1; border-radius: 8px; padding: 12px; min-height: 400px; }
+.kanban-col-title { font-weight: 600; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 2px solid var(--accent); }
+.kanban-card { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin-bottom: 8px; cursor: grab; }
+.kanban-card:hover { box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
+.kanban-card.dragging { opacity: 0.5; }
+
+/* ===== Feature 7: Weekly Report ===== */
+.weekly-report-section { margin-bottom: 16px; }
+.weekly-report-section h4 { font-weight: 600; margin-bottom: 8px; color: var(--accent); font-size: 13px; }
+.weekly-report-item { padding: 6px 10px; border-left: 3px solid var(--border); margin-bottom: 4px; font-size: 13px; background: #fafaf8; border-radius: 0 4px 4px 0; }

@@ -79,6 +79,16 @@ function cafe24Channel(shopName) {
   return (shopName === 'LEMANGO PARTNER') ? '파트너' : '공홈'
 }
 
+function extractCafe24Channels(rows) {
+  const set = new Set()
+  ;(rows || []).forEach(r => {
+    const shop = String(r[CAFE24.shopName] || '').trim()
+    if (!shop) return
+    set.add(cafe24Channel(shop))
+  })
+  return [...set]
+}
+
 // --- Existing order index for duplicate detection ---
 function _buildExistingOrderIndex() {
   const set = new Set()
@@ -154,7 +164,7 @@ function handleGonghomUpload(input) {
   if (!file) return
   const isCsv = /\.csv$/i.test(file.name)
   const reader = new FileReader()
-  reader.onload = e => {
+  reader.onload = async e => {
     const opts = isCsv
       ? { type: 'string', codepage: 65001 }
       : { type: 'array' }
@@ -163,6 +173,8 @@ function handleGonghomUpload(input) {
     const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
     const dataRows = raw.slice(1).filter(r => r[CAFE24.productCode] || r[CAFE24.orderNo])
     input.value = ''
+    const newCh = detectNewChannels(extractCafe24Channels(dataRows))
+    if (newCh.length) await promptNewChannels(newCh)
     showGonghomPreview(dataRows)
   }
   if (isCsv) reader.readAsText(file, 'UTF-8')
@@ -616,6 +628,7 @@ function confirmGonghomUpload() {
       })
       saleCnt++
     }
+    try { if (typeof addProductHistory === 'function') addProductHistory(r.p.productCode, '카페24매출', `${ch} ${r.qty}개 (주문 ${r.orderNo})`) } catch(e) {}
   })
 
   _closeCafe24Filter()

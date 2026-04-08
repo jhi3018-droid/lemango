@@ -22,19 +22,31 @@ const EV_COLORS = [
 ]
 
 /* ---------- 네비게이션 ---------- */
+let _evCursor = new Date()
 function evPrevMonth() {
-  _evMonth--
-  if (_evMonth < 0) { _evMonth = 11; _evYear-- }
+  const mode = (State && State.eventCalView) || 'month'
+  if (mode === 'week') { _evCursor = new Date(_evCursor); _evCursor.setDate(_evCursor.getDate() - 7) }
+  else if (mode === 'day') { _evCursor = new Date(_evCursor); _evCursor.setDate(_evCursor.getDate() - 1) }
+  else {
+    _evMonth--
+    if (_evMonth < 0) { _evMonth = 11; _evYear-- }
+  }
   renderEventCalendar()
 }
 function evNextMonth() {
-  _evMonth++
-  if (_evMonth > 11) { _evMonth = 0; _evYear++ }
+  const mode = (State && State.eventCalView) || 'month'
+  if (mode === 'week') { _evCursor = new Date(_evCursor); _evCursor.setDate(_evCursor.getDate() + 7) }
+  else if (mode === 'day') { _evCursor = new Date(_evCursor); _evCursor.setDate(_evCursor.getDate() + 1) }
+  else {
+    _evMonth++
+    if (_evMonth > 11) { _evMonth = 0; _evYear++ }
+  }
   renderEventCalendar()
 }
 function evToday() {
   _evYear  = new Date().getFullYear()
   _evMonth = new Date().getMonth()
+  _evCursor = new Date()
   renderEventCalendar()
 }
 
@@ -43,6 +55,31 @@ function renderEventCalendar() {
   const container = document.getElementById('evCalendar')
   const title     = document.getElementById('evMonthTitle')
   if (!container) return
+
+  // Inject view toggle buttons (once per render)
+  const header = container.parentElement?.querySelector('.evcal-header')
+  if (header) {
+    const old = header.querySelector('.cal-view-btns')
+    if (old) old.remove()
+    header.insertAdjacentHTML('beforeend', _calViewBtnsHtml('event', (State && State.eventCalView) || 'month'))
+  }
+
+  const mode = (State && State.eventCalView) || 'month'
+  if (mode === 'week') {
+    const start = getStartOfWeek(_evCursor)
+    const end = new Date(start); end.setDate(start.getDate() + 6)
+    title.textContent = `${start.getFullYear()}.${start.getMonth()+1}.${start.getDate()} ~ ${end.getMonth()+1}.${end.getDate()}`
+    title.classList.remove('cal-month-clickable'); title.onclick = null
+    container.innerHTML = renderWeekView('event', _evCursor)
+    return
+  }
+  if (mode === 'day') {
+    const d = new Date(_evCursor)
+    title.textContent = `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()}`
+    title.classList.remove('cal-month-clickable'); title.onclick = null
+    container.innerHTML = renderDayView('event', _evCursor)
+    return
+  }
 
   title.textContent = `${_evYear}년 ${_evMonth + 1}월`
   title.classList.add('cal-month-clickable')
@@ -69,7 +106,7 @@ function renderEventCalendar() {
   }
 
   // 이벤트 바 배치 (최대 10줄)
-  const MAX_ROWS = 10
+  const MAX_ROWS = 6
   const barRows  = placeEventBars(cells[0].date, cells[cells.length - 1].date, MAX_ROWS)
 
   // HTML
@@ -253,7 +290,16 @@ function openEventDetailModal(no, fromDash) {
   buildEventDetailContent(ev)
   modal.showModal()
   centerModal(modal)
+  _evSyncWatchBtn()
+  _evSyncLockWarn()
   loadComments('event', ev.no)
+  if (typeof pushModalHistory === 'function') pushModalHistory('event', ev.no)
+  const favBtn = document.getElementById('evFavBtn')
+  if (favBtn) {
+    const on = typeof isFavorite === 'function' && isFavorite('event', ev.no)
+    favBtn.textContent = on ? '★' : '☆'
+    favBtn.classList.toggle('fav-on', on)
+  }
 }
 
 /* ---------- 신규 등록 (빈 폼, 바로 편집 상태) ---------- */
@@ -309,10 +355,25 @@ function buildEventDetailContent(ev) {
   if (ev.memo) {
     html += `<div class="srm-divider"></div><div class="srm-memo-label">메모</div><div class="srm-memo-text">${esc(ev.memo)}</div>`
   }
+
+  // 이미지 (보기)
+  const imgs = (ev.tempImages || []).filter(i => i && i.url)
+  if (imgs.length) {
+    html += `<div class="srm-divider"></div><div class="srm-memo-label">이미지</div>`
+    html += `<div class="ev-img-grid-view" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">`
+    imgs.forEach(i => {
+      html += `<img src="${esc(i.url)}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #eee" onclick="window.open('${esc(i.url)}','_blank')">`
+    })
+    html += '</div>'
+  }
+
+  // 체크리스트 (보기)
+  html += `<div class="srm-divider"></div><div id="evChecklistViewArea">${buildEventChecklistHtml(ev.checklist || [], false)}</div>`
+
   html += '</div>'
 
   // ===== 수정 모드 (.dedit) =====
-  html += '<div class="dedit ev-detail-fields" style="display:none">'
+  html += '<div class="dedit ev-detail-fields">'
   html += `<div class="srm-field"><label class="srm-field-label">행사명</label><input type="text" id="evName" value="${esc(ev.name)}"></div>`
   html += `<div class="srm-field"><label class="srm-field-label">채널</label><input type="text" id="evChannel" value="${esc(ev.channel || '')}"></div>`
   html += `<div class="srm-field-row">
@@ -324,6 +385,23 @@ function buildEventDetailContent(ev) {
     <div class="srm-field"><label class="srm-field-label">당사지원 (%)</label><input type="number" id="evSupport" value="${ev.support || ''}" min="0" max="100"></div>
   </div>`
   html += `<div class="srm-field"><label class="srm-field-label">메모</label><textarea id="evMemo">${esc(ev.memo || '')}</textarea></div>`
+
+  // 이미지 (편집) — URL 추가 + 파일 업로드 + 썸네일 그리드
+  _evImages = (ev.tempImages || []).map(i => ({...i}))
+  html += `<div class="srm-field"><label class="srm-field-label">이미지</label>
+    <div style="flex:1">
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <input type="text" id="evImgUrlInput" placeholder="이미지 URL 입력 후 추가" style="flex:1;padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px">
+        <button type="button" class="btn btn-sm btn-outline" onclick="evAddImageUrl()">+ URL</button>
+        <label class="btn btn-sm btn-outline" style="margin:0;cursor:pointer">+ 파일<input type="file" multiple accept="image/*" style="display:none" onchange="evHandleImageUpload(this)"></label>
+      </div>
+      <div id="evImgGrid" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    </div></div>`
+
+  // 체크리스트 (편집)
+  html += `<div class="srm-field"><label class="srm-field-label">체크리스트</label>
+    <div id="evChecklistEditArea" style="flex:1">${buildEventChecklistHtml(ev.checklist || [], true)}</div></div>`
+
   html += '</div>'
 
   if (canDeleteEvent(ev)) {
@@ -371,20 +449,49 @@ function buildEventNewForm(dateStr) {
   body.innerHTML = html
 }
 
+function _evSyncWatchBtn() {
+  const btn = document.getElementById('evWatchBtn')
+  if (!btn || _editingEventNo == null) return
+  const on = typeof isWatching === 'function' && isWatching('event', _editingEventNo)
+  btn.textContent = on ? '👁 활성' : '👁'
+  btn.classList.toggle('active', on)
+}
+window._evSyncWatchBtn = _evSyncWatchBtn
+
+function _evSyncLockWarn() {
+  const el = document.getElementById('evLockWarn')
+  if (!el) return
+  const info = (typeof getEditLockInfo === 'function') ? getEditLockInfo('event', _editingEventNo) : null
+  if (info) { el.textContent = `🔒 ${info.userName || '다른 사용자'} 편집중`; el.style.display = '' }
+  else { el.textContent = ''; el.style.display = 'none' }
+}
+window._evSyncLockWarn = _evSyncLockWarn
+
 /* ---------- 수정 모드 토글 ---------- */
 function toggleEventEdit() {
   const modal = document.getElementById('eventRegisterModal')
   if (modal.classList.contains('edit-mode')) {
     // 취소 → 보기 모드 복원
+    try { if (typeof releaseEditLock === 'function') releaseEditLock('event', _editingEventNo) } catch(e) {}
     modal.classList.remove('edit-mode')
     _evUpdateHeaderBtns('view')
     const ev = _events.find(e => e.no === _editingEventNo)
     if (ev) buildEventDetailContent(ev)
     loadComments('event', _editingEventNo)
+    _evSyncLockWarn()
   } else {
     // 수정 모드 진입
+    const info = (typeof getEditLockInfo === 'function') ? getEditLockInfo('event', _editingEventNo) : null
+    if (info) {
+      showToast(`${info.userName || '다른 사용자'}님이 편집 중입니다`, 'warn')
+      _evSyncLockWarn()
+      return
+    }
+    if (typeof acquireEditLock === 'function') acquireEditLock('event', _editingEventNo)
     modal.classList.add('edit-mode')
     _evUpdateHeaderBtns('edit')
+    _evSyncLockWarn()
+    setTimeout(() => _evRenderImgGrid(), 0)
   }
 }
 
@@ -406,6 +513,8 @@ function saveEventEdit() {
   ev.discount = document.getElementById('evDiscount')?.value || ''
   ev.support = document.getElementById('evSupport')?.value || ''
   ev.memo = document.getElementById('evMemo')?.value.trim() || ''
+  ev.tempImages = (_evImages || []).map(i => ({...i}))
+  // checklist already mutated in-place via ev.checklist
 
   stampModified(ev)
   saveEvents()
@@ -414,6 +523,10 @@ function saveEventEdit() {
   renderDashCalendar()
   showToast('행사가 수정되었습니다.', 'success')
   logActivity('update', '행사일정', `행사수정: ${ev.name}`)
+  try {
+    if (typeof notifyWatchers === 'function') notifyWatchers('event', ev.no, '수정됨')
+    if (typeof releaseEditLock === 'function') releaseEditLock('event', ev.no)
+  } catch(e) {}
 }
 
 /* ---------- 신규 등록 저장 ---------- */
@@ -470,6 +583,7 @@ function goToEventEdit(no) {
     modal.showModal()
     centerModal(modal)
     loadComments('event', ev.no)
+    setTimeout(() => _evRenderImgGrid(), 0)
   }, 300)
 }
 
@@ -489,6 +603,7 @@ function canDeleteEvent(ev) {
 function closeEventRegisterModal(force) {
   const modal = document.getElementById('eventRegisterModal')
   if (!modal) return
+  try { if (typeof releaseEditLock === 'function' && _editingEventNo != null) releaseEditLock('event', _editingEventNo) } catch(e) {}
   if (force) { modal.close(); return }
   safeCloseModal(modal,
     () => modal.classList.contains('edit-mode'),
@@ -517,6 +632,169 @@ function submitEvent(e) { if (e) e.preventDefault() }
 /* ---------- 초기 렌더 ---------- */
 function renderEventTable() {
   renderEventCalendar()
+}
+
+/* ---------- 이벤트 체크리스트 ---------- */
+let _evChecklistDraft = []
+let _evImages = []
+
+function buildEventChecklistHtml(list, isEdit) {
+  list = list || []
+  const done = list.filter(c => c.done).length
+  const total = list.length
+  let html = '<div class="checklist-section">'
+  html += `<div class="checklist-title">체크리스트 <span class="checklist-count">${done}/${total}</span></div>`
+  list.forEach(c => {
+    const cid = esc(c.id)
+    const text = esc(c.text || '')
+    const rowStyle = 'display:flex !important;align-items:center;gap:6px;padding:5px 0;font-size:13px;width:100%;'
+    const cbStyle = 'width:16px !important;height:16px !important;flex:0 0 16px !important;margin:0;cursor:pointer;'
+    const txtStyle = 'flex:1 1 auto !important;min-width:0;word-break:break-all;font-size:12px;'
+    const inpStyle = 'flex:1 1 auto;min-width:0;border:1px solid #ddd;padding:2px 6px;font-size:13px;display:none;'
+    const btnStyle = 'background:none;border:none;color:#999;cursor:pointer;font-size:9px;line-height:1;padding:0 3px;flex:0 0 auto;'
+    let trailing = ''
+    if (isEdit) {
+      trailing = `
+        <input type="text" class="ev-chk-input" data-chk-id="${cid}" value="${text}" style="${inpStyle}">
+        <button type="button" onclick="evEditChk('${cid}')" style="${btnStyle}">✎</button>
+        <button type="button" class="ev-chk-save" onclick="evSaveChk('${cid}')" style="${btnStyle};display:none">저장</button>
+        <button type="button" class="ev-chk-cancel" onclick="evCancelChk('${cid}')" style="${btnStyle};display:none">취소</button>
+        <button type="button" onclick="evRemoveChk('${cid}')" style="${btnStyle}">✕</button>`
+    } else if (c.done && c.checkedBy) {
+      const who = esc((c.checkedBy || '') + (c.checkedByPosition || ''))
+      trailing = `<span style="font-size:10px;color:#b4b2a9;flex-shrink:0">${who}</span>`
+    }
+    const cbHandler = isEdit
+      ? `onclick="this.closest('.checklist-item').classList.toggle('checklist-done', this.checked)"`
+      : `onchange="evToggleChk('${cid}')"`
+    html += `<div class="checklist-item${c.done?' checklist-done':''}" data-chk-id="${cid}" style="${rowStyle}">
+      <input type="checkbox" class="checklist-cb" ${c.done?'checked':''} ${cbHandler} style="${cbStyle}">
+      <span class="checklist-text" style="${txtStyle}">${text}</span>${trailing}
+    </div>`
+  })
+  if (isEdit) {
+    html += `<div class="checklist-add" style="display:flex;gap:6px;margin-top:6px">
+      <input type="text" id="evNewChkInput" class="checklist-add-input" placeholder="새 항목 추가" style="flex:1;padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px" onkeydown="if(event.key==='Enter'){event.preventDefault();evAddChk()}">
+      <button type="button" class="btn btn-sm btn-outline" onclick="evAddChk()">추가</button>
+    </div>`
+  }
+  html += '</div>'
+  return html
+}
+
+function _evGetEditingList() {
+  const ev = _events.find(e => e.no === _editingEventNo)
+  if (!ev) return null
+  if (!ev.checklist) ev.checklist = []
+  return ev.checklist
+}
+
+function _evRerenderEditChecklist() {
+  const list = _evGetEditingList() || []
+  const area = document.getElementById('evChecklistEditArea')
+  if (area) area.innerHTML = buildEventChecklistHtml(list, true)
+}
+
+function evAddChk() {
+  const input = document.getElementById('evNewChkInput')
+  if (!input || !input.value.trim()) return
+  const list = _evGetEditingList()
+  if (!list) return
+  list.push({ id: 'evc' + Date.now() + Math.random().toString(36).slice(2,6), text: input.value.trim(), done: false })
+  input.value = ''
+  _evRerenderEditChecklist()
+}
+
+function evRemoveChk(id) {
+  const ev = _events.find(e => e.no === _editingEventNo)
+  if (!ev || !ev.checklist) return
+  ev.checklist = ev.checklist.filter(c => c.id !== id)
+  _evRerenderEditChecklist()
+}
+
+function evEditChk(id) {
+  const row = document.querySelector(`#evChecklistEditArea .checklist-item[data-chk-id="${id}"]`)
+  if (!row) return
+  row.querySelector('.checklist-text').style.display = 'none'
+  row.querySelectorAll('button')[0].style.display = 'none' // ✎
+  row.querySelectorAll('button')[3].style.display = 'none' // ✕
+  const inp = row.querySelector('.ev-chk-input'); inp.style.display = 'block'
+  row.querySelector('.ev-chk-save').style.display = 'inline-block'
+  row.querySelector('.ev-chk-cancel').style.display = 'inline-block'
+  inp.focus(); inp.select()
+}
+
+function evSaveChk(id) {
+  const row = document.querySelector(`#evChecklistEditArea .checklist-item[data-chk-id="${id}"]`)
+  if (!row) return
+  const newText = row.querySelector('.ev-chk-input').value.trim()
+  if (!newText) { showToast('내용을 입력하세요', 'warning'); return }
+  const list = _evGetEditingList(); if (!list) return
+  const c = list.find(x => x.id === id); if (c) c.text = newText
+  _evRerenderEditChecklist()
+}
+
+function evCancelChk(id) { _evRerenderEditChecklist() }
+
+function evToggleChk(id) {
+  const ev = _events.find(e => e.no === _editingEventNo)
+  if (!ev || !ev.checklist) return
+  const c = ev.checklist.find(x => x.id === id); if (!c) return
+  c.done = !c.done
+  if (c.done) {
+    c.checkedBy = (typeof _currentUserName !== 'undefined' && _currentUserName) || ''
+    c.checkedByPosition = (typeof _currentUserPosition !== 'undefined' && _currentUserPosition) || ''
+  } else { c.checkedBy = ''; c.checkedByPosition = '' }
+  saveEvents()
+  const area = document.getElementById('evChecklistViewArea')
+  if (area) area.innerHTML = buildEventChecklistHtml(ev.checklist, false)
+}
+
+/* ---------- 이벤트 이미지 ---------- */
+function _evRenderImgGrid() {
+  const grid = document.getElementById('evImgGrid')
+  if (!grid) return
+  grid.innerHTML = _evImages.map((img, i) =>
+    `<div style="position:relative;width:80px;height:80px"><img src="${esc(img.url)}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #eee"><button type="button" onclick="evRemoveImage(${i})" style="position:absolute;top:-4px;right:-4px;width:18px;height:18px;border-radius:50%;border:none;background:#e05252;color:#fff;cursor:pointer;font-size:11px;line-height:1">✕</button></div>`
+  ).join('')
+}
+
+function evAddImageUrl() {
+  const inp = document.getElementById('evImgUrlInput')
+  if (!inp || !inp.value.trim()) return
+  _evImages.push({ url: inp.value.trim(), type: 'url' })
+  inp.value = ''
+  _evRenderImgGrid()
+}
+
+function evHandleImageUpload(input) {
+  Array.from(input.files || []).forEach(f => {
+    const reader = new FileReader()
+    reader.onload = e => {
+      _evImages.push({ url: e.target.result, type: 'file', name: f.name })
+      _evRenderImgGrid()
+    }
+    reader.readAsDataURL(f)
+  })
+  input.value = ''
+}
+
+function evRemoveImage(idx) {
+  _evImages.splice(idx, 1)
+  _evRenderImgGrid()
+}
+
+if (typeof window !== 'undefined') {
+  window.buildEventChecklistHtml = buildEventChecklistHtml
+  window.evAddChk = evAddChk
+  window.evRemoveChk = evRemoveChk
+  window.evEditChk = evEditChk
+  window.evSaveChk = evSaveChk
+  window.evCancelChk = evCancelChk
+  window.evToggleChk = evToggleChk
+  window.evAddImageUrl = evAddImageUrl
+  window.evHandleImageUpload = evHandleImageUpload
+  window.evRemoveImage = evRemoveImage
 }
 
 /* ---------- HTML 이스케이프 ---------- */

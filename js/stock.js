@@ -21,6 +21,10 @@ function searchStock() {
   })
   State.stock.page = 1
   State.stock.filtered = sortData(result, State.stock.sort.key, State.stock.sort.dir)
+  saveFilterDefault('stock', {
+    sKeyword: document.getElementById('sKeyword').value,
+    sDateFrom: dateFrom, sDateTo: dateTo, sStockStatus: status
+  })
   renderStockTable()
 }
 
@@ -239,6 +243,7 @@ function saveSrmStock(productCode) {
   renderStockTable()
   showToast(`${p.nameKr} 입고 ${total}개 저장 완료`, 'success')
   logActivity('create', '재고관리', `입고: ${p.productCode} ${p.nameKr} ${total}개`)
+  try { if (typeof addProductHistory === 'function') addProductHistory(p.productCode, '입고', `총 ${total}개`) } catch(e) {}
   // 저장 후 동일 상품 다시 렌더 (현재 재고 + 입고 이력 포함)
   document.getElementById('srmProductArea').innerHTML = buildSrmProductArea(p)
 }
@@ -463,12 +468,14 @@ function submitOutgoing(productCode) {
   renderStockTable()
   showToast(`${p.nameKr} 출고 ${total}개 처리 완료`, 'success')
   logActivity('create', '재고관리', `출고: ${p.productCode} ${p.nameKr} ${total}개`)
+  try { if (typeof addProductHistory === 'function') addProductHistory(p.productCode, '출고', `총 ${total}개`) } catch(e) {}
   closeOutgoingModal(true)
 }
 
 function changeStockPageSize(val) {
   State.stock.pageSize = parseInt(val) || 0
   State.stock.page = 1
+  saveTableCustom('stock')
   renderStockTable()
 }
 
@@ -503,7 +510,14 @@ const STOCK_COLUMNS = [
 const STOCK_FIXED_KEYS = STOCK_COLUMNS.filter(c=>c.fixed).map(c=>c.key)
 
 function renderStockTable() {
-  initColumnState('stock', STOCK_COLUMNS.map(c=>c.key))
+  const allKeys = STOCK_COLUMNS.map(c=>c.key)
+  initColumnState('stock', allKeys)
+  applyTableCustom('stock')
+  allKeys.forEach(k => {
+    if (!State.stock.activeColumns.includes(k) && !State.stock.inactiveColumns.includes(k)) State.stock.activeColumns.push(k)
+  })
+  State.stock.activeColumns = State.stock.activeColumns.filter(k => allKeys.includes(k))
+  State.stock.inactiveColumns = State.stock.inactiveColumns.filter(k => allKeys.includes(k))
   renderColInactiveArea('sInactiveArea','sInactiveTags','stock',STOCK_COLUMNS,STOCK_FIXED_KEYS,'renderStockTable')
 
   const data = applyColFilters(State.stock.filtered, State.stock.columnFilters)
@@ -524,7 +538,7 @@ function renderStockTable() {
 
   const activeCols = State.stock.activeColumns.map(k => STOCK_COLUMNS.find(c=>c.key===k)).filter(Boolean)
   const thHtml = activeCols.map(c => `<th ${c.thAttr} data-col-key="${c.key}">${c.label}</th>`).join('')
-  const tbodyHtml = pageData.map(p => `<tr>${activeCols.map(c=>c.td(p)).join('')}</tr>`).join('')
+  const tbodyHtml = pageData.map(p => `<tr data-code="${p.productCode}">${activeCols.map(c=>c.td(p)).join('')}</tr>`).join('')
 
   // tfoot: 합계 행 — 비어있지 않은 tf가 하나라도 있을 때만
   const hasTfData = activeCols.some(c => c.key.startsWith('stock_') || c.key === 'totalStock')
@@ -541,7 +555,13 @@ function renderStockTable() {
 
   initTableFeatures('stockTable', 'stock', 'renderStockTable')
   bindColumnDragDrop('stockTable', 'stock', STOCK_FIXED_KEYS, 'renderStockTable')
+  applyColWidthsToHeader('stockTable', 'stock')
   renderPagination('sPagination', 'stock', 'renderStockTable')
+  // Feature 12: row double-click → detail
+  initRowDblClick('stockTable', (tr) => {
+    const code = tr.getAttribute('data-code')
+    if (code) openDetailModal(code)
+  })
 }
 
 // =============================================

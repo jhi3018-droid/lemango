@@ -5,6 +5,188 @@
 let _wkYear  = new Date().getFullYear()
 let _wkMonth = new Date().getMonth() // 0-based
 let _wkCatFilter = 'all'
+let _wkCursor = new Date()  // used as base date for week/day views
+if (typeof State !== 'undefined') {
+  State.workCalView = State.workCalView || 'month'
+  State.eventCalView = State.eventCalView || 'month'
+}
+
+// ---------- Shared month/week/day view switcher ----------
+function switchCalView(scope, mode) {
+  if (typeof State === 'undefined') return
+  if (scope === 'work') {
+    State.workCalView = mode
+    if (mode !== 'month') _wkCursor = new Date(_wkYear, _wkMonth, (new Date()).getDate())
+    renderWorkCalendar()
+  } else if (scope === 'event') {
+    State.eventCalView = mode
+    if (mode !== 'month' && typeof _evCursor !== 'undefined') {
+      window._evCursor = new Date(_evYear, _evMonth, (new Date()).getDate())
+    }
+    renderEventCalendar()
+  }
+}
+if (typeof window !== 'undefined') window.switchCalView = switchCalView
+
+// ---------- View toggle buttons HTML ----------
+function _calViewBtnsHtml(scope, mode) {
+  return `<div class="cal-view-btns">
+    <button class="cal-view-btn${mode==='month'?' active':''}" onclick="switchCalView('${scope}','month')">월간</button>
+    <button class="cal-view-btn${mode==='week'?' active':''}" onclick="switchCalView('${scope}','week')">주간</button>
+    <button class="cal-view-btn${mode==='day'?' active':''}" onclick="switchCalView('${scope}','day')">일간</button>
+  </div>`
+}
+
+// ---------- Week / Day view renderers (shared by work + event) ----------
+const CAL_HOUR_START = 8
+const CAL_HOUR_END = 22
+
+function _calItemsInRange(scope, startStr, endStr) {
+  if (scope === 'work') {
+    return (State.workItems || []).filter(w => {
+      if (!w.startDate) return false
+      const s = w.startDate, e = w.endDate || w.startDate
+      return s <= endStr && e >= startStr &&
+        (_wkCatFilter === 'all' || w.category === _wkCatFilter)
+    })
+  } else {
+    return (typeof _events !== 'undefined' ? _events : []).filter(ev =>
+      ev.startDate && ev.endDate && ev.startDate <= endStr && ev.endDate >= startStr
+    )
+  }
+}
+
+function _calItemColor(scope, item) {
+  if (scope === 'work') {
+    const c = getWorkCatColor(item.category)
+    return { bg: c.bg, text: c.text }
+  }
+  const color = EV_COLORS[item.no % EV_COLORS.length]
+  return { bg: color.bar, text: color.text }
+}
+
+function _calItemLabel(scope, item) {
+  if (scope === 'work') return `${item.category || ''} ${item.title || ''}`.trim()
+  return `${item.channel || ''} ${item.name || ''}`.trim()
+}
+
+function _calItemClick(scope, item) {
+  if (scope === 'work') return `openWorkDetailModal(${item.no})`
+  return `openEventDetailModal(${item.no})`
+}
+
+function _hourLabel(h) { return (h < 10 ? '0' + h : h) + ':00' }
+
+function renderWeekView(scope, baseDate) {
+  const start = getStartOfWeek(baseDate)
+  const days = []
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start); d.setDate(start.getDate() + i)
+    days.push({ date: new Date(d), dateStr: fmtDate(d) })
+  }
+  const startStr = days[0].dateStr, endStr = days[6].dateStr
+  const items = _calItemsInRange(scope, startStr, endStr)
+
+  // split into full-day vs hourly
+  const fullDay = [], hourly = []
+  items.forEach(it => {
+    if (scope === 'work' && it.startTime) hourly.push(it)
+    else fullDay.push(it)
+  })
+
+  const DOW = ['일','월','화','수','목','금','토']
+  const todayStr = fmtDate(new Date())
+
+  let html = '<div class="week-view">'
+  // Header
+  html += '<div class="week-header"><div class="week-time"></div>'
+  days.forEach((d, i) => {
+    const cls = (d.dateStr === todayStr ? ' week-today' : '') + (i === 0 ? ' evcal-sun' : i === 6 ? ' evcal-sat' : '')
+    html += `<div class="week-day-header${cls}">${DOW[i]} ${d.date.getMonth()+1}/${d.date.getDate()}</div>`
+  })
+  html += '</div>'
+
+  // All-day row
+  html += '<div class="week-row week-allday"><div class="week-time">종일</div>'
+  days.forEach(d => {
+    const dayItems = fullDay.filter(it => {
+      const s = scope === 'work' ? it.startDate : it.startDate
+      const e = scope === 'work' ? (it.endDate || it.startDate) : it.endDate
+      return s <= d.dateStr && e >= d.dateStr
+    })
+    html += '<div class="week-cell">'
+    dayItems.forEach(it => {
+      const c = _calItemColor(scope, it)
+      html += `<div class="evcal-bar evcal-bar-fill" style="background:${c.bg};color:${c.text}" onclick="${_calItemClick(scope, it)}">${esc(_calItemLabel(scope, it))}</div>`
+    })
+    html += '</div>'
+  })
+  html += '</div>'
+
+  // Hourly rows
+  for (let h = CAL_HOUR_START; h <= CAL_HOUR_END; h++) {
+    html += `<div class="week-row"><div class="week-time">${_hourLabel(h)}</div>`
+    days.forEach(d => {
+      const hourItems = hourly.filter(it => {
+        const s = it.startDate, e = it.endDate || it.startDate
+        if (!(s <= d.dateStr && e >= d.dateStr)) return false
+        const st = parseInt((it.startTime || '00:00').split(':')[0], 10)
+        return st === h
+      })
+      html += '<div class="week-cell">'
+      hourItems.forEach(it => {
+        const c = _calItemColor(scope, it)
+        const time = it.startTime + (it.endTime ? '~' + it.endTime : '')
+        html += `<div class="evcal-bar evcal-bar-fill" style="background:${c.bg};color:${c.text}" onclick="${_calItemClick(scope, it)}">${esc(time + ' ' + _calItemLabel(scope, it))}</div>`
+      })
+      html += '</div>'
+    })
+    html += '</div>'
+  }
+  html += '</div>'
+  return html
+}
+
+function renderDayView(scope, date) {
+  const d = (date instanceof Date) ? new Date(date) : new Date(date)
+  d.setHours(0, 0, 0, 0)
+  const dateStr = fmtDate(d)
+  const items = _calItemsInRange(scope, dateStr, dateStr)
+  const fullDay = [], hourly = []
+  items.forEach(it => {
+    if (scope === 'work' && it.startTime) hourly.push(it)
+    else fullDay.push(it)
+  })
+  const DOW = ['일','월','화','수','목','금','토']
+  let html = '<div class="day-view">'
+  html += `<div class="day-title">${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 (${DOW[d.getDay()]})</div>`
+
+  html += '<div class="day-row"><div class="day-time">종일</div><div class="day-content">'
+  if (!fullDay.length) html += '<span style="color:#999;font-size:12px">-</span>'
+  fullDay.forEach(it => {
+    const c = _calItemColor(scope, it)
+    html += `<div class="evcal-bar evcal-bar-fill" style="background:${c.bg};color:${c.text}" onclick="${_calItemClick(scope, it)}">${esc(_calItemLabel(scope, it))}</div>`
+  })
+  html += '</div></div>'
+
+  for (let h = CAL_HOUR_START; h <= CAL_HOUR_END; h++) {
+    const hourItems = hourly.filter(it => parseInt((it.startTime || '00:00').split(':')[0], 10) === h)
+    html += `<div class="day-row"><div class="day-time">${_hourLabel(h)}</div><div class="day-content">`
+    hourItems.forEach(it => {
+      const c = _calItemColor(scope, it)
+      const time = it.startTime + (it.endTime ? '~' + it.endTime : '')
+      html += `<div class="evcal-bar evcal-bar-fill" style="background:${c.bg};color:${c.text}" onclick="${_calItemClick(scope, it)}">${esc(time + ' ' + _calItemLabel(scope, it))}</div>`
+    })
+    html += '</div></div>'
+  }
+  html += '</div>'
+  return html
+}
+if (typeof window !== 'undefined') {
+  window.renderWeekView = renderWeekView
+  window.renderDayView = renderDayView
+}
+
 
 let _psYear = new Date().getFullYear()
 let _psMonth = new Date().getMonth()
@@ -14,18 +196,34 @@ let _psFilterDept = ''
 
 /* ---------- 네비게이션 ---------- */
 function wkPrevMonth() {
-  _wkMonth--
-  if (_wkMonth < 0) { _wkMonth = 11; _wkYear-- }
+  const mode = (State && State.workCalView) || 'month'
+  if (mode === 'week') {
+    _wkCursor = new Date(_wkCursor); _wkCursor.setDate(_wkCursor.getDate() - 7)
+  } else if (mode === 'day') {
+    _wkCursor = new Date(_wkCursor); _wkCursor.setDate(_wkCursor.getDate() - 1)
+  } else {
+    _wkMonth--
+    if (_wkMonth < 0) { _wkMonth = 11; _wkYear-- }
+  }
   renderWorkCalendar()
 }
 function wkNextMonth() {
-  _wkMonth++
-  if (_wkMonth > 11) { _wkMonth = 0; _wkYear++ }
+  const mode = (State && State.workCalView) || 'month'
+  if (mode === 'week') {
+    _wkCursor = new Date(_wkCursor); _wkCursor.setDate(_wkCursor.getDate() + 7)
+  } else if (mode === 'day') {
+    _wkCursor = new Date(_wkCursor); _wkCursor.setDate(_wkCursor.getDate() + 1)
+  } else {
+    _wkMonth++
+    if (_wkMonth > 11) { _wkMonth = 0; _wkYear++ }
+  }
   renderWorkCalendar()
 }
 function wkToday() {
+  const mode = (State && State.workCalView) || 'month'
   _wkYear  = new Date().getFullYear()
   _wkMonth = new Date().getMonth()
+  _wkCursor = new Date()
   renderWorkCalendar()
 }
 function wkFilterCategory(val) {
@@ -38,6 +236,32 @@ function renderWorkCalendar() {
   const container = document.getElementById('wkCalendar')
   const title     = document.getElementById('wkMonthTitle')
   if (!container) return
+
+  // Inject view toggle buttons into header (once)
+  const header = container.parentElement?.querySelector('.evcal-header')
+  if (header && !header.querySelector('.cal-view-btns')) {
+    header.insertAdjacentHTML('beforeend', _calViewBtnsHtml('work', (State && State.workCalView) || 'month'))
+  } else if (header) {
+    const old = header.querySelector('.cal-view-btns')
+    if (old) old.outerHTML = _calViewBtnsHtml('work', (State && State.workCalView) || 'month')
+  }
+
+  const mode = (State && State.workCalView) || 'month'
+  if (mode === 'week') {
+    const start = getStartOfWeek(_wkCursor)
+    const end = new Date(start); end.setDate(start.getDate() + 6)
+    title.textContent = `${start.getFullYear()}.${start.getMonth()+1}.${start.getDate()} ~ ${end.getMonth()+1}.${end.getDate()}`
+    title.classList.remove('cal-month-clickable'); title.onclick = null
+    container.innerHTML = renderWeekView('work', _wkCursor)
+    return
+  }
+  if (mode === 'day') {
+    const d = new Date(_wkCursor)
+    title.textContent = `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()}`
+    title.classList.remove('cal-month-clickable'); title.onclick = null
+    container.innerHTML = renderDayView('work', _wkCursor)
+    return
+  }
 
   title.textContent = `${_wkYear}년 ${_wkMonth + 1}월`
   title.classList.add('cal-month-clickable')
@@ -68,7 +292,7 @@ function renderWorkCalendar() {
     : State.workItems.filter(w => w.category === _wkCatFilter)
 
   // 바 배치
-  const MAX_ROWS = 10
+  const MAX_ROWS = 6
   const barRows = placeWorkBars(cells[0].date, cells[cells.length - 1].date, items, MAX_ROWS)
 
   // HTML
@@ -215,6 +439,9 @@ function openWorkRegisterModal(dateStr) {
     document.getElementById('wkRegStart').value = dateStr
     document.getElementById('wkRegEnd').value = dateStr
   }
+  _currentWorkItem = { checklist: [] }
+  const chkArea = document.getElementById('wkRegChecklistArea')
+  if (chkArea) chkArea.innerHTML = buildChecklistHtml([], true)
   modal.showModal()
   centerModal(modal)
 }
@@ -245,6 +472,14 @@ function submitWork(e) {
     registeredAt: isEdit ? (State.workItems.find(w => w.no === no)?.registeredAt || new Date().toISOString()) : new Date().toISOString()
   }
 
+  // Collect checklist: merge text edits from inputs with done state from _currentWorkItem
+  const baseList = (_currentWorkItem && _currentWorkItem.checklist) ? _currentWorkItem.checklist : []
+  const editedList = baseList.map(c => {
+    const inp = document.querySelector(`#wkRegChecklistArea .checklist-text-input[data-chk-id="${c.id}"]`)
+    return { id: c.id, text: inp ? inp.value.trim() : (c.text || ''), done: !!c.done }
+  }).filter(c => c.text)
+  item.checklist = editedList
+
   if (!item.title) { showToast('제목을 입력해주세요.', 'warning'); return }
   if (!item.startDate) { showToast('시작일을 입력해주세요.', 'warning'); return }
 
@@ -269,6 +504,12 @@ function submitWork(e) {
   renderWorkCalendar()
   showToast(isEdit ? '업무일정이 수정되었습니다.' : '업무일정이 등록되었습니다.', 'success')
   logActivity(isEdit ? 'update' : 'create', '업무일정', `${isEdit ? '업무수정' : '업무등록'}: ${item.title}`)
+  if (isEdit) {
+    try {
+      if (typeof notifyWatchers === 'function') notifyWatchers('work', item.no, '수정됨')
+      if (typeof releaseEditLock === 'function') releaseEditLock('work', item.no)
+    } catch(e) {}
+  }
 
   // 참조자에게 즉시 알림
   if (!isEdit && item.mentions && item.mentions.length) {
@@ -287,6 +528,8 @@ function submitWork(e) {
 function openWorkDetailModal(no, fromDash = false) {
   const w = State.workItems.find(x => x.no === no)
   if (!w) return
+  w.checklist = w.checklist || []
+  _currentWorkItem = w
   const modal = document.getElementById('workDetailModal')
   if (!modal) return
 
@@ -300,11 +543,17 @@ function openWorkDetailModal(no, fromDash = false) {
       ? `<button class="btn btn-sm btn-primary" onclick="goToWorkEdit(${w.no})">업무일정에서 수정</button>`
       : `<button class="btn btn-sm btn-primary" onclick="editWorkFromDetail(${w.no})">수정</button>
          <button class="btn btn-sm btn-outline" style="color:var(--danger);border-color:var(--danger)" onclick="deleteWork(${w.no})">삭제</button>`
-    hbtns.innerHTML = actionBtns + `<button class="modal-close" onclick="closeWorkDetailModal()">✕</button>`
+    const watchLabel = (typeof isWatching === 'function' && isWatching('work', w.no)) ? '👁 활성' : '👁'
+    const watchActive = (typeof isWatching === 'function' && isWatching('work', w.no)) ? ' active' : ''
+    const watchBtn = `<button class="btn btn-sm btn-outline watch-btn${watchActive}" id="wkWatchBtn" onclick="toggleWatch('work', ${w.no}, '${(w.title||'').replace(/'/g,"\\'")}'); _wkSyncWatchBtn(${w.no})" title="변경 알림">${watchLabel}</button>`
+    const lockInfo = (typeof getEditLockInfo === 'function') ? getEditLockInfo('work', w.no) : null
+    const lockWarn = lockInfo ? `<span class="edit-lock-warn" id="wkLockWarn">🔒 ${esc(lockInfo.userName || '다른 사용자')} 편집중</span>` : `<span class="edit-lock-warn" id="wkLockWarn" style="display:none"></span>`
+    hbtns.innerHTML = watchBtn + lockWarn + actionBtns + `<button class="modal-close" onclick="closeWorkDetailModal()">✕</button>`
   }
   modal.showModal()
   centerModal(modal)
   loadComments('work', no)
+  if (typeof pushModalHistory === 'function') pushModalHistory('work', no)
 }
 
 function buildWorkDetailContent(w, fromDash = false) {
@@ -333,10 +582,185 @@ function buildWorkDetailContent(w, fromDash = false) {
         <span class="srm-tl-dot" style="background:${c.bg}"></span>
       </div>` : ''}
       ${w.memo ? `<div class="srm-divider"></div><div class="srm-memo-label">메모</div><div class="srm-memo-text">${w.memo}</div>` : ''}
+      ${buildChecklistHtml(w.checklist || [], false)}
       ${(w.mentions && w.mentions.length) ? `<div class="srm-divider"></div><div class="srm-memo-label">참조</div><div class="srm-view-value">${w.mentions.map(m => m.type === 'user' ? `<span class="mention-tag mention-user">@${esc(formatUserName(m.name, m.position))}</span>` : `<span class="mention-tag mention-dept">@${esc(m.dept)}</span>`).join(' ')}</div>` : ''}
       ${renderStampInfo(w)}
       ${buildCommentSection('work', w.no)}
     </div>`
+}
+
+/* ---------- Checklist (Feature 11) ---------- */
+let _currentWorkItem = null
+
+function buildChecklistHtml(checklist, isEdit) {
+  checklist = checklist || []
+  const done = checklist.filter(c => c.done).length
+  const total = checklist.length
+  let html = '<div class="checklist-section">'
+  html += `<div class="checklist-title">체크리스트 <span class="checklist-count">${done}/${total}</span></div>`
+  checklist.forEach(c => {
+    const cid = esc(c.id)
+    const text = esc(c.text || '')
+    const cbHandler = isEdit
+      ? `onclick="this.closest('.checklist-item').classList.toggle('checklist-done', this.checked)"`
+      : `onchange="toggleChecklistItem('${cid}')"`
+    const delHandler = isEdit
+      ? `onclick="removeChecklistItem('${cid}')"`
+      : `onclick="deleteChecklistItemView('${cid}')"`
+    const rowStyle = 'display:flex !important;align-items:center;gap:6px;padding:5px 0;font-size:13px;width:100%;'
+    const cbStyle = 'width:16px !important;height:16px !important;flex:0 0 16px !important;margin:0;cursor:pointer;'
+    const txtStyle = 'flex:1 1 auto !important;min-width:0;word-break:break-all;font-size:12px;'
+    const inpStyle = 'flex:1 1 auto;min-width:0;border:1px solid #ddd;padding:2px 6px;font-size:13px;display:none;'
+    const btnStyle = 'background:none;border:none;color:#999;cursor:pointer;font-size:9px;line-height:1;padding:0 3px;flex:0 0 auto;'
+    let trailing = ''
+    if (isEdit) {
+      trailing = `
+      <input type="text" class="checklist-text-input" data-chk-id="${cid}" value="${text}" style="${inpStyle}">
+      <button type="button" class="checklist-edit" onclick="editChecklistItem('${cid}', true)" style="${btnStyle}">✎</button>
+      <button type="button" class="checklist-save" onclick="saveChecklistItem('${cid}', true)" style="${btnStyle};display:none">저장</button>
+      <button type="button" class="checklist-cancel" onclick="cancelChecklistEdit('${cid}', true)" style="${btnStyle};display:none">취소</button>
+      <button type="button" class="checklist-del" ${delHandler} style="${btnStyle}">✕</button>`
+    } else if (c.done && c.checkedBy) {
+      const who = esc((c.checkedBy || '') + (c.checkedByPosition || ''))
+      trailing = `<span class="checklist-checker" style="font-size:10px;color:#b4b2a9;flex-shrink:0">${who}</span>`
+    }
+    html += `<div class="checklist-item${c.done?' checklist-done':''}" data-chk-id="${cid}" style="${rowStyle}">
+      <input type="checkbox" class="checklist-cb" ${c.done?'checked':''} ${cbHandler} style="${cbStyle}">
+      <span class="checklist-text" style="${txtStyle}">${text}</span>${trailing}
+    </div>`
+  })
+  if (isEdit) {
+    html += `<div class="checklist-add">
+      <input type="text" id="newChecklistInput" class="checklist-add-input" placeholder="새 항목 추가" onkeydown="if(event.key==='Enter'){event.preventDefault();addChecklistItem()}">
+      <button type="button" class="checklist-add-btn" onclick="addChecklistItem()">추가</button>
+    </div>`
+  }
+  html += '</div>'
+  return html
+}
+
+function toggleChecklistItem(id) {
+  if (!_currentWorkItem) return
+  const c = (_currentWorkItem.checklist || []).find(x => x.id === id)
+  if (!c) return
+  c.done = !c.done
+  if (c.done) {
+    c.checkedBy = (typeof _currentUserName !== 'undefined' && _currentUserName) || ''
+    c.checkedByPosition = (typeof _currentUserPosition !== 'undefined' && _currentUserPosition) || ''
+  } else {
+    c.checkedBy = ''
+    c.checkedByPosition = ''
+  }
+  const idx = State.workItems.findIndex(w => w.no === _currentWorkItem.no)
+  if (idx >= 0) {
+    State.workItems[idx].checklist = _currentWorkItem.checklist
+    _workItems = State.workItems
+    saveWorkItems()
+  }
+  const section = document.querySelector('#wkDetailBody .checklist-section')
+  if (section) section.outerHTML = buildChecklistHtml(_currentWorkItem.checklist, false)
+}
+
+function addChecklistItem() {
+  const input = document.getElementById('newChecklistInput')
+  if (!input || !input.value.trim()) return
+  if (!_currentWorkItem) _currentWorkItem = { checklist: [] }
+  _currentWorkItem.checklist = _currentWorkItem.checklist || []
+  _currentWorkItem.checklist.push({ id: 'c' + Date.now() + Math.random().toString(36).slice(2,6), text: input.value.trim(), done: false })
+  input.value = ''
+  // Re-render checklist section inline
+  const host = document.querySelector('#wkRegChecklistArea, #wkDetailBody .checklist-section')?.parentElement
+  const container = document.getElementById('wkRegChecklistArea')
+  if (container) container.innerHTML = buildChecklistHtml(_currentWorkItem.checklist, true)
+}
+
+function _chkRow(id, isEditForm) {
+  const root = isEditForm ? '#wkRegChecklistArea' : '#wkDetailBody'
+  return document.querySelector(`${root} .checklist-item[data-chk-id="${id}"]`)
+}
+
+function editChecklistItem(id, isEditForm) {
+  const row = _chkRow(id, isEditForm)
+  if (!row) return
+  row.classList.add('checklist-editing')
+  row.querySelector('.checklist-text').style.display = 'none'
+  row.querySelector('.checklist-edit').style.display = 'none'
+  row.querySelector('.checklist-del').style.display = 'none'
+  const inp = row.querySelector('.checklist-text-input')
+  inp.style.display = 'block'
+  row.querySelector('.checklist-save').style.display = 'inline-block'
+  row.querySelector('.checklist-cancel').style.display = 'inline-block'
+  inp.focus(); inp.select()
+}
+
+function saveChecklistItem(id, isEditForm) {
+  const row = _chkRow(id, isEditForm)
+  if (!row) return
+  const newText = row.querySelector('.checklist-text-input').value.trim()
+  if (!newText) { showToast('내용을 입력하세요', 'warning'); return }
+  if (_currentWorkItem) {
+    const c = (_currentWorkItem.checklist || []).find(x => x.id === id)
+    if (c) c.text = newText
+  }
+  if (!isEditForm && _currentWorkItem) {
+    const idx = State.workItems.findIndex(w => w.no === _currentWorkItem.no)
+    if (idx >= 0) { State.workItems[idx].checklist = _currentWorkItem.checklist; _workItems = State.workItems; saveWorkItems() }
+  }
+  row.querySelector('.checklist-text').textContent = newText
+  cancelChecklistEdit(id, isEditForm)
+  if (!isEditForm) showToast('수정 완료', 'success')
+}
+
+function cancelChecklistEdit(id, isEditForm) {
+  const row = _chkRow(id, isEditForm)
+  if (!row) return
+  const c = (_currentWorkItem?.checklist || []).find(x => x.id === id)
+  row.classList.remove('checklist-editing')
+  row.querySelector('.checklist-text').style.display = ''
+  row.querySelector('.checklist-edit').style.display = 'inline-block'
+  row.querySelector('.checklist-del').style.display = 'inline-block'
+  const inp = row.querySelector('.checklist-text-input')
+  inp.style.display = 'none'
+  if (c) inp.value = c.text || ''
+  row.querySelector('.checklist-save').style.display = 'none'
+  row.querySelector('.checklist-cancel').style.display = 'none'
+}
+
+async function deleteChecklistItemView(id) {
+  if (!_currentWorkItem) return
+  const ok = await korConfirm('이 항목을 삭제하시겠습니까?', '삭제', '취소')
+  if (!ok) return
+  _currentWorkItem.checklist = (_currentWorkItem.checklist || []).filter(c => c.id !== id)
+  const idx = State.workItems.findIndex(w => w.no === _currentWorkItem.no)
+  if (idx >= 0) { State.workItems[idx].checklist = _currentWorkItem.checklist; _workItems = State.workItems; saveWorkItems() }
+  const section = document.querySelector('#wkDetailBody .checklist-section')
+  if (section) section.outerHTML = buildChecklistHtml(_currentWorkItem.checklist, false)
+}
+
+function removeChecklistItem(id) {
+  if (!_currentWorkItem) return
+  _currentWorkItem.checklist = (_currentWorkItem.checklist || []).filter(c => c.id !== id)
+  const container = document.getElementById('wkRegChecklistArea')
+  if (container) container.innerHTML = buildChecklistHtml(_currentWorkItem.checklist, true)
+}
+
+function cancelWorkEdit() {
+  const noField = document.getElementById('wkRegNo')
+  const editingNo = noField && noField.value ? parseInt(noField.value) : null
+  closeWorkRegisterModal(true)
+  if (editingNo) openWorkDetailModal(editingNo)
+}
+
+if (typeof window !== 'undefined') {
+  window.cancelWorkEdit = cancelWorkEdit
+  window.buildChecklistHtml = buildChecklistHtml
+  window.toggleChecklistItem = toggleChecklistItem
+  window.addChecklistItem = addChecklistItem
+  window.removeChecklistItem = removeChecklistItem
+  window.editChecklistItem = editChecklistItem
+  window.saveChecklistItem = saveChecklistItem
+  window.cancelChecklistEdit = cancelChecklistEdit
+  window.deleteChecklistItemView = deleteChecklistItemView
 }
 
 function workCatBadge(cat) {
@@ -350,7 +774,22 @@ function goToWorkEdit(no) {
   setTimeout(() => editWorkFromDetail(no), 300)
 }
 
+function _wkSyncWatchBtn(no) {
+  const btn = document.getElementById('wkWatchBtn')
+  if (!btn) return
+  const on = typeof isWatching === 'function' && isWatching('work', no)
+  btn.textContent = on ? '👁 활성' : '👁'
+  btn.classList.toggle('active', on)
+}
+window._wkSyncWatchBtn = _wkSyncWatchBtn
+
 function editWorkFromDetail(no) {
+  const info = (typeof getEditLockInfo === 'function') ? getEditLockInfo('work', no) : null
+  if (info) {
+    showToast(`${info.userName || '다른 사용자'}님이 편집 중입니다`, 'warn')
+    return
+  }
+  if (typeof acquireEditLock === 'function') acquireEditLock('work', no)
   closeWorkDetailModal()
   const w = State.workItems.find(x => x.no === no)
   if (!w) return
@@ -375,6 +814,9 @@ function editWorkFromDetail(no) {
     if (m.type === 'user') addMention('work', 'user', m.uid, m.name, m.position || '')
     else addMention('work', 'dept', '', m.dept, '')
   })
+  _currentWorkItem = { no: w.no, checklist: (w.checklist || []).map(c => ({ ...c })) }
+  const chkArea = document.getElementById('wkRegChecklistArea')
+  if (chkArea) chkArea.innerHTML = buildChecklistHtml(_currentWorkItem.checklist, true)
   modal.showModal()
   centerModal(modal)
 }
@@ -435,10 +877,131 @@ function switchWorkTab(tab) {
   document.querySelector(`.work-inner-tab[data-tab="${tab}"]`)?.classList.add('active')
   document.getElementById('workCalendarArea').style.display = tab === 'work' ? '' : 'none'
   document.getElementById('personalCalendarArea').style.display = tab === 'personal' ? '' : 'none'
+  const kanban = document.getElementById('kanbanArea')
+  if (kanban) kanban.style.display = tab === 'kanban' ? '' : 'none'
   if (tab === 'personal') {
     loadAllUsers().then(() => loadPersonalSchedules().then(() => renderPersonalCalendar()))
   }
+  if (tab === 'kanban') {
+    renderKanbanBoard()
+  }
 }
+window.switchWorkTab = switchWorkTab
+
+/* ===== Feature 6: Kanban Board ===== */
+function _deriveKanbanStatus(w) {
+  if (w.kanbanStatus) return w.kanbanStatus
+  const today = new Date().toISOString().slice(0,10)
+  if (w.endDate && w.endDate < today) return '완료'
+  if (w.startDate && w.startDate > today) return '예정'
+  return '진행중'
+}
+
+function renderKanbanBoard() {
+  const area = document.getElementById('kanbanArea')
+  if (!area) return
+  const cols = ['예정','진행중','완료']
+  const items = State.workItems || []
+  const grouped = { '예정': [], '진행중': [], '완료': [] }
+  items.forEach(w => {
+    const s = _deriveKanbanStatus(w)
+    if (!grouped[s]) grouped[s] = []
+    grouped[s].push(w)
+  })
+  let html = '<div class="kanban-board" ondragover="event.preventDefault()">'
+  cols.forEach(col => {
+    html += `<div class="kanban-col" ondragover="kanbanDragOver(event)" ondrop="kanbanDrop(event,'${col}')">`
+    html += `<div class="kanban-col-title">${col} <span style="color:#999;font-size:11px">(${grouped[col].length})</span></div>`
+    grouped[col].forEach(w => {
+      const cat = esc(w.category || '')
+      const title = esc(w.title || '')
+      const date = esc((w.startDate || '') + (w.endDate && w.endDate !== w.startDate ? ' ~ ' + w.endDate : ''))
+      html += `<div class="kanban-card" draggable="true" ondragstart="kanbanDragStart(event,${w.no})" ondragend="this.classList.remove('dragging')" onclick="openWorkDetailModal(${w.no})">
+        <div style="font-size:11px;color:#666;margin-bottom:2px">${cat}</div>
+        <div style="font-weight:600;font-size:13px">${title}</div>
+        <div style="font-size:10px;color:#999;margin-top:4px">${date}</div>
+      </div>`
+    })
+    html += '</div>'
+  })
+  html += '</div>'
+  area.innerHTML = html
+}
+window.renderKanbanBoard = renderKanbanBoard
+
+function kanbanDragStart(e, no) {
+  try {
+    e.dataTransfer.setData('text/plain', String(no))
+    e.dataTransfer.effectAllowed = 'move'
+    e.currentTarget.classList.add('dragging')
+  } catch(err) {}
+}
+window.kanbanDragStart = kanbanDragStart
+
+function kanbanDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }
+window.kanbanDragOver = kanbanDragOver
+
+function kanbanDrop(e, status) {
+  e.preventDefault()
+  const no = Number(e.dataTransfer.getData('text/plain'))
+  if (!no) return
+  const w = State.workItems.find(x => x.no === no)
+  if (!w) return
+  w.kanbanStatus = status
+  if (typeof saveWorkItems === 'function') saveWorkItems()
+  renderKanbanBoard()
+  if (typeof showToast === 'function') showToast(`"${w.title}" → ${status}`, 'success')
+}
+window.kanbanDrop = kanbanDrop
+
+/* ===== Feature 7: Weekly Report ===== */
+function _startOfWeekMon(date) {
+  const d = new Date(date)
+  d.setHours(0,0,0,0)
+  const day = d.getDay() // 0 Sun .. 6 Sat
+  const diff = (day === 0 ? -6 : 1 - day)
+  d.setDate(d.getDate() + diff)
+  return d
+}
+
+function generateWeeklyReport() {
+  const body = document.getElementById('weeklyReportBody')
+  if (!body) return
+  const now = new Date()
+  const start = _startOfWeekMon(now)
+  const end = new Date(start); end.setDate(end.getDate() + 6); end.setHours(23,59,59,999)
+  const nextStart = new Date(end); nextStart.setDate(nextStart.getDate() + 1); nextStart.setHours(0,0,0,0)
+  const nextEnd = new Date(nextStart); nextEnd.setDate(nextEnd.getDate() + 6); nextEnd.setHours(23,59,59,999)
+  const items = State.workItems || []
+  const inRange = (d, s, e) => { if (!d) return false; const x = new Date(d); return x >= s && x <= e }
+  const completed = items.filter(w => _deriveKanbanStatus(w) === '완료' && (inRange(w.endDate, start, end) || inRange(w.startDate, start, end)))
+  const inProgress = items.filter(w => _deriveKanbanStatus(w) === '진행중')
+  const upcoming = items.filter(w => inRange(w.startDate, nextStart, nextEnd))
+  const fmt = d => `${d.getMonth()+1}/${d.getDate()}`
+  const rowHtml = w => `<div class="weekly-report-item"><strong>${esc(w.title||'')}</strong> <span style="color:#888;font-size:11px">· ${esc(w.category||'')} · ${esc(w.startDate||'')}${w.endDate && w.endDate !== w.startDate ? ' ~ ' + esc(w.endDate) : ''}</span></div>`
+  body.innerHTML = `
+    <div style="font-size:12px;color:#666;margin-bottom:12px">📆 ${fmt(start)} ~ ${fmt(end)}</div>
+    <div class="weekly-report-section"><h4>✅ 이번 주 완료 (${completed.length})</h4>${completed.length ? completed.map(rowHtml).join('') : '<div style="color:#999;font-size:12px">완료 항목 없음</div>'}</div>
+    <div class="weekly-report-section"><h4>⏳ 진행중 (${inProgress.length})</h4>${inProgress.length ? inProgress.map(rowHtml).join('') : '<div style="color:#999;font-size:12px">진행중 항목 없음</div>'}</div>
+    <div class="weekly-report-section"><h4>📅 다음 주 예정 (${upcoming.length})</h4>${upcoming.length ? upcoming.map(rowHtml).join('') : '<div style="color:#999;font-size:12px">예정 항목 없음</div>'}</div>
+  `
+}
+window.generateWeeklyReport = generateWeeklyReport
+
+function openWeeklyReportModal() {
+  const modal = document.getElementById('weeklyReportModal')
+  if (!modal) return
+  generateWeeklyReport()
+  if (typeof centerModal === 'function') centerModal(modal)
+  modal.showModal()
+}
+window.openWeeklyReportModal = openWeeklyReportModal
+
+function closeWeeklyReportModal() {
+  const modal = document.getElementById('weeklyReportModal')
+  if (modal) modal.close()
+}
+window.closeWeeklyReportModal = closeWeeklyReportModal
 
 async function loadPersonalSchedules() {
   try {
@@ -521,7 +1084,7 @@ function renderPersonalCalendar() {
     })
   }
 
-  const MAX_ROWS = 10
+  const MAX_ROWS = 6
   const barRows = placePsBars(cells[0].date, cells[cells.length - 1].date, visible, MAX_ROWS)
   const todayStr = fmtDate(new Date())
 

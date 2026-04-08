@@ -75,12 +75,13 @@ function ensureSizeSpec(p) {
 }
 // ===== 기획 일정 단계 (동적 관리) =====
 const DEFAULT_PLAN_PHASES = [
-  { key: 'design',     label: '디자인',   color: '#c9a96e' },
-  { key: 'production', label: '생산',     color: '#4caf7d' },
-  { key: 'image',      label: '이미지',   color: '#7C3AED' },
-  { key: 'register',   label: '상품등록', color: '#f0a500' },
-  { key: 'logistics',  label: '물류입고', color: '#0891B2' },
+  { key: 'design',     label: '디자인',   color: '#c9a96e', isDefault: true },
+  { key: 'production', label: '생산',     color: '#4caf7d', isDefault: true },
+  { key: 'image',      label: '이미지',   color: '#7C3AED', isDefault: true },
+  { key: 'register',   label: '상품등록', color: '#f0a500', isDefault: true },
+  { key: 'logistics',  label: '물류입고', color: '#0891B2', isDefault: true },
 ]
+const DEFAULT_PLAN_PHASE_KEYS = ['design','production','image','register','logistics']
 const PLAN_PHASES_KEY = 'lemango_plan_phases_v1'
 let _planPhases = null
 function getPlanPhases() {
@@ -93,8 +94,11 @@ function getPlanPhases() {
       _planPhases = DEFAULT_PLAN_PHASES.map(p => ({ ...p }))
       savePlanPhases()
     }
-    // Backfill missing colors for saved data
-    _planPhases.forEach(p => { if (!p.color) p.color = '#888' })
+    // Backfill missing colors and isDefault for saved data
+    _planPhases.forEach(p => {
+      if (!p.color) p.color = '#888'
+      if (DEFAULT_PLAN_PHASE_KEYS.indexOf(p.key) >= 0) p.isDefault = true
+    })
   }
   return _planPhases
 }
@@ -142,19 +146,112 @@ const SETTING_DEFS = [
 ]
 
 // =============================================
-// ===== 판매 채널(플랫폼) 관리 =====
+// ===== 판매 채널(플랫폼+수수료) 통합 관리 =====
 // =============================================
 const DEFAULT_PLATFORMS = ['공홈', 'GS', '29cm', 'W쇼핑', '기타']
 
-let _platforms = (() => {
+// 기본 수수료율 매핑 (마이그레이션/신규 채널 기본값용)
+const _DEFAULT_FEE_MAP = {
+  '공홈': 0, '파트너': 0,
+  '29CM': 30, '29cm': 30,
+  '무신사': 25, 'GS shop': 35, 'GS': 35,
+  '신세계몰': 28, 'W쇼핑': 32, '롯데ON': 30,
+  '카카오': 20, '하프클럽': 33, 'SSF': 27,
+  'CJ온스타일': 35, '현대Hmall': 30
+}
+
+// 신규 통합 구조: [{name, feeRate, note, active}]
+let _channels = (() => {
   try {
-    const saved = localStorage.getItem('lemango_platforms_v1')
-    return saved ? JSON.parse(saved) : [...DEFAULT_PLATFORMS]
-  } catch { return [...DEFAULT_PLATFORMS] }
+    const saved = localStorage.getItem('lemango_channels_v1')
+    if (saved) return JSON.parse(saved)
+  } catch {}
+  // 마이그레이션: 기존 _platforms + _channelFees 병합
+  let oldPlats = []
+  try {
+    const sp = localStorage.getItem('lemango_platforms_v1')
+    oldPlats = sp ? JSON.parse(sp) : [...DEFAULT_PLATFORMS]
+  } catch { oldPlats = [...DEFAULT_PLATFORMS] }
+  let oldFees = []
+  try {
+    const sf = localStorage.getItem('lemango_channel_fees_v1')
+    oldFees = sf ? JSON.parse(sf) : []
+  } catch {}
+  const seen = new Set()
+  const merged = []
+  oldPlats.forEach(name => {
+    if (!name || seen.has(name)) return
+    seen.add(name)
+    const fee = oldFees.find(f => f.channel === name)
+    const rate = fee ? (Number(fee.rate) || 0) : (_DEFAULT_FEE_MAP[name] != null ? _DEFAULT_FEE_MAP[name] : 0)
+    merged.push({ name, feeRate: rate, note: '', active: true })
+  })
+  oldFees.forEach(f => {
+    if (!f || !f.channel || seen.has(f.channel)) return
+    seen.add(f.channel)
+    merged.push({ name: f.channel, feeRate: Number(f.rate) || 0, note: '', active: true })
+  })
+  return merged
 })()
+
+let _platforms = _channels.filter(c => c.active).map(c => c.name)
 
 function savePlatforms() {
   localStorage.setItem('lemango_platforms_v1', JSON.stringify(_platforms))
+}
+
+function getChannels() { return _channels }
+function getActiveChannels() { return _channels.filter(c => c.active) }
+
+function saveChannels() {
+  localStorage.setItem('lemango_channels_v1', JSON.stringify(_channels))
+  _platforms = _channels.filter(c => c.active).map(c => c.name)
+  savePlatforms()
+}
+
+function getChannelFeeRate(channelName) {
+  const found = _channels.find(c => c.name === channelName)
+  return found ? Number(found.feeRate) || 0 : 0
+}
+
+// 매출 업로드: 새 채널 자동 감지 + 추가
+function detectNewChannels(uploadedChannels) {
+  const existing = getChannels().map(c => c.name.toLowerCase())
+  const seen = new Set()
+  return (uploadedChannels || []).filter(ch => {
+    if (!ch) return false
+    const lower = String(ch).toLowerCase()
+    if (seen.has(lower)) return false
+    seen.add(lower)
+    return !existing.some(ex => ex === lower || ex.includes(lower) || lower.includes(ex))
+  })
+}
+
+async function promptNewChannels(newChannels) {
+  if (!newChannels || !newChannels.length) return
+  const list = newChannels.join(', ')
+  const ok = await korConfirm('새로운 판매 채널이 발견되었습니다:\n\n' + list + '\n\n판매채널 설정에 추가하시겠습니까?', '추가', '건너뛰기')
+  if (!ok) return
+  const added = []
+  for (const ch of newChannels) {
+    const rateStr = prompt('"' + ch + '" 수수료율 (%, 0~100)', '0')
+    if (rateStr === null) continue
+    const rate = parseFloat(rateStr)
+    const feeRate = (isNaN(rate) || rate < 0 || rate > 100) ? 0 : rate
+    if (!_channels.some(c => c.name === ch)) {
+      _channels.push({ name: ch, feeRate, note: '매출 업로드에서 자동 추가', active: true })
+      added.push(ch)
+      if (typeof State !== 'undefined' && Array.isArray(State.allProducts)) {
+        State.allProducts.forEach(p => { if (p.sales && !(ch in p.sales)) p.sales[ch] = 0 })
+      }
+    }
+  }
+  if (added.length) {
+    saveChannels()
+    if (typeof populateAllSelects === 'function') populateAllSelects()
+    if (typeof showToast === 'function') showToast(added.length + '개 새 채널이 추가되었습니다.')
+    if (typeof logActivity === 'function') logActivity('setting', '설정', '매출 업로드에서 새 채널 추가 — ' + added.join(', '))
+  }
 }
 
 let _settings = (() => {
@@ -256,10 +353,10 @@ function populateAllSelects() {
 const State = {
   allProducts: [],
   planItems:   [],
-  product: { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [] },
-  stock:   { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [] },
-  sales:   { filtered: [], sort: { key: 'totalSales', dir: 'desc' }, page: 1, pageSize: 10, activePlatforms: [], inactivePlatforms: [], columnFilters: {} },
-  plan:    { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [] },
+  product: { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {} },
+  stock:   { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {} },
+  sales:   { filtered: [], sort: { key: 'totalSales', dir: 'desc' }, page: 1, pageSize: 10, activePlatforms: [], inactivePlatforms: [], columnFilters: {}, colWidths: {} },
+  plan:    { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {} },
   event:   { filtered: [], sort: { key: 'startDate', dir: 'asc' }, page: 1 },
   work:    { filtered: [], sort: { key: 'startDate', dir: 'desc' }, page: 1 },
   workItems: [],
@@ -435,5 +532,352 @@ const NOTIF_ICONS = {
   personal_schedule:'📋',
   work_mention: '📋',
   work_start: '⏰',
-  work_upcoming: '📅'
+  work_upcoming: '📅',
+  comment_mention: '💬',
+  watch_change: '👁'
 }
+
+// =============================================
+// ===== Feature 1: Global Search =====
+// =============================================
+let _gsearchResults = []
+let _gsearchIdx = -1
+
+function globalSearch(q) {
+  q = (q || '').trim().toLowerCase()
+  if (!q) { hideGsearchDropdown(); _gsearchResults = []; return }
+  const out = []
+  const push = (item) => { if (out.length < 12) out.push(item) }
+  // products
+  ;(State.allProducts || []).forEach(p => {
+    if (out.length >= 12) return
+    const hay = ((p.productCode||'') + ' ' + (p.nameKr||'') + ' ' + (p.nameEn||'') + ' ' + (p.sampleNo||'') + ' ' + (p.brand||'')).toLowerCase()
+    if (hay.includes(q)) push({ type:'product', id:p.productCode, title:p.nameKr || p.productCode, sub:`상품 · ${p.productCode}${p.brand?' · '+p.brand:''}` })
+  })
+  ;(State.planItems || []).forEach(p => {
+    if (out.length >= 12) return
+    const hay = ((p.productCode||'') + ' ' + (p.nameKr||'') + ' ' + (p.sampleNo||'') + ' ' + (p.brand||'')).toLowerCase()
+    if (hay.includes(q)) push({ type:'plan', id:p.no, title:p.nameKr || p.sampleNo || ('기획 #'+p.no), sub:`기획 · ${p.sampleNo||''}${p.productCode?' · '+p.productCode:''}` })
+  })
+  ;(typeof _events !== 'undefined' ? _events : []).forEach(ev => {
+    if (out.length >= 12) return
+    const hay = ((ev.name||'') + ' ' + (ev.channel||'') + ' ' + (ev.memo||'')).toLowerCase()
+    if (hay.includes(q)) push({ type:'event', id:ev.no, title:ev.name || '행사', sub:`행사 · ${ev.channel||''} · ${ev.startDate||''}~${ev.endDate||''}` })
+  })
+  ;(typeof _workItems !== 'undefined' ? _workItems : []).forEach(w => {
+    if (out.length >= 12) return
+    const hay = ((w.title||'') + ' ' + (w.category||'') + ' ' + (w.memo||'')).toLowerCase()
+    if (hay.includes(q)) push({ type:'work', id:w.no, title:w.title || '업무', sub:`업무 · ${w.category||''} · ${w.startDate||''}` })
+  })
+  _gsearchResults = out
+  _gsearchIdx = -1
+  renderGsearchResults()
+  showGsearchDropdown()
+}
+
+function renderGsearchResults() {
+  const dd = document.getElementById('gsearchDropdown')
+  if (!dd) return
+  if (!_gsearchResults.length) { dd.innerHTML = '<div class="gsearch-empty">결과 없음</div>'; return }
+  dd.innerHTML = _gsearchResults.map((r, i) => {
+    const active = i === _gsearchIdx ? ' gsearch-active' : ''
+    const icon = { product:'📦', plan:'📝', event:'🎉', work:'📋' }[r.type] || '•'
+    return `<div class="gsearch-item${active}" data-idx="${i}" onclick="selectGsearchResult(${i})">
+      <span class="gsearch-icon">${icon}</span>
+      <span class="gsearch-body"><span class="gsearch-title">${(r.title||'').replace(/[<>]/g,'')}</span><span class="gsearch-sub">${(r.sub||'').replace(/[<>]/g,'')}</span></span>
+    </div>`
+  }).join('')
+}
+
+function gsearchKeyDown(e) {
+  if (!_gsearchResults.length) return
+  if (e.key === 'ArrowDown') { e.preventDefault(); _gsearchIdx = Math.min(_gsearchResults.length-1, _gsearchIdx+1); renderGsearchResults() }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); _gsearchIdx = Math.max(0, _gsearchIdx-1); renderGsearchResults() }
+  else if (e.key === 'Enter') { e.preventDefault(); if (_gsearchIdx < 0) _gsearchIdx = 0; selectGsearchResult(_gsearchIdx) }
+  else if (e.key === 'Escape') { hideGsearchDropdown() }
+}
+
+function selectGsearchResult(i) {
+  const r = _gsearchResults[i]
+  if (!r) return
+  hideGsearchDropdown()
+  const input = document.getElementById('gsearchInput')
+  if (input) input.value = ''
+  const tabMap = { product:'product', plan:'plan', event:'event', work:'work' }
+  const tab = tabMap[r.type]
+  if (typeof navigateTo === 'function') navigateTo(tab)
+  setTimeout(() => {
+    try {
+      if (r.type === 'product' && typeof openDetailModal === 'function') openDetailModal(r.id)
+      else if (r.type === 'plan' && typeof openPlanDetailModal === 'function') openPlanDetailModal(r.id)
+      else if (r.type === 'event' && typeof openEventDetailModal === 'function') openEventDetailModal(r.id)
+      else if (r.type === 'work' && typeof openWorkDetailModal === 'function') openWorkDetailModal(r.id)
+    } catch(e) { console.warn('gsearch open error', e) }
+  }, 300)
+}
+
+function showGsearchDropdown() {
+  const dd = document.getElementById('gsearchDropdown')
+  if (dd) dd.style.display = ''
+}
+function hideGsearchDropdown() {
+  const dd = document.getElementById('gsearchDropdown')
+  if (dd) dd.style.display = 'none'
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('click', (e) => {
+    const wrap = document.querySelector('.gsearch-wrap')
+    if (wrap && !wrap.contains(e.target)) hideGsearchDropdown()
+  })
+})
+
+// =============================================
+// ===== Feature 3: Favorites =====
+// =============================================
+let _favorites = (() => {
+  try { return JSON.parse(localStorage.getItem('lemango_favorites_v1') || '[]') } catch(e) { return [] }
+})()
+
+function saveFavorites() {
+  try { localStorage.setItem('lemango_favorites_v1', JSON.stringify(_favorites)) } catch(e) {}
+}
+
+function isFavorite(type, id) {
+  return _favorites.some(f => f.type === type && String(f.id) === String(id))
+}
+
+function toggleFavorite(type, id, name) {
+  if (id === null || id === undefined || id === '') return
+  const idx = _favorites.findIndex(f => f.type === type && String(f.id) === String(id))
+  if (idx >= 0) {
+    _favorites.splice(idx, 1)
+    if (typeof showToast === 'function') showToast('즐겨찾기 해제', 'info')
+  } else {
+    _favorites.unshift({ type, id, name: name || '', addedAt: new Date().toISOString() })
+    if (_favorites.length > 50) _favorites = _favorites.slice(0, 50)
+    if (typeof showToast === 'function') showToast('즐겨찾기 추가', 'success')
+  }
+  saveFavorites()
+  // update any open buttons
+  const btnMap = { product:'dFavBtn', plan:'pdFavBtn', event:'evFavBtn', work:'wkFavBtn' }
+  const bid = btnMap[type]
+  if (bid) {
+    const b = document.getElementById(bid)
+    if (b) {
+      const on = isFavorite(type, id)
+      b.textContent = on ? '★' : '☆'
+      b.classList.toggle('fav-on', on)
+    }
+  }
+  if (typeof renderFavoritesList === 'function') renderFavoritesList()
+}
+
+function renderFavoriteStar(type, id) {
+  const on = isFavorite(type, id)
+  return `<span class="fav-star-inline${on?' fav-on':''}">${on?'★':'☆'}</span>`
+}
+
+function openFavorite(type, id) {
+  const tabMap = { product:'product', plan:'plan', event:'event', work:'work' }
+  const tab = tabMap[type]
+  if (typeof navigateTo === 'function') navigateTo(tab)
+  setTimeout(() => {
+    try {
+      if (type === 'product') openDetailModal(id)
+      else if (type === 'plan') openPlanDetailModal(Number(id))
+      else if (type === 'event') openEventDetailModal(Number(id))
+      else if (type === 'work') openWorkDetailModal(Number(id))
+    } catch(e) {}
+  }, 300)
+}
+
+function renderFavoritesList() {
+  // Tab-scoped favorites bars
+  const pArea = document.getElementById('productFavArea')
+  if (pArea) pArea.innerHTML = renderFavoritesBar('product')
+  const npArea = document.getElementById('planFavArea')
+  if (npArea) npArea.innerHTML = renderFavoritesBar('plan')
+}
+
+function renderFavoritesBar(filterType) {
+  const list = filterType === 'all' ? _favorites : _favorites.filter(f => f.type === filterType)
+  if (!list.length) return ''
+  const icon = { product:'📦', plan:'📝', event:'🎉', work:'📋' }
+  let html = '<div class="fav-bar"><div class="fav-bar-title">★ 즐겨찾기</div><div class="fav-bar-list">'
+  list.slice(0, 10).forEach(f => {
+    const idJson = JSON.stringify(f.id).replace(/"/g, '&quot;')
+    const name = (f.name || String(f.id)).replace(/[<>"']/g, '')
+    html += `<div class="fav-bar-item" onclick="openFavorite('${f.type}', ${idJson})">
+      <span class="fav-bar-icon">${icon[f.type]||'•'}</span>
+      <span class="fav-bar-name">${name}</span>
+      <span class="fav-bar-x" onclick="event.stopPropagation();toggleFavorite('${f.type}', ${idJson}, '')">✕</span>
+    </div>`
+  })
+  html += '</div></div>'
+  return html
+}
+
+// =============================================
+// ===== Feature 13: Modal back navigation =====
+// =============================================
+let _modalHistory = []
+
+function pushModalHistory(type, id) {
+  // avoid duplicate at top
+  const last = _modalHistory[_modalHistory.length - 1]
+  if (last && last.type === type && String(last.id) === String(id)) return
+  _modalHistory.push({ type, id })
+  if (_modalHistory.length > 20) _modalHistory = _modalHistory.slice(-20)
+  updateBackBtns()
+}
+
+function popModalHistory() {
+  _modalHistory.pop()
+  updateBackBtns()
+  return _modalHistory[_modalHistory.length - 1] || null
+}
+
+function clearModalHistory() {
+  _modalHistory = []
+  updateBackBtns()
+}
+
+function updateBackBtns() {
+  const show = _modalHistory.length > 1
+  ;['dBackBtn','pdBackBtn','evBackBtn','wkBackBtn'].forEach(id => {
+    const b = document.getElementById(id)
+    if (b) b.style.display = show ? '' : 'none'
+  })
+}
+
+function goBack() {
+  // remove current top then reopen previous
+  _modalHistory.pop()
+  const prev = _modalHistory.pop() // will be re-pushed by open*
+  updateBackBtns()
+  // close any open srm-modal / detail / plan dialogs
+  document.querySelectorAll('dialog[open]').forEach(d => { try { d.close() } catch(e){} })
+  if (!prev) return
+  setTimeout(() => {
+    try {
+      if (prev.type === 'product') openDetailModal(prev.id)
+      else if (prev.type === 'plan') openPlanDetailModal(Number(prev.id))
+      else if (prev.type === 'event') openEventDetailModal(Number(prev.id))
+      else if (prev.type === 'work') openWorkDetailModal(Number(prev.id))
+    } catch(e) {}
+  }, 200)
+}
+
+// expose globals
+window.globalSearch = globalSearch
+window.gsearchKeyDown = gsearchKeyDown
+window.selectGsearchResult = selectGsearchResult
+window.showGsearchDropdown = showGsearchDropdown
+window.hideGsearchDropdown = hideGsearchDropdown
+window.toggleFavorite = toggleFavorite
+window.isFavorite = isFavorite
+window.renderFavoritesBar = renderFavoritesBar
+window.openFavorite = openFavorite
+window.renderFavoritesList = renderFavoritesList
+
+/* ========== Feature 1: Product History ========== */
+function addProductHistory(productCode, action, detail) {
+  if (!productCode) return
+  const all = JSON.parse(localStorage.getItem('lemango_product_history_v1') || '{}')
+  if (!all[productCode]) all[productCode] = []
+  all[productCode].push({
+    action, detail: detail || '',
+    user: (typeof _currentUserName !== 'undefined' && _currentUserName) || '',
+    userPosition: (typeof _currentUserPosition !== 'undefined' && _currentUserPosition) || '',
+    timestamp: new Date().toISOString()
+  })
+  if (all[productCode].length > 50) all[productCode] = all[productCode].slice(-50)
+  localStorage.setItem('lemango_product_history_v1', JSON.stringify(all))
+}
+function getProductHistory(productCode) {
+  const all = JSON.parse(localStorage.getItem('lemango_product_history_v1') || '{}')
+  return (all[productCode] || []).slice().reverse()
+}
+window.addProductHistory = addProductHistory
+window.getProductHistory = getProductHistory
+
+/* ========== Feature 2: Watches ========== */
+let _watches = (() => { try { return JSON.parse(localStorage.getItem('lemango_watches_v1') || '[]') } catch(e) { return [] } })()
+function saveWatches() { try { localStorage.setItem('lemango_watches_v1', JSON.stringify(_watches)) } catch(e) {} }
+function _myUid() { try { return (firebase.auth().currentUser && firebase.auth().currentUser.uid) || '' } catch(e) { return '' } }
+function isWatching(type, id) {
+  const uid = _myUid()
+  return _watches.some(w => w.type === type && String(w.id) === String(id) && w.uid === uid)
+}
+function toggleWatch(type, id, name) {
+  if (id === null || id === undefined || id === '') return
+  const uid = _myUid()
+  const idx = _watches.findIndex(w => w.type === type && String(w.id) === String(id) && w.uid === uid)
+  if (idx >= 0) {
+    _watches.splice(idx, 1)
+    if (typeof showToast === 'function') showToast('워치 해제', 'info')
+  } else {
+    _watches.push({ type, id: String(id), uid, name: name || '' })
+    if (typeof showToast === 'function') showToast('워치 등록 — 변경 시 알림', 'success')
+  }
+  saveWatches()
+  const btnMap = { product:'dWatchBtn', plan:'pdWatchBtn', event:'evWatchBtn', work:'wkWatchBtn' }
+  const b = document.getElementById(btnMap[type])
+  if (b) {
+    const on = isWatching(type, id)
+    b.textContent = on ? '👁' : '👁‍🗨'
+    b.classList.toggle('watch-on', on)
+  }
+}
+function notifyWatchers(type, id, action) {
+  const uid = _myUid()
+  _watches.filter(w => w.type === type && String(w.id) === String(id) && w.uid !== uid).forEach(w => {
+    const who = (typeof formatUserName === 'function' ? formatUserName(_currentUserName, _currentUserPosition) : (_currentUserName || ''))
+    addNotification('watch_change', '워치 알림', `${who}님이 ${w.name || id} ${action}`, type)
+  })
+}
+window.toggleWatch = toggleWatch
+window.isWatching = isWatching
+window.notifyWatchers = notifyWatchers
+
+/* ========== Feature 9: Edit Locks ========== */
+function acquireEditLock(type, id) {
+  const locks = JSON.parse(localStorage.getItem('lemango_edit_locks_v1') || '{}')
+  const key = type + '_' + id
+  const uid = _myUid()
+  if (locks[key] && locks[key].uid !== uid) {
+    const elapsed = Date.now() - new Date(locks[key].since).getTime()
+    if (elapsed < 300000) {
+      const lockerName = (typeof formatUserName === 'function' ? formatUserName(locks[key].name, locks[key].position) : locks[key].name)
+      if (typeof showToast === 'function') showToast(lockerName + '님이 수정 중입니다.', 'warning')
+      return false
+    }
+  }
+  locks[key] = { uid, name: _currentUserName || '', position: _currentUserPosition || '', since: new Date().toISOString() }
+  localStorage.setItem('lemango_edit_locks_v1', JSON.stringify(locks))
+  return true
+}
+function releaseEditLock(type, id) {
+  const locks = JSON.parse(localStorage.getItem('lemango_edit_locks_v1') || '{}')
+  delete locks[type + '_' + id]
+  localStorage.setItem('lemango_edit_locks_v1', JSON.stringify(locks))
+}
+function getEditLockInfo(type, id) {
+  const locks = JSON.parse(localStorage.getItem('lemango_edit_locks_v1') || '{}')
+  const lock = locks[type + '_' + id]
+  if (!lock) return null
+  if (lock.uid === _myUid()) return null
+  if (Date.now() - new Date(lock.since).getTime() >= 300000) return null
+  return lock
+}
+window.acquireEditLock = acquireEditLock
+window.releaseEditLock = releaseEditLock
+window.getEditLockInfo = getEditLockInfo
+window.renderFavoriteStar = renderFavoriteStar
+window.openFavorite = openFavorite
+window.renderFavoritesList = renderFavoritesList
+window.pushModalHistory = pushModalHistory
+window.popModalHistory = popModalHistory
+window.clearModalHistory = clearModalHistory
+window.goBack = goBack

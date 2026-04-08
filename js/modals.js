@@ -35,7 +35,7 @@ document.addEventListener('keydown', e => {
 // =============================================
 function makeDraggableResizable(modal, minW = 420, minH = 300) {
   if (!modal || modal._dragInit) return   // 중복 초기화 방지
-  const header = modal.querySelector('.srm-header, .rmodal-header, .dmodal-header')
+  const header = modal.querySelector('.srm-modal-header, .srm-header, .rmodal-header, .dmodal-header')
   if (!header) return
   modal._dragInit = true
 
@@ -158,9 +158,9 @@ function openDetailModal(productCode) {
     lockBtn.style.display = p.productCodeLocked ? 'none' : 'inline-block'
     lockBtn.textContent = '🔒 품번 확정'
   }
-  // 삭제 버튼 (grade 3+ only)
+  // 삭제 버튼 (grade 2+ only)
   const deleteBtn = document.getElementById('dDeleteBtn')
-  if (deleteBtn && !(State.currentUser && State.currentUser.grade >= 3)) {
+  if (deleteBtn && !(State.currentUser && State.currentUser.grade >= 2)) {
     deleteBtn.dataset.hidden = '1'
   } else if (deleteBtn) {
     delete deleteBtn.dataset.hidden
@@ -191,7 +191,16 @@ function openDetailModal(productCode) {
 
   modal.showModal()
   centerModal(modal)
+  _dSyncWatchBtn()
+  _dSyncLockWarn()
   loadComments('product', p.productCode)
+  if (typeof pushModalHistory === 'function') pushModalHistory('product', p.productCode)
+  const favBtn = document.getElementById('dFavBtn')
+  if (favBtn) {
+    const on = typeof isFavorite === 'function' && isFavorite('product', p.productCode)
+    favBtn.textContent = on ? '★' : '☆'
+    favBtn.classList.toggle('fav-on', on)
+  }
 }
 
 // ===== 상세 모달 이미지 네비게이션 =====
@@ -320,6 +329,30 @@ function _initThumbDragScroll(el) {
   }
 }
 
+function buildProductHistoryHtml(productCode) {
+  const list = (typeof getProductHistory === 'function' ? getProductHistory(productCode) : []) || []
+  if (!list.length) {
+    return `<div class="prod-history-section">
+      <div class="phs-title">이력</div>
+      <div class="phs-empty">이력 없음</div>
+    </div>`
+  }
+  const rows = list.slice().reverse().map(h => {
+    const when = (typeof timeAgo === 'function' && h.ts) ? timeAgo(h.ts) : ''
+    const user = h.userName || ''
+    return `<div class="phs-item">
+      <span class="phs-action">${esc(h.action || '')}</span>
+      <span class="phs-detail">${esc(h.detail || '')}</span>
+      <span class="phs-meta">${esc(user)} · ${esc(when)}</span>
+    </div>`
+  }).join('')
+  return `<div class="prod-history-section">
+    <div class="phs-title">이력 (${list.length})</div>
+    <div class="phs-list">${rows}</div>
+  </div>`
+}
+window.buildProductHistoryHtml = buildProductHistoryHtml
+
 function buildDetailContent(p) {
   const sizes  = SIZES
   const platforms = _platforms
@@ -444,7 +477,21 @@ function buildDetailContent(p) {
   const brandOpts       = mkOpts(_settings.brands,         p.brand)
   const saleStatusOpts  = mkOpts(_settings.saleStatuses,   p.saleStatus||'판매중')
 
+  // Assignee options from _allUsers
+  const _users = Array.isArray(window._allUsers) ? window._allUsers : []
+  const assigneeName = p.assigneeName || (p.assignee ? (_users.find(u=>u.uid===p.assignee)?.name || '') : '')
+  const assigneePos  = p.assigneePosition || (p.assignee ? (_users.find(u=>u.uid===p.assignee)?.position || '') : '')
+  const assigneeView = (assigneeName && typeof formatUserName === 'function') ? formatUserName(assigneeName, assigneePos) : (assigneeName || '-')
+  const assigneeOpts = `<option value="">- 미지정 -</option>` + _users.map(u => `<option value="${u.uid}"${p.assignee===u.uid?' selected':''}>${esc((typeof formatUserName==='function')?formatUserName(u.name, u.position):u.name)}</option>`).join('')
+
+  const pinnedMemoBlock = `
+    <div class="pinned-memo">📌 ${esc(p.pinnedMemo || '')}</div>
+    <div class="pinned-memo-edit">
+      <textarea data-key="pinnedMemo" rows="2" placeholder="📌 고정 메모 (상단 상시 노출)">${esc(p.pinnedMemo || '')}</textarea>
+    </div>`
+
   return `
+    ${pinnedMemoBlock}
     <div class="dsection">
       <div class="dsection-title">기본 정보</div>
       <div class="detail-basic-grid">
@@ -460,6 +507,7 @@ function buildDetailContent(p) {
           `<option value=""${!p.gender?' selected':''}>-</option>` +
           Object.entries(GENDER_MAP).map(([v,l]) => `<option value="${v}"${p.gender===v?' selected':''}>${l}</option>`).join('')
         )}
+        ${field('담당자', 'assignee', assigneeView, 'select', assigneeOpts)}
       </div>
     </div>
 
@@ -598,6 +646,7 @@ function buildDetailContent(p) {
     <div class="dsection">
       <div class="dsection-title dimg-toggle" onclick="toggleDImg('dImgBody')">
         이미지 URL <span class="dimg-arrow">▼</span>
+        <button type="button" class="img-html-btn-all" onclick="event.stopPropagation();copyAllImageHtml()">전체 HTML 복사</button>
       </div>
       <div id="dImgBody" class="dsection-grid col1">
         ${(() => {
@@ -612,19 +661,29 @@ function buildDetailContent(p) {
           }
           return `
         <div class="dimg-sub">
-          <div class="dimg-sub-title collapsed" onclick="toggleDImg('dImgMain')">대표이미지 ${preview(mainImg)}<span class="dimg-arrow">▶</span></div>
-          <div id="dImgMain" class="dimg-hidden">${urlField('대표이미지', 'mainImage', mainImg, 'text')}</div>
+          <div class="dimg-sub-title collapsed" onclick="toggleDImg('dImgMain')">대표이미지 ${preview(mainImg)}<span class="dimg-arrow">▶</span>${mainImg ? `<button type="button" class="img-html-btn" onclick="event.stopPropagation();copyImageHtml('mainImage')">HTML</button>` : ''}</div>
+          <div id="dImgMain" class="dimg-hidden">${(() => {
+            const safeVal = (mainImg||'').replace(/"/g, '&quot;')
+            return `<div class="dfield span3">
+              <div class="dfield-label-row">
+                <span class="dfield-label">대표이미지</span>
+                ${mainImg ? `<button type="button" class="btn-copy-url" data-url="${safeVal}" onclick="copySingleUrlFromBtn(this)" title="클립보드 복사">복사</button>` : ''}
+              </div>
+              <span class="dfield-value${!mainImg ? ' empty' : ''}" data-urlkey="mainImage">${mainImg || '-'}</span>
+              <input type="text" data-key="mainImage" value="${safeVal}" />
+            </div>`
+          })()}</div>
         </div>
         <div class="dimg-sub">
-          <div class="dimg-sub-title collapsed" onclick="toggleDImg('dImgJasa')">자사몰 ${preview(jasaUrls)}<span class="dimg-arrow">▶</span></div>
+          <div class="dimg-sub-title collapsed" onclick="toggleDImg('dImgJasa')">자사몰 ${preview(jasaUrls)}<span class="dimg-arrow">▶</span>${jasaUrls.length ? `<button type="button" class="img-html-btn" onclick="event.stopPropagation();copyImageHtml('jasa')">HTML</button>` : ''}</div>
           <div id="dImgJasa" class="dimg-hidden">${urlField('자사몰', 'urlJasa', jasaUrls.join('\n'), 'textarea')}</div>
         </div>
         <div class="dimg-sub">
-          <div class="dimg-sub-title collapsed" onclick="toggleDImg('dImgExternal')">외부몰 ${preview(extUrls)}<span class="dimg-arrow">▶</span></div>
+          <div class="dimg-sub-title collapsed" onclick="toggleDImg('dImgExternal')">외부몰 ${preview(extUrls)}<span class="dimg-arrow">▶</span>${extUrls.length ? `<button type="button" class="img-html-btn" onclick="event.stopPropagation();copyImageHtml('external')">HTML</button>` : ''}</div>
           <div id="dImgExternal" class="dimg-hidden">${urlField('외부몰', 'urlExternal', extUrls.join('\n'), 'textarea')}</div>
         </div>
         <div class="dimg-sub">
-          <div class="dimg-sub-title collapsed" onclick="toggleDImg('dImgSum')">SUM ${preview(sumUrls)}<span class="dimg-arrow">▶</span></div>
+          <div class="dimg-sub-title collapsed" onclick="toggleDImg('dImgSum')">SUM ${preview(sumUrls)}<span class="dimg-arrow">▶</span>${sumUrls.length ? `<button type="button" class="img-html-btn" onclick="event.stopPropagation();copyImageHtml('sum')">HTML</button>` : ''}</div>
           <div id="dImgSum" class="dimg-hidden">${urlField('SUM', 'urlSum', sumUrls.join('\n'), 'textarea')}</div>
         </div>
         <div class="dimg-sub">
@@ -686,15 +745,62 @@ function buildDetailContent(p) {
       </div>
     </div>` : ''}
 
+    ${(Array.isArray(p.tempImages) && p.tempImages.length > 0) ? `
+    <div class="dsection">
+      <div class="dsection-title">참고 이미지 <span class="plan-img-badge plan-img-badge-temp">임시</span></div>
+      <div style="padding:8px 12px">
+        <div class="temp-img-bar">
+          <span class="temp-img-bar-text">임시 이미지 ${p.tempImages.length}개 — 확인 후 삭제하세요</span>
+          <button type="button" class="temp-img-del-all" onclick="deleteAllProductTempImages()">전체 삭제</button>
+        </div>
+        <div class="plan-img-grid">
+          ${p.tempImages.map((img, i) => {
+            const safe = String(img.url || '').replace(/"/g,'&quot;')
+            const nm = (img.name || '').length > 16 ? img.name.slice(0,14)+'..' : (img.name||'')
+            return `<div class="plan-img-thumb plan-img-thumb-temp">
+              <span class="plan-img-thumb-tag-temp">임시</span>
+              <img src="${safe}" onclick="window.open('${safe.replace(/'/g,"\\'")}','_blank')" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'" />
+              <div class="plan-img-thumb-name">${esc(nm)}</div>
+              <button type="button" class="plan-img-thumb-x temp-del-btn" onclick="deleteProductTempImage(${i})">✕</button>
+            </div>`
+          }).join('')}
+        </div>
+      </div>
+    </div>` : ''}
+
     <div class="dmodal-edit-footer">
       <button type="button" class="btn btn-outline" onclick="toggleDetailEdit()">취소</button>
       <button type="button" class="btn btn-new" onclick="saveDetailEdit()">저장</button>
     </div>
 
+    ${buildProductHistoryHtml(p.productCode)}
     ${renderStampInfo(p)}
     ${buildCommentSection('product', p.productCode)}
   `
 }
+
+async function deleteProductTempImage(idx) {
+  const p = State.allProducts.find(x => x.productCode === _detailCode)
+  if (!p || !Array.isArray(p.tempImages)) return
+  const ok = await korConfirm('이 임시 이미지를 삭제하시겠습니까?', '삭제', '취소')
+  if (!ok) return
+  p.tempImages.splice(idx, 1)
+  openDetailModal(_detailCode)
+  showToast('임시 이미지가 삭제되었습니다.', 'success')
+}
+
+async function deleteAllProductTempImages() {
+  const p = State.allProducts.find(x => x.productCode === _detailCode)
+  if (!p || !Array.isArray(p.tempImages) || !p.tempImages.length) return
+  const ok = await korConfirm(`임시 이미지 ${p.tempImages.length}개를 모두 삭제하시겠습니까?`, '전체 삭제', '취소')
+  if (!ok) return
+  p.tempImages = []
+  openDetailModal(_detailCode)
+  showToast('임시 이미지가 모두 삭제되었습니다.', 'success')
+}
+
+window.deleteProductTempImage = deleteProductTempImage
+window.deleteAllProductTempImages = deleteAllProductTempImages
 
 function toggleDImg(id) {
   const body = document.getElementById(id)
@@ -721,6 +827,7 @@ function closeDetailModal(force) {
       }
       _detailPendingCode = null
     }
+    try { if (typeof releaseEditLock === 'function') releaseEditLock('product', _detailCode) } catch(e) {}
     modal.close()
   }
   if (force) { doClose(); return }
@@ -785,10 +892,46 @@ function _dUpdateHeaderBtns(mode) {
   })
 }
 
+function _dSyncWatchBtn() {
+  const btn = document.getElementById('dWatchBtn')
+  if (!btn || !_detailCode) return
+  const on = typeof isWatching === 'function' && isWatching('product', _detailCode)
+  btn.textContent = on ? '👁 활성' : '👁'
+  btn.classList.toggle('active', on)
+}
+window._dSyncWatchBtn = _dSyncWatchBtn
+
+function _dSyncLockWarn() {
+  const el = document.getElementById('dLockWarn')
+  if (!el) return
+  const info = (typeof getEditLockInfo === 'function') ? getEditLockInfo('product', _detailCode) : null
+  if (info) {
+    el.textContent = `🔒 ${info.userName || '다른 사용자'} 편집중`
+    el.style.display = ''
+  } else {
+    el.textContent = ''
+    el.style.display = 'none'
+  }
+}
+window._dSyncLockWarn = _dSyncLockWarn
+
 function toggleDetailEdit() {
   const modal = document.getElementById('detailModal')
+  const willEdit = !modal.classList.contains('edit-mode')
+  if (willEdit) {
+    const info = (typeof getEditLockInfo === 'function') ? getEditLockInfo('product', _detailCode) : null
+    if (info) {
+      showToast(`${info.userName || '다른 사용자'}님이 편집 중입니다`, 'warn')
+      _dSyncLockWarn()
+      return
+    }
+    if (typeof acquireEditLock === 'function') acquireEditLock('product', _detailCode)
+  } else {
+    if (typeof releaseEditLock === 'function') releaseEditLock('product', _detailCode)
+  }
   const isEdit = modal.classList.toggle('edit-mode')
   _dUpdateHeaderBtns(isEdit ? 'edit' : 'view')
+  _dSyncLockWarn()
 
   // 취소 시 임시 예약 코드 해제
   if (!isEdit && _detailPendingCode) {
@@ -803,8 +946,15 @@ function toggleDetailEdit() {
 function saveDetailEdit() {
   const p = State.allProducts.find(x => x.productCode === _detailCode)
   if (!p) return
-
+  const _changedKeys = []
   // 일반 필드 수집
+  document.querySelectorAll('#dDetailContent .dfield [data-key]').forEach(inp => {
+    try {
+      const k = inp.dataset.key
+      const old = (p[k] == null ? '' : String(p[k]))
+      if (old !== (inp.value || '').trim() && !_changedKeys.includes(k)) _changedKeys.push(k)
+    } catch(e) {}
+  })
   document.querySelectorAll('#dDetailContent .dfield [data-key]').forEach(inp => {
     const key = inp.dataset.key
     const val = inp.value.trim()
@@ -821,6 +971,11 @@ function saveDetailEdit() {
       if (key === 'urlSum')     p.images.sum      = arr
     } else if (key === 'videoUrl') {
       p.videoUrl = val || null
+    } else if (key === 'assignee') {
+      p.assignee = val || ''
+      const u = (Array.isArray(window._allUsers) ? window._allUsers : []).find(x => x.uid === val)
+      p.assigneeName = u ? (u.name || '') : ''
+      p.assigneePosition = u ? (u.position || '') : ''
     } else {
       p[key] = val
     }
@@ -866,6 +1021,12 @@ function saveDetailEdit() {
   openDetailModal(_detailCode)
   showToast('상품 정보가 수정되었습니다.', 'success')
   logActivity('update', '상품조회', `상품수정: ${_detailCode}`)
+  try {
+    const detail = _changedKeys.length ? `필드: ${_changedKeys.join(', ')}` : '정보 수정'
+    if (typeof addProductHistory === 'function') addProductHistory(_detailCode, '수정', detail)
+    if (typeof notifyWatchers === 'function') notifyWatchers('product', _detailCode, '수정됨')
+    if (typeof releaseEditLock === 'function') releaseEditLock('product', _detailCode)
+  } catch(e) {}
 }
 
 async function lockProductCode() {
@@ -1022,3 +1183,51 @@ function applyDetailGeneratedCode() {
 
   showToast(`품번 "${code}" 적용됨. 저장 버튼을 눌러 확정하세요.`, 'success')
 }
+
+// ===== Feature 8: Product compare =====
+function getSelectedProducts() {
+  const codes = Array.from(document.querySelectorAll('#productTable .prod-check:checked'))
+    .map(el => el.getAttribute('data-code'))
+  return codes.map(c => State.allProducts.find(p => p.productCode === c)).filter(Boolean)
+}
+window.getSelectedProducts = getSelectedProducts
+
+function openCompareModal() {
+  const products = getSelectedProducts()
+  if (products.length < 2) { showToast('2개 이상의 상품을 선택해주세요.', 'warning'); return }
+  if (products.length > 3) { showToast('최대 3개까지 비교 가능합니다.', 'warning'); return }
+  const modal = document.getElementById('compareModal')
+  if (!modal) return
+  const fields = [
+    { key:'brand',      label:'브랜드' },
+    { key:'nameKr',     label:'상품명' },
+    { key:'type',       label:'타입' },
+    { key:'salePrice',  label:'판매가', fmt: v => (typeof fmtPrice==='function'?fmtPrice(v):v) },
+    { key:'costPrice',  label:'원가',   fmt: v => (typeof fmtPrice==='function'?fmtPrice(v):v) },
+    { key:'material',   label:'소재' },
+    { key:'gender',     label:'성별' },
+    { key:'saleStatus', label:'판매상태' },
+  ]
+  // Header row: thumbnails + productCode
+  const headHtml = products.map(p => {
+    const thumb = (typeof getThumbUrl === 'function' ? (getThumbUrl(p) || PLACEHOLDER_IMG) : PLACEHOLDER_IMG)
+    return `<th class="compare-th"><div class="compare-thumb"><img src="${thumb}" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'"></div><div class="compare-code">${p.productCode||''}</div></th>`
+  }).join('')
+  const bodyRows = fields.map(f => {
+    const vals = products.map(p => {
+      const raw = p[f.key]
+      return f.fmt ? f.fmt(raw) : (raw != null && raw !== '' ? raw : '-')
+    })
+    const allSame = vals.every(v => String(v) === String(vals[0]))
+    const tds = vals.map(v => `<td class="${allSame?'':'compare-diff'}">${v}</td>`).join('')
+    return `<tr><td class="compare-label">${f.label}</td>${tds}</tr>`
+  }).join('')
+  document.getElementById('compareBody').innerHTML = `
+    <table class="compare-table">
+      <thead><tr><th class="compare-label"></th>${headHtml}</tr></thead>
+      <tbody>${bodyRows}</tbody>
+    </table>`
+  if (typeof centerModal === 'function') centerModal(modal)
+  modal.showModal()
+}
+window.openCompareModal = openCompareModal

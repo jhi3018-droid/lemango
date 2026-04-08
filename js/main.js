@@ -151,11 +151,13 @@ async function initApp() {
   makeDraggableResizable(document.getElementById('memberAddModal'))
   makeDraggableResizable(document.getElementById('memberProfileModal'))
   makeDraggableResizable(document.getElementById('detailModal'), 480, 300)
+  makeDraggableResizable(document.getElementById('compareModal'), 600, 400)
   makeDraggableResizable(document.getElementById('registerModal'))
   makeDraggableResizable(document.getElementById('planRegisterModal'))
   makeDraggableResizable(document.getElementById('planDetailModal'))
   makeDraggableResizable(document.getElementById('stockRegisterModal'))
   makeDraggableResizable(document.getElementById('outgoingModal'))
+  makeDraggableResizable(document.getElementById('weeklyReportModal'), 600, 400)
   makeDraggableResizable(document.getElementById('salesUploadModal'), 600, 400)
   makeDraggableResizable(document.getElementById('gonghomPreviewModal'))
   makeDraggableResizable(document.getElementById('sabangnetPreviewModal'))
@@ -183,6 +185,7 @@ async function initApp() {
     outgoingModal: closeOutgoingModal,
     barcodeUploadModal: closeBarcodeUploadModal,
     workRegisterModal: closeWorkRegisterModal,
+    planRegisterModal: closePlanRegisterModal,
     personalScheduleModal: closePersonalScheduleModal,
     bulkScheduleModal: closeBulkScheduleModal,
   }

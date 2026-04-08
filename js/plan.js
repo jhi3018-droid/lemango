@@ -1,10 +1,12 @@
 // =============================================
 // ===== 신규기획 =====
 // =============================================
-let _plLocalImgUrls = []
+let _planTempImages = [] // [{url, type:'url'|'file', name}]
 let _planSelected = new Set()
 
-function openPlanRegisterModal() {
+
+
+function openPlanRegisterModal(item) {
   const modal = document.getElementById('planRegisterModal')
   // Populate schedule rows dynamically from plan phases
   const tbody = modal.querySelector('.plan-schedule-table tbody')
@@ -52,19 +54,198 @@ function openPlanRegisterModal() {
     specWrap.innerHTML = h
   }
 
+  // Init image sections
+  _planTempImages = (item && Array.isArray(item.tempImages))
+    ? item.tempImages.map(x => ({ ...x }))
+    : []
+  const tempSec = document.getElementById('planTempImageSection')
+  if (tempSec) tempSec.innerHTML = buildPlanTempImageSection(item || {})
+  const prodSec = document.getElementById('planProductImageSection')
+  if (prodSec) prodSec.innerHTML = buildPlanProductImageSection(item || {})
+  renderPlanTempImageGrid()
+
   modal.showModal()
   centerModal(modal)
   initPlPcodePanel()
 }
 
-function closePlanRegisterModal() {
-  const code = document.getElementById('plProductCode')?.value
-  if (code) _reservedCodes.delete(code)
-  document.getElementById('planRegisterModal').close()
-  document.getElementById('planRegisterForm').reset()
-  const prev = document.getElementById('plImgPreview')
-  if (prev) prev.innerHTML = ''
-  _plLocalImgUrls = []
+function buildPlanTempImageSection(item) {
+  return `
+    <div class="rform-section">
+      <div class="rform-section-title">
+        참고 이미지
+        <span class="plan-img-badge plan-img-badge-temp">임시</span>
+      </div>
+      <div class="plan-img-desc">샘플/참고용 임시 이미지. 상품확정 시 상품조회로 이전되어 확인 후 삭제할 수 있습니다.</div>
+      <div class="plan-img-actions">
+        <button type="button" class="plan-img-btn" onclick="addPlanTempImageUrl()">+ URL 추가</button>
+        <label class="plan-img-btn plan-img-upload-label">
+          + 파일 업로드
+          <input type="file" accept="image/*" multiple style="display:none" onchange="handlePlanTempImageUpload(this)" />
+        </label>
+      </div>
+      <div class="plan-img-grid" id="planTempImgGrid"></div>
+    </div>
+  `
+}
+
+function buildPlanProductImageSection(item) {
+  const mainImg = (item && item.mainImage) ? String(item.mainImage).replace(/"/g,'&quot;') : ''
+  const getArr = k => {
+    const v = item?.images?.[k]
+    if (Array.isArray(v)) return v.join('\n')
+    return v || ''
+  }
+  return `
+    <div class="rform-section">
+      <div class="rform-section-title">
+        상품 이미지
+        <span class="plan-img-badge plan-img-badge-prod">상품</span>
+      </div>
+      <div class="plan-img-desc">실제 상품 이미지 URL. 상품조회 이전 후에도 유지됩니다.</div>
+      <div class="rform-grid">
+        <div class="rform-field" style="grid-column:span 2">
+          <label>대표이미지 URL</label>
+          <input type="text" id="npMainImage" placeholder="https://..." value="${mainImg}" />
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>SUM (한 줄에 하나)</label>
+          <textarea id="npImg_sum" rows="2" placeholder="https://...">${esc(getArr('sum'))}</textarea>
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>자사몰 (lemango)</label>
+          <textarea id="npImg_lemango" rows="2" placeholder="https://...">${esc(getArr('lemango'))}</textarea>
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>느와 (noir)</label>
+          <textarea id="npImg_noir" rows="2" placeholder="https://...">${esc(getArr('noir'))}</textarea>
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>외부몰 (external)</label>
+          <textarea id="npImg_external" rows="2" placeholder="https://...">${esc(getArr('external'))}</textarea>
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>디자인 (design)</label>
+          <textarea id="npImg_design" rows="2" placeholder="https://...">${esc(getArr('design'))}</textarea>
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>촬영 (shoot)</label>
+          <textarea id="npImg_shoot" rows="2" placeholder="https://...">${esc(getArr('shoot'))}</textarea>
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>영상 URL</label>
+          <input type="text" id="npVideoUrl" placeholder="https://..." value="${(item && item.videoUrl) ? String(item.videoUrl).replace(/"/g,'&quot;') : ''}" />
+        </div>
+      </div>
+    </div>
+  `
+}
+
+async function addPlanTempImageUrl() {
+  const url = window.prompt('참고 이미지 URL을 입력하세요 (http/https)')
+  if (!url) return
+  const trimmed = url.trim()
+  if (!/^https?:\/\//i.test(trimmed)) {
+    showToast('http:// 또는 https:// 로 시작해야 합니다.', 'error')
+    return
+  }
+  if (_planTempImages.some(i => i.url === trimmed)) {
+    showToast('이미 추가된 URL입니다.', 'warning')
+    return
+  }
+  _planTempImages.push({ url: trimmed, type: 'url', name: trimmed })
+  renderPlanTempImageGrid()
+}
+
+function handlePlanTempImageUpload(input) {
+  const files = Array.from(input.files || [])
+  let pending = files.length
+  if (!pending) return
+  files.forEach(file => {
+    if (_planTempImages.some(i => i.type === 'file' && i.name === file.name)) {
+      pending--
+      if (pending === 0) { renderPlanTempImageGrid(); input.value = '' }
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      _planTempImages.push({ url: reader.result, type: 'file', name: file.name })
+      pending--
+      if (pending === 0) { renderPlanTempImageGrid(); input.value = '' }
+    }
+    reader.onerror = () => {
+      pending--
+      if (pending === 0) { renderPlanTempImageGrid(); input.value = '' }
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+function renderPlanTempImageGrid() {
+  const grids = document.querySelectorAll('#planTempImgGrid')
+  if (!grids.length) return
+  let html
+  if (!_planTempImages.length) {
+    html = '<div style="color:var(--text-muted);font-size:12px;padding:8px">참고 이미지 없음</div>'
+  } else {
+    html = _planTempImages.map((img, i) => {
+      const nameDisp = (img.name || '').length > 16 ? img.name.slice(0, 14) + '..' : (img.name || '')
+      const safeUrl = String(img.url).replace(/"/g, '&quot;')
+      return `<div class="plan-img-thumb plan-img-thumb-temp">
+        <span class="plan-img-thumb-tag-temp">임시</span>
+        <img src="${safeUrl}" onerror="this.onerror=null;this.src=PLACEHOLDER_IMG" onclick="window.open('${safeUrl.replace(/'/g,"\\'")}','_blank')" />
+        <div class="plan-img-thumb-name">${esc(nameDisp)}</div>
+        <button type="button" class="plan-img-thumb-x temp-del-btn" onclick="removePlanTempImage(${i})">✕</button>
+      </div>`
+    }).join('')
+  }
+  grids.forEach(g => { g.innerHTML = html })
+}
+
+function removePlanTempImage(idx) {
+  _planTempImages.splice(idx, 1)
+  renderPlanTempImageGrid()
+}
+
+function getPlanThumbUrl(item) {
+  if (item?.mainImage) return item.mainImage
+  if (item?.tempImages && item.tempImages.length) return item.tempImages[0].url
+  if (item?.images?.sum?.length) return item.images.sum[0]
+  if (item?.images?.lemango?.length) return item.images.lemango[0]
+  return 'assets/logo-placeholder.png'
+}
+
+window.addPlanTempImageUrl = addPlanTempImageUrl
+window.handlePlanTempImageUpload = handlePlanTempImageUpload
+window.renderPlanTempImageGrid = renderPlanTempImageGrid
+window.removePlanTempImage = removePlanTempImage
+window.getPlanThumbUrl = getPlanThumbUrl
+
+function closePlanRegisterModal(force) {
+  const modal = document.getElementById('planRegisterModal')
+  const doClose = () => {
+    const code = document.getElementById('plProductCode')?.value
+    if (code) _reservedCodes.delete(code)
+    modal.close()
+    document.getElementById('planRegisterForm').reset()
+    _planTempImages = []
+    const ts = document.getElementById('planTempImageSection')
+    if (ts) ts.innerHTML = ''
+    const ps = document.getElementById('planProductImageSection')
+    if (ps) ps.innerHTML = ''
+  }
+  if (force) { doClose(); return }
+  const isEditing = () => {
+    const form = document.getElementById('planRegisterForm')
+    if (!form) return false
+    return Array.from(form.querySelectorAll('input, textarea, select')).some(el => {
+      if (el.type === 'checkbox' || el.type === 'radio') return el.checked
+      if (el.tagName === 'SELECT') return el.selectedIndex > 0
+      return (el.value || '').trim() !== ''
+    })
+  }
+  if (typeof safeCloseModal === 'function') safeCloseModal(modal, isEditing, doClose)
+  else doClose()
 }
 
 function submitPlanRegister(e) {
@@ -72,11 +253,19 @@ function submitPlanRegister(e) {
   const sampleNo = document.getElementById('plSampleNo').value.trim()
   if (!sampleNo) { showToast('샘플번호는 필수입니다.', 'error'); return }
 
-  const splitLines = (id) => (document.getElementById(id)?.value || '').split('\n').map(u => u.trim()).filter(Boolean)
-  const sumUrls     = splitLines('plImgSum')
-  const lemangoUrls = splitLines('plImgLemango')
-  const noirUrls    = splitLines('plImgNoir')
-  const extUrls     = splitLines('plImgExternal')
+  // Image collection — separate temp (reference) vs product images
+  const splitLines = (id) => (document.getElementById(id)?.value || '')
+    .split(/[\n\r]+/).map(s => s.trim()).filter(Boolean)
+  const mainImageUrl = (document.getElementById('npMainImage')?.value || '').trim()
+  const prodImages = {
+    sum:      splitLines('npImg_sum'),
+    lemango:  splitLines('npImg_lemango'),
+    noir:     splitLines('npImg_noir'),
+    external: splitLines('npImg_external'),
+    design:   splitLines('npImg_design').join('\n'),
+    shoot:    splitLines('npImg_shoot').join('\n')
+  }
+  const tempImagesSnap = _planTempImages.map(x => ({ ...x }))
 
   // sizeSpec 수집
   const sizeSpec = {}
@@ -127,16 +316,10 @@ function submitPlanRegister(e) {
     // 메모
     memo:        val('plMemo'),
     // 이미지
-    mainImage:   val('plMainImage'),
-    videoUrl:    val('plVideoUrl'),
-    images: {
-      sum:      [...sumUrls, ..._plLocalImgUrls],
-      lemango:  lemangoUrls,
-      noir:     noirUrls,
-      external: extUrls,
-      design:   val('plImgDesign'),
-      shoot:    val('plImgShoot')
-    },
+    mainImage:   mainImageUrl,
+    tempImages:  tempImagesSnap,
+    videoUrl:    (document.getElementById('npVideoUrl')?.value || '').trim(),
+    images:      prodImages,
     schedule: (() => {
       const sch = {}
       document.querySelectorAll('#planRegisterModal .pl-sched-input').forEach(el => {
@@ -151,9 +334,9 @@ function submitPlanRegister(e) {
   stampCreated(item)
   State.planItems.push(item)
   State.plan.filtered = State.planItems.filter(p => !p.confirmed)
-  _plLocalImgUrls = []
+  _planTempImages = []
   renderPlanTable()
-  closePlanRegisterModal()
+  closePlanRegisterModal(true)
   showToast(`"${sampleNo}" 기획 등록 완료`, 'success')
   logActivity('create', '신규기획', `기획등록: ${sampleNo}`)
 }
@@ -353,33 +536,6 @@ function applyPlGeneratedCode() {
   showToast(`품번 ${code} 적용됨`, 'success')
 }
 
-function handlePlImgUpload(input) {
-  const files = Array.from(input.files)
-  const preview = document.getElementById('plImgPreview')
-  files.forEach(file => {
-    const url = URL.createObjectURL(file)
-    _plLocalImgUrls.push(url)
-    const wrap = document.createElement('div')
-    wrap.className = 'pl-img-thumb-wrap'
-    const img = document.createElement('img')
-    img.src = url
-    img.className = 'pl-img-thumb'
-    img.onclick = () => window.open(url)
-    const del = document.createElement('button')
-    del.type = 'button'
-    del.className = 'pl-img-del'
-    del.textContent = '✕'
-    del.onclick = () => {
-      _plLocalImgUrls = _plLocalImgUrls.filter(u => u !== url)
-      URL.revokeObjectURL(url)
-      wrap.remove()
-    }
-    wrap.appendChild(img)
-    wrap.appendChild(del)
-    preview.appendChild(wrap)
-  })
-  input.value = ''
-}
 
 function searchPlan() {
   const raw    = document.getElementById('npKeyword').value
@@ -433,12 +589,18 @@ function searchPlan() {
   })
   State.plan.page = 1
   State.plan.filtered = result
+  saveFilterDefault('plan', {
+    npKeyword: raw, npSearchField: field, npBrand: brand, npType: type, npYear: year,
+    npSeason: season, npGenderFilter: gender, npConfirmed: confirmed, npPhase: phase,
+    npDateFrom: dateFrom, npDateTo: dateTo
+  })
   renderPlanTable()
 }
 
 function changePlanPageSize(val) {
   State.plan.pageSize = parseInt(val) || 0
   State.plan.page = 1
+  saveTableCustom('plan')
   renderPlanTable()
 }
 
@@ -472,7 +634,13 @@ const PLAN_REGULAR_COLS = [
   { key:'no',         label:'No.',    fixed:false, thAttr:'data-key="no" data-no-filter style="width:45px;text-align:center"',
     td: p=>`<td style="text-align:center">${p.no}${p.confirmed?'<br><span style="font-size:9px;background:var(--success);color:#fff;padding:1px 5px;border-radius:8px">이전됨</span>':''}</td>` },
   { key:'_image',     label:'이미지', fixed:false, thAttr:'data-no-sort data-no-filter style="width:60px"',
-    td: p=>`<td>${renderThumb(p)}</td>` },
+    td: p=>{
+      const url = getPlanThumbUrl(p)
+      const isTemp = !p.mainImage && !(p.images?.sum?.length) && !(p.images?.lemango?.length) && !(p.images?.noir?.length) && p.tempImages && p.tempImages.length
+      const cls = isTemp ? 'plan-table-thumb plan-table-thumb-temp' : 'plan-table-thumb'
+      const tag = isTemp ? '<span class="plan-table-thumb-tag">임시</span>' : ''
+      return `<td><div class="${cls}"><img src="${url}" onerror="this.onerror=null;this.src=PLACEHOLDER_IMG" />${tag}</div></td>`
+    } },
   { key:'sampleNo',   label:'샘플번호',fixed:false, thAttr:'data-key="sampleNo"',
     td: p=>`<td><span class="code-link" onclick="openPlanDetailModal(${p.no})">${p.sampleNo}</span></td>` },
   { key:'productCode',label:'품번',   fixed:true,  thAttr:'data-key="productCode" style="width:145px"',
@@ -480,13 +648,13 @@ const PLAN_REGULAR_COLS = [
   { key:'brand',      label:'브랜드', fixed:false, thAttr:'data-key="brand"',
     td: p=>`<td style="font-size:12px">${p.brand||'-'}</td>` },
   { key:'nameKr',     label:'상품명', fixed:false, thAttr:'data-key="nameKr"',
-    td: p=>`<td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${p.nameKr||''}">${p.nameKr||'-'}</td>` },
+    td: p=>`<td data-editable="nameKr" style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${p.nameKr||''}">${p.nameKr||'-'}</td>` },
   { key:'colorKr',    label:'색상',   fixed:false, thAttr:'data-key="colorKr"',
     td: p=>`<td style="font-size:12px">${p.colorKr||'-'}</td>` },
   { key:'type',       label:'타입',   fixed:false, thAttr:'data-key="type"',
-    td: p=>`<td>${typeBadge(p.type)}</td>` },
+    td: p=>`<td data-editable="type">${typeBadge(p.type)}</td>` },
   { key:'salePrice',  label:'판매가', fixed:false, thAttr:'data-key="salePrice" style="text-align:right"',
-    td: p=>`<td style="text-align:right"><span class="price">${fmtPrice(p.salePrice)}</span></td>` },
+    td: p=>`<td data-editable="salePrice" style="text-align:right"><span class="price">${fmtPrice(p.salePrice)}</span></td>` },
 ]
 function _getPlanScheduleCols() {
   return getPlanPhases().map(s => ({
@@ -498,10 +666,19 @@ function _getPlanAllCols() { return [...PLAN_REGULAR_COLS, ..._getPlanScheduleCo
 function _getPlanFixedKeys() { return _getPlanAllCols().filter(c=>c.fixed).map(c=>c.key) }
 
 function renderPlanTable() {
+  const _favArea = document.getElementById('planFavArea')
+  if (_favArea && typeof renderFavoritesBar === 'function') _favArea.innerHTML = renderFavoritesBar('plan')
   const PLAN_ALL_COLS = _getPlanAllCols()
   const PLAN_SCHEDULE_COLS = _getPlanScheduleCols()
   const PLAN_FIXED_KEYS = _getPlanFixedKeys()
-  initColumnState('plan', PLAN_ALL_COLS.map(c=>c.key))
+  const allKeys = PLAN_ALL_COLS.map(c=>c.key)
+  initColumnState('plan', allKeys)
+  applyTableCustom('plan')
+  allKeys.forEach(k => {
+    if (!State.plan.activeColumns.includes(k) && !State.plan.inactiveColumns.includes(k)) State.plan.activeColumns.push(k)
+  })
+  State.plan.activeColumns = State.plan.activeColumns.filter(k => allKeys.includes(k))
+  State.plan.inactiveColumns = State.plan.inactiveColumns.filter(k => allKeys.includes(k))
   renderColInactiveArea('npInactiveArea','npInactiveTags','plan',PLAN_ALL_COLS,PLAN_FIXED_KEYS,'renderPlanTable')
 
   const data = applyColFilters(State.plan.filtered, State.plan.columnFilters)
@@ -543,7 +720,7 @@ function renderPlanTable() {
              `<td class="schedule-date-cell${sch.end?' has-date':''}">${fmtD(sch.end)}</td>`
     }).join('')
     const cls = [isChecked ? 'np-selected' : '', p.confirmed ? '' : ''].filter(Boolean).join(' ')
-    return `<tr class="${cls}"${p.confirmed?' style="opacity:0.6"':''}><td><input type="checkbox" class="np-check" data-no="${p.no}" ${isChecked?'checked':''} onchange="updatePlanSelection()"></td>${regTds}${schTds}</tr>`
+    return `<tr class="${cls}" data-no="${p.no}"${p.confirmed?' style="opacity:0.6"':''}><td><input type="checkbox" class="np-check" data-no="${p.no}" ${isChecked?'checked':''} onchange="updatePlanSelection()"></td>${regTds}${schTds}</tr>`
   }).join('')
 
   document.getElementById('npTableWrap').innerHTML = `
@@ -561,8 +738,85 @@ function renderPlanTable() {
   initTableFeatures('planTable', 'plan', 'renderPlanTable')
   // fixStickySubRow 불필요 — .plan-table thead { position: sticky } CSS로 처리
   bindColumnDragDrop('planTable', 'plan', PLAN_FIXED_KEYS, 'renderPlanTable')
+  applyColWidthsToHeader('planTable', 'plan')
   renderPagination('npPagination', 'plan', 'renderPlanTable')
+  // Feature 5: row drag sort
+  initPlanDragSort()
+  // Feature 6: inline edit
+  initInlineEdit('planTable', 'plan')
+  // Feature 12: row double-click → detail
+  initRowDblClick('planTable', (tr) => {
+    const no = Number(tr.getAttribute('data-no'))
+    if (!Number.isNaN(no)) openPlanDetailModal(no)
+  })
 }
+
+// ===== Feature 5: Plan row drag sort =====
+function initPlanDragSort() {
+  const table = document.getElementById('planTable')
+  if (!table) return
+  const tbody = table.querySelector('tbody')
+  if (!tbody) return
+  const rows = Array.from(tbody.querySelectorAll('tr'))
+  rows.forEach(tr => {
+    // skip rows with no data-no
+    if (!tr.hasAttribute('data-no')) {
+      // find first np-check checkbox for data-no fallback
+      const chk = tr.querySelector('.np-check')
+      if (chk) tr.setAttribute('data-no', chk.getAttribute('data-no'))
+    }
+    tr.setAttribute('draggable', 'true')
+    tr.addEventListener('dragstart', _planDragStart)
+    tr.addEventListener('dragover', _planDragOver)
+    tr.addEventListener('dragleave', _planDragLeave)
+    tr.addEventListener('drop', _planDrop)
+    tr.addEventListener('dragend', _planDragEnd)
+  })
+}
+let _planDragSrcNo = null
+function _planDragStart(e) {
+  // don't start drag when starting from an input/checkbox
+  const tag = (e.target.tagName || '').toLowerCase()
+  if (['input','select','textarea','button','label'].includes(tag)) { e.preventDefault(); return }
+  _planDragSrcNo = Number(this.getAttribute('data-no'))
+  this.classList.add('drag-row')
+  try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(_planDragSrcNo)) } catch(_){}
+}
+function _planDragOver(e) {
+  e.preventDefault()
+  try { e.dataTransfer.dropEffect = 'move' } catch(_){}
+  this.classList.add('drag-over')
+}
+function _planDragLeave() { this.classList.remove('drag-over') }
+function _planDrop(e) {
+  e.preventDefault()
+  this.classList.remove('drag-over')
+  const targetNo = Number(this.getAttribute('data-no'))
+  if (_planDragSrcNo == null || targetNo === _planDragSrcNo) return
+  const arr = State.planItems
+  const from = arr.findIndex(x => x.no === _planDragSrcNo)
+  const to   = arr.findIndex(x => x.no === targetNo)
+  if (from < 0 || to < 0) return
+  const [moved] = arr.splice(from, 1)
+  arr.splice(to, 0, moved)
+  // reflect in filtered order too
+  if (State.plan && Array.isArray(State.plan.filtered)) {
+    const fFrom = State.plan.filtered.findIndex(x => x.no === _planDragSrcNo)
+    const fTo   = State.plan.filtered.findIndex(x => x.no === targetNo)
+    if (fFrom >= 0 && fTo >= 0) {
+      const [m2] = State.plan.filtered.splice(fFrom, 1)
+      State.plan.filtered.splice(fTo, 0, m2)
+    }
+  }
+  if (typeof showToast === 'function') showToast('기획 순서가 변경되었습니다')
+  renderPlanTable()
+}
+function _planDragEnd() {
+  this.classList.remove('drag-row')
+  document.querySelectorAll('#planTable tr.drag-over').forEach(tr => tr.classList.remove('drag-over'))
+  _planDragSrcNo = null
+}
+window.initPlanDragSort = initPlanDragSort
 
 // ===== 신규기획 상세 모달 =====
 let _editingPlanNo = null
@@ -571,7 +825,9 @@ function openPlanDetailModal(no) {
   const item = State.planItems.find(p => p.no === no)
   if (!item) return
   _editingPlanNo = no
+  _planTempImages = Array.isArray(item.tempImages) ? item.tempImages.map(x => ({ ...x })) : []
   buildPlanDetailContent(item)
+  renderPlanTempImageGrid()
   // 뷰 모드로 초기화
   const modal = document.getElementById('planDetailModal')
   modal.classList.remove('edit-mode')
@@ -580,7 +836,16 @@ function openPlanDetailModal(no) {
   if (confirmBtn && item.confirmed) confirmBtn.style.display = 'none'
   modal.showModal()
   centerModal(modal)
+  _pdSyncWatchBtn()
+  _pdSyncLockWarn()
   loadComments('plan', no)
+  if (typeof pushModalHistory === 'function') pushModalHistory('plan', no)
+  const favBtn = document.getElementById('pdFavBtn')
+  if (favBtn) {
+    const on = typeof isFavorite === 'function' && isFavorite('plan', no)
+    favBtn.textContent = on ? '★' : '☆'
+    favBtn.classList.toggle('fav-on', on)
+  }
 }
 
 function closePlanDetailModal(force) {
@@ -594,6 +859,8 @@ function closePlanDetailModal(force) {
       }
       _pdPendingCode = null
     }
+    _planTempImages = []
+    try { if (typeof releaseEditLock === 'function') releaseEditLock('plan', _editingPlanNo) } catch(e) {}
     modal.close()
   }
   if (force) { doClose(); return }
@@ -758,10 +1025,41 @@ function _pdUpdateHeaderBtns(mode) {
   }
 }
 
+function _pdSyncWatchBtn() {
+  const btn = document.getElementById('pdWatchBtn')
+  if (!btn || _editingPlanNo == null) return
+  const on = typeof isWatching === 'function' && isWatching('plan', _editingPlanNo)
+  btn.textContent = on ? '👁 활성' : '👁'
+  btn.classList.toggle('active', on)
+}
+window._pdSyncWatchBtn = _pdSyncWatchBtn
+
+function _pdSyncLockWarn() {
+  const el = document.getElementById('pdLockWarn')
+  if (!el) return
+  const info = (typeof getEditLockInfo === 'function') ? getEditLockInfo('plan', _editingPlanNo) : null
+  if (info) { el.textContent = `🔒 ${info.userName || '다른 사용자'} 편집중`; el.style.display = '' }
+  else { el.textContent = ''; el.style.display = 'none' }
+}
+window._pdSyncLockWarn = _pdSyncLockWarn
+
 function togglePlanDetailEdit() {
   const modal = document.getElementById('planDetailModal')
+  const willEdit = !modal.classList.contains('edit-mode')
+  if (willEdit) {
+    const info = (typeof getEditLockInfo === 'function') ? getEditLockInfo('plan', _editingPlanNo) : null
+    if (info) {
+      showToast(`${info.userName || '다른 사용자'}님이 편집 중입니다`, 'warn')
+      _pdSyncLockWarn()
+      return
+    }
+    if (typeof acquireEditLock === 'function') acquireEditLock('plan', _editingPlanNo)
+  } else {
+    if (typeof releaseEditLock === 'function') releaseEditLock('plan', _editingPlanNo)
+  }
   const isEdit = modal.classList.toggle('edit-mode')
   _pdUpdateHeaderBtns(isEdit ? 'edit' : 'view')
+  _pdSyncLockWarn()
   const cb = document.getElementById('pdConfirmBtn')
   if (cb && !cb.dataset.hidden) cb.disabled = !isEdit
 }
@@ -813,6 +1111,11 @@ function savePlanDetailEdit() {
     }
     const val = el.tagName === 'INPUT' && el.type === 'number' ? (parseFloat(el.value) || 0) : el.value
     item[key] = val
+    if (key === 'assignee') {
+      const u = (Array.isArray(window._allUsers) ? window._allUsers : []).find(x => x.uid === val)
+      item.assigneeName = u ? (u.name || '') : ''
+      item.assigneePosition = u ? (u.position || '') : ''
+    }
   })
 
   // 사이즈 규격 수집
@@ -838,14 +1141,22 @@ function savePlanDetailEdit() {
   document.getElementById('pdNameKr').textContent = item.nameKr || '(상품명 없음)'
   document.getElementById('pdSampleNo').textContent = item.sampleNo
 
+  // 임시 이미지 저장
+  item.tempImages = _planTempImages.map(x => ({ ...x }))
+
   stampModified(item)
 
   buildPlanDetailContent(item)
+  renderPlanTempImageGrid()
   modal.classList.remove('edit-mode')
   _pdUpdateHeaderBtns('view')
   renderPlanTable()
   showToast('저장됐습니다.', 'success')
   logActivity('update', '신규기획', `기획수정: ${item.sampleNo || item.productCode}`)
+  try {
+    if (typeof notifyWatchers === 'function') notifyWatchers('plan', item.no, '수정됨')
+    if (typeof releaseEditLock === 'function') releaseEditLock('plan', item.no)
+  } catch(e) {}
 }
 
 async function confirmPlanToProduct() {
@@ -903,6 +1214,7 @@ async function confirmPlanToProduct() {
       design:   item.images?.design   || null,
       shoot:    item.images?.shoot    || null
     },
+    tempImages: (item.tempImages || []).map(img => ({ ...img, fromPlan: true })),
     // 기획 일정 이력 (상품조회 하단에 표시)
     scheduleLog: item.schedule && Object.keys(item.schedule).length
       ? [{ confirmedAt: new Date().toISOString().slice(0, 10), schedule: JSON.parse(JSON.stringify(item.schedule)) }]
@@ -930,6 +1242,7 @@ async function confirmPlanToProduct() {
 
   showToast(`"${newProduct.productCode}" 상품이 상품조회로 이전됐습니다.`, 'success')
   logActivity('create', '신규기획', `상품이전: ${newProduct.productCode}`)
+  try { if (typeof addProductHistory === 'function') addProductHistory(newProduct.productCode, '기획이전', '기획→상품 확정') } catch(e) {}
 }
 
 function buildPlanDetailContent(item) {
@@ -939,17 +1252,30 @@ function buildPlanDetailContent(item) {
 
   const schedules = SCHEDULE_DEFS
 
-  const allImgs = [
-    ...(item.images?.sum    || []),
-    ...(item.images?.lemango ? [item.images.lemango] : []),
-    ...(item.images?.noir    ? [item.images.noir]    : [])
+  const prodImgs = [
+    ...(item.mainImage ? [item.mainImage] : []),
+    ...(Array.isArray(item.images?.sum) ? item.images.sum : []),
+    ...(Array.isArray(item.images?.lemango) ? item.images.lemango : (item.images?.lemango ? [item.images.lemango] : [])),
+    ...(Array.isArray(item.images?.noir) ? item.images.noir : (item.images?.noir ? [item.images.noir] : []))
   ].filter(Boolean)
+  const tempImgs = Array.isArray(item.tempImages) ? item.tempImages : []
 
-  const imgHtml = allImgs.length
-    ? allImgs.map((url, i) =>
-        `<img src="${url}" class="pd-thumb" onclick="openModal(${i}, ${JSON.stringify(allImgs).replace(/"/g, '&quot;')})" onerror="this.onerror=null;this.src=PLACEHOLDER_IMG" />`
+  const prodImgHtml = prodImgs.length
+    ? prodImgs.map(url =>
+        `<img src="${url}" class="pd-thumb" onclick="window.open('${String(url).replace(/'/g,"\\'")}','_blank')" onerror="this.onerror=null;this.src=PLACEHOLDER_IMG" />`
       ).join('')
-    : '<span class="pd-no-img">이미지 없음</span>'
+    : '<span class="pd-no-img">등록된 상품 이미지 없음</span>'
+  const tempImgHtml = tempImgs.length
+    ? tempImgs.map(img => {
+        const safe = String(img.url).replace(/"/g,'&quot;')
+        const nm = (img.name || '').length > 16 ? img.name.slice(0,14)+'..' : (img.name||'')
+        return `<div class="plan-img-thumb plan-img-thumb-temp">
+          <span class="plan-img-thumb-tag-temp">임시</span>
+          <img src="${safe}" onclick="window.open('${safe.replace(/'/g,"\\'")}','_blank')" onerror="this.onerror=null;this.src=PLACEHOLDER_IMG" />
+          <div class="plan-img-thumb-name">${esc(nm)}</div>
+        </div>`
+      }).join('')
+    : ''
 
   const fmtDate = d => d || '-'
   const typeLabel   = { onepiece: '원피스', bikini: '비키니', 'two piece': '투피스' }
@@ -1028,11 +1354,35 @@ function buildPlanDetailContent(item) {
     </div>
   </div>`
 
+  // Pinned memo + Assignee (Feature 5 & 11)
+  const _plUsers = Array.isArray(window._allUsers) ? window._allUsers : []
+  const plAssigneeName = item.assigneeName || (item.assignee ? (_plUsers.find(u=>u.uid===item.assignee)?.name || '') : '')
+  const plAssigneePos  = item.assigneePosition || (item.assignee ? (_plUsers.find(u=>u.uid===item.assignee)?.position || '') : '')
+  const plAssigneeView = (plAssigneeName && typeof formatUserName === 'function') ? formatUserName(plAssigneeName, plAssigneePos) : (plAssigneeName || '-')
+  const plAssigneeOpts = `<option value="">- 미지정 -</option>` + _plUsers.map(u => `<option value="${u.uid}"${item.assignee===u.uid?' selected':''}>${esc((typeof formatUserName==='function')?formatUserName(u.name, u.position):u.name)}</option>`).join('')
+  const plPinnedMemoBlock = `
+    <div class="pinned-memo">📌 ${esc(item.pinnedMemo || '')}</div>
+    <div class="pinned-memo-edit">
+      <textarea data-pkey="pinnedMemo" rows="2" placeholder="📌 고정 메모 (상단 상시 노출)">${esc(item.pinnedMemo || '')}</textarea>
+    </div>`
+
   document.getElementById('pdContent').innerHTML = `
+    ${plPinnedMemoBlock}
     <div class="pd-section">
-      <div class="pd-section-title">이미지</div>
-      <div class="pd-img-row">${imgHtml}</div>
+      <div class="pd-section-title">상품 이미지 <span class="plan-img-badge plan-img-badge-prod">상품</span></div>
+      <div class="pd-img-row">${prodImgHtml}</div>
       ${item.confirmed ? '' : `<div style="margin-top:12px;text-align:right"><button class="srm-btn-gold" id="pdConfirmBtn" disabled onclick="confirmPlanWithCheck()">상품확정 →</button></div>`}
+    </div>
+    <div class="pd-section">
+      <div class="pd-section-title">참고 이미지 <span class="plan-img-badge plan-img-badge-temp">임시</span></div>
+      <div class="plan-img-grid" id="planTempImgGrid"></div>
+      <div class="plan-edit-img-actions">
+        <button type="button" class="plan-img-btn" onclick="addPlanTempImageUrl()">+ URL 추가</button>
+        <label class="plan-img-btn plan-img-upload-label">
+          + 파일 업로드
+          <input type="file" accept="image/*" multiple style="display:none" onchange="handlePlanTempImageUpload(this)" />
+        </label>
+      </div>
     </div>
     <div class="pd-section">
       <div class="pd-section-title">기본 정보</div>
@@ -1044,6 +1394,7 @@ function buildPlanDetailContent(item) {
         ${pf('상품명 (영문)', 'nameEn',     item.nameEn,  'text',   '', 'dfield-span2')}
         ${pf('색상 (한글)',   'colorKr',    item.colorKr)}
         ${pf('색상 (영문)',   'colorEn',    item.colorEn)}
+        ${pf('담당자', 'assignee', plAssigneeView, 'select', plAssigneeOpts, '', plAssigneeView)}
       </div>
     </div>
     <div class="pd-section">

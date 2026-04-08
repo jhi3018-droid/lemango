@@ -234,6 +234,7 @@ window.submitComment = async function(modalType, targetId) {
     input.value = ''
     loadComments(modalType, targetId)
     logActivity('create', '댓글', `댓글 등록 — ${modalType}/${targetId}`)
+    try { checkCommentMentions(content, modalType, targetId) } catch(e) {}
     // 게시판 댓글수 동기화
     if (modalType === 'board') {
       db.collection('posts').doc(String(targetId)).update({
@@ -297,3 +298,32 @@ window.deleteComment = async function(commentId, modalType, targetId) {
     _showCommentError(`${modalType}-${targetId}`, '댓글 삭제 실패: ' + e.message)
   }
 }
+
+/* ===== Feature 4: Comment @mention ===== */
+function checkCommentMentions(content, targetType, targetId) {
+  if (!content) return
+  const users = Array.isArray(window._allUsers) ? window._allUsers : []
+  if (!users.length) return
+  const myUid = (typeof _myUid === 'function') ? _myUid() : ''
+  const matches = content.match(/@([\p{L}\p{N}_]+)/gu) || []
+  if (!matches.length) return
+  const notifiedUids = new Set()
+  matches.forEach(raw => {
+    const name = raw.slice(1)
+    users.forEach(u => {
+      if (!u || !u.name || !u.uid) return
+      if (u.uid === myUid) return
+      if (notifiedUids.has(u.uid)) return
+      if (u.name === name || u.name.startsWith(name) || name.startsWith(u.name)) {
+        notifiedUids.add(u.uid)
+        try {
+          const curName = (typeof _currentUserName !== 'undefined' && _currentUserName) ? _currentUserName : '누군가'
+          if (typeof addNotification === 'function') {
+            addNotification('comment_mention', '댓글 멘션', `${curName}님이 댓글에서 회원님을 멘션했습니다`, `#${targetType}_${targetId}`)
+          }
+        } catch(e) {}
+      }
+    })
+  })
+}
+window.checkCommentMentions = checkCommentMentions

@@ -149,12 +149,21 @@ function _sbCreateProduct(code, name, unitPrice) {
 // ===========================================
 // ===== File Upload =====
 // ===========================================
+function extractSabangnetChannels(rows) {
+  const set = new Set()
+  ;(rows || []).forEach(r => {
+    const shop = String(r[SABANGNET.shopName] || '').trim()
+    if (shop) set.add(shop)
+  })
+  return [...set]
+}
+
 function handleSabangnetUpload(input) {
   const file = input.files[0]
   if (!file) return
   const isCsv = /\.csv$/i.test(file.name)
   const reader = new FileReader()
-  reader.onload = e => {
+  reader.onload = async e => {
     const opts = isCsv
       ? { type: 'string', codepage: 65001 }
       : { type: 'array' }
@@ -166,6 +175,8 @@ function handleSabangnetUpload(input) {
       String(r[SABANGNET.productCode] || '').trim() !== ''
     )
     input.value = ''
+    const newCh = detectNewChannels(extractSabangnetChannels(dataRows))
+    if (newCh.length) await promptNewChannels(newCh)
     showSabangnetPreview(dataRows)
   }
   if (isCsv) reader.readAsText(file, 'UTF-8')
@@ -531,6 +542,7 @@ function confirmSabangnetUpload() {
       qty: r.qty, revenue: r.revenue, registeredAt: now
     })
     saleCnt++
+    try { if (typeof addProductHistory === 'function') addProductHistory(r.p.productCode, '사방넷매출', `${ch} ${r.qty}개 (주문 ${r.orderNo})`) } catch(e) {}
   })
 
   _closeSbFilter()

@@ -107,6 +107,7 @@ function resetTabs() {
 function applyTabState() {
   // close any open srm-modal dialogs on tab switch
   document.querySelectorAll('dialog.srm-modal[open]').forEach(d => d.close())
+  if (typeof clearModalHistory === 'function') clearModalHistory()
 
   // 해시 업데이트
   const hash = '#' + State.activeTab
@@ -143,6 +144,20 @@ function triggerTabRender(tab) {
   if (!State.allProducts.length && !['dashboard', 'board', 'members'].includes(tab)) return
   if (_renderedTabs.has(tab)) return
   _renderedTabs.add(tab)
+
+  // 테이블 탭 첫 진입 시 저장된 필터 기본값을 복원 + 검색 실행
+  const filterTabMap = {
+    product: { load: 'product', search: 'searchProduct' },
+    stock:   { load: 'stock',   search: 'searchStock' },
+    sales:   { load: 'sales',   search: 'searchSales' },
+    plan:    { load: 'plan',    search: 'searchPlan' }
+  }
+  if (filterTabMap[tab] && typeof applyFilterDefault === 'function') {
+    if (applyFilterDefault(filterTabMap[tab].load)) {
+      const fn = window[filterTabMap[tab].search]
+      if (typeof fn === 'function') { try { fn() } catch(e) {} }
+    }
+  }
 
   switch (tab) {
     case 'dashboard': renderDashboard(); break

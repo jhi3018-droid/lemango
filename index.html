@@ -117,6 +117,11 @@
       <button class="tab-btn" data-tab="members">👥 회원관리</button>
     </nav>
     <div class="header-right">
+      <div class="gsearch-wrap">
+        <input type="text" id="gsearchInput" class="gsearch-input" placeholder="🔍 통합 검색 (상품/기획/행사/업무)" autocomplete="off"
+          oninput="globalSearch(this.value)" onfocus="if(this.value)showGsearchDropdown()" onkeydown="gsearchKeyDown(event)">
+        <div class="gsearch-dropdown" id="gsearchDropdown" style="display:none"></div>
+      </div>
       <div class="header-date" id="headerDate"></div>
       <div class="header-user-area">
         <span id="headerUserGrade"></span>
@@ -152,6 +157,7 @@
       <div class="dash-notice-card" id="dashNoticeCard"></div>
       <div class="dash-activity-card" id="dashActivityCard"></div>
     </div>
+    <div id="dailySummaryArea"></div>
     <div class="dashboard-main">
       <div class="card dash-cal-card">
         <div class="card-header">
@@ -263,7 +269,9 @@
       <div class="search-actions">
         <button class="btn btn-primary" onclick="searchProduct()">검색</button>
         <button class="btn btn-outline" onclick="resetProduct()">초기화</button>
+        <button class="filter-my-btn" onclick="filterMyAssigned('product')">내 담당</button>
         <button class="btn btn-new" onclick="openRegisterModal()">＋ 신규등록</button>
+        <button class="btn btn-outline" onclick="openCompareModal()">⇆ 비교</button>
         <div class="action-btns">
           <button class="btn btn-accent" onclick="downloadExcel('product')">⬇ 다운로드</button>
           <label class="btn btn-outline" for="pUploadFile">⬆ 업로드</label>
@@ -283,8 +291,10 @@
           <option value="100">100개</option>
           <option value="0">전체</option>
         </select>
+        <button type="button" class="table-reset-btn" onclick="resetTableLayout('product')">레이아웃 초기화</button>
       </div>
     </div>
+    <div id="productFavArea"></div>
     <div class="col-inactive-area" id="pInactiveArea" style="display:none">
       <span class="col-inactive-label">컬럼을 여기로 드래그하여 숨기기</span>
       <div class="col-inactive-tags" id="pInactiveTags"></div>
@@ -341,6 +351,7 @@
           <option value="100">100개</option>
           <option value="0">전체</option>
         </select>
+        <button type="button" class="table-reset-btn" onclick="resetTableLayout('stock')">레이아웃 초기화</button>
       </div>
     </div>
     <div class="col-inactive-area" id="sInactiveArea" style="display:none">
@@ -399,6 +410,7 @@
           <option value="100">100개</option>
           <option value="0">전체</option>
         </select>
+        <button type="button" class="table-reset-btn" onclick="resetTableLayout('sales')">레이아웃 초기화</button>
       </div>
     </div>
     <div class="table-wrap card" id="slTableWrap">
@@ -490,6 +502,7 @@
       <div class="search-actions">
         <button class="btn btn-primary" onclick="searchPlan()">검색</button>
         <button class="btn btn-outline" onclick="resetPlan()">초기화</button>
+        <button class="filter-my-btn" onclick="filterMyAssigned('plan')">내 담당</button>
         <button class="btn btn-new" onclick="openPlanRegisterModal()">＋ 신규기획 등록</button>
         <div class="action-btns">
           <button class="btn btn-accent" onclick="downloadExcel('plan')">⬇ 다운로드</button>
@@ -507,6 +520,7 @@
           <option value="100">100개</option>
           <option value="0">전체</option>
         </select>
+        <button type="button" class="table-reset-btn" onclick="resetTableLayout('plan')">레이아웃 초기화</button>
       </div>
     </div>
     <div class="np-toolbar" id="npToolbar" style="display:none">
@@ -515,6 +529,7 @@
       <button class="np-toolbar-btn np-toolbar-primary" onclick="openBulkScheduleModal()">일괄 일정 설정</button>
       <button class="np-toolbar-btn" onclick="clearPlanSelection()">선택 해제</button>
     </div>
+    <div id="planFavArea"></div>
     <div class="col-inactive-area" id="npInactiveArea" style="display:none">
       <span class="col-inactive-label">컬럼을 여기로 드래그하여 숨기기</span>
       <div class="col-inactive-tags" id="npInactiveTags"></div>
@@ -548,7 +563,11 @@
     <div class="work-inner-tabs" id="workInnerTabs">
       <button class="work-inner-tab active" data-tab="work" onclick="switchWorkTab('work')">업무일정</button>
       <button class="work-inner-tab" data-tab="personal" onclick="switchWorkTab('personal')">개인일정</button>
+      <button class="work-inner-tab" data-tab="kanban" onclick="switchWorkTab('kanban')">현황보드</button>
+      <span style="flex:1"></span>
+      <button class="btn btn-outline btn-sm" onclick="openWeeklyReportModal()" style="margin-left:auto">📊 주간 리포트</button>
     </div>
+    <div id="kanbanArea" style="display:none"></div>
 
     <div id="workCalendarArea">
       <div class="search-bar card" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
@@ -1240,6 +1259,17 @@
 </dialog>
 
 <!-- 상품 상세 모달 -->
+<!-- 상품 비교 모달 -->
+<dialog id="compareModal" class="srm-modal">
+  <div class="srm-header">
+    <h3>상품 비교</h3>
+    <button type="button" class="btn-close" onclick="document.getElementById('compareModal').close()">✕</button>
+  </div>
+  <div class="srm-body">
+    <div id="compareBody"></div>
+  </div>
+</dialog>
+
 <dialog id="detailModal" class="detail-modal">
   <!-- 리사이즈 핸들 8방향 -->
   <div class="resize-handle lt" data-dir="lt"></div>
@@ -1258,6 +1288,10 @@
       <span class="dmodal-code" id="dCode"></span>
     </div>
     <div class="dmodal-header-actions">
+      <button class="modal-back-btn" id="dBackBtn" onclick="goBack()" style="display:none">←</button>
+      <button class="fav-star" id="dFavBtn" onclick="toggleFavorite('product', _detailCode, document.getElementById('dNameKr').textContent)" title="즐겨찾기">☆</button>
+      <button class="btn btn-sm btn-outline watch-btn" id="dWatchBtn" onclick="toggleWatch('product', _detailCode, document.getElementById('dNameKr').textContent); _dSyncWatchBtn()" title="변경 알림">👁</button>
+      <span class="edit-lock-warn" id="dLockWarn" style="display:none"></span>
       <button class="btn btn-sm btn-primary d-view-btn" id="dEditBtn" onclick="toggleDetailEdit()">수정</button>
       <button class="btn btn-sm btn-primary d-edit-btn" id="dSaveBtn" onclick="saveDetailEdit()" style="display:none">저장</button>
       <button class="btn btn-sm btn-outline d-edit-btn" id="dCancelBtn" onclick="toggleDetailEdit()" style="display:none">취소</button>
@@ -1343,13 +1377,17 @@
 
 <!-- 신규기획 상세 모달 -->
 <dialog id="planDetailModal" class="plan-detail-modal">
-  <div class="rmodal-header">
+  <div class="dmodal-header">
     <div class="dmodal-title-wrap">
       <span class="dmodal-brand" id="pdBrand"></span>
       <h2 class="dmodal-title" id="pdNameKr"></h2>
       <span class="dmodal-code" id="pdSampleNo"></span>
     </div>
-    <div class="rmodal-header-actions">
+    <div class="dmodal-header-actions">
+      <button class="modal-back-btn" id="pdBackBtn" onclick="goBack()" style="display:none">←</button>
+      <button class="fav-star" id="pdFavBtn" onclick="toggleFavorite('plan', _editingPlanNo, document.getElementById('pdNameKr').textContent)" title="즐겨찾기">☆</button>
+      <button class="btn btn-sm btn-outline watch-btn" id="pdWatchBtn" onclick="toggleWatch('plan', _editingPlanNo, document.getElementById('pdNameKr').textContent); _pdSyncWatchBtn()" title="변경 알림">👁</button>
+      <span class="edit-lock-warn" id="pdLockWarn" style="display:none"></span>
       <button class="btn btn-sm btn-outline" id="pdCloneBtn" onclick="clonePlanItem(_editingPlanNo)">복제</button>
       <button class="btn btn-sm btn-primary pd-view-btn" id="pdEditBtn" onclick="togglePlanDetailEdit()">수정</button>
       <button class="btn btn-sm btn-primary pd-edit-btn" id="pdSaveBtn" onclick="savePlanDetailEdit()" style="display:none">저장</button>
@@ -1641,52 +1679,9 @@
       </div>
     </div>
 
-    <!-- 이미지 -->
-    <div class="rform-section">
-      <div class="rform-section-title">이미지</div>
-      <div class="rform-grid">
-        <div class="rform-field" style="grid-column:span 4">
-          <label>대표이미지 URL</label>
-          <input type="text" id="plMainImage" placeholder="https://..." />
-        </div>
-        <div class="rform-field" style="grid-column:span 2">
-          <label>자사몰 이미지 URL (줄바꿈 다중)</label>
-          <textarea id="plImgLemango" rows="2" placeholder="https://..."></textarea>
-        </div>
-        <div class="rform-field" style="grid-column:span 2">
-          <label>느와 이미지 URL (줄바꿈 다중)</label>
-          <textarea id="plImgNoir" rows="2" placeholder="https://..."></textarea>
-        </div>
-        <div class="rform-field" style="grid-column:span 2">
-          <label>외부몰 이미지 URL (줄바꿈 다중)</label>
-          <textarea id="plImgExternal" rows="2"></textarea>
-        </div>
-        <div class="rform-field" style="grid-column:span 2">
-          <label>SUM 이미지 URL (줄바꿈 다중)</label>
-          <textarea id="plImgSum" rows="2"></textarea>
-        </div>
-        <div class="rform-field" style="grid-column:span 2">
-          <label>디자인 이미지 URL</label>
-          <input type="text" id="plImgDesign" placeholder="https://..." />
-        </div>
-        <div class="rform-field" style="grid-column:span 2">
-          <label>촬영 이미지 URL</label>
-          <input type="text" id="plImgShoot" placeholder="https://..." />
-        </div>
-        <div class="rform-field" style="grid-column:span 4">
-          <label>영상 URL</label>
-          <input type="text" id="plVideoUrl" placeholder="https://..." />
-        </div>
-        <div class="rform-field" style="grid-column:span 4">
-          <label>로컬 파일 업로드</label>
-          <label class="pl-img-upload-btn btn btn-outline">
-            📁 파일 선택 (여러 개 가능)
-            <input type="file" accept="image/*" multiple style="display:none" onchange="handlePlImgUpload(this)" />
-          </label>
-          <div class="pl-img-preview" id="plImgPreview"></div>
-        </div>
-      </div>
-    </div>
+    <!-- 이미지 (참고 + 상품) -->
+    <div id="planTempImageSection"></div>
+    <div id="planProductImageSection"></div>
 
     <!-- 일정 관리 -->
     <div class="rform-section">
@@ -1882,8 +1877,12 @@
   <div class="srm-modal-header">
     <div class="srm-header-title"><span class="srm-header-dot" style="background:#c9a96e"></span><span class="rmodal-title">행사일정</span></div>
     <div class="srm-header-btns">
+      <button class="modal-back-btn" id="evBackBtn" onclick="goBack()" style="display:none">←</button>
+      <button class="fav-star" id="evFavBtn" onclick="toggleFavorite('event', _editingEventNo, (_events.find(e=>e.no===_editingEventNo)||{}).name||'')" title="즐겨찾기">☆</button>
+      <button class="btn btn-sm btn-outline watch-btn" id="evWatchBtn" onclick="toggleWatch('event', _editingEventNo, (_events.find(e=>e.no===_editingEventNo)||{}).name||''); _evSyncWatchBtn()" title="변경 알림">👁</button>
+      <span class="edit-lock-warn" id="evLockWarn" style="display:none"></span>
       <button class="srm-btn-outline ev-back-btn" onclick="backToDashEvent()" style="display:none">&larr; 뒤로</button>
-      <button class="srm-btn-gold ev-view-btn" onclick="goToEventEdit(_editingEventNo)">수정</button>
+      <button class="srm-btn-gold ev-view-btn" onclick="toggleEventEdit()">수정</button>
       <button class="srm-btn-gold ev-edit-btn" onclick="saveEventEdit()">저장</button>
       <button class="srm-btn-outline ev-edit-btn" onclick="toggleEventEdit()">취소</button>
       <button class="srm-btn-gold ev-new-btn" onclick="submitEventNew()">등록</button>
@@ -1924,7 +1923,7 @@
     <span class="rmodal-title">업무일정 등록</span>
     <div class="srm-header-btns">
       <button type="button" class="btn btn-sm btn-primary" onclick="document.getElementById('wkRegForm').requestSubmit()">등록</button>
-      <button type="button" class="btn btn-sm btn-outline" onclick="closeWorkRegisterModal()">취소</button>
+      <button type="button" class="btn btn-sm btn-outline" onclick="cancelWorkEdit()">취소</button>
       <button class="modal-close" onclick="closeWorkRegisterModal()">✕</button>
     </div>
   </div>
@@ -1939,6 +1938,7 @@
       <div class="rform-field" style="flex:0 0 120px"><label>종료시간</label><input type="time" id="wkRegEndTime" min="00:00" max="23:59" /></div>
     </div>
     <div class="rform-field"><label>메모</label><textarea id="wkRegMemo" rows="3" placeholder="상세 내용"></textarea></div>
+    <div class="rform-field"><label>체크리스트</label><div id="wkRegChecklistArea"></div></div>
     <div class="rform-field" style="position:relative"><label>참조 (@이름, @부서로 공유)</label>
       <div class="mention-area" id="workMentionArea">
         <input type="text" class="mention-input" id="workMentionInput" placeholder="@입력..." oninput="searchMention(this.value, 'work')" onkeydown="mentionKeyDown(event, 'work')" />
@@ -1950,8 +1950,20 @@
 </dialog>
 
 <!-- 업무일정 상세 모달 -->
+<!-- 주간 리포트 모달 -->
+<dialog id="weeklyReportModal" class="srm-modal" style="width:620px;max-width:96vw">
+  <div class="srm-header">
+    <h3 style="margin:0">📊 주간 리포트</h3>
+    <div class="srm-header-btns">
+      <button class="modal-close" onclick="closeWeeklyReportModal()">✕</button>
+    </div>
+  </div>
+  <div class="srm-body" id="weeklyReportBody"></div>
+</dialog>
+
 <dialog id="workDetailModal" class="srm-modal" style="width:500px;max-width:96vw">
   <div class="srm-header">
+    <button class="modal-back-btn" id="wkBackBtn" onclick="goBack()" style="display:none">←</button>
     <span class="rmodal-title">업무일정 상세</span>
     <div class="srm-header-btns" id="wkDetailHeaderBtns">
       <button class="modal-close" onclick="closeWorkDetailModal()">✕</button>

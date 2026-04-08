@@ -2,6 +2,146 @@
 // ===== 유틸 함수들 =====
 // =============================================
 
+// getStartOfWeek — returns Date representing Sunday (00:00) of the week containing `date`
+function getStartOfWeek(date) {
+  const d = (date instanceof Date) ? new Date(date) : new Date(date)
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() - d.getDay())
+  return d
+}
+if (typeof window !== 'undefined') window.getStartOfWeek = getStartOfWeek
+
+
+// ===== 테이블 사용자 커스터마이징 영속화 =====
+const TABLE_CUSTOM_KEY = 'lemango_table_custom_'
+const FILTER_DEFAULT_KEY = 'lemango_filter_default_'
+
+function _serializeColFilters(cf) {
+  if (!cf) return {}
+  const out = {}
+  Object.entries(cf).forEach(([k, v]) => {
+    if (v instanceof Set) out[k] = [...v]
+    else if (Array.isArray(v)) out[k] = v.slice()
+  })
+  return out
+}
+function _deserializeColFilters(obj) {
+  const out = {}
+  if (!obj) return out
+  Object.entries(obj).forEach(([k, v]) => {
+    if (Array.isArray(v) && v.length) out[k] = new Set(v)
+  })
+  return out
+}
+
+function saveTableCustom(tabKey) {
+  const s = State[tabKey]
+  if (!s) return
+  const data = {
+    activeColumns: s.activeColumns || null,
+    inactiveColumns: s.inactiveColumns || [],
+    colWidths: s.colWidths || {},
+    pageSize: s.pageSize,
+    sort: s.sort ? { key: s.sort.key, dir: s.sort.dir } : null,
+    columnFilters: _serializeColFilters(s.columnFilters),
+    savedAt: new Date().toISOString()
+  }
+  if (tabKey === 'sales') {
+    data.activePlatforms = s.activePlatforms || []
+    data.inactivePlatforms = s.inactivePlatforms || []
+  }
+  try { localStorage.setItem(TABLE_CUSTOM_KEY + tabKey, JSON.stringify(data)) } catch(e) {}
+}
+
+function loadTableCustom(tabKey) {
+  try {
+    const raw = localStorage.getItem(TABLE_CUSTOM_KEY + tabKey)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch(e) { return null }
+}
+
+function applyTableCustom(tabKey) {
+  const data = loadTableCustom(tabKey)
+  if (!data) return
+  const s = State[tabKey]
+  if (!s) return
+  if (Array.isArray(data.activeColumns)) s.activeColumns = data.activeColumns.slice()
+  if (Array.isArray(data.inactiveColumns)) s.inactiveColumns = data.inactiveColumns.slice()
+  if (data.colWidths && typeof data.colWidths === 'object') s.colWidths = { ...data.colWidths }
+  else if (!s.colWidths) s.colWidths = {}
+  if (typeof data.pageSize !== 'undefined' && data.pageSize !== null) s.pageSize = data.pageSize
+  if (data.sort && data.sort.key != null) s.sort = { key: data.sort.key, dir: data.sort.dir || 'asc' }
+  if (data.columnFilters) s.columnFilters = _deserializeColFilters(data.columnFilters)
+  if (tabKey === 'sales') {
+    if (Array.isArray(data.activePlatforms)) s.activePlatforms = data.activePlatforms.slice()
+    if (Array.isArray(data.inactivePlatforms)) s.inactivePlatforms = data.inactivePlatforms.slice()
+  }
+}
+
+function saveFilterDefault(tabKey, filterState) {
+  try {
+    const data = { ...filterState, savedAt: new Date().toISOString() }
+    localStorage.setItem(FILTER_DEFAULT_KEY + tabKey, JSON.stringify(data))
+  } catch(e) {}
+}
+function loadFilterDefault(tabKey) {
+  try {
+    const raw = localStorage.getItem(FILTER_DEFAULT_KEY + tabKey)
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch(e) { return null }
+}
+
+function applyFilterDefault(tabKey) {
+  const data = loadFilterDefault(tabKey)
+  if (!data) return false
+  Object.entries(data).forEach(([id, val]) => {
+    if (id === 'savedAt') return
+    const el = document.getElementById(id)
+    if (el && typeof val !== 'undefined' && val !== null) el.value = val
+  })
+  return true
+}
+
+function resetTableCustom(tabKey) {
+  try {
+    localStorage.removeItem(TABLE_CUSTOM_KEY + tabKey)
+    localStorage.removeItem(FILTER_DEFAULT_KEY + tabKey)
+  } catch(e) {}
+  const s = State[tabKey]
+  if (s) {
+    s.activeColumns = null
+    s.inactiveColumns = []
+    s.colWidths = {}
+    s.columnFilters = {}
+    s.pageSize = 10
+    if (tabKey === 'sales') {
+      s.activePlatforms = []
+      s.inactivePlatforms = []
+    }
+  }
+}
+
+function resetTableLayout(tabKey) {
+  resetTableCustom(tabKey)
+  if (typeof showToast === 'function') showToast('테이블 레이아웃이 초기화되었습니다.')
+  const renderMap = { product: 'renderProductTable', stock: 'renderStockTable', plan: 'renderPlanTable', sales: 'renderSalesTable' }
+  const fn = window[renderMap[tabKey]]
+  if (typeof fn === 'function') fn()
+}
+
+function applyColWidthsToHeader(tableId, tabKey) {
+  const s = State[tabKey]
+  if (!s || !s.colWidths) return
+  const table = document.getElementById(tableId)
+  if (!table) return
+  table.querySelectorAll('thead th').forEach(th => {
+    const k = th.dataset.colKey || th.dataset.key
+    if (k && s.colWidths[k]) th.style.width = s.colWidths[k] + 'px'
+  })
+}
+
 // ===== 모달 안전 닫기 =====
 async function safeCloseModal(modal, isEditing, closeFn) {
   if (modal._closingInProgress) return
@@ -459,12 +599,14 @@ function openColumnFilter(th, tabKey, key, renderFnName) {
       State[tabKey].columnFilters[key] = sel
     }
     State[tabKey].page = 1
+    saveTableCustom(tabKey)
     closeColumnFilter()
     window[renderFnName]()
   })
   dd.querySelector('.cfd-reset').addEventListener('click', () => {
     delete State[tabKey].columnFilters[key]
     State[tabKey].page = 1
+    saveTableCustom(tabKey)
     closeColumnFilter()
     window[renderFnName]()
   })
@@ -541,6 +683,7 @@ function initTableFeatures(tableId, tabKey, renderFnName) {
         if (newSort.key) {
           State[tabKey].filtered = sortData(State[tabKey].filtered, newSort.key, newSort.dir)
         }
+        saveTableCustom(tabKey)
         window[renderFnName]()
       })
     }
@@ -570,6 +713,13 @@ function initTableFeatures(tableId, tabKey, renderFnName) {
         document.body.classList.remove('col-resize-active')
         document.removeEventListener('mousemove', onMove)
         document.removeEventListener('mouseup', onUp)
+        // persist width
+        const k = th.dataset.colKey || th.dataset.key
+        if (k && State[tabKey]) {
+          if (!State[tabKey].colWidths) State[tabKey].colWidths = {}
+          State[tabKey].colWidths[k] = th.offsetWidth
+          saveTableCustom(tabKey)
+        }
       }
       document.addEventListener('mousemove', onMove)
       document.addEventListener('mouseup', onUp)
@@ -650,6 +800,7 @@ function removeColumn(tabKey, colKey, renderFnName) {
   const st = State[tabKey]
   st.activeColumns = st.activeColumns.filter(k => k !== colKey)
   if (!st.inactiveColumns.includes(colKey)) st.inactiveColumns.push(colKey)
+  saveTableCustom(tabKey)
   window[renderFnName]()
 }
 
@@ -661,6 +812,7 @@ function restoreColumn(tabKey, colKey, insertIdx, renderFnName) {
   } else {
     st.activeColumns.splice(insertIdx, 0, colKey)
   }
+  saveTableCustom(tabKey)
   window[renderFnName]()
 }
 
@@ -671,6 +823,7 @@ function reorderColumn(tabKey, fromKey, toIdx, renderFnName) {
   arr.splice(fromIdx, 1)
   const insertAt = toIdx > fromIdx ? toIdx - 1 : toIdx
   arr.splice(insertAt < 0 ? 0 : insertAt, 0, fromKey)
+  saveTableCustom(tabKey)
   window[renderFnName]()
 }
 
@@ -1006,3 +1159,174 @@ function renderStampInfo(obj) {
 
 window.formatDateTime = formatDateTime
 window.renderStampInfo = renderStampInfo
+
+function convertUrlsToHtml(urlString) {
+  if (!urlString) return ''
+  const urls = String(urlString)
+    .split(/[\n,]+/)
+    .map(u => u.trim())
+    .filter(u => u.length > 0 && (u.startsWith('http') || u.startsWith('//')))
+  return urls.map(url => '<center><img src="' + url + '"></center>').join('\n')
+}
+window.convertUrlsToHtml = convertUrlsToHtml
+
+function copyImageHtml(key) {
+  const p = State.allProducts.find(x => x.productCode === _detailCode)
+  if (!p) return
+  let urlString = ''
+  if (key === 'jasa') {
+    const a = [...(p.images?.lemango||[]), ...(p.images?.noir||[])]
+    urlString = a.join('\n')
+  } else if (key === 'mainImage') {
+    urlString = p.mainImage || ''
+  } else {
+    const arr = p.images?.[key]
+    urlString = Array.isArray(arr) ? arr.join('\n') : (arr || '')
+  }
+  if (!urlString.trim()) { showToast('URL이 없습니다.', 'warning'); return }
+  const html = convertUrlsToHtml(urlString)
+  navigator.clipboard.writeText(html).then(() => showToast('HTML 복사 완료 (' + key + ')'))
+}
+window.copyImageHtml = copyImageHtml
+
+function copyAllImageHtml() {
+  const p = State.allProducts.find(x => x.productCode === _detailCode)
+  if (!p) return
+  const sections = ['sum', 'lemango', 'noir', 'external', 'design', 'shoot']
+  let allHtml = ''
+  sections.forEach(key => {
+    const arr = p.images?.[key]
+    const urlString = Array.isArray(arr) ? arr.join('\n') : (arr || '')
+    if (urlString.trim()) allHtml += convertUrlsToHtml(urlString) + '\n'
+  })
+  if (!allHtml.trim()) { showToast('이미지 URL이 없습니다.', 'warning'); return }
+  navigator.clipboard.writeText(allHtml.trim()).then(() => showToast('전체 이미지 HTML 복사 완료'))
+}
+window.copyAllImageHtml = copyAllImageHtml
+
+// ===== Feature 6: Inline cell edit (double-click) =====
+const _INLINE_EDIT_BOUND = new WeakSet()
+function initInlineEdit(tableId, tabKey) {
+  const table = document.getElementById(tableId)
+  if (!table) return
+  if (_INLINE_EDIT_BOUND.has(table)) return
+  _INLINE_EDIT_BOUND.add(table)
+  table.addEventListener('dblclick', (e) => {
+    const td = e.target.closest('td[data-editable]')
+    if (!td) return
+    if (td.querySelector('.inline-edit-input')) return
+    const tr = td.closest('tr')
+    if (!tr) return
+    const key = td.getAttribute('data-editable')
+    const id = tabKey === 'product' ? tr.getAttribute('data-code') : Number(tr.getAttribute('data-no'))
+    if (id == null || id === '' || (typeof id === 'number' && Number.isNaN(id))) return
+    e.stopPropagation()
+    _startInlineEdit(td, tabKey, id, key)
+  })
+}
+function _startInlineEdit(td, tabKey, id, key) {
+  const item = tabKey === 'product'
+    ? State.allProducts.find(p => p.productCode === id)
+    : State.planItems.find(p => p.no === id)
+  if (!item) return
+  const curRaw = item[key] != null ? item[key] : ''
+  const origHtml = td.innerHTML
+  let inputEl
+  const selectKeys = {
+    type: ['onepiece','bikini','two piece'],
+    saleStatus: ['판매중','종료','추가생산']
+  }
+  if (selectKeys[key]) {
+    inputEl = document.createElement('select')
+    inputEl.className = 'inline-edit-input'
+    selectKeys[key].forEach(v => {
+      const o = document.createElement('option')
+      o.value = v; o.textContent = v
+      if (String(curRaw) === v) o.selected = true
+      inputEl.appendChild(o)
+    })
+  } else if (key === 'salePrice' || key === 'costPrice') {
+    inputEl = document.createElement('input')
+    inputEl.type = 'number'
+    inputEl.className = 'inline-edit-input'
+    inputEl.value = curRaw || 0
+  } else {
+    inputEl = document.createElement('input')
+    inputEl.type = 'text'
+    inputEl.className = 'inline-edit-input'
+    inputEl.value = curRaw
+  }
+  td.innerHTML = ''
+  td.appendChild(inputEl)
+  inputEl.focus()
+  if (inputEl.select) try { inputEl.select() } catch(_){}
+  let done = false
+  const commit = () => {
+    if (done) return; done = true
+    let val = inputEl.value
+    if (key === 'salePrice' || key === 'costPrice') val = Number(val) || 0
+    saveInlineEdit(tabKey, id, key, val)
+  }
+  const cancel = () => {
+    if (done) return; done = true
+    td.innerHTML = origHtml
+  }
+  inputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commit() }
+    else if (e.key === 'Escape') { e.preventDefault(); cancel() }
+  })
+  inputEl.addEventListener('blur', commit)
+}
+function saveInlineEdit(tabKey, id, key, value) {
+  const item = tabKey === 'product'
+    ? State.allProducts.find(p => p.productCode === id)
+    : State.planItems.find(p => p.no === id)
+  if (!item) return
+  item[key] = value
+  if (typeof stampModified === 'function') { try { stampModified(item) } catch(_){} }
+  try {
+    if (tabKey === 'product' && typeof saveProducts === 'function') saveProducts()
+    else if (tabKey === 'plan' && typeof savePlanItems === 'function') savePlanItems()
+  } catch(_){}
+  if (typeof showToast === 'function') showToast('수정되었습니다')
+  if (tabKey === 'product' && typeof renderProductTable === 'function') renderProductTable()
+  else if (tabKey === 'plan' && typeof renderPlanTable === 'function') renderPlanTable()
+}
+window.initInlineEdit = initInlineEdit
+window.saveInlineEdit = saveInlineEdit
+
+// ===== Feature 12: Row double-click → detail =====
+const _ROW_DBLCLICK_BOUND = new WeakSet()
+function initRowDblClick(tableId, callback) {
+  const table = document.getElementById(tableId)
+  if (!table) return
+  if (_ROW_DBLCLICK_BOUND.has(table)) return
+  _ROW_DBLCLICK_BOUND.add(table)
+  table.addEventListener('dblclick', (e) => {
+    const tag = (e.target.tagName || '').toLowerCase()
+    if (['input','select','textarea','button','label'].includes(tag)) return
+    if (e.target.closest('td[data-editable]')) return
+    if (e.target.closest('.code-link')) return
+    const tr = e.target.closest('tbody tr')
+    if (!tr) return
+    callback(tr)
+  })
+}
+window.initRowDblClick = initRowDblClick
+
+/* ===== Feature 5: filterMyAssigned ===== */
+function filterMyAssigned(tabKey) {
+  try {
+    const uid = (typeof _myUid === 'function') ? _myUid() : ''
+    if (!uid) { if (typeof showToast === 'function') showToast('로그인이 필요합니다', 'warn'); return }
+    if (!State[tabKey]) return
+    const source = (tabKey === 'plan') ? (State.planItems || []) : (State.allProducts || [])
+    State[tabKey].filtered = source.filter(x => x && x.assignee === uid)
+    State[tabKey].page = 1
+    const tableNameMap = { product: 'renderProductTable', stock: 'renderStockTable', plan: 'renderPlanTable', sales: 'renderSalesTable' }
+    const fnName = tableNameMap[tabKey]
+    if (fnName && typeof window[fnName] === 'function') window[fnName]()
+    if (typeof showToast === 'function') showToast(`내 담당 ${State[tabKey].filtered.length}건`, 'success')
+  } catch(e) { console.warn(e) }
+}
+window.filterMyAssigned = filterMyAssigned
