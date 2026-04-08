@@ -432,5 +432,8 @@ const NOTIF_ICONS = {
   plan_deadline:'📋',
   board_notice: '📢',
   member_pending:'👤',
-  personal_schedule:'📋'
+  personal_schedule:'📋',
+  work_mention: '📋',
+  work_start: '⏰',
+  work_upcoming: '📅'
 }

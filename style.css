@@ -4070,3 +4070,18 @@ body.col-resize-active * { cursor: col-resize !important; }
 
 .header-logo-img { height:24px; object-fit:contain; vertical-align:middle; cursor:pointer; }
 .login-logo-img { height:36px; object-fit:contain; margin-bottom:24px; }
+
+/* ===== Common @Mention (work + ps) ===== */
+.mention-area { border:1px solid #e8e6e0; border-radius:8px; padding:6px 8px; min-height:36px; display:flex; flex-wrap:wrap; gap:4px; align-items:center; background:#fff; }
+.mention-tag { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:500; }
+.mention-user { background:#EEEDFE; color:#3C3489; }
+.mention-dept { background:#E1F5EE; color:#085041; }
+.mention-x { cursor:pointer; font-size:10px; opacity:0.6; }
+.mention-x:hover { opacity:1; }
+.mention-input { border:none; outline:none; font-size:12px; flex:1; min-width:80px; background:transparent; }
+.mention-dropdown { border:1px solid #e8e6e0; border-radius:8px; margin-top:4px; max-height:200px; overflow-y:auto; background:#fff; box-shadow:0 4px 12px rgba(0,0,0,0.08); position:relative; z-index:100; }
+.mention-item { padding:8px 12px; cursor:pointer; font-size:12px; display:flex; align-items:center; gap:6px; }
+.mention-item:hover { background:#faf9f7; }
+.mention-item-active { background:#f0efe9 !important; color:#1a1a2e; font-weight:500; }
+.mention-icon { font-size:11px; color:#888780; width:14px; text-align:center; }
+.mention-vis { font-size:11px; color:#888; margin-top:6px; }

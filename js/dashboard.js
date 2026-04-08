@@ -405,6 +405,22 @@ function renderDashCalendar() {
     const MAX_VISIBLE = 6
     let visibleCount = 0
 
+    // 업무일정 바 (TOP)
+    di.works.forEach(w => {
+      if (visibleCount >= MAX_VISIBLE) return
+      visibleCount++
+      const wColor = getWorkCatColor(w.category)
+      const timePrefix = (w.startTime && cell.date === w.startDate) ? (w.startTime + ' ') : ''
+      const isVacation = w.category === '연차' || w.category === '반차'
+      const authorSuffix = (isVacation && w.createdByName) ? ' ' + (typeof formatUserName === 'function' ? formatUserName(w.createdByName, w.createdByPosition) : w.createdByName) : ''
+      const label = `${timePrefix}${w.category} ${w.title || ''}${authorSuffix}`.trim()
+      if (isPast) {
+        html += `<div class="dcal-bar dcal-bar-mini" style="background:${wColor.bg};" title="${esc(label)}" onclick="openWorkDetailModal(${w.no}, true)"></div>`
+      } else {
+        html += `<div class="dcal-bar dcal-bar-work" style="background:${wColor.bg}; color:${wColor.text};" title="${esc(label)}" onclick="openWorkDetailModal(${w.no}, true)">${esc(label)}</div>`
+      }
+    })
+
     // 행사 바
     di.events.forEach(ev => {
       if (visibleCount >= MAX_VISIBLE) return
@@ -438,19 +454,6 @@ function renderDashCalendar() {
       }
     })
 
-    // 업무일정 바
-    di.works.forEach(w => {
-      if (visibleCount >= MAX_VISIBLE) return
-      visibleCount++
-      const wColor = getWorkCatColor(w.category)
-      const label = `${w.category} ${w.title}`.trim()
-      if (isPast) {
-        html += `<div class="dcal-bar dcal-bar-mini" style="background:${wColor.bg};" title="${esc(label)}" onclick="openWorkDetailModal(${w.no}, true)"></div>`
-      } else {
-        html += `<div class="dcal-bar dcal-bar-work" style="background:${wColor.bg}; color:${wColor.text};" title="${esc(label)}" onclick="openWorkDetailModal(${w.no}, true)">${esc(label)}</div>`
-      }
-    })
-
     // 개인일정 바
     const psUid = firebase.auth().currentUser?.uid
     if (di.personal) di.personal.forEach(ps => {
@@ -458,7 +461,8 @@ function renderDashCalendar() {
       visibleCount++
       const isMine = ps.createdBy === psUid
       const barBg = isMine ? '#7C3AED' : '#0891B2'
-      const label = `${ps.category || ''} ${ps.title}`.trim()
+      const psTimePrefix = (ps.startTime && cell.date === ps.startDate) ? (ps.startTime + ' ') : ''
+      const label = `${psTimePrefix}${ps.category || ''} ${ps.title}`.trim()
       if (isPast) {
         html += `<div class="dcal-bar dcal-bar-mini" style="background:${barBg};opacity:0.6" title="${esc(label)}" onclick="openPersonalDetailModal('${ps.id}')"></div>`
       } else {

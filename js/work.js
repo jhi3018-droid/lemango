@@ -212,6 +212,8 @@ function openWorkRegisterModal(dateStr) {
   document.getElementById('wkRegNo').value = ''
   modal.querySelector('.rmodal-title').textContent = '업무일정 등록'
   populateAllSelects()
+  clearWorkMentionArea()
+  if (typeof loadAllUsers === 'function') loadAllUsers()
   if (dateStr) {
     document.getElementById('wkRegStart').value = dateStr
     document.getElementById('wkRegEnd').value = dateStr
@@ -239,7 +241,10 @@ function submitWork(e) {
     title:        document.getElementById('wkRegTitle').value.trim(),
     startDate:    document.getElementById('wkRegStart').value,
     endDate:      document.getElementById('wkRegEnd').value || document.getElementById('wkRegStart').value,
+    startTime:    document.getElementById('wkRegStartTime')?.value || '',
+    endTime:      document.getElementById('wkRegEndTime')?.value || '',
     memo:         document.getElementById('wkRegMemo').value.trim(),
+    mentions:     collectMentions('work'),
     registeredAt: isEdit ? (State.workItems.find(w => w.no === no)?.registeredAt || new Date().toISOString()) : new Date().toISOString()
   }
 
@@ -267,6 +272,18 @@ function submitWork(e) {
   renderWorkCalendar()
   showToast(isEdit ? '업무일정이 수정되었습니다.' : '업무일정이 등록되었습니다.', 'success')
   logActivity(isEdit ? 'update' : 'create', '업무일정', `${isEdit ? '업무수정' : '업무등록'}: ${item.title}`)
+
+  // 참조자에게 즉시 알림
+  if (!isEdit && item.mentions && item.mentions.length) {
+    const myUid = (typeof firebase !== 'undefined' && firebase.auth().currentUser) ? firebase.auth().currentUser.uid : null
+    item.mentions.forEach(m => {
+      if (m.type === 'user' && m.uid !== myUid) {
+        addNotification('work_mention', '업무일정 참조',
+          formatUserNameHonorific(_currentUserName, _currentUserPosition) + '이 업무일정을 공유했습니다: ' + item.title,
+          'work')
+      }
+    })
+  }
 }
 
 // ===== 상세 모달 =====
@@ -295,11 +312,13 @@ function openWorkDetailModal(no, fromDash = false) {
 
 function buildWorkDetailContent(w, fromDash = false) {
   const c = getWorkCatColor(w.category)
-  const start = w.startDate || ''
-  const end = w.endDate || start
+  const startDateStr = w.startDate || ''
+  const endDateStr = w.endDate || startDateStr
+  const start = startDateStr + (w.startTime ? ' ' + w.startTime : '')
+  const end = endDateStr + (w.endTime ? ' ' + w.endTime : '')
   let progress = 0, days = 1
-  if (start && end) {
-    const s = new Date(start), e = new Date(end), t = new Date()
+  if (startDateStr && endDateStr) {
+    const s = new Date(startDateStr), e = new Date(endDateStr), t = new Date()
     days = Math.max(1, Math.round((e - s) / 86400000) + 1)
     if (t < s) progress = 0
     else if (t > e) progress = 100
@@ -317,6 +336,7 @@ function buildWorkDetailContent(w, fromDash = false) {
         <span class="srm-tl-dot" style="background:${c.bg}"></span>
       </div>` : ''}
       ${w.memo ? `<div class="srm-divider"></div><div class="srm-memo-label">메모</div><div class="srm-memo-text">${w.memo}</div>` : ''}
+      ${(w.mentions && w.mentions.length) ? `<div class="srm-divider"></div><div class="srm-memo-label">참조</div><div class="srm-view-value">${w.mentions.map(m => m.type === 'user' ? `<span class="mention-tag mention-user">@${esc(formatUserName(m.name, m.position))}</span>` : `<span class="mention-tag mention-dept">@${esc(m.dept)}</span>`).join(' ')}</div>` : ''}
       ${renderStampInfo(w)}
       ${buildCommentSection('work', w.no)}
     </div>`
@@ -345,13 +365,31 @@ function editWorkFromDetail(no) {
   document.getElementById('wkRegTitle').value     = w.title || ''
   document.getElementById('wkRegStart').value     = w.startDate || ''
   document.getElementById('wkRegEnd').value       = w.endDate || ''
+  const wkST = document.getElementById('wkRegStartTime'); if (wkST) wkST.value = w.startTime || ''
+  const wkET = document.getElementById('wkRegEndTime');   if (wkET) wkET.value = w.endTime || ''
   document.getElementById('wkRegMemo').value      = w.memo || ''
 
   modal.querySelector('.rmodal-title').textContent = '업무일정 수정'
   populateAllSelects()
   document.getElementById('wkRegCategory').value = w.category || ''
+  clearWorkMentionArea()
+  if (typeof loadAllUsers === 'function') loadAllUsers()
+  ;(w.mentions || []).forEach(m => {
+    if (m.type === 'user') addMention('work', 'user', m.uid, m.name, m.position || '')
+    else addMention('work', 'dept', '', m.dept, '')
+  })
   modal.showModal()
   centerModal(modal)
+}
+
+function clearWorkMentionArea() {
+  const area = document.getElementById('workMentionArea')
+  if (!area) return
+  area.querySelectorAll('.mention-tag, .ps-mention-tag').forEach(t => t.remove())
+  const input = document.getElementById('workMentionInput')
+  if (input) input.value = ''
+  const dd = document.getElementById('workMentionDropdown')
+  if (dd) dd.style.display = 'none'
 }
 
 function closeWorkDetailModal() {
@@ -367,6 +405,28 @@ async function deleteWork(no) {
   renderWorkCalendar()
   showToast('업무일정이 삭제되었습니다.', 'success')
   logActivity('delete', '업무일정', `업무삭제: no=${no}`)
+}
+
+function checkWorkMentionAlerts() {
+  if (typeof firebase === 'undefined' || !firebase.auth().currentUser) return
+  const uid = firebase.auth().currentUser.uid
+  const dept = _currentUserDept || ''
+  const today = fmtDate(new Date())
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1)
+  const tomorrowStr = fmtDate(tomorrow)
+  ;(State.workItems || []).forEach(w => {
+    if (!w.mentions || !w.mentions.length) return
+    const isMentioned = w.mentions.some(m =>
+      (m.type === 'user' && m.uid === uid) ||
+      (m.type === 'dept' && m.dept === dept)
+    )
+    if (!isMentioned) return
+    if (w.startDate === today) {
+      addNotification('work_start', '업무일정 시작', '오늘 시작: ' + (w.title || '업무일정'), 'work')
+    } else if (w.startDate === tomorrowStr) {
+      addNotification('work_upcoming', '업무일정 내일 시작', '내일 시작: ' + (w.title || '업무일정'), 'work')
+    }
+  })
 }
 
 // =============================================
@@ -652,11 +712,13 @@ function buildPsView(ps) {
   html += `<span class="srm-cat-tag" style="background:${catColor};color:#fff;border-color:${catColor}">${esc(ps.category)}</span>`
   html += `<div class="srm-view-value-lg" style="margin-bottom:14px">${esc(ps.title)}</div>`
   if (ps.startDate && ps.endDate) {
+    const startLabel = ps.startDate + (ps.startTime ? ' ' + ps.startTime : '')
+    const endLabel = ps.endDate + (ps.endTime ? ' ' + ps.endTime : '')
     html += `<div class="srm-timeline">
       <span class="srm-tl-dot"></span>
-      <span class="srm-tl-date">${ps.startDate}</span>
+      <span class="srm-tl-date">${startLabel}</span>
       <div class="srm-tl-line"><div class="srm-tl-fill" style="width:${progress}%"></div><span class="srm-tl-days">${days}일간</span></div>
-      <span class="srm-tl-date">${ps.endDate}</span>
+      <span class="srm-tl-date">${endLabel}</span>
       <span class="srm-tl-dot"></span>
     </div>`
   }
@@ -686,8 +748,12 @@ function buildPsForm(ps) {
     <div class="srm-field-row">
       <div class="srm-field"><label class="srm-field-label">시작일</label>
       <input type="date" id="psStartDate" value="${ps.startDate || ''}"></div>
+      <div class="srm-field"><label class="srm-field-label">시작시간</label>
+      <input type="time" id="psStartTime" min="00:00" max="23:59" value="${ps.startTime || ''}"></div>
       <div class="srm-field"><label class="srm-field-label">종료일</label>
       <input type="date" id="psEndDate" value="${ps.endDate || ''}"></div>
+      <div class="srm-field"><label class="srm-field-label">종료시간</label>
+      <input type="time" id="psEndTime" min="00:00" max="23:59" value="${ps.endTime || ''}"></div>
     </div>
 
     <div class="srm-field"><label class="srm-field-label">카테고리</label>
@@ -696,7 +762,7 @@ function buildPsForm(ps) {
     <div class="srm-field" style="position:relative"><label class="srm-field-label">참조 (@이름, @부서로 공유)</label>
     <div class="ps-mention-area" id="psMentionArea" style="display:flex;flex-wrap:wrap;gap:6px;padding:6px;border:0.5px solid #e8e6e0;border-radius:6px;min-height:36px;background:#fff">
       ${mentionTags}
-      <input class="ps-mention-input" id="psMentionInput" placeholder="@입력..." oninput="searchPsMention(this.value)" style="display:inline-block;flex:1;min-width:120px;border:none;outline:none;font-size:13px;padding:2px 4px;background:transparent">
+      <input class="ps-mention-input" id="psMentionInput" placeholder="@입력..." oninput="searchMention(this.value, 'ps')" onkeydown="mentionKeyDown(event, 'ps')" style="display:inline-block;flex:1;min-width:120px;border:none;outline:none;font-size:13px;padding:2px 4px;background:transparent">
     </div>
     <div class="ps-mention-dropdown" id="psMentionDropdown" style="display:none"></div>
     <div style="font-size:11px;color:#b4b2a9;margin-top:6px">작성자 + 참조자 + 시스템 관리자만 볼 수 있습니다</div>
@@ -706,42 +772,87 @@ function buildPsForm(ps) {
     <textarea id="psMemo" rows="3" placeholder="메모">${esc(ps.memo || '')}</textarea></div>`
 }
 
-/* ---------- @Mention ---------- */
-function searchPsMention(query) {
-  const dropdown = document.getElementById('psMentionDropdown')
-  const q = query.replace(/^@/, '').toLowerCase().trim()
-  if (q.length < 1) { dropdown.style.display = 'none'; return }
+/* ---------- @Mention (공통: work + ps) ---------- */
+let _mentionHighlight = -1
+let _mentionResults = []
+
+function searchMention(query, prefix) {
+  const dropdown = document.getElementById(prefix + 'MentionDropdown')
+  if (!dropdown) return
+  _mentionHighlight = -1
+  const q = (query || '').replace(/^@/, '').toLowerCase().trim()
+  if (q.length < 1) { dropdown.style.display = 'none'; _mentionResults = []; return }
 
   let results = []
   _allUsers.forEach(u => {
+    if (u.status && u.status !== 'approved') return
     const name = formatUserName(u.name, u.position)
-    if (name.toLowerCase().includes(q) || (u.dept || '').toLowerCase().includes(q)) {
-      results.push({ type: 'user', uid: u.uid, name: u.name, position: u.position || '', dept: u.dept || '', display: name + (u.dept ? ' \u2014 ' + u.dept : '') })
+    const dept = u.dept || u.department || ''
+    if (name.toLowerCase().includes(q) || dept.toLowerCase().includes(q) || (u.name || '').toLowerCase().includes(q)) {
+      results.push({ type: 'user', uid: u.uid, name: u.name, position: u.position || '', dept, display: name + (dept ? ' \u2014 ' + dept : '') })
     }
   })
-  const depts = [...new Set(_allUsers.map(u => u.dept).filter(Boolean))].sort()
+  const deptSet = new Set()
+  if (typeof _depts !== 'undefined' && Array.isArray(_depts)) _depts.forEach(d => d && deptSet.add(d))
+  _allUsers.forEach(u => { const d = u.dept || u.department; if (d) deptSet.add(d) })
+  const depts = [...deptSet].sort()
   depts.forEach(dept => {
     if (dept.toLowerCase().includes(q)) {
       results.push({ type: 'dept', dept, display: dept + ' (부서 전체)' })
     }
   })
 
+  _mentionResults = results
   if (!results.length) { dropdown.style.display = 'none'; return }
   dropdown.style.display = 'block'
-  dropdown.innerHTML = results.slice(0, 8).map(r => {
-    if (r.type === 'user') {
-      return `<div class="ps-mention-item" onclick="addPsMention('user','${r.uid}','${esc(r.name)}','${esc(r.position)}')"><span class="ps-mention-icon">@</span>${esc(r.display)}</div>`
-    }
-    return `<div class="ps-mention-item" onclick="addPsMention('dept','','${esc(r.dept)}','')"><span class="ps-mention-icon">@</span>${esc(r.display)}</div>`
+  renderMentionDropdown(prefix)
+}
+
+function renderMentionDropdown(prefix) {
+  const dropdown = document.getElementById(prefix + 'MentionDropdown')
+  if (!dropdown) return
+  dropdown.innerHTML = _mentionResults.slice(0, 8).map((r, i) => {
+    const cls = i === _mentionHighlight ? 'mention-item mention-item-active' : 'mention-item'
+    const icon = r.type === 'user' ? '@' : '#'
+    const onclick = r.type === 'user'
+      ? `addMention('${prefix}','user','${r.uid}','${esc(r.name)}','${esc(r.position)}')`
+      : `addMention('${prefix}','dept','','${esc(r.dept)}','')`
+    return `<div class="${cls}" onclick="${onclick}" data-idx="${i}"><span class="mention-icon">${icon}</span>${esc(r.display)}</div>`
   }).join('')
 }
 
-function addPsMention(type, uid, name, position) {
-  const area = document.getElementById('psMentionArea')
-  const input = document.getElementById('psMentionInput')
-  const dropdown = document.getElementById('psMentionDropdown')
+function mentionKeyDown(e, prefix) {
+  const dropdown = document.getElementById(prefix + 'MentionDropdown')
+  if (!dropdown || dropdown.style.display === 'none' || _mentionResults.length === 0) return
+  const maxIdx = Math.min(_mentionResults.length, 8) - 1
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    _mentionHighlight = _mentionHighlight < maxIdx ? _mentionHighlight + 1 : 0
+    renderMentionDropdown(prefix)
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    _mentionHighlight = _mentionHighlight > 0 ? _mentionHighlight - 1 : maxIdx
+    renderMentionDropdown(prefix)
+  } else if (e.key === 'Enter') {
+    e.preventDefault()
+    const idx = _mentionHighlight >= 0 ? _mentionHighlight : 0
+    if (idx <= maxIdx) {
+      const r = _mentionResults[idx]
+      if (r.type === 'user') addMention(prefix, 'user', r.uid, r.name, r.position)
+      else addMention(prefix, 'dept', '', r.dept, '')
+    }
+  } else if (e.key === 'Escape') {
+    dropdown.style.display = 'none'; _mentionResults = []; _mentionHighlight = -1
+  }
+}
 
-  const existing = area.querySelectorAll('.ps-mention-tag')
+function addMention(prefix, type, uid, name, position) {
+  const area = document.getElementById(prefix + 'MentionArea')
+  const input = document.getElementById(prefix + 'MentionInput')
+  const dropdown = document.getElementById(prefix + 'MentionDropdown')
+  if (!area || !input) return
+
+  const existing = area.querySelectorAll('.mention-tag, .ps-mention-tag')
   for (const tag of existing) {
     if (type === 'user' && tag.dataset.uid === uid) return
     if (type === 'dept' && tag.dataset.dept === name) return
@@ -749,29 +860,36 @@ function addPsMention(type, uid, name, position) {
 
   const tag = document.createElement('span')
   if (type === 'user') {
-    tag.className = 'ps-mention-tag ps-mention-user'
+    tag.className = 'mention-tag mention-user'
     tag.dataset.type = 'user'
     tag.dataset.uid = uid
     tag.dataset.name = name
     tag.dataset.position = position
-    tag.innerHTML = '@' + esc(formatUserName(name, position)) + ' <span class="ps-mention-x" onclick="this.parentElement.remove()">&#10005;</span>'
+    tag.innerHTML = '@' + esc(formatUserName(name, position)) + ' <span class="mention-x" onclick="this.parentElement.remove()">&#10005;</span>'
   } else {
-    tag.className = 'ps-mention-tag ps-mention-dept'
+    tag.className = 'mention-tag mention-dept'
     tag.dataset.type = 'dept'
     tag.dataset.dept = name
-    tag.innerHTML = '@' + esc(name) + ' <span class="ps-mention-x" onclick="this.parentElement.remove()">&#10005;</span>'
+    tag.innerHTML = '@' + esc(name) + ' <span class="mention-x" onclick="this.parentElement.remove()">&#10005;</span>'
   }
   area.insertBefore(tag, input)
   input.value = ''
-  dropdown.style.display = 'none'
+  if (dropdown) dropdown.style.display = 'none'
+  _mentionResults = []; _mentionHighlight = -1
 }
 
-function collectMentions() {
-  return Array.from(document.querySelectorAll('#psMentionArea .ps-mention-tag')).map(tag => {
+function collectMentions(prefix) {
+  prefix = prefix || 'ps'
+  const tags = document.querySelectorAll(`#${prefix}MentionArea .mention-tag, #${prefix}MentionArea .ps-mention-tag`)
+  return Array.from(tags).map(tag => {
     if (tag.dataset.type === 'user') return { type: 'user', uid: tag.dataset.uid, name: tag.dataset.name, position: tag.dataset.position || '' }
     return { type: 'dept', dept: tag.dataset.dept }
   })
 }
+
+/* 호환 alias */
+function searchPsMention(q) { return searchMention(q, 'ps') }
+function addPsMention(type, uid, name, position) { return addMention('ps', type, uid, name, position) }
 
 /* ---------- Save / Delete ---------- */
 async function savePersonalSchedule() {
@@ -780,11 +898,13 @@ async function savePersonalSchedule() {
   const startDate = document.getElementById('psStartDate').value
   if (!startDate) { showToast('시작일을 입력해주세요.', 'warning'); return }
   const endDate = document.getElementById('psEndDate').value || startDate
+  const startTime = document.getElementById('psStartTime')?.value || ''
+  const endTime = document.getElementById('psEndTime')?.value || ''
 
   const user = firebase.auth().currentUser
-  const mentions = collectMentions()
+  const mentions = collectMentions('ps')
   const data = {
-    title, startDate, endDate,
+    title, startDate, endDate, startTime, endTime,
     category: document.getElementById('psCategory').value,
     memo: document.getElementById('psMemo').value.trim(),
     mentions,

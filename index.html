@@ -1934,9 +1934,18 @@
     <div class="rform-field"><label>제목</label><input type="text" id="wkRegTitle" required placeholder="예: 하계휴가, 거래처 미팅" /></div>
     <div style="display:flex;gap:12px">
       <div class="rform-field" style="flex:1"><label>시작일</label><input type="date" id="wkRegStart" required /></div>
+      <div class="rform-field" style="flex:0 0 120px"><label>시작시간</label><input type="time" id="wkRegStartTime" min="00:00" max="23:59" /></div>
       <div class="rform-field" style="flex:1"><label>종료일</label><input type="date" id="wkRegEnd" /></div>
+      <div class="rform-field" style="flex:0 0 120px"><label>종료시간</label><input type="time" id="wkRegEndTime" min="00:00" max="23:59" /></div>
     </div>
     <div class="rform-field"><label>메모</label><textarea id="wkRegMemo" rows="3" placeholder="상세 내용"></textarea></div>
+    <div class="rform-field" style="position:relative"><label>참조 (@이름, @부서로 공유)</label>
+      <div class="mention-area" id="workMentionArea">
+        <input type="text" class="mention-input" id="workMentionInput" placeholder="@입력..." oninput="searchMention(this.value, 'work')" onkeydown="mentionKeyDown(event, 'work')" />
+      </div>
+      <div class="mention-dropdown" id="workMentionDropdown" style="display:none"></div>
+      <div class="mention-vis">참조된 사용자에게 알림이 전송됩니다</div>
+    </div>
   </form>
 </dialog>
 

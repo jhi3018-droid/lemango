@@ -95,6 +95,11 @@ function injectSampleData() {
     {category:'기타', title:'건강검진', startDate:'2026-05-20', endDate:'2026-05-20', memo:'연간 건강검진'},
     {category:'기타', title:'워크숍', startDate:'2026-06-01', endDate:'2026-06-02', memo:'팀 빌딩 워크숍 (가평)'},
     {category:'기타', title:'재고실사', startDate:'2026-03-28', endDate:'2026-03-29', memo:'분기 재고실사'},
+    // ===== TEST DATA (for verification — remove later) =====
+    {category:'연차', title:'하계휴가', startDate:'2026-04-10', endDate:'2026-04-12', memo:'', createdByName:'조현일', createdByPosition:'과장'},
+    {category:'반차', title:'오전반차', startDate:'2026-04-11', endDate:'2026-04-11', memo:'', createdByName:'김민수', createdByPosition:'대리'},
+    {category:'미팅일정', title:'GS홈쇼핑 미팅', startDate:'2026-04-14', endDate:'2026-04-14', memo:'', startTime:'10:00', endTime:'12:00', createdByName:'박지영', createdByPosition:'사원'},
+    {category:'기타', title:'촬영 스케줄', startDate:'2026-04-15', endDate:'2026-04-16', memo:'', createdByName:'이수진', createdByPosition:'주임'},
   ]
   const wkMaxNo = _workItems.reduce((mx, w) => Math.max(mx, w.no || 0), 0)
   workSamples.forEach((w, i) => {
@@ -106,6 +111,10 @@ function injectSampleData() {
         startDate: w.startDate,
         endDate: w.endDate,
         memo: w.memo,
+        startTime: w.startTime || '',
+        endTime: w.endTime || '',
+        createdByName: w.createdByName || '',
+        createdByPosition: w.createdByPosition || '',
         registeredAt: new Date().toISOString()
       })
     }
@@ -259,6 +268,7 @@ async function initApp() {
   checkMemberAlerts()
   if (typeof checkEventAlerts === 'function') checkEventAlerts()
   if (typeof checkPlanAlerts === 'function') checkPlanAlerts()
+  if (typeof checkWorkMentionAlerts === 'function') checkWorkMentionAlerts()
   // 로그인 직후 미읽은 알림 있으면 드롭다운 자동 표시
   setTimeout(() => {
     const unread = (_notifications || []).filter(n => !n.dismissed && !n.read).length
@@ -278,5 +288,15 @@ async function initApp() {
     if (wrap && dd && !wrap.contains(e.target)) dd.style.display = 'none'
   })
 }
+
+document.addEventListener('wheel', function(e) {
+  const t = e.target
+  if (!t || t.tagName !== 'INPUT' || t.type !== 'time') return
+  const val = t.value
+  if (!val) return
+  const [h, m] = val.split(':').map(Number)
+  if (e.deltaY < 0 && h === 23 && m === 59) e.preventDefault()
+  if (e.deltaY > 0 && h === 0 && m === 0) e.preventDefault()
+}, { passive: false })
 
 document.addEventListener('DOMContentLoaded', init)
