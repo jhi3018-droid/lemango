@@ -68,6 +68,9 @@ function injectSampleData() {
     {no:13, name:'플래시세일', channel:'29cm', startDate:'2026-06-05', endDate:'2026-06-07', discount:45, support:20, memo:'29cm 48시간 한정 세일'},
     {no:14, name:'7월 썸머 페스타', channel:'W쇼핑', startDate:'2026-07-01', endDate:'2026-07-14', discount:30, support:15, memo:'W쇼핑 썸머 페스타 참여'},
     {no:15, name:'시즌엔드 세일', channel:'공홈', startDate:'2026-08-15', endDate:'2026-08-31', discount:50, support:30, memo:'SS시즌 마무리 대규모 할인'},
+    // ===== TEST DATA (for verification — remove later) =====
+    {no:901, name:'공홈 회원 감사 세일', channel:'공홈', startDate:'2026-04-10', endDate:'2026-04-20', discount:30, support:15, memo:'테스트 행사', createdByName:'조현일', createdByPosition:'과장'},
+    {no:902, name:'GS 산산 현장 프로모션', channel:'GS', startDate:'2026-04-07', endDate:'2026-04-09', discount:20, support:10, memo:'테스트 행사2', createdByName:'김민수', createdByPosition:'대리'},
   ]
   // 기존 이벤트 유지하면서 추가 (no 중복 방지)
   const existingMaxNo = _events.reduce((mx, e) => Math.max(mx, e.no || 0), 0)
