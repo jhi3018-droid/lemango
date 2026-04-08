@@ -4283,10 +4283,12 @@ td[data-editable]:hover { background: #FAEEDA; }
 .plan-detail-modal.edit-mode .pinned-memo-edit { display: block !important; margin-bottom: 12px; }
 
 /* ===== Feature 8: Deadline Classes ===== */
-.deadline-overdue { background: #ffcdd2 !important; color: #b71c1c !important; }
-.deadline-today { background: #ffe0b2 !important; color: #e65100 !important; }
-.deadline-urgent { background: #fff9c4 !important; }
-.deadline-soon { background: #f0f4c3 !important; }
+.dcal-cell.deadline-overdue .dcal-date { color: #b71c1c; font-weight: 700; }
+.dcal-cell.deadline-today .dcal-date { color: #e65100; font-weight: 700; }
+.dcal-cell.deadline-urgent .dcal-date { color: #f57c00; font-weight: 600; }
+.ddm-row.deadline-overdue { border-left: 3px solid #b71c1c; }
+.ddm-row.deadline-today { border-left: 3px solid #e65100; }
+.ddm-row.deadline-urgent { border-left: 3px solid #f57c00; }
 
 /* ===== Feature 3: Daily Team Summary ===== */
 .daily-summary { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; }

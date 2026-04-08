@@ -2108,6 +2108,15 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 ---
 
+### 2026-04-08 (session 2 hotfix)
+
+#### 대시보드 캘린더 바 색상 깨짐 수정 (F8 회귀)
+- **원인**: F8에서 `getDeadlineClass()` 결과를 work/event/plan 바 div의 class에 직접 추가 → `.deadline-* { background !important }` 가 채널/단계/카테고리 색상을 덮어씌움
+- **수정**: `js/dashboard.js` work/event/plan 바 렌더에서 `${wDlc}/${evDlc}/${pDlc}` 클래스 제거 (바 배경은 원래 팔레트 유지)
+- **CSS 재작성** (`style.css`): `.deadline-* { background !important }` → `.dcal-cell.deadline-* .dcal-date { color }` (날짜 숫자 색상만) + `.ddm-row.deadline-*` (dashDayModal 행 left-border 강조)
+
+---
+
 ## 다음 작업 후보 (미구현)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 데이터 영속성 (localStorage 또는 서버 연동)

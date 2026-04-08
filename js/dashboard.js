@@ -475,11 +475,10 @@ function renderDashCalendar() {
       const isVacation = w.category === '연차' || w.category === '반차'
       const authorSuffix = (isVacation && w.createdByName) ? ' ' + (typeof formatUserName === 'function' ? formatUserName(w.createdByName, w.createdByPosition) : w.createdByName) : ''
       const label = `${timePrefix}${w.category} ${w.title || ''}${authorSuffix}`.trim()
-      const wDlc = (typeof getDeadlineClass === 'function') ? getDeadlineClass(w.endDate) : ''
       if (isPast) {
-        html += `<div class="dcal-bar dcal-bar-mini ${wDlc}" style="background:${wColor.bg};" title="${esc(label)}" onclick="openWorkDetailModal(${w.no}, true)"></div>`
+        html += `<div class="dcal-bar dcal-bar-mini" style="background:${wColor.bg};" title="${esc(label)}" onclick="openWorkDetailModal(${w.no}, true)"></div>`
       } else {
-        html += `<div class="dcal-bar dcal-bar-work ${wDlc}" style="background:${wColor.bg}; color:${wColor.text};" title="${esc(label)}" onclick="openWorkDetailModal(${w.no}, true)">${esc(label)}</div>`
+        html += `<div class="dcal-bar dcal-bar-work" style="background:${wColor.bg}; color:${wColor.text};" title="${esc(label)}" onclick="openWorkDetailModal(${w.no}, true)">${esc(label)}</div>`
       }
     })
 
@@ -489,11 +488,10 @@ function renderDashCalendar() {
       visibleCount++
       const color = EV_COLORS[ev.no % EV_COLORS.length]
       const label = esc(`${ev.channel || ''} ${ev.name}`.trim())
-      const evDlc = (typeof getDeadlineClass === 'function') ? getDeadlineClass(ev.endDate) : ''
       if (isPast) {
-        html += `<div class="dcal-bar dcal-bar-mini ${evDlc}" style="background:${color.bar};" title="${label}" onclick="openDashEventInfo(${ev.no})"></div>`
+        html += `<div class="dcal-bar dcal-bar-mini" style="background:${color.bar};" title="${label}" onclick="openDashEventInfo(${ev.no})"></div>`
       } else {
-        html += `<div class="dcal-bar dcal-bar-ev ${evDlc}" style="background:${color.bar}; color:${color.text};" title="${label} (${ev.startDate}~${ev.endDate})" onclick="openDashEventInfo(${ev.no})">${label}</div>`
+        html += `<div class="dcal-bar dcal-bar-ev" style="background:${color.bar}; color:${color.text};" title="${label} (${ev.startDate}~${ev.endDate})" onclick="openDashEventInfo(${ev.no})">${label}</div>`
       }
     })
 
@@ -510,11 +508,10 @@ function renderDashCalendar() {
       const barLabel = p.phaseLabel
       const identifier = p.item.productCode || p.item.sampleNo || ''
       const tooltip = `${identifier} ${p.phaseLabel} ${p.phase.start || ''}~${p.phase.end || ''}`
-      const pDlc = (typeof getDeadlineClass === 'function') ? getDeadlineClass(p.phase && p.phase.end) : ''
       if (isPast) {
-        html += `<div class="dcal-bar dcal-bar-mini ${pDlc}" style="background:${phaseColor.bar};" title="${esc(tooltip)}" onclick="openPlanScheduleForDate('${cell.date}')"></div>`
+        html += `<div class="dcal-bar dcal-bar-mini" style="background:${phaseColor.bar};" title="${esc(tooltip)}" onclick="openPlanScheduleForDate('${cell.date}')"></div>`
       } else {
-        html += `<div class="dcal-bar dcal-bar-plan ${pDlc}" style="background:${phaseColor.bar}; color:${phaseColor.text};" title="${esc(tooltip)}" onclick="openPlanScheduleForDate('${cell.date}')">${esc(barLabel)}</div>`
+        html += `<div class="dcal-bar dcal-bar-plan" style="background:${phaseColor.bar}; color:${phaseColor.text};" title="${esc(tooltip)}" onclick="openPlanScheduleForDate('${cell.date}')">${esc(barLabel)}</div>`
       }
     })
 
