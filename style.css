@@ -2892,7 +2892,7 @@ body.col-resize-active * { cursor: col-resize !important; }
   border-bottom: 1px solid var(--border);
 }
 .dcal-cell {
-  min-height: 130px;
+  min-height: 170px;
   border-right: 1px solid var(--border-light);
   border-bottom: 1px solid var(--border-light);
   padding: 2px;

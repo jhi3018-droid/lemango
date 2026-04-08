@@ -402,7 +402,7 @@ function renderDashCalendar() {
     html += `<div class="evcal-day">${cell.day}${holiday ? `<span class="dcal-hol-name">${esc(holiday)}</span>` : ''}</div>`
     html += '<div class="dcal-bars">'
 
-    const MAX_VISIBLE = 6
+    const MAX_VISIBLE = 8
     let visibleCount = 0
 
     // 업무일정 바 (TOP)
