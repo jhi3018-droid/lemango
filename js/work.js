@@ -105,10 +105,7 @@ function renderWorkCalendar() {
 
     for (let row = 0; row < MAX_ROWS; row++) {
       const bar = cellBars[row]
-      if (!bar) {
-        if (!isPast) html += '<div class="evcal-bar evcal-bar-empty"></div>'
-        continue
-      }
+      if (!bar) continue
 
       const w = bar.item
       const color = getWorkCatColor(w.category)
@@ -556,7 +553,7 @@ function renderPersonalCalendar() {
 
     for (let row = 0; row < MAX_ROWS; row++) {
       const bar = cellBars[row]
-      if (!bar) { if (!isPast) html += '<div class="evcal-bar evcal-bar-empty"></div>'; continue }
+      if (!bar) continue
       const ps = bar.item
       const isMine = ps.createdBy === uid
       const catColor = PS_CAT_COLORS[ps.category] || PS_CAT_COLORS['기타']

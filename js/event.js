@@ -107,11 +107,7 @@ function renderEventCalendar() {
 
     for (let row = 0; row < MAX_ROWS; row++) {
       const bar = cellBars[row]
-      if (!bar) {
-        // 지난 날짜에 빈 줄은 생략
-        if (!isPast) html += '<div class="evcal-bar evcal-bar-empty"></div>'
-        continue
-      }
+      if (!bar) continue
 
       const ev    = bar.event
       const color = EV_COLORS[ev.no % EV_COLORS.length]
