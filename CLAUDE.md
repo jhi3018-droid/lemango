@@ -2129,6 +2129,21 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 ---
 
+### 2026-04-09
+
+#### 업무일정 차량 사용여부
+- workItem 스키마에 `useVehicle: boolean` 필드 추가
+- `toggleVehicleBtn(btnId)` (`js/work.js`, window 노출) — 🚗 버튼 토글 (data-active / vehicle-active class / 라벨 전환)
+- `workRegisterModal` 메모 필드 아래 `.wk-field` 영역 추가 (wkRegVehicle 버튼 + wkRegVehicleLabel)
+- `submitWork` 저장 시 `useVehicle` 수집 (strict === true 체크)
+- `openWorkRegisterModal` / `editWorkFromDetail` — 신규/편집 시 버튼 상태 초기화·복원
+- `renderWorkCalendar` 업무 바에 `.bar-right > .bar-author + .bar-vehicle` 구조로 차량 아이콘 노출
+- `renderDashCalendar` 대시보드 업무 바에도 작성자+차량 아이콘 표시 (flex 레이아웃)
+- `buildWorkDetailContent` — `w.useVehicle === true` 시 `.vehicle-badge` 표시
+- CSS: `.wk-field`, `.vehicle-toggle(.vehicle-active)`, `.vehicle-label`, `.bar-right`, `.bar-vehicle`, `.vehicle-badge`
+
+---
+
 ## 다음 작업 후보 (미구현)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 데이터 영속성 (localStorage 또는 서버 연동)
@@ -2136,3 +2151,142 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 - [ ] 이미지합치기 웹 통합 (테스트 후)
 - [ ] 업무일정 수정 권한 관리 (작성자/관리자/인사담당자만 수정 가능)
 - [ ] 권한 기반 UI 숨김 (등급별 탭/기능 접근 제어)
+
+### 2026-04-09
+
+#### 대시보드 활동 뷰 — 등급 기반 필터 + 상세 모달
+- 등급별 범위: 1=본인 / 2=부서+본인 / 3+=전체, 타이틀: 오늘 나의/부서/팀 활동
+- 대시보드 `#dailySummaryArea`: 최신 3건 + 외 N건, 등급 1은 사용자 컬럼 숨김
+- `openActivityDetailModal()` / `filterActivityLogs()` (window 노출) — 날짜 피커 + 검색, 최대 100건
+- `#activityDetailModal` srm-modal 추가 (main.js에 makeDraggableResizable 등록)
+- `logActivity()` — localStorage mirror `lemango_recent_activity_v1` (500 FIFO), `userDept` 필드 추가 (기존 userPosition 유지)
+- 신규 함수: `_loadRecentActivity`, `_currentGradeInfo`, `_filterByGrade`, `_gradeTitle`, `buildDailyTeamSummary`(재작성), `openActivityDetailModal`, `filterActivityLogs`
+
+### 2026-04-09
+
+#### 알림 설정 (전체 토글 + 타입별 on/off)
+- localStorage `lemango_notif_settings_v1` — `{globalEnabled, types:{...14종}}`
+- `getNotifSettings()` / `saveNotifSettings()` / `isNotifEnabled(type)` / `toggleGlobalNotif()` / `updateNotifToggleUI()` — `js/core.js`
+- `addNotification()` 첫 줄에서 `isNotifEnabled(type)` 게이트 — 꺼진 타입은 저장/표시 안 됨
+- 헤더 벨 옆 `#notifGlobalToggle` 버튼 (🔔/🔕) — `toggleGlobalNotif()`
+- 설정 탭 "🔔 알림 설정" 섹션 — 전체 토글 + 14개 타입별 스위치 (`renderNotifSettingsCard`, `onGlobalNotifChange`, `onNotifTypeChange`)
+- 토글 스위치 CSS (`.notif-switch`, `.notif-slider`)
+
+---
+
+### 2026-04-09 (session 2)
+
+#### Notification link direct-navigation
+- Notification link format standardized to `#tab:id` / `#tab:personal:id` — `clickNotification()` (`js/utils.js`) parses with `split(':')`, calls `openTab(tab)` + 600ms `setTimeout` → native detail modals (`openEventDetailModal`/`openPlanDetailModal`/`openWorkDetailModal`/`openPersonalDetailModal`/`openBoardPost`). Debug `console.log` left in for future tracing.
+- Callsites updated to include refId: `js/dashboard.js` (event_start/end, plan_deadline, ps_start/upcoming/end), `js/work.js` (work_start/upcoming/mention + ps_created/personal_schedule via `_psDocRef.id`), `js/board.js` (board_notice via `_bdRef.id`), `js/comments.js` (`_` → `:` separator), `js/core.js` `notifyWatchers`.
+- Legacy notifications stored before the refactor carry a bare `type` as the link → tab still opens, detail modal does not. Clearing localStorage `lemango_notifications_v1` resolves it for a given user.
+
+#### Notification OFF behavior (final)
+- **OFF semantics**: no new notifications created, no auto-popup on login, but existing notifications remain visible in the dropdown when the bell is clicked.
+- `addNotification()` (`js/core.js`) gates at the top — ps_ prefixed (mandatory personal schedule) notifications also blocked when `globalEnabled === false`.
+- `renderNotifications()` (`js/utils.js`) — **does NOT** hide the list when OFF (earlier hotfix reverted). It always renders existing notifications.
+- `main.js` login auto-popup — wrapped in `globalEnabled === false` guard so no bell flyout on login when OFF.
+- `toggleGlobalNotif()` calls `renderNotifications()` immediately so UI reflects toggle without a refresh.
+
+#### Dashboard preview modal UI standard (`dashInfoModal`)
+Established the reference style that every dashboard-opened srm-modal should follow:
+```html
+<dialog class="srm-modal" style="width:780px;max-width:95vw;max-height:85vh;padding:0;overflow:hidden;border-radius:10px">
+  <div class="srm-header modal-header" style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:14px;cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">제목</span>
+    <button class="modal-close" style="margin:0">×</button>
+  </div>
+  <div class="srm-body" style="padding:18px 22px;overflow-y:auto;flex:1"></div>
+</dialog>
+```
+- `.srm-header` class **required** (or `.srm-modal-header`/`.rmodal-header`/`.dmodal-header`) so `makeDraggableResizable()` can attach.
+- Title `color:#fff` (dark header background — never inherit `--primary`).
+- `dashInfoModal` (post/activity preview) + free-board dashboard card + new `dash-free-card` (next to notice card) all conform.
+- Entry points unified to open `dashInfoModal`: dashboard notice/free item titles, recent-activity items, calendar bars (work/event/personal), dashDayModal rows.
+
+#### Notification click → dashboard preview pattern
+- Notification click bypasses the preview modal — direct navigation to the target tab and native detail modal (see "Notification link direct-navigation" above). This is the opposite rule from dashboard clicks (which use `dashInfoModal` preview).
+
+#### Plan schedule modal (`planScheduleModal`) compact rework
+- Width **560px** (compact card layout; intentionally narrower than `dashInfoModal`'s 780px).
+- Dialog style adopts the dashInfoModal frame (dark header, white title, draggable).
+- `ps-phase-code` font changed from monospace 15px → sans-serif 12px/600 with `letter-spacing:0.2px`.
+- Columns synced across header + rows: `품번 96 / 상태 38 / 품명 110 / 시작 42 / 완료 42` (bar widths in both `<span>` inline styles and the `.ps-phase-*` CSS classes must stay in lockstep — edit both or columns desync).
+- Deduplication in `openPlanScheduleForDate()` via a `_seen` Set keyed by `(item.no|def.key)` — eliminates same-item+phase duplicates that were appearing twice.
+- `.ps-phase-*` CSS shrunk: row padding 6→5px, status 42→38px, name 120→110px, date 46→42px, view button font 14→11px.
+
+#### Dashboard "최근 등록" sort fix
+- `renderDashActivity()` sorts by **registration time**, not start date.
+- Priority: `createdAt` (from `stampCreated`) → `registeredAt` → `no` fallback.
+- New `_ts(v)` helper handles NaN guard. Replaces `sortDate: new Date(...)` with numeric `sortTs` for consistent descending sort.
+- Fixes bug where future-dated events/work floated to the top because `startDate` was treated as the sort key.
+
+#### Work schedule — vehicle toggle
+- `workItem.useVehicle: boolean` added to schema.
+- `toggleVehicleBtn(btnId)` helper in `js/work.js` (window-exposed) — toggles `data-active` + `.vehicle-active` class + button label.
+- `workRegisterModal` gains a `.wk-field` section under memo (`#wkRegVehicle` button + `#wkRegVehicleLabel`); `submitWork` strict-checks `=== true`.
+- `openWorkRegisterModal` / `editWorkFromDetail` reset or restore the button state.
+- Work calendar bars — work/dashboard calendar both show `.bar-right > .bar-author + .bar-vehicle` with 🚗 icon when `useVehicle === true`.
+- `buildWorkDetailContent` shows a `.vehicle-badge` in view mode.
+- CSS: `.wk-field`, `.vehicle-toggle[.vehicle-active]`, `.vehicle-label`, `.bar-right`, `.bar-vehicle`, `.vehicle-badge`.
+
+#### Dashboard "오늘의 팀 활동" — grade-based scope + detail modal
+- Scope rules by grade: `1` = self only, `2` = self + department, `3+` = all. Title switches to 오늘 나의/부서/팀 활동.
+- `#dailySummaryArea` renders latest 3 + "외 N건" link; grade 1 hides the user column.
+- `openActivityDetailModal()` / `filterActivityLogs()` — window-exposed; date picker + keyword filter, capped at 100 rows.
+- `#activityDetailModal` srm-modal added; `makeDraggableResizable` registered in main.js.
+- `logActivity()` now mirrors recent entries to localStorage `lemango_recent_activity_v1` (FIFO, 500 cap) and stamps `userDept` alongside the existing `userPosition`.
+- Helpers added: `_loadRecentActivity`, `_currentGradeInfo`, `_filterByGrade`, `_gradeTitle`, plus a rewrite of `buildDailyTeamSummary`.
+
+#### Board nav tab style normalized
+- `.tab-btn[data-tab="board"]` — earlier white+bold override reverted to `rgba(255,255,255,0.55)` + `font-weight:normal` so it matches every other nav tab.
+
+#### 조직도 탭 (organization chart, 신규)
+- New tab between 게시판 and 설정.
+- **Files**: `js/orgchart.js` (new), `<section id="tab-orgchart">` in `index.html`, `TAB_LABELS.orgchart = '조직도'` in `js/core.js`, router switch case + `triggerTabRender` data-guard exception (`['dashboard','board','members','orgchart']`).
+- `renderOrgChart()` — Firestore `users` where `status === 'approved'`, grouped by department.
+- Department order follows `_depts` (settings), unknown departments trail after.
+- Within each department, members sort by position (higher rank first via reversed `POSITIONS` priority), then by name.
+- Card layout: navy header (department name + count), member rows with circular avatar (first initial), name + position, **phone number** (not email).
+- `formatPhone(raw)` — 11 digits → `010-0000-0000`, 10 digits → `02-0000-0000`, other → raw.
+- Member row click → existing `showUserProfile()` popup (no new popup implementation).
+- CSS: `.org-*` classes appended to `style.css` — `auto-fill grid minmax(320px,1fr)`.
+
+#### Header layout rework
+- `.header-inner` uses a strict three-zone flex: logo (`flex-shrink:0`) · tab-nav (`flex:0 1 auto; overflow:hidden`) · header-right (`flex:1 1 auto; flex-shrink:0 !important`).
+- **Only `tab-nav` shrinks/clips** when the window narrows; header-right stays intact.
+- `.header-date { margin-left:auto !important }` pushes date + user cluster to the right.
+- `.gsearch-wrap` width constrained to `160px` max, integrated search input compacted (`font-size:10px`, `padding:7px 8px`).
+- `.header-user-name { max-width:80px; overflow:hidden; text-overflow:ellipsis }` — long names truncate cleanly.
+- `.header-right` gets `padding-right:82px !important` to reserve space so the logout button never clips under the browser edge.
+- Logo image nudged up 3px (`position:relative; top:-3px`) to vertically align with "관리 시스템" subtitle.
+- `.watch-btn` stripped of border/box-shadow/background to match the new star/heart icons in detail modals.
+
+#### Calendar week/day views + work checklist
+- `State.workCalView` / `State.eventCalView` (`'month'|'week'|'day'`) + `_wkCursor` cursor.
+- Shared helpers in `js/work.js`: `switchCalView(scope, mode)`, `_calViewBtnsHtml`, `_calItemsInRange`, `_calItemColor`, `_calItemLabel`, `_calItemClick`, `renderWeekView(scope, baseDate)`, `renderDayView(scope, date)`.
+- Week view: 7-day Sun~Sat grid, all-day row + hourly rows 08:00–22:00; timed items placed by `startTime` hour, full-day items in the top row.
+- Day view: single-day hourly list 08:00–22:00 + 종일 row.
+- `renderWorkCalendar` / `renderEventCalendar` branch on view mode; month title re-formats as range for week mode and full date for day mode; view toggle buttons injected into `.evcal-header`.
+- `wkPrevMonth/wkNextMonth/wkToday` (and event equivalents) step by week or day depending on active mode.
+- `getStartOfWeek(date)` added in `js/utils.js`.
+- Existing bar click handlers reused (`openWorkDetailModal` / `openEventDetailModal`); personal calendar deferred.
+
+#### Work checklist
+- `workItem.checklist: [{id,text,done}]` added.
+- `buildChecklistHtml(checklist, isEdit)` renders `.checklist-section` card — view mode shows checkbox + text, edit mode shows text inputs + remove button + add-row field.
+- `toggleChecklistItem(id)` mutates `_currentWorkItem.checklist` in view mode and persists via `State.workItems` + `saveWorkItems()`, also updating the `.checklist-count` inline without a full re-render.
+- `addChecklistItem()` reads `#newChecklistInput`, pushes, re-renders `#wkRegChecklistArea`. `removeChecklistItem(id)` filters.
+- `submitWork` merges `_currentWorkItem.checklist` done-state with the `.checklist-text-input[data-chk-id]` values from edit mode.
+- `_currentWorkItem` tracked on `openWorkDetailModal`, `openWorkRegisterModal`, `editWorkFromDetail`.
+- Register modal HTML gains `#wkRegChecklistArea`; the same builder is reused by edit mode.
+- CSS: `.checklist-section`, `.checklist-title`, `.checklist-count`, `.checklist-item[.checklist-done]`, `.checklist-cb`, `.checklist-text`, `.checklist-text-input`, `.checklist-del`, `.checklist-add`, `.checklist-add-input`, `.checklist-add-btn`, plus week/day view classes (`.cal-view-btns`, `.week-view`, `.week-header`, `.week-row`, `.week-cell`, `.day-view`, `.day-row`, `.day-content`).
+
+#### Working rules (established this session)
+- **No deployment by Claude** unless explicitly asked (user deploys manually for normal changes).
+- **Don't ask — decide and report.** Pick the best judgment and reflect it, then summarize the change.
+- **Legacy data awareness.** When changing localStorage/Firestore schemas (e.g. notification link format), call out that pre-change records may not behave with the new code.
+- **Dashboard modal reuse.** New dashboard preview content should reuse the `dashInfoModal` frame rather than stand up a new dialog.
+- **Header span widths ≡ CSS column widths.** When touching `.ps-phase-*` or any tabular list inside a modal, update the `<span>` inline style widths *and* the `.ps-phase-*` CSS classes together or the header will desync from rows.
+- **`makeDraggableResizable()` requires `.srm-header` / `.srm-modal-header` / `.rmodal-header` / `.dmodal-header`** — adding a new draggable dialog must include one of these classes on the title bar.
+- **Notification links must carry refId.** Use `#tab:id` (or `#tab:personal:id`); never store just `#tab`.

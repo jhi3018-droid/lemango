@@ -1060,12 +1060,44 @@ function clickNotification(id) {
   saveNotifications()
   renderNotifications()
   document.getElementById('notifDropdown').style.display = 'none'
-  if (n.link) {
-    if (n.link.startsWith('#')) {
-      const tab = n.link.slice(1)
-      if (tab) openTab(tab)
-    }
-  }
+  console.log('[notif click]', { link: n.link, type: n.type })
+  if (!n.link) { console.warn('[notif] no link'); return }
+  const raw = n.link.startsWith('#') ? n.link.slice(1) : n.link
+  if (!raw) return
+  const parts = raw.split(':')
+  const tab = parts[0]
+  console.log('[notif parts]', parts)
+  if (!tab) return
+  openTab(tab)
+  const sub = parts[1], sub2 = parts[2]
+  if (!sub) return
+  setTimeout(() => {
+    try {
+      console.log('[notif exec]', tab, sub, sub2)
+      if (tab === 'event') {
+        const fn = window.openEventDetailModal || openEventDetailModal
+        console.log('[notif] event fn?', typeof fn, 'no=', Number(sub))
+        fn && fn(Number(sub), false)
+      }
+      else if (tab === 'plan') {
+        const fn = window.openPlanDetailModal || openPlanDetailModal
+        fn && fn(Number(sub))
+      }
+      else if (tab === 'work') {
+        if (sub === 'personal') {
+          if (window.switchWorkTab) window.switchWorkTab('personal')
+          if (sub2) setTimeout(() => { const fn = window.openPersonalDetailModal || openPersonalDetailModal; fn && fn(sub2) }, 400)
+        } else {
+          const fn = window.openWorkDetailModal || openWorkDetailModal
+          fn && fn(Number(sub), false)
+        }
+      }
+      else if (tab === 'board') {
+        const fn = window.openBoardPost || openBoardPost
+        fn && fn(sub)
+      }
+    } catch(e) { console.error('notification nav error', e) }
+  }, 600)
 }
 
 function dismissNotification(id) {
@@ -1147,6 +1179,9 @@ window.closeUserProfilePopup = closeUserProfilePopup
 
 function formatDateTime(isoStr) {
   if (!isoStr) return ''
+  if (typeof isoStr === 'object' && typeof isoStr.toDate === 'function') isoStr = isoStr.toDate()
+  if (isoStr instanceof Date) isoStr = isoStr.toISOString()
+  if (typeof isoStr !== 'string') return ''
   return isoStr.slice(0, 10) + ' ' + isoStr.slice(11, 16)
 }
 

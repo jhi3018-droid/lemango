@@ -896,7 +896,7 @@ function _dSyncWatchBtn() {
   const btn = document.getElementById('dWatchBtn')
   if (!btn || !_detailCode) return
   const on = typeof isWatching === 'function' && isWatching('product', _detailCode)
-  btn.textContent = on ? '👁 활성' : '👁'
+  btn.textContent = on ? '💛' : '🤍'
   btn.classList.toggle('active', on)
 }
 window._dSyncWatchBtn = _dSyncWatchBtn

@@ -319,7 +319,7 @@ function checkCommentMentions(content, targetType, targetId) {
         try {
           const curName = (typeof _currentUserName !== 'undefined' && _currentUserName) ? _currentUserName : '누군가'
           if (typeof addNotification === 'function') {
-            addNotification('comment_mention', '댓글 멘션', `${curName}님이 댓글에서 회원님을 멘션했습니다`, `#${targetType}_${targetId}`)
+            addNotification('comment_mention', '댓글 멘션', `${curName}님이 댓글에서 회원님을 멘션했습니다`, `#${targetType}:${targetId}`)
           }
         } catch(e) {}
       }

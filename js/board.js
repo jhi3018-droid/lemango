@@ -466,11 +466,11 @@ window.submitBoardPost = async function() {
       postData.views = 0
       postData.commentCount = 0
       stampCreated(postData)
-      await db.collection('posts').add(postData)
+      const _bdRef = await db.collection('posts').add(postData)
       showToast('게시글이 등록되었습니다.', 'success')
       logActivity('create', '게시판', `게시글 등록: ${title}`)
       if (State.boardType === 'notice') {
-        addNotification('board_notice', `새 공지: ${title}`, `${State.currentUser?.name || ''} 님이 공지사항을 등록했습니다.`, '#board')
+        addNotification('board_notice', `새 공지: ${title}`, `${State.currentUser?.name || ''} 님이 공지사항을 등록했습니다.`, '#board:' + _bdRef.id)
       }
     }
     loadBoardPosts()

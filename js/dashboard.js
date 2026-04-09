@@ -3,6 +3,7 @@
 // =============================================
 function renderDashboard() {
   renderDashNotice()
+  renderDashFree()
   renderDashActivity()
   if (typeof renderFavoritesList === 'function') renderFavoritesList()
   renderBestList()
@@ -11,48 +12,110 @@ function renderDashboard() {
   renderDashCalendar()
   checkEventAlerts()
   checkPlanAlerts()
-  try { buildDailyTeamSummary() } catch(e) { console.warn(e) }
 }
 
-/* ===== Feature 3: Daily Team Summary ===== */
+/* ===== Grade-based daily activity view ===== */
+function _loadRecentActivity() {
+  try {
+    const raw = localStorage.getItem('lemango_recent_activity_v1')
+    return raw ? JSON.parse(raw) : []
+  } catch(e) { return [] }
+}
+function _currentGradeInfo() {
+  const u = State.currentUser || {}
+  const grade = u.grade || (typeof _currentUserGrade !== 'undefined' ? _currentUserGrade : 1) || 1
+  const uid = (window.auth && auth.currentUser) ? auth.currentUser.uid : (u.uid || '')
+  const dept = (typeof _currentUserDept !== 'undefined' && _currentUserDept) || u.dept || ''
+  return { grade, uid, dept }
+}
+function _filterByGrade(logs, info) {
+  if (info.grade >= 3) return logs
+  if (info.grade === 2) return logs.filter(l => l.uid === info.uid || (l.userDept && l.userDept === info.dept))
+  return logs.filter(l => l.uid === info.uid)
+}
+function _gradeTitle(grade) {
+  if (grade >= 3) return '오늘 팀 활동'
+  if (grade === 2) return '오늘 부서 활동'
+  return '오늘 나의 활동'
+}
 function buildDailyTeamSummary() {
   const area = document.getElementById('dailySummaryArea')
   if (!area) return
-  let logs = []
-  try {
-    if (Array.isArray(window._activityLog)) logs = window._activityLog
-    else if (State.activityLog && Array.isArray(State.activityLog.all)) logs = State.activityLog.all
-    else {
-      const raw = localStorage.getItem('lemango_activity_log_v1')
-      if (raw) logs = JSON.parse(raw)
-    }
-  } catch(e) { logs = [] }
-  if (!Array.isArray(logs)) logs = []
-  const today = new Date().toISOString().slice(0, 10)
-  const todayLogs = logs.filter(l => {
-    const ts = l.timestamp || l.ts || l.createdAt || ''
-    const d = (ts && ts.toDate) ? ts.toDate().toISOString().slice(0,10) : String(ts).slice(0,10)
-    return d === today
-  })
-  const byUser = {}
-  todayLogs.forEach(l => {
-    const name = l.userName || l.user || '익명'
-    if (!byUser[name]) byUser[name] = {}
-    const act = l.action || '기타'
-    byUser[name][act] = (byUser[name][act] || 0) + 1
-  })
-  const names = Object.keys(byUser)
-  if (!names.length) {
-    area.innerHTML = `<div class="daily-summary"><div class="daily-summary-title">📊 오늘의 팀 활동</div><div class="daily-summary-user" style="color:#999">오늘 기록된 활동이 없습니다.</div></div>`
+  const info = _currentGradeInfo()
+  const todayStr = (typeof fmtDate === 'function') ? fmtDate(new Date()) : new Date().toISOString().slice(0,10)
+  const all = _loadRecentActivity()
+  const todayLogs = _filterByGrade(all, info).filter(l => String(l.timestamp || '').slice(0,10) === todayStr)
+  todayLogs.sort((a,b) => String(b.timestamp).localeCompare(String(a.timestamp)))
+  const title = _gradeTitle(info.grade)
+  const count = todayLogs.length
+  const showUser = info.grade >= 2
+  if (!count) {
+    area.innerHTML = `<div class="daily-activity-section"><div class="daily-activity-header"><div class="daily-activity-title">${esc(title)}<span class="daily-activity-count">0건</span></div><button class="daily-activity-more" onclick="openActivityDetailModal()">더보기</button></div><div class="daily-activity-empty">아직 활동이 없습니다</div></div>`
     return
   }
-  const rows = names.map(n => {
-    const acts = Object.entries(byUser[n]).map(([a,c]) => `<span class="daily-summary-action">${esc(a)} ${c}</span>`).join(' · ')
-    return `<div class="daily-summary-user"><strong>${esc(n)}</strong> ${acts}</div>`
+  const top = todayLogs.slice(0, 3)
+  const rows = top.map(l => {
+    const t = String(l.timestamp).slice(11,16)
+    const uname = (typeof formatUserName === 'function') ? formatUserName(l.userName || '', l.userPosition || '') : (l.userName || '')
+    const desc = l.detail || l.target || l.action || ''
+    const userCol = showUser ? `<div class="daily-activity-user">${esc(uname)}</div>` : ''
+    return `<div class="daily-activity-item"><div class="daily-activity-time">${esc(t)}</div>${userCol}<div class="daily-activity-desc">${esc(desc)}</div></div>`
   }).join('')
-  area.innerHTML = `<div class="daily-summary"><div class="daily-summary-title">📊 오늘의 팀 활동 (${today})</div>${rows}</div>`
+  const overflow = count > 3 ? `<div class="daily-activity-overflow">외 ${count - 3}건</div>` : ''
+  area.innerHTML = `<div class="daily-activity-section"><div class="daily-activity-header"><div class="daily-activity-title">${esc(title)}<span class="daily-activity-count">${count}건</span></div><button class="daily-activity-more" onclick="openActivityDetailModal()">더보기</button></div>${rows}${overflow}</div>`
 }
 window.buildDailyTeamSummary = buildDailyTeamSummary
+
+function openActivityDetailModal() {
+  const modal = document.getElementById('activityDetailModal')
+  if (!modal) return
+  const info = _currentGradeInfo()
+  const titleEl = document.getElementById('activityModalTitle')
+  if (titleEl) {
+    const map = { 1: '나의 활동 내역', 2: '부서 활동 내역' }
+    titleEl.textContent = map[info.grade] || '팀 활동 내역'
+  }
+  const dateEl = document.getElementById('activityDateFilter')
+  if (dateEl) dateEl.value = (typeof fmtDate === 'function') ? fmtDate(new Date()) : new Date().toISOString().slice(0,10)
+  const searchEl = document.getElementById('activitySearchInput')
+  if (searchEl) searchEl.value = ''
+  filterActivityLogs()
+  if (!modal.open) modal.showModal()
+  if (typeof centerModal === 'function') centerModal(modal)
+}
+window.openActivityDetailModal = openActivityDetailModal
+
+function filterActivityLogs() {
+  const listEl = document.getElementById('activityModalList')
+  if (!listEl) return
+  const info = _currentGradeInfo()
+  const all = _loadRecentActivity()
+  let data = _filterByGrade(all, info)
+  const dateVal = (document.getElementById('activityDateFilter') || {}).value || ''
+  const kw = ((document.getElementById('activitySearchInput') || {}).value || '').trim().toLowerCase()
+  if (dateVal) data = data.filter(l => String(l.timestamp || '').slice(0,10) === dateVal)
+  if (kw) data = data.filter(l => {
+    const hay = `${l.userName||''} ${l.detail||''} ${l.target||''} ${l.action||''}`.toLowerCase()
+    return hay.includes(kw)
+  })
+  data.sort((a,b) => String(b.timestamp).localeCompare(String(a.timestamp)))
+  const total = data.length
+  if (!total) {
+    listEl.innerHTML = `<div class="activity-modal-count">총 0건</div><div class="activity-modal-empty">활동 내역이 없습니다</div>`
+    return
+  }
+  const capped = data.slice(0, 100)
+  const rows = capped.map(l => {
+    const ts = String(l.timestamp || '')
+    const t = ts.length >= 16 ? `${ts.slice(5,10)} ${ts.slice(11,16)}` : ts
+    const uname = (typeof formatUserName === 'function') ? formatUserName(l.userName || '', l.userPosition || '') : (l.userName || '')
+    const desc = l.detail || l.target || l.action || ''
+    return `<div class="activity-modal-item"><div class="activity-modal-time">${esc(t)}</div><div class="activity-modal-user">${esc(uname)}</div><div class="activity-modal-desc">${esc(desc)}</div></div>`
+  }).join('')
+  const overflow = total > 100 ? `<div class="activity-modal-overflow">최근 100건까지 표시 (총 ${total}건)</div>` : ''
+  listEl.innerHTML = `<div class="activity-modal-count">총 ${total}건</div>${rows}${overflow}</div>`
+}
+window.filterActivityLogs = filterActivityLogs
 
 /* ===== Feature 8: Deadline CSS class helper ===== */
 function getDeadlineClass(endDate) {
@@ -75,19 +138,19 @@ function checkEventAlerts() {
   const soon = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10)
   _events.forEach(ev => {
     if (ev.startDate === today) {
-      addNotification('event_start', `행사 시작: ${ev.name}`, `${ev.channel || ''} ${ev.startDate}~${ev.endDate}`, '#event')
+      addNotification('event_start', `행사 시작: ${ev.name}`, `${ev.channel || ''} ${ev.startDate}~${ev.endDate}`, '#event:' + ev.no)
     } else if (ev.startDate > today && ev.startDate <= soon) {
       const days = Math.ceil((new Date(ev.startDate) - new Date(today)) / 86400000)
-      addNotification('event_start', `행사 D-${days}: ${ev.name}`, `${ev.channel || ''} ${ev.startDate} 시작`, '#event')
+      addNotification('event_start', `행사 D-${days}: ${ev.name}`, `${ev.channel || ''} ${ev.startDate} 시작`, '#event:' + ev.no)
     }
     // FIX: event_end D-3 알림 추가 (기존에는 당일만 체크, D-3 누락)
     if (ev.endDate < today) {
       // 지난 행사는 알림 생성 생략 (노이즈 방지)
     } else if (ev.endDate === today) {
-      addNotification('event_end', `행사 종료: ${ev.name}`, `${ev.channel || ''} 오늘 종료`, '#event')
+      addNotification('event_end', `행사 종료: ${ev.name}`, `${ev.channel || ''} 오늘 종료`, '#event:' + ev.no)
     } else if (ev.endDate > today && ev.endDate <= soon) {
       const days = Math.ceil((new Date(ev.endDate) - new Date(today)) / 86400000)
-      addNotification('event_end', `행사 종료 D-${days}: ${ev.name}`, `${ev.channel || ''} ${ev.endDate} 종료`, '#event')
+      addNotification('event_end', `행사 종료 D-${days}: ${ev.name}`, `${ev.channel || ''} ${ev.endDate} 종료`, '#event:' + ev.no)
     }
   })
 }
@@ -102,16 +165,39 @@ function checkPlanAlerts() {
       const sch = it.schedule[def.key]
       if (!sch || !sch.end) return
       if (sch.end < today) {
-        addNotification('plan_deadline', `기획 지연: ${def.label}`, `${it.productCode || it.nameKr || ''} ${def.label} ${sch.end} 지연`, '#plan')
+        addNotification('plan_deadline', `기획 지연: ${def.label}`, `${it.productCode || it.nameKr || ''} ${def.label} ${sch.end} 지연`, '#plan:' + it.no)
       } else if (sch.end === today) {
-        addNotification('plan_deadline', `기획 D-Day: ${def.label}`, `${it.productCode || it.nameKr || ''} ${def.label} 오늘 마감`, '#plan')
+        addNotification('plan_deadline', `기획 D-Day: ${def.label}`, `${it.productCode || it.nameKr || ''} ${def.label} 오늘 마감`, '#plan:' + it.no)
       } else if (sch.end > today && sch.end <= soon) {
         const days = Math.ceil((new Date(sch.end) - new Date(today)) / 86400000)
-        addNotification('plan_deadline', `기획 D-${days}: ${def.label}`, `${it.productCode || it.nameKr || ''} ${def.label} ${sch.end} 마감`, '#plan')
+        addNotification('plan_deadline', `기획 D-${days}: ${def.label}`, `${it.productCode || it.nameKr || ''} ${def.label} ${sch.end} 마감`, '#plan:' + it.no)
       }
     })
   })
 }
+
+// ===== 알림 자동 생성: 개인일정 (작성자 본인 - 강제, 설정 무시) =====
+function checkPersonalScheduleAlerts() {
+  const uid = (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) ? firebase.auth().currentUser.uid : ''
+  if (!uid) return
+  const schedules = (typeof _personalSchedules !== 'undefined' && _personalSchedules) ? _personalSchedules : []
+  const today = new Date().toISOString().slice(0, 10)
+  const tmr = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+  schedules.forEach(ps => {
+    if (ps.createdBy !== uid) return
+    const title = ps.title || '개인일정'
+    if (ps.startDate === today) {
+      addNotification('ps_start', '📅 개인일정 시작', '오늘 시작: ' + title, '#work:personal:' + ps.id)
+    }
+    if (ps.startDate === tmr) {
+      addNotification('ps_upcoming', '📅 개인일정 내일', '내일 시작: ' + title, '#work:personal:' + ps.id)
+    }
+    if (ps.endDate && ps.endDate === today && ps.startDate !== today) {
+      addNotification('ps_end', '📅 개인일정 종료', '오늘 종료: ' + title, '#work:personal:' + ps.id)
+    }
+  })
+}
+window.checkPersonalScheduleAlerts = checkPersonalScheduleAlerts
 
 // ===== 대시보드 공지사항 미니 섹션 =====
 async function renderDashNotice() {
@@ -145,7 +231,7 @@ async function renderDashNotice() {
       const ts = p.createdAt?.toDate ? p.createdAt.toDate() : new Date(p.createdAt)
       const dateStr = ts.toISOString().slice(0, 10)
       const isNew = (Date.now() - ts.getTime()) < 24 * 60 * 60 * 1000
-      return `<div class="dash-notice-item" onclick="openTab('board');switchBoardType('notice');openBoardPost('${p.id}')">
+      return `<div class="dash-notice-item" onclick="openDashPostPreview('notice','${p.id}')">
         ${p.pinned ? '<span class="dash-notice-pin">&#9733;</span>' : ''}
         <span class="dash-notice-text">${esc(p.title)}</span>
         ${isNew ? '<span class="brd-new" style="font-size:8px;padding:0 3px">N</span>' : ''}
@@ -158,6 +244,244 @@ async function renderDashNotice() {
   }
 }
 
+// ===== 대시보드 자유게시판 미니 섹션 =====
+async function renderDashFree() {
+  const el = document.getElementById('dashFreeCard')
+  if (!el) return
+  el.innerHTML = `<div class="dash-mini-header"><span class="dash-mini-title">자유게시판</span><span class="dash-mini-more" onclick="openTab('board');switchBoardType('free')">더보기</span></div><div class="dash-mini-body" style="color:#bbb;font-size:12px">로딩 중...</div>`
+  if (!db) return
+  try {
+    const snap = await db.collection('posts').where('boardType', '==', 'free').get()
+    let posts = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    posts.sort((a, b) => {
+      const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()
+      const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()
+      return tb - ta
+    })
+    posts = posts.slice(0, 5)
+    if (!posts.length) {
+      el.querySelector('.dash-mini-body').innerHTML = '<div style="color:#bbb;font-size:12px;padding:8px 0">게시글이 없습니다.</div>'
+      return
+    }
+    el.querySelector('.dash-mini-body').innerHTML = posts.map(p => {
+      const ts = p.createdAt?.toDate ? p.createdAt.toDate() : new Date(p.createdAt)
+      const dateStr = ts.toISOString().slice(0, 10)
+      const isNew = (Date.now() - ts.getTime()) < 24 * 60 * 60 * 1000
+      const cc = p.commentCount ? `<span class="dash-notice-date">💬${p.commentCount}</span>` : ''
+      return `<div class="dash-notice-item" onclick="openDashPostPreview('free','${p.id}')">
+        <span class="dash-notice-text">${esc(p.title)}</span>
+        ${isNew ? '<span class="brd-new" style="font-size:8px;padding:0 3px">N</span>' : ''}
+        ${cc}
+        <span class="dash-notice-date">${dateStr}</span>
+      </div>`
+    }).join('')
+  } catch (e) {
+    console.error('Dashboard free error:', e)
+    el.querySelector('.dash-mini-body').innerHTML = ''
+  }
+}
+window.renderDashFree = renderDashFree
+
+// ===== 대시보드 게시글 미리보기 모달 =====
+let _dashInfoTarget = null
+let _dashInfoPostId = null
+async function openDashPostPreview(boardType, postId) {
+  const modal = document.getElementById('dashInfoModal')
+  const titleEl = document.getElementById('dashInfoTitle')
+  const body = document.getElementById('dashInfoBody')
+  if (!modal || !body || !db) return
+  _dashInfoTarget = boardType
+  _dashInfoPostId = postId
+  titleEl.textContent = boardType === 'notice' ? '📢 공지사항' : '💬 자유게시판'
+  body.innerHTML = '<div style="color:#999;font-size:12px">로딩 중...</div>'
+  if (typeof centerModal === 'function') centerModal(modal)
+  modal.showModal()
+  try {
+    const doc = await db.collection('posts').doc(postId).get()
+    if (!doc.exists) { body.innerHTML = '<div style="color:#c00">게시글 없음</div>'; return }
+    const p = doc.data()
+    const ts = p.createdAt?.toDate ? p.createdAt.toDate() : new Date(p.createdAt)
+    const dateStr = ts.toISOString().slice(0, 16).replace('T', ' ')
+    const author = p.authorName || '-'
+    const content = esc(p.content || '').replace(/\n/g, '<br>')
+    const commentHtml = (typeof buildCommentSection === 'function') ? buildCommentSection('board', postId) : ''
+    body.innerHTML = `
+      <h3 style="margin:0 0 8px;font-size:17px;color:var(--primary)">${p.pinned ? '★ ' : ''}${esc(p.title || '')}</h3>
+      <div style="color:#888;font-size:12px;margin-bottom:14px;border-bottom:1px solid #eee;padding-bottom:10px">${esc(author)} · ${dateStr} · 조회 ${p.views || 0}</div>
+      <div style="font-size:13px;line-height:1.7;color:#333;white-space:pre-wrap;min-height:80px;margin-bottom:18px">${content}</div>
+      ${commentHtml}
+    `
+    if (typeof loadComments === 'function') loadComments('board', postId)
+  } catch (e) {
+    console.error(e); body.innerHTML = '<div style="color:#c00">로드 실패</div>'
+  }
+}
+window.openDashPostPreview = openDashPostPreview
+
+async function openDashInfoModal(type) {
+  const modal = document.getElementById('dashInfoModal')
+  const titleEl = document.getElementById('dashInfoTitle')
+  const body = document.getElementById('dashInfoBody')
+  if (!modal || !body) return
+  _dashInfoTarget = type
+  let title = '', html = '<div style="color:#999;font-size:12px">로딩 중...</div>'
+  if (type === 'notice') title = '📢 공지사항'
+  else if (type === 'free') title = '💬 자유게시판'
+  else if (type === 'activity') title = '🕒 최근 등록'
+  titleEl.textContent = title
+  body.innerHTML = html
+  if (typeof centerModal === 'function') centerModal(modal)
+  modal.showModal()
+
+  if (type === 'notice' || type === 'free') {
+    if (!db) { body.innerHTML = '<div style="color:#999">DB 연결 없음</div>'; return }
+    try {
+      const snap = await db.collection('posts').where('boardType', '==', type).get()
+      let posts = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      posts.sort((a, b) => {
+        if (type === 'notice') {
+          if (a.pinned && !b.pinned) return -1
+          if (!a.pinned && b.pinned) return 1
+        }
+        const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()
+        const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()
+        return tb - ta
+      })
+      posts = posts.slice(0, 20)
+      if (!posts.length) { body.innerHTML = '<div style="color:#999;font-size:13px;padding:12px">게시글이 없습니다.</div>'; return }
+      body.innerHTML = posts.map(p => {
+        const ts = p.createdAt?.toDate ? p.createdAt.toDate() : new Date(p.createdAt)
+        const dateStr = ts.toISOString().slice(0, 10)
+        const isNew = (Date.now() - ts.getTime()) < 24 * 60 * 60 * 1000
+        const pin = p.pinned ? '<span style="color:var(--accent);margin-right:4px">&#9733;</span>' : ''
+        const cc = p.commentCount ? `<span style="color:#888;font-size:11px;margin-left:6px">💬${p.commentCount}</span>` : ''
+        const newB = isNew ? '<span class="brd-new" style="font-size:9px;padding:0 4px;margin-left:4px">N</span>' : ''
+        return `<div class="dash-notice-item" style="padding:8px 4px;border-bottom:1px solid #f0f0f0" onclick="document.getElementById('dashInfoModal').close();openTab('board');switchBoardType('${type}');openBoardPost('${p.id}')">
+          ${pin}<span class="dash-notice-text">${esc(p.title)}</span>${newB}${cc}
+          <span class="dash-notice-date" style="margin-left:auto">${dateStr}</span>
+        </div>`
+      }).join('')
+    } catch (e) {
+      console.error(e); body.innerHTML = '<div style="color:#c00;font-size:12px">로드 실패</div>'
+    }
+  } else if (type === 'activity') {
+    const items = []
+    if (State.planItems) State.planItems.forEach(p => items.push({ type:'plan', label:'기획', text:(p.productCode||p.sampleNo||'')+' '+(p.nameKr||''), date:p.registeredAt||p.createdAt||'', tab:'plan' }))
+    if (typeof _events !== 'undefined' && _events) _events.forEach(e => items.push({ type:'event', label:'행사', text:(e.name||'')+' ('+(e.startDate||'')+'~'+(e.endDate||'')+')', date:e.registeredAt||e.startDate||'', tab:'event' }))
+    if (State.workItems) State.workItems.forEach(w => items.push({ type:'work', label:'업무', text:(w.title||w.category||'')+' ('+(w.startDate||'')+')', date:w.registeredAt||w.startDate||'', tab:'work' }))
+    items.sort((a,b) => new Date(b.date||0) - new Date(a.date||0))
+    const top = items.slice(0, 20)
+    body.innerHTML = top.length ? top.map(it => {
+      const ds = it.date ? String(it.date).slice(0,10) : ''
+      const cls = { plan:'dash-act-plan', event:'dash-act-event', work:'dash-act-work' }[it.type] || ''
+      return `<div class="dash-act-item" style="padding:8px 4px;border-bottom:1px solid #f0f0f0;cursor:pointer" onclick="document.getElementById('dashInfoModal').close();openTab('${it.tab}')">
+        <span class="dash-act-badge ${cls}">${it.label}</span>
+        <span class="dash-act-detail">${esc(it.text)}</span>
+        <span class="dash-act-time" style="margin-left:auto">${ds}</span>
+      </div>`
+    }).join('') : '<div style="color:#999;font-size:13px;padding:12px">등록 항목 없음</div>'
+  }
+}
+function dashInfoGoToTab() {
+  const t = _dashInfoTarget, id = _dashInfoPostId
+  document.getElementById('dashInfoModal').close()
+  if (t === 'notice' || t === 'free') {
+    openTab('board')
+    if (typeof switchBoardType === 'function') switchBoardType(t)
+    if (id && typeof openBoardPost === 'function') setTimeout(() => openBoardPost(id), 150)
+  } else if (typeof t === 'string' && t.indexOf('activity:') === 0) {
+    const sub = t.slice(9)
+    if (sub === 'plan') {
+      openTab('plan')
+      setTimeout(() => { if (typeof openPlanDetailModal === 'function') openPlanDetailModal(id) }, 350)
+    } else if (sub === 'event') {
+      openTab('event')
+      setTimeout(() => { if (typeof openEventDetailModal === 'function') openEventDetailModal(id, false) }, 350)
+    } else if (sub === 'work') {
+      openTab('work')
+      setTimeout(() => { if (typeof openWorkDetailModal === 'function') openWorkDetailModal(id, false) }, 350)
+    } else if (sub === 'personal') {
+      openTab('work')
+      if (typeof switchWorkTab === 'function') setTimeout(() => switchWorkTab('personal'), 100)
+      setTimeout(() => { if (typeof openPersonalDetailModal === 'function') openPersonalDetailModal(id) }, 400)
+    }
+  }
+}
+window.openDashInfoModal = openDashInfoModal
+window.dashInfoGoToTab = dashInfoGoToTab
+
+function openDashActivityPreview(type, no) {
+  const modal = document.getElementById('dashInfoModal')
+  const titleEl = document.getElementById('dashInfoTitle')
+  const body = document.getElementById('dashInfoBody')
+  if (!modal || !body) return
+  _dashInfoTarget = 'activity:' + type
+  _dashInfoPostId = no
+  let item = null, title = '', author = '', dateStr = '', content = ''
+  if (type === 'plan') {
+    item = (State.planItems || []).find(x => x.no === no)
+    if (!item) return
+    title = '📋 ' + (item.productCode || item.sampleNo || '기획')
+    author = item.createdByName || '-'
+    dateStr = (item.registeredAt || item.createdAt || '').slice(0, 16).replace('T', ' ')
+    const parts = []
+    if (item.nameKr) parts.push('상품명: ' + item.nameKr)
+    if (item.brand) parts.push('브랜드: ' + item.brand)
+    if (item.type) parts.push('타입: ' + item.type)
+    if (item.season) parts.push('시즌: ' + item.season)
+    if (item.memo) parts.push('\n' + item.memo)
+    content = parts.join('\n')
+  } else if (type === 'event') {
+    item = (typeof _events !== 'undefined' ? _events : []).find(x => x.no === no)
+    if (!item) return
+    title = '🎪 ' + (item.name || '행사')
+    author = item.createdByName || '-'
+    dateStr = (item.registeredAt || item.startDate || '').slice(0, 16).replace('T', ' ')
+    const parts = []
+    if (item.channel) parts.push('채널: ' + item.channel)
+    if (item.startDate) parts.push('기간: ' + item.startDate + ' ~ ' + (item.endDate || ''))
+    if (item.discount) parts.push('할인: ' + item.discount + '%')
+    if (item.support) parts.push('지원: ' + item.support + '%')
+    if (item.memo) parts.push('\n' + item.memo)
+    content = parts.join('\n')
+  } else if (type === 'personal') {
+    item = (typeof _personalSchedules !== 'undefined' ? _personalSchedules : []).find(x => x.id === no)
+    if (!item) return
+    title = '📅 ' + (item.title || '개인일정')
+    author = item.createdByName || '-'
+    dateStr = (item.createdAt && item.createdAt.toDate ? item.createdAt.toDate().toISOString() : (item.createdAt || item.startDate || '')).toString().slice(0, 16).replace('T', ' ')
+    const parts = []
+    if (item.category) parts.push('카테고리: ' + item.category)
+    if (item.startDate) parts.push('기간: ' + item.startDate + ' ~ ' + (item.endDate || item.startDate))
+    if (item.startTime) parts.push('시간: ' + item.startTime + (item.endTime ? ' ~ ' + item.endTime : ''))
+    if (item.memo) parts.push('\n' + item.memo)
+    content = parts.join('\n')
+  } else if (type === 'work') {
+    item = (State.workItems || []).find(x => x.no === no)
+    if (!item) return
+    title = '📝 ' + (item.title || item.category || '업무')
+    author = item.createdByName || '-'
+    dateStr = (item.registeredAt || item.startDate || '').slice(0, 16).replace('T', ' ')
+    const parts = []
+    if (item.category) parts.push('카테고리: ' + item.category)
+    if (item.startDate) parts.push('기간: ' + item.startDate + ' ~ ' + (item.endDate || ''))
+    if (item.memo) parts.push('\n' + item.memo)
+    content = parts.join('\n')
+  } else return
+  titleEl.textContent = title
+  const commentHtml = (typeof buildCommentSection === 'function') ? buildCommentSection(type, no) : ''
+  body.innerHTML = `
+    <h3 style="margin:0 0 8px;font-size:17px;color:var(--primary)">${esc(title)}</h3>
+    <div style="color:#888;font-size:12px;margin-bottom:14px;border-bottom:1px solid #eee;padding-bottom:10px">${esc(author)}${dateStr ? ' · ' + dateStr : ''}</div>
+    <div style="font-size:13px;line-height:1.7;color:#333;white-space:pre-wrap;min-height:80px;margin-bottom:18px">${esc(content)}</div>
+    ${commentHtml}
+  `
+  if (typeof loadComments === 'function') loadComments(type, no)
+  if (typeof centerModal === 'function') centerModal(modal)
+  modal.showModal()
+}
+window.openDashActivityPreview = openDashActivityPreview
+
 // ===== 대시보드 최근 등록 미니 섹션 =====
 function renderDashActivity() {
   const el = document.getElementById('dashActivityCard')
@@ -165,15 +489,17 @@ function renderDashActivity() {
 
   const items = []
 
+  const _ts = v => { if (!v) return 0; const t = new Date(v).getTime(); return isNaN(t) ? 0 : t }
+
   // 1. 신규기획
   if (State.planItems && State.planItems.length) {
     State.planItems.forEach(p => {
-      const d = p.registeredAt || p.createdAt || ''
+      const d = p.createdAt || p.registeredAt || ''
       items.push({
         type: 'plan', label: '기획',
         text: (p.productCode || p.sampleNo || '') + ' ' + (p.nameKr || ''),
-        date: d, sortDate: new Date(d || 0),
-        onclick: "openTab('plan')"
+        date: d, sortTs: _ts(d) || (p.no || 0),
+        onclick: `openDashActivityPreview('plan',${p.no})`, refId: p.no
       })
     })
   }
@@ -181,12 +507,12 @@ function renderDashActivity() {
   // 2. 행사일정
   if (_events && _events.length) {
     _events.forEach(e => {
-      const d = e.registeredAt || e.startDate || ''
+      const d = e.createdAt || e.registeredAt || ''
       items.push({
         type: 'event', label: '행사',
         text: (e.name || '') + ' (' + (e.startDate || '') + '~' + (e.endDate || '') + ')',
-        date: d, sortDate: new Date(d || 0),
-        onclick: "openTab('event')"
+        date: d, sortTs: _ts(d) || (e.no || 0),
+        onclick: `openDashActivityPreview('event',${e.no})`, refId: e.no
       })
     })
   }
@@ -194,18 +520,18 @@ function renderDashActivity() {
   // 3. 업무일정
   if (State.workItems && State.workItems.length) {
     State.workItems.forEach(w => {
-      const d = w.registeredAt || w.startDate || ''
+      const d = w.createdAt || w.registeredAt || ''
       items.push({
         type: 'work', label: '업무',
         text: (w.title || w.category || '') + ' (' + (w.startDate || '') + ')',
-        date: d, sortDate: new Date(d || 0),
-        onclick: "openTab('work')"
+        date: d, sortTs: _ts(d) || (w.no || 0),
+        onclick: `openDashActivityPreview('work',${w.no})`, refId: w.no
       })
     })
   }
 
   // Sort by date desc, take top 7
-  items.sort((a, b) => b.sortDate - a.sortDate)
+  items.sort((a, b) => b.sortTs - a.sortTs)
   const top = items.slice(0, 7)
 
   el.innerHTML = `<div class="dash-mini-header"><span class="dash-mini-title">최근 등록</span></div><div class="dash-mini-body">${
@@ -463,7 +789,7 @@ function renderDashCalendar() {
     html += `<div class="evcal-day">${cell.day}${holiday ? `<span class="dcal-hol-name">${esc(holiday)}</span>` : ''}</div>`
     html += '<div class="dcal-bars">'
 
-    const MAX_VISIBLE = 8
+    const MAX_VISIBLE = 9999
     let visibleCount = 0
 
     // 업무일정 바 (TOP)
@@ -476,9 +802,13 @@ function renderDashCalendar() {
       const authorSuffix = (isVacation && w.createdByName) ? ' ' + (typeof formatUserName === 'function' ? formatUserName(w.createdByName, w.createdByPosition) : w.createdByName) : ''
       const label = `${timePrefix}${w.category} ${w.title || ''}${authorSuffix}`.trim()
       if (isPast) {
-        html += `<div class="dcal-bar dcal-bar-mini" style="background:${wColor.bg};" title="${esc(label)}" onclick="openWorkDetailModal(${w.no}, true)"></div>`
+        html += `<div class="dcal-bar dcal-bar-mini" style="background:${wColor.bg};" title="${esc(label)}" onclick="openDashActivityPreview('work',${w.no})"></div>`
       } else {
-        html += `<div class="dcal-bar dcal-bar-work" style="background:${wColor.bg}; color:${wColor.text};" title="${esc(label)}" onclick="openWorkDetailModal(${w.no}, true)">${esc(label)}</div>`
+        const wAuthor = w.createdByName ? (typeof formatUserName==='function' ? formatUserName(w.createdByName, w.createdByPosition) : w.createdByName) : ''
+        let wRight = ''
+        if (wAuthor) wRight += `<span class="bar-author">${esc(wAuthor)}</span>`
+        if (w.useVehicle === true) wRight += `<span class="bar-vehicle">🚗</span>`
+        html += `<div class="dcal-bar dcal-bar-work" style="background:${wColor.bg}; color:${wColor.text};display:flex;justify-content:space-between;align-items:center;gap:4px" title="${esc(label)}" onclick="openDashActivityPreview('work',${w.no})"><span class="bar-text">${esc(label)}</span><span class="bar-right">${wRight}</span></div>`
       }
     })
 
@@ -489,9 +819,9 @@ function renderDashCalendar() {
       const color = EV_COLORS[ev.no % EV_COLORS.length]
       const label = esc(`${ev.channel || ''} ${ev.name}`.trim())
       if (isPast) {
-        html += `<div class="dcal-bar dcal-bar-mini" style="background:${color.bar};" title="${label}" onclick="openDashEventInfo(${ev.no})"></div>`
+        html += `<div class="dcal-bar dcal-bar-mini" style="background:${color.bar};" title="${label}" onclick="openDashActivityPreview('event',${ev.no})"></div>`
       } else {
-        html += `<div class="dcal-bar dcal-bar-ev" style="background:${color.bar}; color:${color.text};" title="${label} (${ev.startDate}~${ev.endDate})" onclick="openDashEventInfo(${ev.no})">${label}</div>`
+        html += `<div class="dcal-bar dcal-bar-ev" style="background:${color.bar}; color:${color.text};" title="${label} (${ev.startDate}~${ev.endDate})" onclick="openDashActivityPreview('event',${ev.no})">${label}</div>`
       }
     })
 
@@ -525,17 +855,12 @@ function renderDashCalendar() {
       const psTimePrefix = (ps.startTime && cell.date === ps.startDate) ? (ps.startTime + ' ') : ''
       const label = `${psTimePrefix}${ps.category || ''} ${ps.title}`.trim()
       if (isPast) {
-        html += `<div class="dcal-bar dcal-bar-mini" style="background:${barBg};opacity:0.6" title="${esc(label)}" onclick="openPersonalDetailModal('${ps.id}')"></div>`
+        html += `<div class="dcal-bar dcal-bar-mini" style="background:${barBg};opacity:0.6" title="${esc(label)}" onclick="openDashActivityPreview('personal','${ps.id}')"></div>`
       } else {
-        html += `<div class="dcal-bar" style="background:${barBg};color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-bottom:1px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(label)}" onclick="openPersonalDetailModal('${ps.id}')">${esc(label)}</div>`
+        html += `<div class="dcal-bar" style="background:${barBg};color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-bottom:1px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(label)}" onclick="openDashActivityPreview('personal','${ps.id}')">${esc(label)}</div>`
       }
     })
 
-    // +N more
-    const totalCount = di.events.length + Object.keys(planLabels).length + di.works.length + (di.personal ? di.personal.length : 0)
-    if (totalCount > visibleCount) {
-      html += `<div class="evcal-more" onclick="openDashDayModal('${cell.date}')">+${totalCount - visibleCount}건</div>`
-    }
 
     html += '</div></div>'
   })
@@ -598,7 +923,7 @@ function openDashDayModal(dateStr) {
   if (events.length) {
     sections.push(`<div class="ddm-section">
       <div class="ddm-section-title">행사일정 <span class="ddm-count">${events.length}</span></div>
-      ${events.map(e => `<div class="ddm-row" onclick="openEventDetailModal(${e.no})">
+      ${events.map(e => `<div class="ddm-row" onclick="document.getElementById('dashDayModal').close();openDashActivityPreview('event',${e.no})">
         <span class="ddm-badge" style="background:var(--primary);color:#fff">${esc(e.channel || '')}</span>
         <span class="ddm-item-name">${esc(e.name)}</span>
         <span class="ddm-item-period">${e.startDate} ~ ${e.endDate}</span>
@@ -650,7 +975,7 @@ function openDashDayModal(dateStr) {
   if (works.length) {
     sections.push(`<div class="ddm-section">
       <div class="ddm-section-title">업무일정 <span class="ddm-count">${works.length}</span></div>
-      ${works.map(w => `<div class="ddm-row" onclick="openWorkDetailModal(${w.no}, true)">
+      ${works.map(w => `<div class="ddm-row" onclick="document.getElementById('dashDayModal').close();openDashActivityPreview('work',${w.no})">
         <span class="ddm-badge" style="background:${getWorkCatColor(w.category).bg};color:${getWorkCatColor(w.category).text}">${esc(w.category || '')}</span>
         <span class="ddm-item-name">${esc(w.title)}</span>
         <span class="ddm-item-period">${w.startDate} ~ ${w.endDate || w.startDate}</span>
@@ -670,7 +995,7 @@ function openDashDayModal(dateStr) {
       ${personalHits.map(ps => {
         const catColor = PS_CAT_COLORS[ps.category] || PS_CAT_COLORS['기타']
         const isMine = ps.createdBy === psUid
-        return `<div class="ddm-row" onclick="openPersonalDetailModal('${ps.id}')">
+        return `<div class="ddm-row" onclick="document.getElementById('dashDayModal').close();openDashActivityPreview('personal','${ps.id}')">
           <span class="ddm-badge" style="background:${catColor.bg};color:#fff">${esc(ps.category || '')}</span>
           <span class="ddm-item-name">${esc(ps.title)}${!isMine ? ' <span style="color:var(--text-sub);font-size:10px">(' + esc(formatUserName(ps.createdByName, ps.createdByPosition)) + ')</span>' : ''}</span>
           <span class="ddm-item-period">${ps.startDate} ~ ${ps.endDate || ps.startDate}</span>
@@ -718,12 +1043,16 @@ function openPlanScheduleForDate(dateStr) {
   const phaseGroups = {}
   SCHEDULE_DEFS.forEach(def => { phaseGroups[def.key] = [] })
 
+  const _seen = new Set()
   State.planItems.forEach(item => {
     if (!item.schedule) return
     SCHEDULE_DEFS.forEach(def => {
       const ph = item.schedule[def.key]
       if (!ph || !ph.start || !ph.end) return
       if (ph.start === dateStr || ph.end === dateStr) {
+        const dedupeKey = (item.no || item.productCode || item.sampleNo || '') + '|' + def.key
+        if (_seen.has(dedupeKey)) return
+        _seen.add(dedupeKey)
         const tags = []
         if (ph.start === dateStr) tags.push('시작')
         if (ph.end === dateStr) tags.push('완료')
@@ -745,7 +1074,7 @@ function openPlanScheduleForDate(dateStr) {
       if (today >= s) return { cls:'ps-phase-status-ing', txt:'진행' }
       return { cls:'ps-phase-status-wait', txt:'대기' }
     }
-    let html = '<div class="ps-phase-table-header"><span style="width:110px">품번</span><span style="width:42px;text-align:center">상태</span><span style="width:120px;margin:0 6px">품명</span><span style="width:46px;text-align:center">시작</span><span style="width:46px;text-align:center">완료</span></div>'
+    let html = '<div class="ps-phase-table-header"><span style="width:96px">품번</span><span style="width:38px;text-align:center">상태</span><span style="width:110px;margin:0 6px">품명</span><span style="width:42px;text-align:center">시작</span><span style="width:42px;text-align:center">완료</span></div>'
     SCHEDULE_DEFS.forEach(def => {
       const items = phaseGroups[def.key]
       if (!items.length) return

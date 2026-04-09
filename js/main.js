@@ -147,6 +147,9 @@ async function initApp() {
   renderDate()
   bindTabs()
   loadAllUsers()
+  if (typeof updateNotifToggleUI === 'function') updateNotifToggleUI()
+  makeDraggableResizable(document.getElementById('activityDetailModal'))
+  makeDraggableResizable(document.getElementById('dashInfoModal'))
   makeDraggableResizable(document.getElementById('memberEditModal'))
   makeDraggableResizable(document.getElementById('memberAddModal'))
   makeDraggableResizable(document.getElementById('memberProfileModal'))
@@ -275,9 +278,14 @@ async function initApp() {
   if (typeof checkEventAlerts === 'function') checkEventAlerts()
   if (typeof checkPlanAlerts === 'function') checkPlanAlerts()
   if (typeof checkWorkMentionAlerts === 'function') checkWorkMentionAlerts()
+  if (typeof checkPersonalScheduleAlerts === 'function') checkPersonalScheduleAlerts()
   // 로그인 직후 미읽은 알림 있으면 드롭다운 자동 표시 (urgent: 1초/5초유지, normal: 2초/3초유지)
-  const hasUrgent = (_notifications || []).some(n => !n.dismissed && !n.read && n.priority === 'urgent')
+  // 알림 전체 OFF 시 자동 팝업 생략
+  const _nsLogin = (typeof getNotifSettings === 'function') ? getNotifSettings() : null
+  const _notifOff = _nsLogin && _nsLogin.globalEnabled === false
+  const hasUrgent = !_notifOff && (_notifications || []).some(n => !n.dismissed && !n.read && n.priority === 'urgent')
   setTimeout(() => {
+    if (_notifOff) return
     const unread = (_notifications || []).filter(n => !n.dismissed && !n.read).length
     if (unread > 0) {
       const dd = document.getElementById('notifDropdown')

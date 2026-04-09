@@ -290,10 +290,10 @@ async function initAdminAccount() {
   if (!snapshot.empty) return
 
   try {
-    const cred = await auth.createUserWithEmailAndPassword('jhi3018@gmail.com', 'lemango2026!')
+    const cred = await auth.createUserWithEmailAndPassword('lemango@gmail.com', 'lemango2026!')
     await db.collection('users').doc(cred.user.uid).set({
       uid: cred.user.uid,
-      email: 'jhi3018@gmail.com',
+      email: 'lemango@gmail.com',
       name: '시스템 관리자',
       phone: '',
       dept: '경영지원',

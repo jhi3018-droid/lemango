@@ -106,7 +106,7 @@ function renderEventCalendar() {
   }
 
   // 이벤트 바 배치 (최대 10줄)
-  const MAX_ROWS = 6
+  const MAX_ROWS = 9999
   const barRows  = placeEventBars(cells[0].date, cells[cells.length - 1].date, MAX_ROWS)
 
   // HTML
@@ -159,19 +159,15 @@ function renderEventCalendar() {
         ></div>`
       } else {
         const label = esc(`${ev.channel || ''} ${ev.name}`.trim())
+        const author = ev.createdByName ? esc(typeof formatUserName === 'function' ? formatUserName(ev.createdByName, ev.createdByPosition) : ev.createdByName) : ''
         html += `<div class="evcal-bar evcal-bar-fill"
           style="background:${color.bar}; color:${color.text};"
           title="${tooltip}"
           onclick="openEventDetailModal(${ev.no})"
-        >${label}</div>`
+        ><span class="bar-text">${label}</span><span class="bar-author">${author}</span></div>`
       }
     }
 
-    // +N more
-    const moreCount = (cellBars._overflow) || 0
-    if (moreCount > 0) {
-      html += `<div class="evcal-more">+${moreCount}건</div>`
-    }
 
     html += '</div></div>'
   })
@@ -453,7 +449,7 @@ function _evSyncWatchBtn() {
   const btn = document.getElementById('evWatchBtn')
   if (!btn || _editingEventNo == null) return
   const on = typeof isWatching === 'function' && isWatching('event', _editingEventNo)
-  btn.textContent = on ? '👁 활성' : '👁'
+  btn.textContent = on ? '💛' : '🤍'
   btn.classList.toggle('active', on)
 }
 window._evSyncWatchBtn = _evSyncWatchBtn

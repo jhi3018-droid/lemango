@@ -24,12 +24,25 @@ const AL_CAT_MAP = {
 async function logActivity(action, target, detail) {
   if (!auth || !auth.currentUser || !db) return
   const user = State.currentUser
+  const userName = user ? user.name : auth.currentUser.email
+  const userPosition = (typeof _currentUserPosition !== 'undefined' && _currentUserPosition) || ''
+  const userDept = (typeof _currentUserDept !== 'undefined' && _currentUserDept) || ''
+  const uid = auth.currentUser.uid
+  // Mirror to localStorage (last 500, FIFO) — fire-and-forget
+  try {
+    const raw = localStorage.getItem('lemango_recent_activity_v1')
+    const arr = raw ? JSON.parse(raw) : []
+    arr.push({ timestamp: new Date().toISOString(), uid, userName, userPosition, userDept, action, target, detail })
+    while (arr.length > 500) arr.shift()
+    localStorage.setItem('lemango_recent_activity_v1', JSON.stringify(arr))
+  } catch(e) {}
   try {
     await db.collection('activityLogs').add({
       timestamp: new Date(),
-      uid: auth.currentUser.uid,
-      userName: user ? user.name : auth.currentUser.email,
-      userPosition: _currentUserPosition || '',
+      uid,
+      userName,
+      userPosition,
+      userDept,
       action: action,
       target: target,
       detail: detail,
@@ -37,6 +50,7 @@ async function logActivity(action, target, detail) {
     })
   } catch (e) { console.warn('Log failed:', e) }
 }
+window.logActivity = logActivity
 
 // ===== Load from Firestore =====
 async function loadActivityLog() {

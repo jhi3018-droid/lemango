@@ -1029,7 +1029,7 @@ function _pdSyncWatchBtn() {
   const btn = document.getElementById('pdWatchBtn')
   if (!btn || _editingPlanNo == null) return
   const on = typeof isWatching === 'function' && isWatching('plan', _editingPlanNo)
-  btn.textContent = on ? '👁 활성' : '👁'
+  btn.textContent = on ? '💛' : '🤍'
   btn.classList.toggle('active', on)
 }
 window._pdSyncWatchBtn = _pdSyncWatchBtn

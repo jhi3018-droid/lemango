@@ -386,7 +386,8 @@ const TAB_LABELS = {
   work:      '업무일정',
   settings:  '설정',
   members:   '회원관리',
-  board:     '게시판'
+  board:     '게시판',
+  orgchart:  '조직도'
 }
 
 // =============================================
@@ -497,7 +498,75 @@ function saveNotifications() {
   localStorage.setItem(NOTIF_KEY, JSON.stringify(_notifications))
 }
 
+const DEFAULT_NOTIF_SETTINGS = {
+  globalEnabled: true,
+  types: {
+    event_upcoming: true, event_end: true, plan_deadline: true,
+    member_pending: true, member_pending_urgent: true,
+    board_notice: true, comment_mention: true, watch_change: true,
+    work_mention: true, work_start: true, work_upcoming: true,
+    deadline_urgent: true, deadline_today: true, deadline_overdue: true,
+  }
+};
+let _notifSettings = null;
+window.getNotifSettings = function() {
+  if (!_notifSettings) {
+    try {
+      const raw = localStorage.getItem('lemango_notif_settings_v1');
+      _notifSettings = raw ? JSON.parse(raw) : JSON.parse(JSON.stringify(DEFAULT_NOTIF_SETTINGS));
+      if (!_notifSettings.types) _notifSettings.types = {...DEFAULT_NOTIF_SETTINGS.types};
+      Object.keys(DEFAULT_NOTIF_SETTINGS.types).forEach(k => {
+        if (_notifSettings.types[k] === undefined) _notifSettings.types[k] = true;
+      });
+    } catch(e) { _notifSettings = JSON.parse(JSON.stringify(DEFAULT_NOTIF_SETTINGS)); }
+  }
+  return _notifSettings;
+};
+window.saveNotifSettings = function() {
+  localStorage.setItem('lemango_notif_settings_v1', JSON.stringify(_notifSettings));
+};
+window.isNotifEnabled = function(type) {
+  const s = getNotifSettings();
+  if (s.globalEnabled === false) return false;
+  if (type && s.types && s.types[type] === false) return false;
+  return true;
+};
+window.toggleGlobalNotif = function() {
+  const s = getNotifSettings();
+  s.globalEnabled = !s.globalEnabled;
+  saveNotifSettings();
+  if (typeof updateNotifToggleUI === 'function') updateNotifToggleUI();
+  if (typeof renderNotifications === 'function') renderNotifications();
+  if (typeof showToast === 'function') showToast(s.globalEnabled ? '알림 켜짐' : '알림 꺼짐');
+  const gc = document.getElementById('notifGlobalCheck');
+  if (gc) gc.checked = s.globalEnabled;
+  document.querySelectorAll('#notifTypeList input[type="checkbox"]').forEach(cb => { cb.disabled = !s.globalEnabled; });
+};
+window.updateNotifToggleUI = function() {
+  const btn = document.getElementById('notifGlobalToggle');
+  if (!btn) return;
+  const s = getNotifSettings();
+  if (s.globalEnabled) {
+    btn.textContent = '🔔';
+    btn.classList.remove('notif-off');
+    btn.classList.add('notif-on');
+    btn.title = '알림 ON (클릭하여 끄기)';
+  } else {
+    btn.textContent = '🔕';
+    btn.classList.remove('notif-on');
+    btn.classList.add('notif-off');
+    btn.title = '알림 OFF (클릭하여 켜기)';
+  }
+};
+
 function addNotification(type, title, body, link, opts) {
+  // 전체 알림 꺼짐 시 모두 차단 (ps_ 포함)
+  try {
+    const s = (typeof getNotifSettings === 'function') ? getNotifSettings() : null
+    if (s && s.globalEnabled === false) return
+  } catch(e) {}
+  const isMandatory = typeof type === 'string' && type.indexOf('ps_') === 0
+  if (!isMandatory && typeof isNotifEnabled === 'function' && !isNotifEnabled(type)) return
   // 동일 type+title 중복 방지 (최근 1시간 이내)
   const oneHourAgo = Date.now() - 3600000
   if (_notifications.some(n => n.type === type && n.title === title && n.ts > oneHourAgo)) return
@@ -536,7 +605,7 @@ const NOTIF_ICONS = {
   work_start: '⏰',
   work_upcoming: '📅',
   comment_mention: '💬',
-  watch_change: '👁'
+  watch_change: '💛'
 }
 
 // =============================================
@@ -721,55 +790,11 @@ function renderFavoritesBar(filterType) {
 }
 
 // =============================================
-// ===== Feature 13: Modal back navigation =====
-// =============================================
-let _modalHistory = []
-
-function pushModalHistory(type, id) {
-  // avoid duplicate at top
-  const last = _modalHistory[_modalHistory.length - 1]
-  if (last && last.type === type && String(last.id) === String(id)) return
-  _modalHistory.push({ type, id })
-  if (_modalHistory.length > 20) _modalHistory = _modalHistory.slice(-20)
-  updateBackBtns()
-}
-
-function popModalHistory() {
-  _modalHistory.pop()
-  updateBackBtns()
-  return _modalHistory[_modalHistory.length - 1] || null
-}
-
-function clearModalHistory() {
-  _modalHistory = []
-  updateBackBtns()
-}
-
-function updateBackBtns() {
-  const show = _modalHistory.length > 1
-  ;['dBackBtn','pdBackBtn','evBackBtn','wkBackBtn'].forEach(id => {
-    const b = document.getElementById(id)
-    if (b) b.style.display = show ? '' : 'none'
-  })
-}
-
-function goBack() {
-  // remove current top then reopen previous
-  _modalHistory.pop()
-  const prev = _modalHistory.pop() // will be re-pushed by open*
-  updateBackBtns()
-  // close any open srm-modal / detail / plan dialogs
-  document.querySelectorAll('dialog[open]').forEach(d => { try { d.close() } catch(e){} })
-  if (!prev) return
-  setTimeout(() => {
-    try {
-      if (prev.type === 'product') openDetailModal(prev.id)
-      else if (prev.type === 'plan') openPlanDetailModal(Number(prev.id))
-      else if (prev.type === 'event') openEventDetailModal(Number(prev.id))
-      else if (prev.type === 'work') openWorkDetailModal(Number(prev.id))
-    } catch(e) {}
-  }, 200)
-}
+// ===== Feature 13: Modal back navigation (removed) =====
+function pushModalHistory() {}
+function popModalHistory() { return null }
+function clearModalHistory() {}
+function goBack() {}
 
 // expose globals
 window.globalSearch = globalSearch
@@ -828,7 +853,7 @@ function toggleWatch(type, id, name) {
   const b = document.getElementById(btnMap[type])
   if (b) {
     const on = isWatching(type, id)
-    b.textContent = on ? '👁' : '👁‍🗨'
+    b.textContent = on ? '💛' : '🤍'
     b.classList.toggle('watch-on', on)
   }
 }
@@ -836,7 +861,7 @@ function notifyWatchers(type, id, action) {
   const uid = _myUid()
   _watches.filter(w => w.type === type && String(w.id) === String(id) && w.uid !== uid).forEach(w => {
     const who = (typeof formatUserName === 'function' ? formatUserName(_currentUserName, _currentUserPosition) : (_currentUserName || ''))
-    addNotification('watch_change', '워치 알림', `${who}님이 ${w.name || id} ${action}`, type)
+    addNotification('watch_change', '워치 알림', `${who}님이 ${w.name || id} ${action}`, '#' + type + ':' + id)
   })
 }
 window.toggleWatch = toggleWatch

@@ -292,7 +292,7 @@ function renderWorkCalendar() {
     : State.workItems.filter(w => w.category === _wkCatFilter)
 
   // 바 배치
-  const MAX_ROWS = 6
+  const MAX_ROWS = 9999
   const barRows = placeWorkBars(cells[0].date, cells[cells.length - 1].date, items, MAX_ROWS)
 
   // HTML
@@ -343,18 +343,13 @@ function renderWorkCalendar() {
         ></div>`
       } else {
         const label = esc(`${w.category || ''} ${w.title}`.trim())
+        const author = w.createdByName ? esc(typeof formatUserName === 'function' ? formatUserName(w.createdByName, w.createdByPosition) : w.createdByName) : ''
         html += `<div class="evcal-bar evcal-bar-fill"
           style="background:${color.bg}; color:${color.text};"
           title="${tooltip}"
           onclick="event.stopPropagation();openWorkDetailModal(${w.no})"
-        >${label}</div>`
+        ><span class="bar-text">${label}</span><span class="bar-right">${author ? `<span class="bar-author">${author}</span>` : ''}${w.useVehicle === true ? '<span class="bar-vehicle">🚗</span>' : ''}</span></div>`
       }
-    }
-
-    // +N more
-    const moreCount = cellBars._overflow || 0
-    if (moreCount > 0) {
-      html += `<div class="evcal-more">+${moreCount}건</div>`
     }
 
     html += '</div></div>'
@@ -442,6 +437,13 @@ function openWorkRegisterModal(dateStr) {
   _currentWorkItem = { checklist: [] }
   const chkArea = document.getElementById('wkRegChecklistArea')
   if (chkArea) chkArea.innerHTML = buildChecklistHtml([], true)
+  const vBtn = document.getElementById('wkRegVehicle')
+  if (vBtn) {
+    vBtn.dataset.active = 'false'
+    vBtn.classList.remove('vehicle-active')
+    const vLbl = document.getElementById('wkRegVehicleLabel')
+    if (vLbl) vLbl.textContent = '미사용'
+  }
   modal.showModal()
   centerModal(modal)
 }
@@ -468,6 +470,7 @@ function submitWork(e) {
     startTime:    document.getElementById('wkRegStartTime')?.value || '',
     endTime:      document.getElementById('wkRegEndTime')?.value || '',
     memo:         document.getElementById('wkRegMemo').value.trim(),
+    useVehicle:   document.getElementById('wkRegVehicle')?.dataset?.active === 'true',
     mentions:     collectMentions('work'),
     registeredAt: isEdit ? (State.workItems.find(w => w.no === no)?.registeredAt || new Date().toISOString()) : new Date().toISOString()
   }
@@ -518,7 +521,7 @@ function submitWork(e) {
       if (m.type === 'user' && m.uid !== myUid) {
         addNotification('work_mention', '업무일정 참조',
           formatUserNameHonorific(_currentUserName, _currentUserPosition) + '이 업무일정을 공유했습니다: ' + item.title,
-          'work')
+          '#work:' + item.no)
       }
     })
   }
@@ -543,7 +546,7 @@ function openWorkDetailModal(no, fromDash = false) {
       ? `<button class="btn btn-sm btn-primary" onclick="goToWorkEdit(${w.no})">업무일정에서 수정</button>`
       : `<button class="btn btn-sm btn-primary" onclick="editWorkFromDetail(${w.no})">수정</button>
          <button class="btn btn-sm btn-outline" style="color:var(--danger);border-color:var(--danger)" onclick="deleteWork(${w.no})">삭제</button>`
-    const watchLabel = (typeof isWatching === 'function' && isWatching('work', w.no)) ? '👁 활성' : '👁'
+    const watchLabel = (typeof isWatching === 'function' && isWatching('work', w.no)) ? '💛' : '🤍'
     const watchActive = (typeof isWatching === 'function' && isWatching('work', w.no)) ? ' active' : ''
     const watchBtn = `<button class="btn btn-sm btn-outline watch-btn${watchActive}" id="wkWatchBtn" onclick="toggleWatch('work', ${w.no}, '${(w.title||'').replace(/'/g,"\\'")}'); _wkSyncWatchBtn(${w.no})" title="변경 알림">${watchLabel}</button>`
     const lockInfo = (typeof getEditLockInfo === 'function') ? getEditLockInfo('work', w.no) : null
@@ -581,6 +584,7 @@ function buildWorkDetailContent(w, fromDash = false) {
         <span class="srm-tl-date">${end}</span>
         <span class="srm-tl-dot" style="background:${c.bg}"></span>
       </div>` : ''}
+      ${w.useVehicle === true ? `<div class="dfield"><span class="dfield-label">차량 사용</span><span class="dfield-value"><span class="vehicle-badge">🚗 사용</span></span></div>` : ''}
       ${w.memo ? `<div class="srm-divider"></div><div class="srm-memo-label">메모</div><div class="srm-memo-text">${w.memo}</div>` : ''}
       ${buildChecklistHtml(w.checklist || [], false)}
       ${(w.mentions && w.mentions.length) ? `<div class="srm-divider"></div><div class="srm-memo-label">참조</div><div class="srm-view-value">${w.mentions.map(m => m.type === 'user' ? `<span class="mention-tag mention-user">@${esc(formatUserName(m.name, m.position))}</span>` : `<span class="mention-tag mention-dept">@${esc(m.dept)}</span>`).join(' ')}</div>` : ''}
@@ -763,6 +767,16 @@ if (typeof window !== 'undefined') {
   window.deleteChecklistItemView = deleteChecklistItemView
 }
 
+window.toggleVehicleBtn = function(btnId) {
+  const btn = document.getElementById(btnId)
+  if (!btn) return
+  const isActive = btn.dataset.active === 'true'
+  btn.dataset.active = isActive ? 'false' : 'true'
+  btn.classList.toggle('vehicle-active', !isActive)
+  const label = document.getElementById(btnId + 'Label')
+  if (label) label.textContent = isActive ? '미사용' : '사용'
+}
+
 function workCatBadge(cat) {
   const c = getWorkCatColor(cat)
   return `<span class="wk-cat-badge" style="background:${c.bg};color:${c.text}">${cat || '-'}</span>`
@@ -778,7 +792,7 @@ function _wkSyncWatchBtn(no) {
   const btn = document.getElementById('wkWatchBtn')
   if (!btn) return
   const on = typeof isWatching === 'function' && isWatching('work', no)
-  btn.textContent = on ? '👁 활성' : '👁'
+  btn.textContent = on ? '💛' : '🤍'
   btn.classList.toggle('active', on)
 }
 window._wkSyncWatchBtn = _wkSyncWatchBtn
@@ -804,6 +818,14 @@ function editWorkFromDetail(no) {
   const wkST = document.getElementById('wkRegStartTime'); if (wkST) wkST.value = w.startTime || ''
   const wkET = document.getElementById('wkRegEndTime');   if (wkET) wkET.value = w.endTime || ''
   document.getElementById('wkRegMemo').value      = w.memo || ''
+  const vBtnE = document.getElementById('wkRegVehicle')
+  if (vBtnE) {
+    const isActive = w.useVehicle === true
+    vBtnE.dataset.active = isActive ? 'true' : 'false'
+    vBtnE.classList.toggle('vehicle-active', isActive)
+    const vLblE = document.getElementById('wkRegVehicleLabel')
+    if (vLblE) vLblE.textContent = isActive ? '사용' : '미사용'
+  }
 
   modal.querySelector('.rmodal-title').textContent = '업무일정 수정'
   populateAllSelects()
@@ -861,9 +883,9 @@ function checkWorkMentionAlerts() {
     )
     if (!isMentioned) return
     if (w.startDate === today) {
-      addNotification('work_start', '업무일정 시작', '오늘 시작: ' + (w.title || '업무일정'), 'work')
+      addNotification('work_start', '업무일정 시작', '오늘 시작: ' + (w.title || '업무일정'), '#work:' + w.no)
     } else if (w.startDate === tomorrowStr) {
-      addNotification('work_upcoming', '업무일정 내일 시작', '내일 시작: ' + (w.title || '업무일정'), 'work')
+      addNotification('work_upcoming', '업무일정 내일 시작', '내일 시작: ' + (w.title || '업무일정'), '#work:' + w.no)
     }
   })
 }
@@ -1007,6 +1029,7 @@ async function loadPersonalSchedules() {
   try {
     const snapshot = await firebase.firestore().collection('personalSchedules').get()
     _personalSchedules = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+    if (typeof checkPersonalScheduleAlerts === 'function') checkPersonalScheduleAlerts()
   } catch(e) { console.error('loadPersonalSchedules error:', e) }
 }
 
@@ -1084,7 +1107,7 @@ function renderPersonalCalendar() {
     })
   }
 
-  const MAX_ROWS = 6
+  const MAX_ROWS = 9999
   const barRows = placePsBars(cells[0].date, cells[cells.length - 1].date, visible, MAX_ROWS)
   const todayStr = fmtDate(new Date())
 
@@ -1131,8 +1154,6 @@ function renderPersonalCalendar() {
       }
     }
 
-    const moreCount = cellBars._overflow || 0
-    if (moreCount > 0) html += `<div class="evcal-more">+${moreCount}건</div>`
     html += '</div></div>'
   })
 
@@ -1480,12 +1501,13 @@ async function savePersonalSchedule() {
       logActivity('update', '개인일정', `일정수정: ${title}`)
     } else {
       stampCreated(data)
-      await firebase.firestore().collection('personalSchedules').add(data)
+      const _psDocRef = await firebase.firestore().collection('personalSchedules').add(data)
       showToast('일정이 등록되었습니다.', 'success')
       logActivity('create', '개인일정', `일정등록: ${title}`)
+      addNotification('ps_created', '📅 개인일정 등록', title + ' (' + startDate + (endDate !== startDate ? ' ~ ' + endDate : '') + ')', '#work:personal:' + _psDocRef.id)
       mentions.forEach(m => {
         if (m.type === 'user' && m.uid !== user.uid) {
-          addNotification('personal_schedule', '일정 참조', formatUserNameHonorific(_currentUserName, _currentUserPosition) + '이 일정을 공유했습니다: ' + title, 'work')
+          addNotification('personal_schedule', '일정 참조', formatUserNameHonorific(_currentUserName, _currentUserPosition) + '이 일정을 공유했습니다: ' + title, '#work:personal:' + _psDocRef.id)
         }
       })
     }

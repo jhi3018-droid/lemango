@@ -141,7 +141,7 @@ const _renderedTabs = new Set()
 function triggerTabRender(tab) {
   // 데이터가 아직 로드 안 됐으면 스킵 (init에서 일괄 렌더)
   // dashboard, board, members는 allProducts 불필요
-  if (!State.allProducts.length && !['dashboard', 'board', 'members'].includes(tab)) return
+  if (!State.allProducts.length && !['dashboard', 'board', 'members', 'orgchart'].includes(tab)) return
   if (_renderedTabs.has(tab)) return
   _renderedTabs.add(tab)
 
@@ -170,6 +170,7 @@ function triggerTabRender(tab) {
     case 'settings':  renderSettings(); break
     case 'members':   loadMembers(); break
     case 'board':     renderBoard(); break
+    case 'orgchart':  if (typeof renderOrgChart === 'function') renderOrgChart(); break
   }
 }
 

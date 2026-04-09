@@ -113,6 +113,7 @@
       <button class="tab-btn" data-tab="event">행사일정</button>
       <button class="tab-btn" data-tab="work">업무일정</button>
       <button class="tab-btn" data-tab="board">게시판</button>
+      <button class="tab-btn" data-tab="orgchart">조직도</button>
       <button class="tab-btn" data-tab="settings">⚙ 설정</button>
       <button class="tab-btn" data-tab="members">👥 회원관리</button>
     </nav>
@@ -126,6 +127,7 @@
       <div class="header-user-area">
         <span id="headerUserGrade"></span>
         <span class="header-user-name header-user-clickable" id="headerUserName" onclick="openMyProfile()"></span>
+        <button id="notifGlobalToggle" class="notif-global-toggle notif-on" onclick="toggleGlobalNotif()" title="알림 ON">🔔</button>
         <div class="notif-wrap" id="notifWrap">
           <button class="notif-bell" id="notifBell" onclick="toggleNotifDropdown()">
             🔔<span class="notif-badge" id="notifBadge" style="display:none">0</span>
@@ -155,9 +157,9 @@
   <section class="tab-content active" id="tab-dashboard">
     <div class="dash-info-row">
       <div class="dash-notice-card" id="dashNoticeCard"></div>
+      <div class="dash-free-card" id="dashFreeCard"></div>
       <div class="dash-activity-card" id="dashActivityCard"></div>
     </div>
-    <div id="dailySummaryArea"></div>
     <div class="dashboard-main">
       <div class="card dash-cal-card">
         <div class="card-header">
@@ -680,6 +682,11 @@
   <!-- ===== 설정 탭 ===== -->
   <section class="tab-content" id="tab-settings">
     <div class="settings-page" id="settingsPage"></div>
+  </section>
+
+  <!-- ===== 조직도 탭 ===== -->
+  <section class="tab-content" id="tab-orgchart">
+    <div class="orgchart-page" id="orgchartPage"></div>
   </section>
 
   <!-- ===== 회원관리 탭 ===== -->
@@ -1288,9 +1295,8 @@
       <span class="dmodal-code" id="dCode"></span>
     </div>
     <div class="dmodal-header-actions">
-      <button class="modal-back-btn" id="dBackBtn" onclick="goBack()" style="display:none">←</button>
       <button class="fav-star" id="dFavBtn" onclick="toggleFavorite('product', _detailCode, document.getElementById('dNameKr').textContent)" title="즐겨찾기">☆</button>
-      <button class="btn btn-sm btn-outline watch-btn" id="dWatchBtn" onclick="toggleWatch('product', _detailCode, document.getElementById('dNameKr').textContent); _dSyncWatchBtn()" title="변경 알림">👁</button>
+      <button class="btn btn-sm btn-outline watch-btn" id="dWatchBtn" onclick="toggleWatch('product', _detailCode, document.getElementById('dNameKr').textContent); _dSyncWatchBtn()" title="변경 알림">🤍</button>
       <span class="edit-lock-warn" id="dLockWarn" style="display:none"></span>
       <button class="btn btn-sm btn-primary d-view-btn" id="dEditBtn" onclick="toggleDetailEdit()">수정</button>
       <button class="btn btn-sm btn-primary d-edit-btn" id="dSaveBtn" onclick="saveDetailEdit()" style="display:none">저장</button>
@@ -1384,9 +1390,8 @@
       <span class="dmodal-code" id="pdSampleNo"></span>
     </div>
     <div class="dmodal-header-actions">
-      <button class="modal-back-btn" id="pdBackBtn" onclick="goBack()" style="display:none">←</button>
       <button class="fav-star" id="pdFavBtn" onclick="toggleFavorite('plan', _editingPlanNo, document.getElementById('pdNameKr').textContent)" title="즐겨찾기">☆</button>
-      <button class="btn btn-sm btn-outline watch-btn" id="pdWatchBtn" onclick="toggleWatch('plan', _editingPlanNo, document.getElementById('pdNameKr').textContent); _pdSyncWatchBtn()" title="변경 알림">👁</button>
+      <button class="btn btn-sm btn-outline watch-btn" id="pdWatchBtn" onclick="toggleWatch('plan', _editingPlanNo, document.getElementById('pdNameKr').textContent); _pdSyncWatchBtn()" title="변경 알림">🤍</button>
       <span class="edit-lock-warn" id="pdLockWarn" style="display:none"></span>
       <button class="btn btn-sm btn-outline" id="pdCloneBtn" onclick="clonePlanItem(_editingPlanNo)">복제</button>
       <button class="btn btn-sm btn-primary pd-view-btn" id="pdEditBtn" onclick="togglePlanDetailEdit()">수정</button>
@@ -1877,11 +1882,9 @@
   <div class="srm-modal-header">
     <div class="srm-header-title"><span class="srm-header-dot" style="background:#c9a96e"></span><span class="rmodal-title">행사일정</span></div>
     <div class="srm-header-btns">
-      <button class="modal-back-btn" id="evBackBtn" onclick="goBack()" style="display:none">←</button>
       <button class="fav-star" id="evFavBtn" onclick="toggleFavorite('event', _editingEventNo, (_events.find(e=>e.no===_editingEventNo)||{}).name||'')" title="즐겨찾기">☆</button>
-      <button class="btn btn-sm btn-outline watch-btn" id="evWatchBtn" onclick="toggleWatch('event', _editingEventNo, (_events.find(e=>e.no===_editingEventNo)||{}).name||''); _evSyncWatchBtn()" title="변경 알림">👁</button>
+      <button class="btn btn-sm btn-outline watch-btn" id="evWatchBtn" onclick="toggleWatch('event', _editingEventNo, (_events.find(e=>e.no===_editingEventNo)||{}).name||''); _evSyncWatchBtn()" title="변경 알림">🤍</button>
       <span class="edit-lock-warn" id="evLockWarn" style="display:none"></span>
-      <button class="srm-btn-outline ev-back-btn" onclick="backToDashEvent()" style="display:none">&larr; 뒤로</button>
       <button class="srm-btn-gold ev-view-btn" onclick="toggleEventEdit()">수정</button>
       <button class="srm-btn-gold ev-edit-btn" onclick="saveEventEdit()">저장</button>
       <button class="srm-btn-outline ev-edit-btn" onclick="toggleEventEdit()">취소</button>
@@ -1893,12 +1896,12 @@
 </dialog>
 
 <!-- 기획일정 조회 모달 -->
-<dialog id="planScheduleModal" class="srm-modal" style="width:640px;max-width:96vw">
-  <div class="srm-header">
-    <span id="planSchedTitle">기획 일정</span>
-    <button class="modal-close" onclick="closePlanScheduleModal()">✕</button>
+<dialog id="planScheduleModal" class="srm-modal" style="width:560px;max-width:95vw;max-height:80vh;padding:0;overflow:hidden;border-radius:10px">
+  <div class="srm-header modal-header" style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:14px;cursor:move">
+    <span id="planSchedTitle" style="font-size:15px;font-weight:700;color:#fff;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">기획 일정</span>
+    <button class="modal-close" style="margin:0" onclick="closePlanScheduleModal()">×</button>
   </div>
-  <div class="srm-body" id="planSchedBody"></div>
+  <div class="srm-body" id="planSchedBody" style="padding:18px 22px;overflow-y:auto;flex:1"></div>
 </dialog>
 
 <!-- 일괄 일정 설정 모달 -->
@@ -1938,6 +1941,11 @@
       <div class="rform-field" style="flex:0 0 120px"><label>종료시간</label><input type="time" id="wkRegEndTime" min="00:00" max="23:59" /></div>
     </div>
     <div class="rform-field"><label>메모</label><textarea id="wkRegMemo" rows="3" placeholder="상세 내용"></textarea></div>
+    <div class="wk-field">
+      <label class="wk-field-label">차량 사용</label>
+      <button type="button" id="wkRegVehicle" class="vehicle-toggle" onclick="toggleVehicleBtn('wkRegVehicle')" data-active="false">🚗</button>
+      <span id="wkRegVehicleLabel" class="vehicle-label">미사용</span>
+    </div>
     <div class="rform-field"><label>체크리스트</label><div id="wkRegChecklistArea"></div></div>
     <div class="rform-field" style="position:relative"><label>참조 (@이름, @부서로 공유)</label>
       <div class="mention-area" id="workMentionArea">
@@ -1951,6 +1959,22 @@
 
 <!-- 업무일정 상세 모달 -->
 <!-- 주간 리포트 모달 -->
+<dialog id="activityDetailModal" class="srm-modal" style="width:640px;max-width:96vw;max-height:85vh">
+  <div class="srm-header">
+    <h3 style="margin:0"><span id="activityModalTitle">활동 내역</span></h3>
+    <div class="srm-header-btns">
+      <button class="modal-close" onclick="document.getElementById('activityDetailModal').close()">✕</button>
+    </div>
+  </div>
+  <div class="srm-body">
+    <div class="activity-modal-toolbar">
+      <input type="date" id="activityDateFilter" onchange="filterActivityLogs()">
+      <input type="text" id="activitySearchInput" placeholder="검색 (이름, 내용...)" oninput="filterActivityLogs()">
+    </div>
+    <div id="activityModalList"></div>
+  </div>
+</dialog>
+
 <dialog id="weeklyReportModal" class="srm-modal" style="width:620px;max-width:96vw">
   <div class="srm-header">
     <h3 style="margin:0">📊 주간 리포트</h3>
@@ -1963,7 +1987,6 @@
 
 <dialog id="workDetailModal" class="srm-modal" style="width:500px;max-width:96vw">
   <div class="srm-header">
-    <button class="modal-back-btn" id="wkBackBtn" onclick="goBack()" style="display:none">←</button>
     <span class="rmodal-title">업무일정 상세</span>
     <div class="srm-header-btns" id="wkDetailHeaderBtns">
       <button class="modal-close" onclick="closeWorkDetailModal()">✕</button>
@@ -2089,6 +2112,18 @@
   <div class="ddm-body" style="padding:14px 18px;overflow-y:auto;flex:1"></div>
 </dialog>
 
+<!-- 대시보드 정보 미니 모달 (공지/자유/최근등록) -->
+<dialog id="dashInfoModal" class="srm-modal" style="width:780px;max-width:95vw;max-height:85vh;padding:0;overflow:hidden;border-radius:10px">
+  <div class="srm-header modal-header" style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:14px;cursor:move">
+    <span id="dashInfoTitle" style="font-size:15px;font-weight:700;color:#fff;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+    <div style="display:flex;gap:12px;align-items:center;flex-shrink:0">
+      <button id="dashInfoGoBtn" class="btn btn-sm btn-primary" style="margin-right:10px" onclick="dashInfoGoToTab()">메뉴 이동</button>
+      <button class="modal-close" style="margin:0" onclick="document.getElementById('dashInfoModal').close()">×</button>
+    </div>
+  </div>
+  <div id="dashInfoBody" style="padding:18px 22px;overflow-y:auto;flex:1"></div>
+</dialog>
+
 <!-- 바코드 업로드 모달 -->
 <dialog id="barcodeUploadModal" class="srm-modal" style="width:640px;max-height:80vh;padding:0;overflow:hidden;border-radius:10px">
   <div class="modal-header" style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
@@ -2134,6 +2169,7 @@
 <script src="js/activity-log.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/members.js"></script>
+<script src="js/orgchart.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

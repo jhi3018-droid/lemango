@@ -460,8 +460,89 @@ function renderSettings() {
       </div>
     </div>
 
-    ${deptSection}`
+    ${deptSection}
+
+    <div class="set-section">
+      <button class="set-section-btn" onclick="toggleSetSection(this)">
+        <span>🔔 알림 설정</span><span class="set-section-arrow">▼</span>
+      </button>
+      <div class="set-section-body">
+        <div class="set-grid">
+          ${renderNotifSettingsCard()}
+        </div>
+      </div>
+    </div>`
 }
+
+const NOTIF_TYPE_LABELS = {
+  event_upcoming: { label: '행사 임박 (D-3)', desc: '행사 시작 3일 전 알림' },
+  event_end: { label: '행사 종료', desc: '행사 종료일 알림' },
+  plan_deadline: { label: '기획 마감 (D-3)', desc: '기획 마감 3일 전 알림' },
+  member_pending: { label: '회원 승인 대기', desc: '신규 가입 승인 요청' },
+  member_pending_urgent: { label: '회원 승인 긴급', desc: '신규 가입 최우선 알림' },
+  board_notice: { label: '게시판 공지', desc: '새 공지사항 등록' },
+  comment_mention: { label: '@멘션 댓글', desc: '댓글에서 나를 언급' },
+  watch_change: { label: '워치 변경', desc: '관심 상품/기획 변경' },
+  work_mention: { label: '업무 참조', desc: '업무일정에서 나를 참조' },
+  work_start: { label: '업무 시작일', desc: '참조된 업무 시작일 알림' },
+  work_upcoming: { label: '업무 내일 시작', desc: '참조된 업무 내일 시작' },
+  deadline_urgent: { label: '마감 긴급 (D-1)', desc: '마감일 하루 전' },
+  deadline_today: { label: '마감 오늘', desc: '오늘 마감인 항목' },
+  deadline_overdue: { label: '마감 초과', desc: '마감일 지난 항목' },
+};
+
+window.renderNotifSettingsCard = function() {
+  const s = getNotifSettings();
+  const globalOn = s.globalEnabled !== false;
+  const items = Object.keys(NOTIF_TYPE_LABELS).map(k => {
+    const meta = NOTIF_TYPE_LABELS[k];
+    const enabled = s.types && s.types[k] !== false;
+    return `<div class="notif-set-item">
+      <div class="notif-set-item-info">
+        <span class="notif-set-item-label">${meta.label}</span>
+        <span class="notif-set-item-desc">${meta.desc}</span>
+      </div>
+      <label class="notif-switch notif-switch-sm">
+        <input type="checkbox" data-notif-type="${k}" ${enabled ? 'checked' : ''} ${globalOn ? '' : 'disabled'} onchange="onNotifTypeChange('${k}', this.checked)">
+        <span class="notif-slider"></span>
+      </label>
+    </div>`;
+  }).join('');
+  return `<div class="set-card set-card-wide">
+    <div class="set-card-header">
+      <span class="set-card-title">🔔 알림 환경설정</span>
+      <span class="set-card-count">${Object.keys(NOTIF_TYPE_LABELS).length}</span>
+    </div>
+    <div class="notif-set-global">
+      <span class="notif-set-global-label">전체 알림</span>
+      <label class="notif-switch">
+        <input type="checkbox" id="notifGlobalCheck" ${globalOn ? 'checked' : ''} onchange="onGlobalNotifChange(this.checked)">
+        <span class="notif-slider"></span>
+      </label>
+    </div>
+    <div class="notif-set-divider"></div>
+    <div class="notif-set-list" id="notifTypeList">${items}</div>
+  </div>`;
+};
+
+window.onGlobalNotifChange = function(enabled) {
+  const s = getNotifSettings();
+  s.globalEnabled = enabled;
+  saveNotifSettings();
+  if (typeof updateNotifToggleUI === 'function') updateNotifToggleUI();
+  document.querySelectorAll('#notifTypeList input[type="checkbox"]').forEach(cb => { cb.disabled = !enabled; });
+  if (typeof showToast === 'function') showToast(enabled ? '전체 알림 켜짐' : '전체 알림 꺼짐');
+};
+window.onNotifTypeChange = function(type, enabled) {
+  const s = getNotifSettings();
+  if (!s.types) s.types = {};
+  s.types[type] = enabled;
+  saveNotifSettings();
+  if (typeof showToast === 'function') {
+    const lbl = (NOTIF_TYPE_LABELS[type] && NOTIF_TYPE_LABELS[type].label) || type;
+    showToast(lbl + (enabled ? ' 켜짐' : ' 꺼짐'));
+  }
+};
 
 function toggleSetSection(btn) {
   const body = btn.nextElementSibling
