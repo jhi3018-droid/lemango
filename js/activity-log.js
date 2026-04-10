@@ -286,14 +286,7 @@ async function populateAlUserFilter() {
   } catch (e) { console.warn('User filter load failed:', e) }
 }
 
-// ===== Members inner tab switch =====
+// ===== Members inner tab switch (legacy compat → delegates to switchHrAdminTab) =====
 window.switchMembersPanel = function(panel) {
-  const listEl = document.getElementById('memberListPanel')
-  const logEl  = document.getElementById('activityLogPanel')
-  if (listEl) listEl.style.display = panel === 'memberList' ? '' : 'none'
-  if (logEl)  logEl.style.display  = panel === 'activityLog' ? '' : 'none'
-  document.querySelectorAll('.members-itab').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.panel === panel)
-  })
-  if (panel === 'activityLog') loadActivityLog()
+  if (typeof switchHrAdminTab === 'function') switchHrAdminTab(panel)
 }

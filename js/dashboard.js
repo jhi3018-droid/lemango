@@ -12,6 +12,21 @@ function renderDashboard() {
   renderDashCalendar()
   checkEventAlerts()
   checkPlanAlerts()
+  checkBirthdayAlerts()
+}
+
+// ===== 생일 알림 =====
+function checkBirthdayAlerts() {
+  if (!_allUsers || !_allUsers.length) return
+  var today = new Date()
+  var todayMD = String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0')
+  _allUsers.forEach(function(u) {
+    if (!u.birthday) return
+    var bMD = u.birthday.slice(5) // "MM-DD"
+    if (bMD === todayMD) {
+      addNotification('birthday', '🎂 ' + (u.name || '') + '님 생일', '오늘은 ' + (u.name || '') + '님의 생일입니다!', '#orgchart')
+    }
+  })
 }
 
 /* ===== Grade-based daily activity view ===== */
@@ -235,6 +250,7 @@ async function renderDashNotice() {
         ${p.pinned ? '<span class="dash-notice-pin">&#9733;</span>' : ''}
         <span class="dash-notice-text">${esc(p.title)}</span>
         ${isNew ? '<span class="brd-new" style="font-size:8px;padding:0 3px">N</span>' : ''}
+        <span class="dash-notice-author">${esc(p.authorName || '')}</span>
         <span class="dash-notice-date">${dateStr}</span>
       </div>`
     }).join('')
@@ -272,6 +288,7 @@ async function renderDashFree() {
         <span class="dash-notice-text">${esc(p.title)}</span>
         ${isNew ? '<span class="brd-new" style="font-size:8px;padding:0 3px">N</span>' : ''}
         ${cc}
+        <span class="dash-notice-author">${esc(p.authorName || '')}</span>
         <span class="dash-notice-date">${dateStr}</span>
       </div>`
     }).join('')
@@ -358,6 +375,7 @@ async function openDashInfoModal(type) {
         const newB = isNew ? '<span class="brd-new" style="font-size:9px;padding:0 4px;margin-left:4px">N</span>' : ''
         return `<div class="dash-notice-item" style="padding:8px 4px;border-bottom:1px solid #f0f0f0" onclick="document.getElementById('dashInfoModal').close();openTab('board');switchBoardType('${type}');openBoardPost('${p.id}')">
           ${pin}<span class="dash-notice-text">${esc(p.title)}</span>${newB}${cc}
+          <span class="dash-notice-author">${esc(p.authorName || '')}</span>
           <span class="dash-notice-date" style="margin-left:auto">${dateStr}</span>
         </div>`
       }).join('')
@@ -798,13 +816,15 @@ function renderDashCalendar() {
       visibleCount++
       const wColor = getWorkCatColor(w.category)
       const timePrefix = (w.startTime && cell.date === w.startDate) ? (w.startTime + ' ') : ''
-      const isVacation = w.category === '연차' || w.category === '반차'
-      const authorSuffix = (isVacation && w.createdByName) ? ' ' + (typeof formatUserName === 'function' ? formatUserName(w.createdByName, w.createdByPosition) : w.createdByName) : ''
-      const label = `${timePrefix}${w.category} ${w.title || ''}${authorSuffix}`.trim()
+      let labelRaw = `${timePrefix}${w.category} ${w.title || ''}`.trim()
+      const wAuthor = w.createdByName ? (typeof formatUserName==='function' ? formatUserName(w.createdByName, w.createdByPosition) : w.createdByName) : ''
+      // 라벨에서 작성자 이름 중복 제거
+      if (wAuthor && labelRaw.indexOf(wAuthor) >= 0) labelRaw = labelRaw.replace(wAuthor, '').replace(/\s*[-–]\s*$/, '').trim()
+      if (w.createdByName && labelRaw.indexOf(w.createdByName) >= 0) labelRaw = labelRaw.replace(w.createdByName, '').replace(/\s*[-–]\s*$/, '').trim()
+      const label = labelRaw
       if (isPast) {
         html += `<div class="dcal-bar dcal-bar-mini" style="background:${wColor.bg};" title="${esc(label)}" onclick="openDashActivityPreview('work',${w.no})"></div>`
       } else {
-        const wAuthor = w.createdByName ? (typeof formatUserName==='function' ? formatUserName(w.createdByName, w.createdByPosition) : w.createdByName) : ''
         let wRight = ''
         if (wAuthor) wRight += `<span class="bar-author">${esc(wAuthor)}</span>`
         if (w.useVehicle === true) wRight += `<span class="bar-vehicle">🚗</span>`

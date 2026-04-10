@@ -342,8 +342,13 @@ function renderWorkCalendar() {
           onclick="event.stopPropagation();openWorkDetailModal(${w.no})"
         ></div>`
       } else {
-        const label = esc(`${w.category || ''} ${w.title}`.trim())
-        const author = w.createdByName ? esc(typeof formatUserName === 'function' ? formatUserName(w.createdByName, w.createdByPosition) : w.createdByName) : ''
+        let labelRaw = `${w.category || ''} ${w.title || ''}`.trim()
+        const authorRaw = w.createdByName ? (typeof formatUserName === 'function' ? formatUserName(w.createdByName, w.createdByPosition) : w.createdByName) : ''
+        // 라벨에서 작성자 이름 중복 제거
+        if (authorRaw && labelRaw.indexOf(authorRaw) >= 0) labelRaw = labelRaw.replace(authorRaw, '').replace(/\s*[-–]\s*$/, '').trim()
+        if (w.createdByName && labelRaw.indexOf(w.createdByName) >= 0) labelRaw = labelRaw.replace(w.createdByName, '').replace(/\s*[-–]\s*$/, '').trim()
+        const label = esc(labelRaw)
+        const author = authorRaw ? esc(authorRaw) : ''
         html += `<div class="evcal-bar evcal-bar-fill"
           style="background:${color.bg}; color:${color.text};"
           title="${tooltip}"

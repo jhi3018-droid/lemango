@@ -35,9 +35,9 @@ function renderTabBar() {
 
 // ===== 탭 열기 (nav 버튼 또는 탭 바 클릭) =====
 function openTab(tab) {
-  // 회원관리 탭 접근 제한: grade 3 이상만
-  if (tab === 'members' && State.currentUser && State.currentUser.grade < 3) {
-    showToast('관리자만 접근할 수 있습니다.', 'warning')
+  // 인사관리 탭 접근 제한: grade 2 이상만
+  if (tab === 'hradmin' && State.currentUser && State.currentUser.grade < 2) {
+    showToast('부서장 이상만 접근할 수 있습니다.', 'warning')
     return
   }
   // 이미 열려있으면 포커스만 이동
@@ -45,6 +45,13 @@ function openTab(tab) {
     State.openTabs.push(tab)
     // 처음 열리는 탭은 렌더 함수 호출
     triggerTabRender(tab)
+  } else if (tab === 'mypage') {
+    // 개인정보 탭은 항상 최신 데이터로 재렌더
+    _renderedTabs.delete('mypage')
+    triggerTabRender('mypage')
+  } else if (tab === 'hradmin') {
+    _renderedTabs.delete('hradmin')
+    triggerTabRender('hradmin')
   }
   State.activeTab = tab
   applyTabState()
@@ -109,6 +116,9 @@ function applyTabState() {
   document.querySelectorAll('dialog.srm-modal[open]').forEach(d => d.close())
   if (typeof clearModalHistory === 'function') clearModalHistory()
 
+  // 개인정보 탭 벗어나면 잠금 복원
+  if (State.activeTab !== 'mypage' && typeof _hrUnlocked !== 'undefined') _hrUnlocked = false
+
   // 해시 업데이트
   const hash = '#' + State.activeTab
   if (location.hash !== hash) {
@@ -128,10 +138,9 @@ function applyTabState() {
   // 탭 바 재렌더
   renderTabBar()
 
-  // 설정/행사/회원관리 탭은 열 때마다 렌더
+  // 설정/행사 탭은 열 때마다 렌더
   if (State.activeTab === 'settings') renderSettings()
   if (State.activeTab === 'event') renderEventTable()
-  if (State.activeTab === 'members') loadMembers()
 }
 
 // ===== 탭 첫 열림 시 렌더 호출 =====
@@ -141,7 +150,7 @@ const _renderedTabs = new Set()
 function triggerTabRender(tab) {
   // 데이터가 아직 로드 안 됐으면 스킵 (init에서 일괄 렌더)
   // dashboard, board, members는 allProducts 불필요
-  if (!State.allProducts.length && !['dashboard', 'board', 'members', 'orgchart'].includes(tab)) return
+  if (!State.allProducts.length && !['dashboard', 'board', 'orgchart', 'mypage', 'hradmin'].includes(tab)) return
   if (_renderedTabs.has(tab)) return
   _renderedTabs.add(tab)
 
@@ -168,9 +177,11 @@ function triggerTabRender(tab) {
     case 'event':     renderEventTable(); break
     case 'work':      renderWorkCalendar(); break
     case 'settings':  renderSettings(); break
-    case 'members':   loadMembers(); break
+    // members merged into hradmin
     case 'board':     renderBoard(); break
     case 'orgchart':  if (typeof renderOrgChart === 'function') renderOrgChart(); break
+    case 'mypage':    if (typeof renderHrTab === 'function') renderHrTab(); break
+    case 'hradmin':   if (typeof renderHrAdminTab === 'function') renderHrAdminTab(); break
   }
 }
 

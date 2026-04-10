@@ -30,6 +30,7 @@ function getLastEmail() { return localStorage.getItem(_EMAIL_KEY) || '' }
 
 // 등급 정의
 const GRADE_DEFS = {
+  5: { name: '대표이사',   bg: '#2c2c2c', color: '#f0d68a' },
   4: { name: '시스템 관리자', bg: '#1a1a2e', color: '#c9a96e' },
   3: { name: '관리자',     bg: '#c9a96e', color: '#fff' },
   2: { name: '부서장',     bg: '#E6F1FB', color: '#0C447C' },
@@ -153,12 +154,19 @@ function showApp(userData) {
   }
   // URL 해시 무시하고 무조건 대시보드로
   try { if (typeof openTab === 'function') openTab('dashboard') } catch(e){}
+  // HR 미처리건 체크 (grade >= 2)
+  setTimeout(function() { if (typeof checkHrPendingItems === 'function') checkHrPendingItems() }, 2000)
+  // 생일 알림
+  setTimeout(function() { if (typeof checkBirthdayAlerts === 'function') checkBirthdayAlerts() }, 2500)
 }
 
 function applyGradeAccess(grade) {
-  // 회원관리 탭: grade 3(관리자), 4(시스템 관리자)만 접근 가능
-  const membersBtn = document.querySelector('.tab-btn[data-tab="members"]')
-  if (membersBtn) membersBtn.style.display = grade >= 3 ? '' : 'none'
+  // 인사관리 탭: grade 2(부서장) 이상만 접근 가능
+  const hrAdminBtn = document.getElementById('tabBtnHrAdmin')
+  if (hrAdminBtn) {
+    if (grade >= 2) hrAdminBtn.classList.remove('hradmin-nav-hidden')
+    else hrAdminBtn.classList.add('hradmin-nav-hidden')
+  }
 }
 
 function showLogin() {

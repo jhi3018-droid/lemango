@@ -114,8 +114,8 @@
       <button class="tab-btn" data-tab="work">업무일정</button>
       <button class="tab-btn" data-tab="board">게시판</button>
       <button class="tab-btn" data-tab="orgchart">조직도</button>
+      <button class="tab-btn hradmin-nav-hidden" data-tab="hradmin" id="tabBtnHrAdmin">인사관리</button>
       <button class="tab-btn" data-tab="settings">⚙ 설정</button>
-      <button class="tab-btn" data-tab="members">👥 회원관리</button>
     </nav>
     <div class="header-right">
       <div class="gsearch-wrap">
@@ -126,7 +126,14 @@
       <div class="header-date" id="headerDate"></div>
       <div class="header-user-area">
         <span id="headerUserGrade"></span>
-        <span class="header-user-name header-user-clickable" id="headerUserName" onclick="openMyProfile()"></span>
+        <div class="header-user-wrap">
+          <span class="header-user-name header-user-clickable" id="headerUserName" onclick="toggleUserMenu()"></span>
+          <div class="user-dropdown-menu" id="userDropdownMenu">
+            <div class="user-menu-item" onclick="doCheckOut()">퇴근 체크</div>
+            <div class="user-menu-item" onclick="openTab('mypage');switchHrTab('profile')">개인 정보</div>
+            <div class="user-menu-item user-menu-logout" onclick="handleLogout()">로그아웃</div>
+          </div>
+        </div>
         <button id="notifGlobalToggle" class="notif-global-toggle notif-on" onclick="toggleGlobalNotif()" title="알림 ON">🔔</button>
         <div class="notif-wrap" id="notifWrap">
           <button class="notif-bell" id="notifBell" onclick="toggleNotifDropdown()">
@@ -141,7 +148,6 @@
             <div class="notif-empty" id="notifEmpty" style="display:none">알림이 없습니다</div>
           </div>
         </div>
-        <button class="header-logout-btn" onclick="handleLogout()">로그아웃</button>
       </div>
     </div>
   </div>
@@ -689,16 +695,34 @@
     <div class="orgchart-page" id="orgchartPage"></div>
   </section>
 
-  <!-- ===== 회원관리 탭 ===== -->
-  <section class="tab-content" id="tab-members">
-    <!-- 이너 탭 -->
-    <div class="members-inner-tabs">
-      <button class="members-itab active" data-panel="memberList" onclick="switchMembersPanel('memberList')">회원목록</button>
-      <button class="members-itab" data-panel="activityLog" onclick="switchMembersPanel('activityLog')">활동 로그</button>
+  <!-- ===== 개인정보 탭 ===== -->
+  <section class="tab-content" id="tab-mypage">
+    <div id="hrGateArea"></div>
+    <div id="hrMainArea" style="display:none">
+      <div class="hr-inner-tabs">
+        <button class="hr-tab-btn hr-tab-active" onclick="switchHrTab('profile')">개인 정보</button>
+        <button class="hr-tab-btn" onclick="switchHrTab('attendance')">출퇴근 기록</button>
+        <button class="hr-tab-btn" onclick="switchHrTab('leave')">연차 관리</button>
+        <button class="hr-tab-btn" onclick="switchHrTab('salary')">급여 명세</button>
+      </div>
+      <div id="hrContent"></div>
     </div>
+  </section>
+
+  <!-- ===== 인사관리 탭 (Grade 2+) ===== -->
+  <section class="tab-content" id="tab-hradmin">
+    <div class="hradmin-inner-tabs">
+      <button class="hradmin-tab-btn hradmin-tab-active" onclick="switchHrAdminTab('teamLeave')">팀원 연차 현황</button>
+      <button class="hradmin-tab-btn" onclick="switchHrAdminTab('teamAttend')">팀원 출퇴근</button>
+      <button class="hradmin-tab-btn" onclick="switchHrAdminTab('leaveApproval')">연차 승인</button>
+      <!-- 출퇴근 승인은 팀원 출퇴근에 통합 -->
+      <button class="hradmin-tab-btn" onclick="switchHrAdminTab('memberList')" style="display:none" id="hrAdminMemberBtn">회원관리</button>
+      <button class="hradmin-tab-btn" onclick="switchHrAdminTab('activityLog')" style="display:none" id="hrAdminActivityBtn">활동 로그</button>
+    </div>
+    <div id="hrAdminContent"></div>
 
     <!-- 회원목록 패널 -->
-    <div id="memberListPanel">
+    <div id="memberListPanel" style="display:none">
       <div class="kpi-row" id="membersKpiRow"></div>
       <div style="display:flex;justify-content:flex-end;margin:12px 0 8px">
         <button class="btn btn-new" onclick="openMemberAddModal()">＋ 회원 추가</button>
@@ -831,6 +855,8 @@
         <option value="">선택</option>
       </select>
     </div>
+    <div class="rform-field"><label>입사일</label><input type="date" id="meEditJoinDate"></div>
+    <div class="rform-field"><label>연차 일수</label><input type="number" id="meEditLeaveQuota" min="0" max="99" value="15" style="width:80px"></div>
     <div class="rform-field">
       <label>등급</label>
       <select id="meEditGrade">
@@ -838,6 +864,7 @@
         <option value="2">부서장 (Lv.2)</option>
         <option value="3">관리자 (Lv.3)</option>
         <option value="4">시스템 관리자 (Lv.4)</option>
+        <option value="5">대표이사 (Lv.5)</option>
       </select>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
@@ -877,6 +904,7 @@
         <option value="2">부서장 (Lv.2)</option>
         <option value="3">관리자 (Lv.3)</option>
         <option value="4">시스템 관리자 (Lv.4)</option>
+        <option value="5">대표이사 (Lv.5)</option>
       </select>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
@@ -918,6 +946,7 @@
           <option value="2">부서장 (Lv.2)</option>
           <option value="3">관리자 (Lv.3)</option>
           <option value="4">시스템 관리자 (Lv.4)</option>
+        <option value="5">대표이사 (Lv.5)</option>
         </select>
       </div>
     </div>
@@ -2080,6 +2109,172 @@
 <!-- /appContainer -->
 </div>
 
+<!-- ===== 출근 확인 팝업 ===== -->
+<dialog id="attendancePopup" class="srm-modal" style="width:360px;max-width:90vw;padding:0;border-radius:10px">
+  <div class="srm-header" style="padding:14px 20px;display:flex;align-items:center;justify-content:space-between">
+    <span style="font-size:15px;font-weight:500;color:#fff">출근 확인</span>
+    <button class="modal-close" onclick="document.getElementById('attendancePopup').close()">&times;</button>
+  </div>
+  <div style="padding:24px;text-align:center">
+    <div style="font-size:13px;color:#888;margin-bottom:4px" id="attendPopupDate"></div>
+    <div style="font-size:36px;font-weight:500;color:#1a1a2e;margin-bottom:12px" id="attendPopupTime"></div>
+    <input type="text" id="attendPopupMemo" placeholder="사유 (선택)" style="width:80%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;margin-bottom:14px;box-sizing:border-box" autocomplete="off">
+    <br>
+    <button style="padding:12px 40px;border-radius:10px;border:none;background:#1a1a2e;color:#c9a96e;font-size:15px;font-weight:500;cursor:pointer" onclick="doCheckIn()">출근 체크</button>
+  </div>
+</dialog>
+
+<!-- ===== 출퇴근 작성 모달 ===== -->
+<dialog id="attendWriteModal" class="srm-modal" style="width:440px;max-width:95vw;padding:0;border-radius:10px">
+  <div class="srm-header" style="padding:14px 20px;display:flex;align-items:center;justify-content:space-between">
+    <span style="font-size:15px;font-weight:500;color:#fff">출퇴근 기록 작성</span>
+    <button class="modal-close" onclick="closeAttendWriteModal()">&times;</button>
+  </div>
+  <div style="padding:20px;display:flex;flex-direction:column;gap:12px">
+    <div>
+      <label style="font-size:12px;font-weight:600;margin-bottom:4px;display:block">대상자</label>
+      <select id="awUser" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px"></select>
+    </div>
+    <div>
+      <label style="font-size:12px;font-weight:600;margin-bottom:4px;display:block">날짜</label>
+      <input type="date" id="awDate" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
+    </div>
+    <div style="display:flex;gap:10px">
+      <div style="flex:1">
+        <label style="font-size:12px;font-weight:600;margin-bottom:4px;display:block">출근 시간</label>
+        <input type="time" id="awCheckIn" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
+      </div>
+      <div style="flex:1">
+        <label style="font-size:12px;font-weight:600;margin-bottom:4px;display:block">퇴근 시간</label>
+        <input type="time" id="awCheckOut" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box">
+      </div>
+    </div>
+    <div>
+      <label style="font-size:12px;font-weight:600;margin-bottom:4px;display:block">출근 사유</label>
+      <input type="text" id="awCheckInMemo" placeholder="선택" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box" autocomplete="off">
+    </div>
+    <div>
+      <label style="font-size:12px;font-weight:600;margin-bottom:4px;display:block">퇴근 사유</label>
+      <input type="text" id="awCheckOutMemo" placeholder="선택" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box" autocomplete="off">
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px">
+      <button class="btn btn-outline" onclick="closeAttendWriteModal()">취소</button>
+      <button class="btn btn-primary" onclick="saveAttendWrite()">저장</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ===== 본인 출퇴근 사유 수정 모달 ===== -->
+<dialog id="myAttendEditModal" class="srm-modal" style="width:400px;max-width:95vw;padding:0;border-radius:10px">
+  <div class="srm-header" style="padding:14px 20px;display:flex;align-items:center;justify-content:space-between">
+    <span style="font-size:15px;font-weight:500;color:#fff">출퇴근 사유 수정</span>
+    <button class="modal-close" onclick="closeMyAttendEditModal()">&times;</button>
+  </div>
+  <div style="padding:20px;display:flex;flex-direction:column;gap:12px">
+    <div>
+      <label style="font-size:12px;font-weight:600;margin-bottom:4px;display:block">날짜</label>
+      <span id="maeDate" style="font-size:14px;font-weight:600;color:var(--primary)"></span>
+    </div>
+    <div style="display:flex;gap:10px">
+      <div style="flex:1">
+        <label style="font-size:12px;font-weight:600;margin-bottom:4px;display:block">출근 시간</label>
+        <input type="time" id="maeCheckIn" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box" disabled>
+      </div>
+      <div style="flex:1">
+        <label style="font-size:12px;font-weight:600;margin-bottom:4px;display:block">퇴근 시간</label>
+        <input type="time" id="maeCheckOut" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box" disabled>
+      </div>
+    </div>
+    <div>
+      <label style="font-size:12px;font-weight:600;margin-bottom:4px;display:block">출근 사유</label>
+      <input type="text" id="maeCheckInMemo" placeholder="사유 입력" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box" autocomplete="off">
+    </div>
+    <div>
+      <label style="font-size:12px;font-weight:600;margin-bottom:4px;display:block">퇴근 사유</label>
+      <input type="text" id="maeCheckOutMemo" placeholder="사유 입력" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box" autocomplete="off">
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px">
+      <button class="btn btn-outline" onclick="closeMyAttendEditModal()">취소</button>
+      <button class="btn btn-primary" onclick="saveMyAttendEdit()">신청</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ===== 연차 신청 모달 ===== -->
+<dialog id="leaveRequestModal" class="srm-modal" style="width:440px;max-width:95vw;padding:0;border-radius:10px">
+  <div class="srm-header" style="padding:14px 20px;display:flex;align-items:center;justify-content:space-between">
+    <span style="font-size:15px;font-weight:500;color:#fff">연차 신청</span>
+    <button class="modal-close" onclick="document.getElementById('leaveRequestModal').close()">&times;</button>
+  </div>
+  <div style="padding:20px">
+    <div style="margin-bottom:12px">
+      <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">유형</label>
+      <select id="leaveType" style="width:100%;padding:8px;border:1px solid #e8e6e0;border-radius:6px;font-size:12px">
+        <option value="연차">연차 (1일)</option>
+        <option value="반차(오전)">반차 - 오전 (0.5일)</option>
+        <option value="반차(오후)">반차 - 오후 (0.5일)</option>
+        <option value="병가">병가 (1일)</option>
+        <option value="대체연차">대체연차</option>
+      </select>
+    </div>
+    <div id="leaveReasonWrap" style="margin-bottom:12px;display:none">
+      <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">사유</label>
+      <input id="leaveReason" placeholder="대체연차 사유 입력" style="width:100%;padding:8px;border:1px solid #e8e6e0;border-radius:6px;font-size:12px">
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <div style="flex:1"><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">시작일</label><input type="date" id="leaveStart" style="width:100%;padding:8px;border:1px solid #e8e6e0;border-radius:6px;font-size:12px"></div>
+      <div style="flex:1"><label style="font-size:12px;color:#888;display:block;margin-bottom:4px">종료일</label><input type="date" id="leaveEnd" style="width:100%;padding:8px;border:1px solid #e8e6e0;border-radius:6px;font-size:12px"></div>
+    </div>
+    <button class="srm-btn-gold" onclick="submitLeaveRequest()" style="width:100%;padding:10px">신청</button>
+  </div>
+</dialog>
+
+<!-- ===== HR 미처리건 모달 ===== -->
+<dialog id="hrPendingModal" class="srm-modal" style="width:380px;max-width:95vw;padding:0;border-radius:10px">
+  <div class="srm-header" style="padding:14px 20px;display:flex;align-items:center;justify-content:space-between">
+    <span style="font-size:15px;font-weight:600;color:#fff">⚠️ 인사 미처리건</span>
+    <button class="modal-close" onclick="dismissHrPending(false)">&times;</button>
+  </div>
+  <div class="srm-body" style="padding:16px 20px"></div>
+  <div style="padding:0 20px 16px;display:flex;justify-content:space-between;align-items:center">
+    <label style="font-size:11px;color:#999;cursor:pointer"><input type="checkbox" onchange="if(this.checked)dismissHrPending(true)"> 오늘 다시 보지 않기</label>
+    <button class="btn btn-primary" onclick="dismissHrPending(false)" style="font-size:12px;padding:6px 16px">확인</button>
+  </div>
+</dialog>
+
+<!-- ===== 연차 상세 모달 ===== -->
+<dialog id="leaveDetailModal" class="srm-modal" style="width:560px;max-width:95vw;max-height:85vh;padding:0;overflow:hidden;border-radius:10px">
+  <div class="srm-header" style="padding:14px 20px;display:flex;align-items:center;justify-content:space-between;cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">연차 상세</span>
+    <button class="modal-close" onclick="document.getElementById('leaveDetailModal').close()">&times;</button>
+  </div>
+  <div class="srm-body" style="padding:18px 22px;overflow-y:auto;flex:1"></div>
+</dialog>
+
+<!-- ===== 비밀번호 변경 모달 ===== -->
+<dialog id="changePasswordModal" class="srm-modal" style="width:400px;max-width:95vw;padding:0;border-radius:10px">
+  <div class="srm-header" style="padding:14px 20px;display:flex;align-items:center;justify-content:space-between">
+    <span style="font-size:15px;font-weight:500;color:#fff">비밀번호 변경</span>
+    <button class="modal-close" onclick="document.getElementById('changePasswordModal').close()">&times;</button>
+  </div>
+  <form style="padding:20px" autocomplete="off" onsubmit="return false">
+    <input type="text" autocomplete="off" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0" tabindex="-1">
+    <div style="margin-bottom:12px">
+      <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">현재 비밀번호</label>
+      <input type="password" id="hrPwCurrent" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" data-form-type="other" style="width:100%;padding:8px;border:1px solid #e8e6e0;border-radius:6px;font-size:12px">
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">새 비밀번호</label>
+      <input type="password" id="hrPwNew" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" data-form-type="other" style="width:100%;padding:8px;border:1px solid #e8e6e0;border-radius:6px;font-size:12px">
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:12px;color:#888;display:block;margin-bottom:4px">새 비밀번호 확인</label>
+      <input type="password" id="hrPwConfirm" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" data-form-type="other" style="width:100%;padding:8px;border:1px solid #e8e6e0;border-radius:6px;font-size:12px">
+    </div>
+    <button class="srm-btn-gold" onclick="submitChangePassword()" style="width:100%;padding:10px">변경</button>
+  </form>
+</dialog>
+
 <!-- 토스트 알림 (appContainer 밖 — 로그인 페이지에서도 표시) -->
 <div id="toast" class="toast"></div>
 
@@ -2170,6 +2365,7 @@
 <script src="js/auth.js"></script>
 <script src="js/members.js"></script>
 <script src="js/orgchart.js"></script>
+<script src="js/hr.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

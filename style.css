@@ -314,6 +314,7 @@ table { border-collapse: collapse; width: 100%; }
   flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--text); font-size: 13px;
 }
+.dash-notice-author { font-size: 11px; color: #888; flex-shrink: 0; margin-left: auto; }
 .dash-notice-date { font-size: 11px; color: #aaa; flex-shrink: 0; }
 
 /* 활동 아이템 */
@@ -3640,7 +3641,7 @@ body.col-resize-active * { cursor: col-resize !important; }
 .brd-th-no { width: 52px; }
 .brd-th-cat { width: 80px; }
 .brd-th-title { text-align: left !important; }
-.brd-th-author { width: 88px; }
+.brd-th-author { width: 100px; }
 .brd-th-date { width: 95px; }
 .brd-th-views { width: 52px; }
 .brd-th-file { width: 44px; }
@@ -4467,3 +4468,167 @@ td[data-editable]:hover { background: #FAEEDA; }
 .org-name { font-size:13px; color:var(--primary); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .org-pos { font-size:11px; color:#888; font-weight:400; margin-left:4px; }
 .org-email { font-size:11px; color:#999; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* =============================================
+   ===== 인사관리 탭 =====
+   ============================================= */
+.hr-inner-tabs { display:flex; gap:0; margin-bottom:16px; border-bottom:2px solid #f0efe9; }
+.hr-tab-btn { padding:8px 16px; font-size:12px; color:#888; cursor:pointer; border:none; background:none; border-bottom:2px solid transparent; margin-bottom:-2px; }
+.hr-tab-btn.hr-tab-active { color:#1a1a2e; font-weight:500; border-bottom-color:#c9a96e; }
+
+.hr-cards { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:16px; }
+.hr-card { background:#faf9f7; border-radius:10px; padding:14px; text-align:center; }
+.hr-card-label { font-size:11px; color:#888; margin-bottom:4px; }
+.hr-card-value { font-size:22px; font-weight:500; color:#1a1a2e; }
+.hr-card-unit { font-size:11px; color:#b4b2a9; }
+.hr-card-accent { background:#FAEEDA; }
+.hr-card-accent .hr-card-value { color:#633806; }
+.hr-card-danger { background:#FCEBEB; }
+.hr-card-danger .hr-card-value { color:#A32D2D; }
+
+.hr-progress { display:flex; align-items:center; gap:8px; margin-bottom:16px; }
+.hr-progress-bar { flex:1; height:8px; background:#f0efe9; border-radius:4px; overflow:hidden; }
+.hr-progress-fill { height:100%; border-radius:4px; background:#c9a96e; }
+.hr-progress-text { font-size:10px; color:#888; min-width:40px; }
+
+.hr-section { margin-bottom:22px; background:#fff; border:1px solid #e0ddd6; border-radius:10px; padding:18px 20px; box-shadow:0 1px 4px rgba(0,0,0,0.04); }
+.hr-section-title { font-size:14px; font-weight:600; color:#1a1a2e; margin-bottom:12px; display:flex; align-items:center; gap:8px; padding-bottom:10px; border-bottom:1px solid #f0efe9; }
+.hr-section-badge { font-size:9px; padding:2px 6px; border-radius:8px; background:#c9a96e; color:#fff; }
+
+.hr-table { width:100%; border-collapse:collapse; font-size:12px; }
+.hr-table th { text-align:left; padding:8px 10px; background:#faf9f7; color:#888; font-weight:500; font-size:11px; border-bottom:1px solid #f0efe9; }
+.hr-table td { padding:8px 10px; border-bottom:0.5px solid #f0efe9; color:#1a1a2e; }
+.hr-table tr:hover { background:#faf9f7; }
+.hr-memo-wrap { display:flex; align-items:center; gap:4px; min-width:0; }
+.hr-memo-td { min-width:160px; }
+.hr-memo-input { flex:1; min-width:0; max-width:140px; padding:4px 6px; border:1px solid #e8e6e0; border-radius:4px; font-size:11px; color:#444; background:#fff; transition:border-color .2s; }
+.hr-memo-input:focus { border-color:var(--accent); outline:none; background:#fffdf5; }
+.hr-memo-input::placeholder { color:#ccc; }
+.hr-request-btn { padding:3px 10px; font-size:10px; border:1px solid var(--accent); background:#fff; color:var(--accent); border-radius:4px; cursor:pointer; font-weight:600; white-space:nowrap; flex-shrink:0; line-height:1.4; }
+.hr-request-btn:hover { background:var(--accent); color:#fff; }
+.hr-memo-text { font-size:11px; color:#555; }
+.hr-reason-btn { padding:3px 10px; font-size:10px; border:1px solid var(--accent); background:#fff; color:var(--accent); border-radius:4px; cursor:pointer; font-weight:600; white-space:nowrap; }
+.hr-reason-btn:hover { background:var(--accent); color:#fff; }
+.hr-status-warn { background:#FFF3E0; color:#E65100; }
+.hr-status { font-size:10px; padding:2px 8px; border-radius:4px; font-weight:500; display:inline-block; }
+.hr-status-ok { background:#EAF3DE; color:#27500A; }
+.hr-status-wait { background:#FAEEDA; color:#633806; }
+.hr-status-no { background:#FCEBEB; color:#A32D2D; }
+.hr-status-info { background:#E6F1FB; color:#0C447C; }
+
+.hr-profile { display:flex; gap:14px; margin-bottom:18px; }
+.hr-profile-avatar { width:56px; height:56px; border-radius:50%; background:#1a1a2e; display:flex; align-items:center; justify-content:center; color:#c9a96e; font-size:20px; font-weight:500; flex-shrink:0; }
+.hr-profile-name { font-size:16px; font-weight:500; color:#1a1a2e; }
+.hr-profile-meta { font-size:11px; color:#888; margin-top:2px; }
+.hr-profile-dept { font-size:10px; padding:2px 8px; border-radius:4px; background:#E6F1FB; color:#0C447C; display:inline-block; margin-top:4px; }
+
+.hr-info-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+.hr-info-item { padding:10px 14px; background:#f9f8f5; border:1px solid #eae8e2; border-radius:8px; }
+.hr-info-label { font-size:11px; color:#999; margin-bottom:3px; }
+.hr-info-value { font-size:13px; color:#1a1a2e; font-weight:600; }
+.hr-edit-input { width:100%; padding:6px 8px; border:1px solid #e8e6e0; border-radius:6px; font-size:12px; margin-top:4px; box-sizing:border-box; }
+
+.hr-attend { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:12px; }
+.hr-attend-card { background:#faf9f7; border-radius:10px; padding:12px 14px; display:flex; align-items:center; gap:12px; }
+.hr-attend-icon { width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:500; flex-shrink:0; }
+.hr-attend-icon-in { background:#E6F1FB; color:#0C447C; }
+.hr-attend-icon-out { background:#FAEEDA; color:#633806; }
+.hr-attend-label { font-size:11px; color:#888; }
+.hr-attend-time { font-size:16px; font-weight:500; color:#1a1a2e; }
+.hr-attend-btns { display:flex; gap:8px; margin-bottom:14px; }
+.hr-attend-btn { padding:8px 20px; border-radius:8px; border:none; font-size:13px; font-weight:500; cursor:pointer; }
+.hr-attend-btn-in { background:#1a1a2e; color:#c9a96e; }
+.hr-attend-btn-out { background:#f0efe9; color:#5f5e5a; }
+
+.hr-calendar { display:grid; grid-template-columns:repeat(7,1fr); gap:2px; margin-bottom:8px; }
+.hr-cal-h { text-align:center; font-size:10px; color:#888; padding:4px; }
+.hr-cal-d { text-align:center; font-size:11px; padding:6px 2px; border-radius:4px; }
+.hr-cal-today { background:#1a1a2e; color:#fff; font-weight:500; }
+.hr-cal-leave { background:#FAEEDA; color:#633806; font-weight:500; }
+.hr-cal-half { background:#E6F1FB; color:#0C447C; }
+.hr-cal-empty { color:#ddd; }
+
+.hr-divider { border-top:2px solid #f0efe9; padding-top:18px; margin-top:6px; }
+
+/* 헤더 이름 드롭다운 */
+.header-user-wrap { position:relative; }
+.user-dropdown-menu { display:none; position:absolute; top:100%; right:0; background:#fff; border:1px solid #e8e6e0; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.1); z-index:6000; min-width:140px; overflow:hidden; }
+.user-dropdown-menu.user-menu-open { display:block; }
+.user-menu-item { padding:10px 14px; font-size:12px; color:#1a1a2e; cursor:pointer; border-bottom:0.5px solid #f0efe9; }
+.user-menu-item:last-child { border-bottom:none; }
+.user-menu-item:hover { background:#faf9f7; }
+.user-menu-logout { color:#A32D2D; border-top:1px solid #f0efe9; }
+
+/* 개인정보 비밀번호 게이트 */
+.hr-profile-gate { max-width:380px; margin:80px auto; text-align:center; background:#fff; border:1px solid #e0ddd6; border-radius:14px; padding:40px 36px 32px; box-shadow:0 4px 20px rgba(0,0,0,0.07); }
+.hr-gate-icon { font-size:44px; margin-bottom:16px; }
+.hr-gate-title { font-size:18px; font-weight:700; color:#1a1a2e; margin-bottom:8px; }
+.hr-gate-desc { font-size:13px; color:#888; margin-bottom:24px; line-height:1.5; }
+.hr-gate-input { width:100%; padding:12px 14px; border:1.5px solid #d5d2cb; border-radius:8px; font-size:14px; text-align:center; box-sizing:border-box; margin-bottom:12px; background:#fafaf8; transition:border-color .2s; }
+.hr-gate-input:focus { border-color:#c9a96e; outline:none; background:#fff; box-shadow:0 0 0 3px rgba(201,169,110,0.12); }
+.hr-gate-btn { width:100%; padding:12px; font-size:14px; font-weight:600; }
+.hr-gate-error { font-size:12px; color:#A32D2D; margin-top:10px; min-height:18px; }
+
+/* ===== 인사관리 탭 (Grade 2+) ===== */
+.hradmin-nav-hidden { display:none !important; }
+.hradmin-inner-tabs { display:flex; gap:0; margin-bottom:14px; border-bottom:2px solid #f0efe9; }
+.hradmin-tab-btn { padding:7px 14px; font-size:12px; color:#888; cursor:pointer; border:none; background:none; border-bottom:2px solid transparent; margin-bottom:-2px; }
+.hradmin-tab-btn.hradmin-tab-active { color:#1a1a2e; font-weight:500; border-bottom-color:#c9a96e; }
+.hradmin-filter-row { display:flex; gap:8px; margin-bottom:12px; align-items:center; }
+.hradmin-filter-label { font-size:11px; color:#888; }
+.hradmin-filter-select { padding:5px 10px; border:1px solid #e8e6e0; border-radius:6px; font-size:11px; }
+.hradmin-section { margin-bottom:18px; background:#fff; border:1px solid #e0ddd6; border-radius:10px; padding:18px 20px; box-shadow:0 1px 4px rgba(0,0,0,0.04); }
+.hradmin-section-title { font-size:14px; font-weight:600; color:#1a1a2e; margin-bottom:12px; display:flex; align-items:center; gap:8px; padding-bottom:10px; border-bottom:1px solid #f0efe9; }
+.hradmin-badge { font-size:9px; padding:2px 6px; border-radius:8px; background:#c9a96e; color:#fff; }
+.hradmin-team-card { background:#f9f8f5; border:1px solid #eae8e2; border-radius:8px; padding:10px 14px; margin-bottom:6px; display:flex; align-items:center; gap:10px; }
+.hradmin-team-avatar { width:32px; height:32px; border-radius:50%; background:#1a1a2e; display:flex; align-items:center; justify-content:center; color:#c9a96e; font-size:12px; font-weight:500; flex-shrink:0; }
+.hradmin-team-name { font-size:12px; font-weight:500; flex-shrink:0; min-width:80px; }
+.hradmin-team-dept { font-size:10px; color:#888; min-width:50px; flex-shrink:0; }
+.hradmin-team-info { flex:1; display:flex; gap:12px; justify-content:flex-end; align-items:center; font-size:10px; color:#5f5e5a; }
+.hradmin-leave-bar { display:flex; align-items:center; gap:4px; }
+.hradmin-leave-bg { height:6px; border-radius:3px; background:#f0efe9; width:60px; overflow:hidden; }
+.hradmin-leave-fill { height:100%; border-radius:3px; background:#c9a96e; }
+.hradmin-leave-pct { font-size:9px; color:#b4b2a9; }
+.hradmin-table { width:100%; border-collapse:collapse; font-size:12px; }
+.hradmin-table th { text-align:left; padding:8px 10px; background:#faf9f7; color:#888; font-weight:500; font-size:11px; border-bottom:1px solid #f0efe9; }
+.hradmin-table td { padding:8px 10px; border-bottom:0.5px solid #f0efe9; color:#1a1a2e; }
+.hradmin-table tr:hover { background:#faf9f7; }
+.hradmin-st { font-size:10px; padding:2px 8px; border-radius:4px; font-weight:500; display:inline-block; }
+.hradmin-st-ok { background:#EAF3DE; color:#27500A; }
+.hradmin-st-wait { background:#FAEEDA; color:#633806; }
+.hradmin-st-no { background:#FCEBEB; color:#A32D2D; }
+.hradmin-st-warn { background:#FAEEDA; color:#633806; }
+.hradmin-st-info { background:#E6F1FB; color:#0C447C; }
+.hradmin-btn-approve { padding:3px 10px; font-size:10px; border:none; background:#c9a96e; color:#fff; border-radius:4px; cursor:pointer; font-weight:500; }
+.hradmin-btn-reject { padding:3px 10px; font-size:10px; border:1px solid #F09595; background:#fff; color:#A32D2D; border-radius:4px; cursor:pointer; }
+.hradmin-btn-confirm { padding:3px 10px; font-size:10px; border:none; background:#1a1a2e; color:#c9a96e; border-radius:4px; cursor:pointer; font-weight:500; }
+.hradmin-btn-confirm:hover { background:#2a2a4e; }
+.hradmin-btn-confirm-ceo { padding:3px 10px; font-size:10px; border:none; background:#c9a96e; color:#fff; border-radius:4px; cursor:pointer; font-weight:500; }
+.hradmin-btn-confirm-ceo:hover { background:#b8954f; }
+
+/* Feature 1: 연차 일수 수정 버튼 */
+.hr-quota-edit-btn { font-size:9px; padding:2px 8px; border:1px solid var(--accent); background:#fff; color:var(--accent); border-radius:4px; cursor:pointer; margin-left:6px; }
+.hr-quota-edit-btn:hover { background:var(--accent); color:#fff; }
+
+/* Feature 4: HR 미처리건 모달 */
+.hr-pending-row { display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius:8px; cursor:pointer; transition:background .15s; }
+.hr-pending-row:hover { background:#f5f4f1; }
+.hr-pending-icon { font-size:20px; }
+.hr-pending-label { flex:1; font-size:13px; font-weight:500; color:var(--primary); }
+.hr-pending-count { font-size:13px; font-weight:700; color:var(--accent); background:#FFF8E8; padding:2px 10px; border-radius:12px; }
+
+/* 연차 상세 모달 */
+.ld-summary { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
+.ld-summary-item { text-align:center; padding:14px 8px; background:#f9f8f6; border-radius:8px; }
+.ld-summary-num { font-size:22px; font-weight:700; color:var(--primary); }
+.ld-summary-num.ld-used { color:var(--warning); }
+.ld-summary-num.ld-remain { color:var(--success); }
+.ld-summary-label { font-size:11px; color:#999; margin-top:4px; }
+.ld-section-title { font-size:13px; font-weight:600; color:var(--primary); margin-bottom:10px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+.ld-table { width:100%; border-collapse:collapse; font-size:12px; }
+.ld-table th { background:#f5f4f1; padding:8px 10px; text-align:left; font-weight:600; color:#555; border-bottom:1px solid var(--border); }
+.ld-table td { padding:8px 10px; border-bottom:1px solid #f0efe9; }
+.ld-st-ok { background:#e8f5e9; color:#2e7d32; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:600; }
+.ld-st-no { background:#ffebee; color:#c62828; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:600; }
+.ld-st-wait { background:#fff3e0; color:#e65100; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:600; }
+.hradmin-team-card:hover { background:#f9f8f5; box-shadow:0 2px 8px rgba(0,0,0,0.06); }

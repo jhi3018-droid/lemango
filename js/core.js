@@ -385,9 +385,10 @@ const TAB_LABELS = {
   event:     '행사일정',
   work:      '업무일정',
   settings:  '설정',
-  members:   '회원관리',
   board:     '게시판',
-  orgchart:  '조직도'
+  orgchart:  '조직도',
+  mypage:    '개인정보',
+  hradmin:   '인사관리'
 }
 
 // =============================================
@@ -605,7 +606,8 @@ const NOTIF_ICONS = {
   work_start: '⏰',
   work_upcoming: '📅',
   comment_mention: '💬',
-  watch_change: '💛'
+  watch_change: '💛',
+  birthday: '🎂'
 }
 
 // =============================================

@@ -357,8 +357,8 @@ function renderSettings() {
     </div>` : ''}
   </div>`
 
-  // 부서 카드 (시스템 관리자 grade 4만 표시)
-  const isTopAdmin = State.currentUser && State.currentUser.grade === 4
+  // 부서 카드 (시스템 관리자/대표이사 grade 4+ 표시)
+  const isTopAdmin = State.currentUser && State.currentUser.grade >= 4
   let deptSection = ''
   if (isTopAdmin) {
     const deptListHtml = _depts.map((d, idx) => `

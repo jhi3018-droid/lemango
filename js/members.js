@@ -26,6 +26,7 @@ window.loadMembers = async function() {
 function renderMembersKPI() {
   const members = State.members || []
   const total = members.length
+  const lv5 = members.filter(m => m.grade === 5).length
   const lv4 = members.filter(m => m.grade === 4).length
   const lv3 = members.filter(m => m.grade === 3).length
   const lv12 = members.filter(m => m.grade <= 2).length
@@ -37,6 +38,11 @@ function renderMembersKPI() {
       <div class="kpi-icon">👥</div>
       <div class="kpi-value">${total}</div>
       <div class="kpi-label">전체 회원</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-icon">${gradeBadgeHtml(5)}</div>
+      <div class="kpi-value">${lv5}</div>
+      <div class="kpi-label">대표이사</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-icon">${gradeBadgeHtml(4)}</div>
@@ -176,9 +182,19 @@ window.openMemberEditModal = function(uid) {
   document.getElementById('meEditDept').value = member.dept || ''
   document.getElementById('meEditGrade').value = member.grade || 1
 
+  // 입사일 + 연차 일수
+  const joinDateEl = document.getElementById('meEditJoinDate')
+  if (joinDateEl) joinDateEl.value = member.joinDate || ''
+  const leaveQuotaEl = document.getElementById('meEditLeaveQuota')
+  if (leaveQuotaEl) {
+    const quota = JSON.parse(localStorage.getItem('lemango_leave_quota_v1') || '{}')
+    const uQuota = quota[uid] || { total: 15 }
+    leaveQuotaEl.value = uQuota.total
+  }
+
   // 시스템 관리자만 등급 변경 가능
   const gradeSelect = document.getElementById('meEditGrade')
-  gradeSelect.disabled = !(State.currentUser && State.currentUser.grade === 4)
+  gradeSelect.disabled = !(State.currentUser && State.currentUser.grade >= 4)
 
   const modal = document.getElementById('memberEditModal')
   if (modal) { modal.showModal(); centerModal(modal) }
@@ -200,10 +216,19 @@ window.saveMemberEdit = async function() {
 
   if (!name) return showToast('이름을 입력해주세요.', 'warning')
 
-  const updates = { name, phone, position, dept }
-  if (State.currentUser && State.currentUser.grade === 4) {
+  const joinDate = document.getElementById('meEditJoinDate') ? document.getElementById('meEditJoinDate').value : ''
+  const leaveQuota = parseInt(document.getElementById('meEditLeaveQuota') ? document.getElementById('meEditLeaveQuota').value : '15') || 15
+
+  const updates = { name, phone, position, dept, joinDate }
+  if (State.currentUser && State.currentUser.grade >= 4) {
     updates.grade = grade
   }
+
+  // 연차 일수 localStorage 저장
+  const quota = JSON.parse(localStorage.getItem('lemango_leave_quota_v1') || '{}')
+  if (!quota[_editingMemberUid]) quota[_editingMemberUid] = { total: 15, year: new Date().getFullYear() }
+  quota[_editingMemberUid].total = leaveQuota
+  localStorage.setItem('lemango_leave_quota_v1', JSON.stringify(quota))
 
   await db.collection('users').doc(_editingMemberUid).update(updates)
   if (State.currentUser && State.currentUser.uid === _editingMemberUid) {
@@ -315,7 +340,7 @@ window.openMemberProfileModal = async function(uid) {
 
   const cu = State.currentUser
   const isSelf = cu && cu.uid === uid
-  const isTopAdmin = cu && cu.grade === 4
+  const isTopAdmin = cu && cu.grade >= 4
   const canEditInfo = isSelf || isTopAdmin
   const canEditEmail = isSelf || isTopAdmin
 
@@ -381,7 +406,7 @@ window.saveMemberProfile = async function() {
 
   const cu = State.currentUser
   const isSelf = cu && cu.uid === _profileUid
-  const isTopAdmin = cu && cu.grade === 4
+  const isTopAdmin = cu && cu.grade >= 4
   if (!isSelf && !isTopAdmin) { _mpError('수정 권한이 없습니다.'); return }
 
   const email    = document.getElementById('mpEmail').value.trim()
@@ -420,7 +445,7 @@ window.saveMemberProfile = async function() {
     showToast('회원 정보가 저장되었습니다.')
     closeMemberProfileModal()
     // 회원관리 탭 열려있으면 새로고침
-    if (State.openTabs.includes('members')) loadMembers()
+    if (State.openTabs.includes('hradmin')) loadMembers()
   } catch (err) {
     if (err.code === 'auth/requires-recent-login') {
       _mpError('이메일 변경을 위해 재로그인이 필요합니다. 로그아웃 후 다시 시도해주세요.')
@@ -482,7 +507,7 @@ async function checkMemberAlerts() {
   try {
     const snap = await db.collection('users').where('status', '==', 'pending').get()
     if (!snap.empty) {
-      addNotification('member_pending_urgent', `🔴 신규 가입 승인 대기 ${snap.size}명`, '회원관리에서 즉시 승인/거절해 주세요.', '#members', { priority: 'urgent' })
+      addNotification('member_pending_urgent', `🔴 신규 가입 승인 대기 ${snap.size}명`, '인사관리 > 회원관리에서 즉시 승인/거절해 주세요.', '#hradmin', { priority: 'urgent' })
     }
   } catch (e) { console.warn('checkMemberAlerts error:', e) }
 }

@@ -147,6 +147,7 @@ async function initApp() {
   renderDate()
   bindTabs()
   loadAllUsers()
+  if (typeof loadHrData === 'function') await loadHrData()
   if (typeof updateNotifToggleUI === 'function') updateNotifToggleUI()
   makeDraggableResizable(document.getElementById('activityDetailModal'))
   makeDraggableResizable(document.getElementById('dashInfoModal'))
@@ -174,6 +175,13 @@ async function initApp() {
   makeDraggableResizable(document.getElementById('downloadFormatModal'), 400, 300)
   makeDraggableResizable(document.getElementById('downloadFormatEditorModal'), 600, 400)
   makeDraggableResizable(document.getElementById('bulkScheduleModal'), 400, 300)
+  makeDraggableResizable(document.getElementById('attendancePopup'), 300, 200)
+  makeDraggableResizable(document.getElementById('leaveRequestModal'), 400, 300)
+  makeDraggableResizable(document.getElementById('changePasswordModal'), 360, 250)
+  makeDraggableResizable(document.getElementById('hrPendingModal'), 340, 200)
+  makeDraggableResizable(document.getElementById('attendWriteModal'), 440, 300)
+  makeDraggableResizable(document.getElementById('myAttendEditModal'), 400, 280)
+  makeDraggableResizable(document.getElementById('leaveDetailModal'), 500, 300)
   document.getElementById('dashDayModal')?.addEventListener('click', e => {
     if (e.target === e.currentTarget) e.currentTarget.close()
   })
@@ -301,7 +309,20 @@ async function initApp() {
     const wrap = document.getElementById('notifWrap')
     const dd = document.getElementById('notifDropdown')
     if (wrap && dd && !wrap.contains(e.target)) dd.style.display = 'none'
+    // 헤더 이름 드롭다운 외부 클릭 닫기
+    const userWrap = document.querySelector('.header-user-wrap')
+    if (userWrap && !userWrap.contains(e.target)) {
+      const menu = document.getElementById('userDropdownMenu')
+      if (menu) menu.classList.remove('user-menu-open')
+    }
   })
+  // 등급 뱃지: Grade 3+ 만 표시
+  const gradeBadge = document.getElementById('headerUserGrade')
+  if (gradeBadge && State.currentUser) {
+    gradeBadge.style.display = State.currentUser.grade >= 3 ? 'inline-block' : 'none'
+  }
+  // 출근 팝업 (로그인 시 1.5초 후)
+  setTimeout(() => { if (typeof checkAttendancePopup === 'function') checkAttendancePopup() }, 1500)
 }
 
 document.addEventListener('wheel', function(e) {
