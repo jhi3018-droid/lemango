@@ -3461,6 +3461,7 @@ body.col-resize-active * { cursor: col-resize !important; }
 .al-badge-upload   { background: #e0f2f1; color: #00695c; }
 .al-badge-approve  { background: #f1f8e9; color: #33691e; }
 .al-badge-setting  { background: #eceff1; color: #37474f; }
+.al-badge-error    { background: #ffebee; color: #c62828; font-weight: 700; }
 
 /* 테이블 셀 */
 .al-time { font-size: 12px; color: var(--text-muted); white-space: nowrap; font-family: 'Inter', monospace; }
@@ -4632,3 +4633,19 @@ td[data-editable]:hover { background: #FAEEDA; }
 .ld-st-no { background:#ffebee; color:#c62828; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:600; }
 .ld-st-wait { background:#fff3e0; color:#e65100; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:600; }
 .hradmin-team-card:hover { background:#f9f8f5; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
+
+/* ===== 백업관리 ===== */
+.bkp-container { padding:4px 0; }
+.bkp-actions { display:flex; align-items:center; gap:12px; margin-bottom:20px; padding:16px; background:#f9f8f5; border-radius:8px; border:1px solid var(--border); }
+.bkp-hint { font-size:12px; color:#888; }
+.bkp-section { margin-bottom:24px; }
+.bkp-section-header { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.bkp-section-header h4 { margin:0; font-size:14px; font-weight:700; color:var(--primary); }
+.bkp-retention { font-size:11px; color:#999; background:#f0efe9; padding:2px 8px; border-radius:10px; }
+.bkp-empty { padding:16px; text-align:center; color:#aaa; font-size:13px; background:#fafafa; border-radius:6px; border:1px dashed var(--border); }
+.bkp-table { width:100%; border-collapse:collapse; font-size:13px; }
+.bkp-table th { background:#f5f4f1; padding:8px 12px; text-align:left; font-weight:600; color:#555; border-bottom:2px solid var(--border); }
+.bkp-table td { padding:8px 12px; border-bottom:1px solid #f0efe9; }
+.bkp-table tbody tr:hover { background:#faf9f6; }
+.bkp-restore-btn { font-size:11px; padding:4px 12px; color:var(--danger); border-color:var(--danger); }
+.bkp-restore-btn:hover { background:var(--danger); color:#fff; }

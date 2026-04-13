@@ -2144,14 +2144,6 @@ position: fixed; margin: 0;  /* dialog 기본 centering 해제 — draggable 필
 
 ---
 
-## 다음 작업 후보 (미구현)
-- [ ] 면세점 주문 업로드 포맷
-- [ ] 데이터 영속성 (localStorage 또는 서버 연동)
-- [ ] 인쇄/PDF 출력
-- [ ] 이미지합치기 웹 통합 (테스트 후)
-- [ ] 업무일정 수정 권한 관리 (작성자/관리자/인사담당자만 수정 가능)
-- [ ] 권한 기반 UI 숨김 (등급별 탭/기능 접근 제어)
-
 ### 2026-04-09
 
 #### 대시보드 활동 뷰 — 등급 기반 필터 + 상세 모달
@@ -2281,6 +2273,132 @@ Established the reference style that every dashboard-opened srm-modal should fol
 - `_currentWorkItem` tracked on `openWorkDetailModal`, `openWorkRegisterModal`, `editWorkFromDetail`.
 - Register modal HTML gains `#wkRegChecklistArea`; the same builder is reused by edit mode.
 - CSS: `.checklist-section`, `.checklist-title`, `.checklist-count`, `.checklist-item[.checklist-done]`, `.checklist-cb`, `.checklist-text`, `.checklist-text-input`, `.checklist-del`, `.checklist-add`, `.checklist-add-input`, `.checklist-add-btn`, plus week/day view classes (`.cal-view-btns`, `.week-view`, `.week-header`, `.week-row`, `.week-cell`, `.day-view`, `.day-row`, `.day-content`).
+
+---
+
+### 2026-04-13
+
+#### 샘플 데이터 전체 초기화 + 데이터 리셋 시스템
+- `injectSampleData()` 함수 완전 제거 (128줄, 5개 탭 샘플 데이터)
+- 신규기획 "아말피 홀터넥" 샘플 플랜 아이템 제거
+- `initApp()`에 일회성 전체 초기화 코드 추가 (`lemango_full_reset_v1` localStorage 플래그)
+  - localStorage 키 9개 삭제 (events, work_items, product_history, notifications, recent_activity, watches, edit_locks, notif_settings, cleanup_done)
+  - 메모리 상태 초기화 (`_events.length = 0`, `_workItems.length = 0`)
+  - Firestore 컬렉션 4개 초기화 (posts, comments, activityLogs, personalSchedules) — users 제외
+  - Firestore batch delete (500건 단위)
+
+#### 자동 백업 시스템 (`js/backup.js` 신규)
+- **매일 23:59** 자동 백업 — `scheduleBackupTimer()` (setTimeout to next 23:59:00)
+- **주간 백업** (일요일), **월간 백업** (매월 1일) — `runAutoBackup()` (로그인 시 catch-up)
+- Firestore `backups/{type}/items/{dateStr}` 저장
+- `_collectBackupData()` — localStorage + State.allProducts/planItems + Firestore 4개 컬렉션
+- `_cleanOldBackups()` — daily 7일, weekly/monthly 90일 초과 자동 삭제
+- `restoreBackup(type, dateStr)` — 2단계 korConfirm 확인 후 복원 (450건 chunk batch)
+- `manualBackup()` — 수동 백업 (korConfirm 확인)
+
+#### 백업관리 패널 (인사관리 탭 이너탭)
+- `#hrAdminBackupBtn` — grade >= 4 (시스템 관리자)만 표시
+- `#backupManagePanel` — 일간/주간/월간 섹션별 백업 목록 테이블
+- `renderBackupPanel()` — Firestore에서 백업 목록 조회 + 렌더
+- `confirmRestore(type, dateStr)` — 2단계 확인 후 복원 실행
+- `switchHrAdminTab()` — backupManage 패널 핸들링 추가
+
+#### Firestore 보안 규칙 업데이트
+- `firestore.rules` — backups 컬렉션 규칙 추가:
+  ```
+  match /backups/{type}/items/{itemId} {
+    allow read, write: if request.auth != null;
+  }
+  ```
+
+#### 에러 로그 자동 기록 (활동 로그 연동)
+- `window.onerror` — 전역 JS 에러 → `logActivity('error', file, detail)` (3초 throttle)
+- `window.addEventListener('unhandledrejection')` — Promise 에러 → 활동 로그
+- `AL_CAT_MAP`에 `'error': ['error']` 카테고리 추가
+- `alActionBadge()`에 `'error': ['에러', 'al-badge-error']` 배지 추가
+- 활동로그 패널에 "에러" 카테고리 탭 + 필터 옵션 추가
+- CSS: `.al-badge-error { background: #ffebee; color: #c62828; font-weight: 700 }`
+
+#### Cafe24 CSV 상품 데이터 일괄 변환 (798개 상품)
+- **입력**: `lemango_20260413_3406_edd0.csv` (Cafe24 상품 내보내기, 126컬럼, UTF-8-BOM)
+- **출력**: `data/products_lemango.json` (633개, 1.2MB), `data/products_noir.json` (165개, 292KB)
+- **변환 스크립트**: `convert_csv.py` (임시 → 실행 후 삭제)
+
+**CSV → 상품 스키마 컬럼 매핑:**
+| CSV 컬럼 [인덱스] | 상품 필드 | 변환 로직 |
+|-------------------|----------|----------|
+| 자체 상품코드 [36] | productCode | 그대로 (LSWON16266707 등) |
+| 상품코드 [23] | cafe24Code | 그대로 (P0000MYV 등) |
+| 추가항목08_한글상품명 [44] | nameKr | 없으면 상품명[17] fallback |
+| 영문 상품명 [27] | nameEn | 그대로 |
+| 상품명 [17] | colorKr, colorEn | 정규식 추출: "수마린 NA(6707)" → NA→네이비 |
+| 판매가 [47] | salePrice | float→int 변환 |
+| 공급가 [3] | costPrice | float→int (대부분 0) |
+| 브랜드 [8] | brand | B0000000→르망고, B000000D→르망고 느와 |
+| 상품소재 [22] | material | 줄바꿈 복원 (겉감/안감 구분) |
+| 상품등록일 [16] | registDate | YYYY-MM-DD 그대로 |
+| 옵션입력 [33] | (사이즈 파싱) | Size{XS\|S\|M\|L\|XL}, 숫자→알파벳 변환 |
+| 이미지등록(목록) [56] | images.sum | 상대경로→절대URL 변환 |
+| 이미지등록(상세) [57] | images.sum[1] | 목록과 다를 때만 추가 |
+| 이미지등록(추가) [59] | images.external | 파이프(\|) 구분 파싱 |
+| 원산지 [34] | madeIn | 1798→대한민국, 264→중국 |
+| 품번 prefix | type | 자동 감지 (아래 표 참조) |
+
+**품번 prefix → 타입 자동 감지:**
+| Prefix | Type | 개수 |
+|--------|------|------|
+| LSWON, LSGON | onepiece | 318 |
+| LGN, NGN | goggles | 180 |
+| LSMBR, LSBJM, LSMJM | bikini | 46 |
+| LSWMO | monokini | 36 |
+| LGK | kids | 17 |
+| LWW | wetsuit | 16 |
+| LSKRG, LSWRG, LSWBK | rashguard | 15 |
+| CO2, SC0 | accessories | 14 |
+| *SW (느와) | onepiece | 127 |
+| *BG, *BR, *GM (느와) | bikini | 18 |
+| *SK, *TS, *TW (느와) | two piece | 5 |
+| *CP (느와) | cover-up | 4 |
+
+**색상 코드 자동 매핑 (40+종):**
+- NA→네이비, BK→블랙, WH→화이트, RD→레드, PK→핑크, GR→그린, BU→블루, BE→베이지 등
+
+**초기화 필드:**
+- stock: {XS:0, S:0, M:0, L:0, XL:0, 2XL:0, F:0}
+- barcodes: 동일 구조 빈문자열
+- sales: {공홈:0, GS:0, 29cm:0, W쇼핑:0, 기타:0}
+- stockLog: [], scheduleLog: [], revenueLog: []
+- saleStatus: '판매중', productionStatus: '지속생산', productCodeLocked: true
+
+**기존 데이터 교체:**
+- 기존 수동입력 르망고 28개 + 느와 17개 → CSV 기반 633 + 165개로 교체
+- 기존 6개 품번(LSWON16266707 등)은 CSV 데이터로 덮어씀 (washMethod, comment 등 수동입력 필드는 비워짐)
+
+#### 파일 변경 목록 (이번 세션)
+| 파일 | 변경 |
+|------|------|
+| `js/backup.js` | **신규** — 자동 백업/복원 시스템 전체 |
+| `js/main.js` | 샘플 데이터 제거, 일회성 리셋, 백업 초기화, 전역 에러 핸들러 |
+| `js/activity-log.js` | error 카테고리/배지 추가 |
+| `js/hr.js` | 백업관리 탭 핸들링 |
+| `index.html` | 백업 버튼/패널, 에러 카테고리 탭/필터 옵션 |
+| `style.css` | al-badge-error, bkp-* 백업 패널 스타일 |
+| `firestore.rules` | backups 컬렉션 규칙 |
+| `data/products_lemango.json` | 28→633개 (Cafe24 CSV 기반) |
+| `data/products_noir.json` | 17→165개 (Cafe24 CSV 기반) |
+
+---
+
+## 다음 작업 후보 (미구현)
+- [ ] 면세점 주문 업로드 포맷
+- [ ] 데이터 영속성 (localStorage 또는 서버 연동)
+- [ ] 인쇄/PDF 출력
+- [ ] 이미지합치기 웹 통합 (테스트 후)
+- [ ] 업무일정 수정 권한 관리 (작성자/관리자/인사담당자만 수정 가능)
+- [ ] 권한 기반 UI 숨김 (등급별 탭/기능 접근 제어)
+- [ ] Firestore rules 배포 (`firebase deploy --only firestore:rules`)
+
+---
 
 #### Working rules (established this session)
 - **No deployment by Claude** unless explicitly asked (user deploys manually for normal changes).

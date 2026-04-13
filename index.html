@@ -718,6 +718,7 @@
       <!-- 출퇴근 승인은 팀원 출퇴근에 통합 -->
       <button class="hradmin-tab-btn" onclick="switchHrAdminTab('memberList')" style="display:none" id="hrAdminMemberBtn">회원관리</button>
       <button class="hradmin-tab-btn" onclick="switchHrAdminTab('activityLog')" style="display:none" id="hrAdminActivityBtn">활동 로그</button>
+      <button class="hradmin-tab-btn" onclick="switchHrAdminTab('backupManage')" style="display:none" id="hrAdminBackupBtn">백업관리</button>
     </div>
     <div id="hrAdminContent"></div>
 
@@ -759,6 +760,7 @@
         <button class="al-cat" data-cat="data">데이터 변경</button>
         <button class="al-cat" data-cat="upload">매출 업로드</button>
         <button class="al-cat" data-cat="member">회원/설정</button>
+        <button class="al-cat" data-cat="error">에러</button>
       </div>
 
       <!-- 필터 -->
@@ -780,6 +782,7 @@
             <option value="upload">업로드</option>
             <option value="approve">승인</option>
             <option value="setting">설정</option>
+            <option value="error">에러</option>
           </select>
           <label style="margin-left:12px">사용자</label>
           <select id="alUser">
@@ -830,6 +833,9 @@
       <!-- 페이지네이션 -->
       <div id="alPagination"></div>
     </div>
+
+    <!-- 백업관리 패널 (시스템 관리자 전용) -->
+    <div id="backupManagePanel" style="display:none"></div>
   </section>
 
 </main>
@@ -2366,6 +2372,7 @@
 <script src="js/members.js"></script>
 <script src="js/orgchart.js"></script>
 <script src="js/hr.js"></script>
+<script src="js/backup.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

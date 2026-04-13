@@ -1276,12 +1276,14 @@ window.toggleUserMenu = function() {
 
 window.renderHrAdminTab = function() {
   if (typeof _renderedTabs !== 'undefined') _renderedTabs.delete('hradmin')
-  // Grade 3+: 회원관리/활동로그 탭 표시
+  // Grade 3+: 회원관리/활동로그, Grade 4+: 백업관리 탭 표시
   var grade = (State.currentUser && State.currentUser.grade) || 1
   var memberBtn = document.getElementById('hrAdminMemberBtn')
   var activityBtn = document.getElementById('hrAdminActivityBtn')
+  var backupBtn = document.getElementById('hrAdminBackupBtn')
   if (memberBtn) memberBtn.style.display = grade >= 3 ? '' : 'none'
   if (activityBtn) activityBtn.style.display = grade >= 3 ? '' : 'none'
+  if (backupBtn) backupBtn.style.display = grade >= 4 ? '' : 'none'
   window.switchHrAdminTab('teamLeave')
 }
 
@@ -1295,9 +1297,12 @@ window.switchHrAdminTab = function(tab) {
   var hrContent = document.getElementById('hrAdminContent')
   var memberPanel = document.getElementById('memberListPanel')
   var alPanel = document.getElementById('activityLogPanel')
-  if (hrContent) hrContent.style.display = (tab === 'memberList' || tab === 'activityLog') ? 'none' : ''
+  var bkpPanel = document.getElementById('backupManagePanel')
+  var specialTabs = ['memberList', 'activityLog', 'backupManage']
+  if (hrContent) hrContent.style.display = specialTabs.indexOf(tab) >= 0 ? 'none' : ''
   if (memberPanel) memberPanel.style.display = tab === 'memberList' ? '' : 'none'
   if (alPanel) alPanel.style.display = tab === 'activityLog' ? '' : 'none'
+  if (bkpPanel) bkpPanel.style.display = tab === 'backupManage' ? '' : 'none'
 
   try {
     if (tab === 'teamLeave') window.renderTeamLeaveTab()
@@ -1306,6 +1311,7 @@ window.switchHrAdminTab = function(tab) {
     else if (tab === 'attendApproval') window.renderAttendApprovalTab()
     else if (tab === 'memberList') { if (typeof loadMembers === 'function') loadMembers() }
     else if (tab === 'activityLog') { if (typeof loadActivityLog === 'function') loadActivityLog() }
+    else if (tab === 'backupManage') { if (typeof renderBackupPanel === 'function') renderBackupPanel() }
   } catch(e) {
     console.error('[HRAdmin] error:', e)
     if (hrContent) hrContent.innerHTML = '<div style="padding:24px;color:#A32D2D">' + e.message + '</div>'

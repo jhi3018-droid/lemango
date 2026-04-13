@@ -17,7 +17,8 @@ const AL_CAT_MAP = {
   'login':  ['login', 'logout', 'login_fail'],
   'data':   ['create', 'update', 'delete'],
   'upload': ['upload'],
-  'member': ['approve', 'setting']
+  'member': ['approve', 'setting'],
+  'error':  ['error']
 }
 
 // ===== Core logging function (fire-and-forget) =====
@@ -130,7 +131,8 @@ function alActionBadge(action) {
     'delete':     ['삭제',       'al-badge-delete'],
     'upload':     ['업로드',     'al-badge-upload'],
     'approve':    ['승인',       'al-badge-approve'],
-    'setting':    ['설정',       'al-badge-setting']
+    'setting':    ['설정',       'al-badge-setting'],
+    'error':      ['에러',       'al-badge-error']
   }
   const [label, cls] = map[action] || [action, '']
   return `<span class="al-badge ${cls}">${label}</span>`
