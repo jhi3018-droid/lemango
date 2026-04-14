@@ -138,18 +138,22 @@ async function _saveAttendRecord(uid, rec) {
   if (!db) return
   if (!_attendCache[uid]) _attendCache[uid] = []
   var existing = _attendCache[uid].find(function(r) { return r.date === rec.date })
-  if (existing) {
+  if (existing && existing._docId) {
     Object.assign(existing, rec)
-    if (existing._docId) {
-      var saveData = Object.assign({ uid: uid }, rec)
-      delete saveData._docId
-      await db.collection('attendance').doc(existing._docId).set(saveData, { merge: true })
-    }
+    var saveData = Object.assign({ uid: uid }, rec)
+    delete saveData._docId
+    await db.collection('attendance').doc(existing._docId).set(saveData, { merge: true })
   } else {
     var saveData = Object.assign({ uid: uid }, rec)
+    delete saveData._docId
     var ref = await db.collection('attendance').add(saveData)
-    rec._docId = ref.id
-    _attendCache[uid].push(rec)
+    if (existing) {
+      Object.assign(existing, rec)
+      existing._docId = ref.id
+    } else {
+      rec._docId = ref.id
+      _attendCache[uid].push(rec)
+    }
   }
 }
 

@@ -316,16 +316,31 @@ async function openDashPostPreview(boardType, postId) {
   try {
     const doc = await db.collection('posts').doc(postId).get()
     if (!doc.exists) { body.innerHTML = '<div style="color:#c00">게시글 없음</div>'; return }
-    const p = doc.data()
+    const p = { id: postId, ...doc.data() }
+    State.currentPost = p
     const ts = p.createdAt?.toDate ? p.createdAt.toDate() : new Date(p.createdAt)
     const dateStr = ts.toISOString().slice(0, 16).replace('T', ' ')
     const author = p.authorName || '-'
     const content = esc(p.content || '').replace(/\n/g, '<br>')
+    let attachHtml = ''
+    if (p.attachments && p.attachments.length) {
+      attachHtml = `<div class="brd-detail-attach" style="margin-bottom:14px">
+        <div class="brd-detail-attach-title">첨부파일 (${p.attachments.length})</div>
+        ${p.attachments.map((a, i) => {
+          const sizeKB = Math.round((a.size || 0) / 1024)
+          return `<div class="brd-detail-attach-item" onclick="downloadAttachment(${i})">
+            <span class="brd-detail-attach-name">${esc(a.name)}</span>
+            <span class="brd-detail-attach-size">${sizeKB}KB</span>
+          </div>`
+        }).join('')}
+      </div>`
+    }
     const commentHtml = (typeof buildCommentSection === 'function') ? buildCommentSection('board', postId) : ''
     body.innerHTML = `
       <h3 style="margin:0 0 8px;font-size:17px;color:var(--primary)">${p.pinned ? '★ ' : ''}${esc(p.title || '')}</h3>
       <div style="color:#888;font-size:12px;margin-bottom:14px;border-bottom:1px solid #eee;padding-bottom:10px">${esc(author)} · ${dateStr} · 조회 ${p.views || 0}</div>
       <div style="font-size:13px;line-height:1.7;color:#333;white-space:pre-wrap;min-height:80px;margin-bottom:18px">${content}</div>
+      ${attachHtml}
       ${commentHtml}
     `
     if (typeof loadComments === 'function') loadComments('board', postId)
