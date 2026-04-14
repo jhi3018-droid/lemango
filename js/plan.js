@@ -1,7 +1,8 @@
 // =============================================
 // ===== 신규기획 =====
 // =============================================
-let _planTempImages = [] // [{url, type:'url'|'file', name}]
+let _planTempImages = [] // [{url, type:'url'|'file', name, path?, _file?, _pending?, _previewUrl?}]
+let _planTempImagesToDelete = [] // Storage 경로 삭제 예약
 let _planSelected = new Set()
 
 
@@ -159,26 +160,21 @@ async function addPlanTempImageUrl() {
 
 function handlePlanTempImageUpload(input) {
   const files = Array.from(input.files || [])
-  let pending = files.length
-  if (!pending) return
+  if (!files.length) return
   files.forEach(file => {
-    if (_planTempImages.some(i => i.type === 'file' && i.name === file.name)) {
-      pending--
-      if (pending === 0) { renderPlanTempImageGrid(); input.value = '' }
+    if (file.size > 10 * 1024 * 1024) {
+      showToast(`${file.name} — 10MB 초과`, 'warning')
       return
     }
-    const reader = new FileReader()
-    reader.onload = () => {
-      _planTempImages.push({ url: reader.result, type: 'file', name: file.name })
-      pending--
-      if (pending === 0) { renderPlanTempImageGrid(); input.value = '' }
-    }
-    reader.onerror = () => {
-      pending--
-      if (pending === 0) { renderPlanTempImageGrid(); input.value = '' }
-    }
-    reader.readAsDataURL(file)
+    if (_planTempImages.some(i => i.type === 'file' && i.name === file.name && !i._pending)) return
+    const previewUrl = URL.createObjectURL(file)
+    _planTempImages.push({
+      url: previewUrl, type: 'file', name: file.name,
+      _file: file, _pending: true, _previewUrl: previewUrl
+    })
   })
+  renderPlanTempImageGrid()
+  input.value = ''
 }
 
 function renderPlanTempImageGrid() {
@@ -191,8 +187,9 @@ function renderPlanTempImageGrid() {
     html = _planTempImages.map((img, i) => {
       const nameDisp = (img.name || '').length > 16 ? img.name.slice(0, 14) + '..' : (img.name || '')
       const safeUrl = String(img.url).replace(/"/g, '&quot;')
+      const tagText = img._pending ? '대기' : '임시'
       return `<div class="plan-img-thumb plan-img-thumb-temp">
-        <span class="plan-img-thumb-tag-temp">임시</span>
+        <span class="plan-img-thumb-tag-temp">${tagText}</span>
         <img src="${safeUrl}" onerror="this.onerror=null;this.src=PLACEHOLDER_IMG" onclick="window.open('${safeUrl.replace(/'/g,"\\'")}','_blank')" />
         <div class="plan-img-thumb-name">${esc(nameDisp)}</div>
         <button type="button" class="plan-img-thumb-x temp-del-btn" onclick="removePlanTempImage(${i})">✕</button>
@@ -203,8 +200,54 @@ function renderPlanTempImageGrid() {
 }
 
 function removePlanTempImage(idx) {
+  const entry = _planTempImages[idx]
+  if (!entry) return
+  // 업로드 완료된 Storage 파일은 삭제 예약
+  if (entry.path && !entry._pending) {
+    _planTempImagesToDelete.push(entry.path)
+  }
+  // 아직 업로드 안 된 대기 파일의 미리보기 URL 해제
+  if (entry._previewUrl) {
+    try { URL.revokeObjectURL(entry._previewUrl) } catch(e) {}
+  }
   _planTempImages.splice(idx, 1)
   renderPlanTempImageGrid()
+}
+
+// 대기 파일을 Storage에 업로드 → _planTempImages 교체
+async function _uploadPendingPlanTempImages(planNo) {
+  const pendings = _planTempImages.filter(i => i._pending && i._file)
+  if (!pendings.length) return
+  const folder = planNo ? `plan/${planNo}` : `plan/tmp_${Date.now()}`
+  for (const entry of pendings) {
+    const safeName = entry.name.replace(/[^\w.\-]/g, '_')
+    const path = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2,6)}_${safeName}`
+    try {
+      const ref = storage.ref().child(path)
+      const snap = await ref.put(entry._file)
+      const url = await snap.ref.getDownloadURL()
+      // 대기 항목 내부 값을 업로드 결과로 교체
+      if (entry._previewUrl) { try { URL.revokeObjectURL(entry._previewUrl) } catch(e) {} }
+      entry.url = url
+      entry.path = path
+      delete entry._file
+      delete entry._pending
+      delete entry._previewUrl
+    } catch (e) {
+      console.error('Storage 업로드 실패:', entry.name, e.message)
+      throw e
+    }
+  }
+}
+
+// 예약된 Storage 경로 삭제
+async function _flushPlanStorageDeletions() {
+  if (!_planTempImagesToDelete.length) return
+  for (const p of _planTempImagesToDelete) {
+    try { await storage.ref().child(p).delete() }
+    catch (e) { console.warn('Storage 삭제 실패:', p, e.message) }
+  }
+  _planTempImagesToDelete = []
 }
 
 function getPlanThumbUrl(item) {
@@ -228,7 +271,12 @@ function closePlanRegisterModal(force) {
     if (code) _reservedCodes.delete(code)
     modal.close()
     document.getElementById('planRegisterForm').reset()
+    // 미리보기 URL 정리 (대기 중이던 파일들)
+    _planTempImages.forEach(i => {
+      if (i._previewUrl) { try { URL.revokeObjectURL(i._previewUrl) } catch(e) {} }
+    })
     _planTempImages = []
+    _planTempImagesToDelete = []
     const ts = document.getElementById('planTempImageSection')
     if (ts) ts.innerHTML = ''
     const ps = document.getElementById('planProductImageSection')
@@ -248,10 +296,21 @@ function closePlanRegisterModal(force) {
   else doClose()
 }
 
-function submitPlanRegister(e) {
+async function submitPlanRegister(e) {
   e.preventDefault()
   const sampleNo = document.getElementById('plSampleNo').value.trim()
   if (!sampleNo) { showToast('샘플번호는 필수입니다.', 'error'); return }
+
+  // 신규 planNo 예약
+  const newPlanNo = State.planItems.length + 1
+
+  // 대기 중 파일 Storage 업로드
+  const pendingCount = _planTempImages.filter(i => i._pending && i._file).length
+  if (pendingCount) {
+    showToast(`참고 이미지 업로드 중... (${pendingCount}개)`, 'info')
+    try { await _uploadPendingPlanTempImages(newPlanNo) }
+    catch (err) { showToast('이미지 업로드 실패: ' + err.message, 'error'); return }
+  }
 
   // Image collection — separate temp (reference) vs product images
   const splitLines = (id) => (document.getElementById(id)?.value || '')
@@ -265,7 +324,11 @@ function submitPlanRegister(e) {
     design:   splitLines('npImg_design').join('\n'),
     shoot:    splitLines('npImg_shoot').join('\n')
   }
-  const tempImagesSnap = _planTempImages.map(x => ({ ...x }))
+  // 저장용 정리 (내부 플래그 제거)
+  const tempImagesSnap = _planTempImages.map(x => {
+    const { _file, _pending, _previewUrl, ...rest } = x
+    return rest
+  })
 
   // sizeSpec 수집
   const sizeSpec = {}
@@ -279,7 +342,7 @@ function submitPlanRegister(e) {
 
   const val = (id) => document.getElementById(id)?.value.trim() || ''
   const item = {
-    no:          State.planItems.length + 1,
+    no:          newPlanNo,
     sampleNo,
     productCode: document.getElementById('plProductCode').value.trim() || '',
     brand:       document.getElementById('plBrand').value,
@@ -859,7 +922,13 @@ function closePlanDetailModal(force) {
       }
       _pdPendingCode = null
     }
+    // 대기 중이던 미리보기 URL 정리
+    _planTempImages.forEach(i => {
+      if (i._previewUrl) { try { URL.revokeObjectURL(i._previewUrl) } catch(e) {} }
+    })
     _planTempImages = []
+    // 편집 취소 시 삭제 예약 무시 (실제 삭제 안 함)
+    _planTempImagesToDelete = []
     try { if (typeof releaseEditLock === 'function') releaseEditLock('plan', _editingPlanNo) } catch(e) {}
     modal.close()
   }
@@ -1071,7 +1140,7 @@ async function confirmPlanWithCheck() {
 }
 window.confirmPlanWithCheck = confirmPlanWithCheck
 
-function savePlanDetailEdit() {
+async function savePlanDetailEdit() {
   const item = State.planItems.find(p => p.no === _editingPlanNo)
   if (!item) return
   const modal = document.getElementById('planDetailModal')
@@ -1084,6 +1153,14 @@ function savePlanDetailEdit() {
     if (panel && panel.style.display === 'none') togglePdCodeGenPanel()
     pcInput.focus()
     return
+  }
+
+  // 대기 중 파일 Storage 업로드
+  const pendingCount = _planTempImages.filter(i => i._pending && i._file).length
+  if (pendingCount) {
+    showToast(`참고 이미지 업로드 중... (${pendingCount}개)`, 'info')
+    try { await _uploadPendingPlanTempImages(item.no) }
+    catch (err) { showToast('이미지 업로드 실패: ' + err.message, 'error'); return }
   }
 
   // 이미지 URL pseudo 키 매핑
@@ -1141,8 +1218,14 @@ function savePlanDetailEdit() {
   document.getElementById('pdNameKr').textContent = item.nameKr || '(상품명 없음)'
   document.getElementById('pdSampleNo').textContent = item.sampleNo
 
-  // 임시 이미지 저장
-  item.tempImages = _planTempImages.map(x => ({ ...x }))
+  // 임시 이미지 저장 (내부 플래그 제거)
+  item.tempImages = _planTempImages.map(x => {
+    const { _file, _pending, _previewUrl, ...rest } = x
+    return rest
+  })
+
+  // 삭제 예약된 Storage 파일 정리
+  await _flushPlanStorageDeletions()
 
   stampModified(item)
 

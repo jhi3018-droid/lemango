@@ -12,13 +12,14 @@ const firebaseConfig = {
   measurementId: "G-K28ZMPNWTN"
 }
 
-let auth, db
+let auth, db, storage
 try {
   firebase.initializeApp(firebaseConfig)
   auth = firebase.auth()
   // 세션 단위 로그인 — 브라우저 탭 닫으면 로그아웃
   auth.setPersistence(firebase.auth.Auth.Persistence.SESSION)
   db   = firebase.firestore()
+  storage = firebase.storage()
 } catch (e) {
   console.error('Firebase init failed:', e.message)
 }

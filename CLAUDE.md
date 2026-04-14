@@ -2276,6 +2276,48 @@ Established the reference style that every dashboard-opened srm-modal should fol
 
 ---
 
+### 2026-04-14
+
+#### Firebase Storage 마이그레이션 (base64 → Storage)
+- **배경**: 게시판 첨부파일/기획 임시이미지가 base64로 Firestore 문서에 저장되어 1MB 문서 제한 초과 위험. Blaze 플랜 전환 후 Storage로 이관.
+- **`storage.rules`** (신규) — `board/{postId}/{fileName}`, `plan/{planNo}/{fileName}` 경로, 인증 + 10MB 제한
+- **`firebase.json`** — `"storage": { "rules": "storage.rules" }` 추가
+- **`index.html`** — `firebase-storage-compat.js` SDK 로드
+- **`js/auth.js`** — `storage = firebase.storage()` 초기화
+
+**`js/board.js` 게시판 첨부파일 전환**
+- `handleBoardFileSelect`: File 객체를 `_pending:true, _file:file`로 보관 (즉시 읽지 않음)
+- `removeBoardAttachment`: 업로드된 파일의 `path`를 `State.boardToDeletePaths`에 큐잉
+- `renderBoardAttachments`: 대기 상태면 "대기" 배지 표시
+- `_uploadBoardFile(file, postIdHint)`: `board/${postId}/${Date.now()}_${safeName}` 경로로 업로드 → `{name, size, url, path}` 반환
+- `_deleteStorageFiles(paths)`: Storage 파일 일괄 삭제
+- `submitBoardPost`: 저장 전 pending 파일 업로드 완료 후 문서 저장
+- `deleteBoardPost`: 게시글 삭제 전 Storage 첨부파일 삭제
+- `downloadAttachment`: `a.url`(신규) + `a.data`(legacy base64) 양쪽 지원 (하위 호환)
+
+**`js/plan.js` 기획 임시이미지 전환**
+- `_planTempImages` 필드 확장: `{url, type, name, path?, _file?, _pending?, _previewUrl?}`
+- `_planTempImagesToDelete` 큐 신설
+- `handlePlanTempImageUpload`: `URL.createObjectURL(file)` 미리보기 + `_file` 보관 (base64 변환 안 함)
+- `renderPlanTempImageGrid`: pending은 "대기", 저장된 것은 "임시" 뱃지
+- `removePlanTempImage`: `path` 있으면 `_planTempImagesToDelete`에 큐잉, `_previewUrl` revoke
+- `_uploadPendingPlanTempImages(planNo)`: `plan/${planNo}/...` 경로 업로드 후 `url`/`path` 저장, 임시 필드 제거
+- `_flushPlanStorageDeletions()`: 저장 확정 후 큐의 Storage 파일 삭제
+- `submitPlanRegister`/`savePlanDetailEdit`: async 전환, 업로드 완료 후 아이템 저장
+- `closePlanRegisterModal`/`closePlanDetailModal`: 취소 시 `URL.revokeObjectURL` + 삭제 큐 초기화
+- `confirmPlanToProduct` (line 1300): `tempImages.map(img => ({...img, fromPlan:true}))` 스프레드로 `url`/`path` 보존 확인
+
+**고아 파일 방지 전략**
+- 업로드는 저장 시점에만 (취소하면 Storage에 안 올라감)
+- 삭제는 큐잉 후 저장 확정 시 실행 (취소 시 원복)
+- postId 없을 땐 `tmp_${timestamp}_${random}` 임시 폴더 사용
+
+**배포**: `firebase deploy --only storage,hosting` → 전체 `firebase deploy` 완료
+
+**CSS**: `.brd-attach-pending` (골드 "대기" 배지 #c9a96e)
+
+---
+
 ### 2026-04-13
 
 #### 샘플 데이터 전체 초기화 + 데이터 리셋 시스템

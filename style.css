@@ -3835,6 +3835,10 @@ body.col-resize-active * { cursor: col-resize !important; }
 }
 .brd-attach-name { flex: 1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .brd-attach-size { font-size: 11px; color: #aaa; }
+.brd-attach-pending {
+  font-size: 10px; color: #c9a96e; background: #fdf6e3;
+  padding: 2px 6px; border-radius: 4px; font-weight: 600;
+}
 .brd-attach-remove {
   width: 22px; height: 22px; border: none; background: none; color: #bbb; font-size: 16px;
   cursor: pointer; border-radius: 4px; display: flex; align-items: center; justify-content: center;

@@ -332,10 +332,16 @@ window.downloadAttachment = function(idx) {
   const post = State.currentPost
   if (!post || !post.attachments || !post.attachments[idx]) return
   const a = post.attachments[idx]
-  const link = document.createElement('a')
-  link.href = a.data
-  link.download = a.name
-  link.click()
+  const href = a.url || a.data
+  if (!href) { showToast('파일을 찾을 수 없습니다.', 'warning'); return }
+  if (a.url) {
+    window.open(a.url, '_blank')
+  } else {
+    const link = document.createElement('a')
+    link.href = href
+    link.download = a.name
+    link.click()
+  }
 }
 
 // ===== 글쓰기/수정 =====
@@ -398,10 +404,11 @@ window.openBoardWrite = function(editPostId) {
   })
 
   if (isEdit) {
-    State.boardAttachments = p.attachments ? [...p.attachments] : []
+    State.boardAttachments = p.attachments ? p.attachments.map(x => ({ ...x })) : []
   } else {
     State.boardAttachments = []
   }
+  State.boardToDeletePaths = []
   renderBoardAttachments()
 }
 
@@ -441,6 +448,32 @@ window.submitBoardPost = async function() {
   if (!content) { showToast('내용을 입력해주세요.', 'warning'); return }
   if (!auth?.currentUser || !State.currentUser) { showToast('로그인이 필요합니다.', 'warning'); return }
 
+  // 대기 중 파일 Storage 업로드
+  const pending = (State.boardAttachments || []).filter(a => a._pending && a._file)
+  let uploadedAttachments = []
+  if (pending.length) {
+    showToast(`파일 업로드 중... (${pending.length}개)`, 'info')
+    try {
+      const postIdHint = State.editingPostId || ('new_' + Date.now())
+      const results = await Promise.all(pending.map(a => _uploadBoardFile(a._file, postIdHint)))
+      // pending 항목을 업로드 결과로 교체
+      let ri = 0
+      State.boardAttachments = (State.boardAttachments || []).map(a => {
+        if (a._pending && a._file) return results[ri++]
+        return a
+      })
+    } catch (e) {
+      showToast('파일 업로드 실패: ' + e.message, 'danger')
+      return
+    }
+  }
+
+  // 저장용 attachments 정리 (내부 플래그 제거)
+  const cleanAttachments = (State.boardAttachments || []).map(a => {
+    const { _pending, _file, ...rest } = a
+    return rest
+  })
+
   const postData = {
     boardType: State.boardType,
     category,
@@ -448,7 +481,7 @@ window.submitBoardPost = async function() {
     content,
     pinned,
     important,
-    attachments: State.boardAttachments || [],
+    attachments: cleanAttachments,
     updatedAt: new Date()
   }
 
@@ -456,6 +489,9 @@ window.submitBoardPost = async function() {
     if (State.editingPostId) {
       stampModified(postData)
       await db.collection('posts').doc(State.editingPostId).update(postData)
+      // 삭제 예약된 Storage 파일 정리
+      await _deleteStorageFiles(State.boardToDeletePaths)
+      State.boardToDeletePaths = []
       showToast('게시글이 수정되었습니다.', 'success')
       logActivity('update', '게시판', `게시글 수정: ${title}`)
     } else {
@@ -486,6 +522,11 @@ window.deleteBoardPost = async function(postId) {
 
   try {
     const post = State.currentPost
+    // Storage 첨부파일 삭제
+    if (post && Array.isArray(post.attachments)) {
+      const paths = post.attachments.filter(a => a && a.path).map(a => a.path)
+      if (paths.length) await _deleteStorageFiles(paths)
+    }
     await db.collection('posts').doc(postId).delete()
 
     // 관련 댓글 삭제
@@ -520,17 +561,20 @@ window.handleBoardFileSelect = function(input) {
       showToast(file.name + ' — 10MB 초과', 'warning')
       return
     }
-    const reader = new FileReader()
-    reader.onload = () => {
-      State.boardAttachments.push({ name: file.name, size: file.size, data: reader.result })
-      renderBoardAttachments()
-    }
-    reader.readAsDataURL(file)
+    State.boardAttachments.push({ name: file.name, size: file.size, _file: file, _pending: true })
   })
+  renderBoardAttachments()
   input.value = ''
 }
 
 window.removeBoardAttachment = function(idx) {
+  const a = State.boardAttachments[idx]
+  if (!a) return
+  // 이미 업로드된 파일이면 삭제 예약
+  if (a.path && !a._pending) {
+    State.boardToDeletePaths = State.boardToDeletePaths || []
+    State.boardToDeletePaths.push(a.path)
+  }
   State.boardAttachments.splice(idx, 1)
   renderBoardAttachments()
 }
@@ -541,10 +585,31 @@ function renderBoardAttachments() {
   if (!State.boardAttachments.length) { el.innerHTML = ''; return }
   el.innerHTML = State.boardAttachments.map((a, i) => {
     const sizeKB = Math.round(a.size / 1024)
+    const badge = a._pending ? '<span class="brd-attach-pending">대기</span>' : ''
     return `<div class="brd-attach-file">
       <span class="brd-attach-name">${esc(a.name)}</span>
       <span class="brd-attach-size">${sizeKB}KB</span>
+      ${badge}
       <button type="button" class="brd-attach-remove" onclick="removeBoardAttachment(${i})">&times;</button>
     </div>`
   }).join('')
+}
+
+// Storage 업로드 유틸
+async function _uploadBoardFile(file, postIdHint) {
+  const postId = postIdHint || 'tmp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
+  const safeName = file.name.replace(/[^\w.\-]/g, '_')
+  const path = `board/${postId}/${Date.now()}_${safeName}`
+  const ref = storage.ref().child(path)
+  const snap = await ref.put(file)
+  const url = await snap.ref.getDownloadURL()
+  return { name: file.name, size: file.size, url, path }
+}
+
+async function _deleteStorageFiles(paths) {
+  if (!paths || !paths.length) return
+  for (const p of paths) {
+    try { await storage.ref().child(p).delete() }
+    catch (e) { console.warn('Storage 삭제 실패:', p, e.message) }
+  }
 }
