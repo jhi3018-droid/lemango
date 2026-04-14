@@ -1492,24 +1492,35 @@ window.checkHrPendingItems = function() {
   if (dismissed === fmtDate(new Date())) return
 
   var dept = _currentUserDept || ''
+  var myUid = (State.currentUser && State.currentUser.uid) || ''
+  var curYear = new Date().getFullYear()
   var pendingLeave = 0, pendingAttend = 0
 
-  // 연차 대기
+  // 연차 대기 (본인 제외, 현재 연도만)
   var allLeaves = _getLeaveRecords()
   Object.keys(allLeaves).forEach(function(uid) {
+    if (uid === myUid) return
     var user = (_allUsers || []).find(function(u) { return u.uid === uid })
     if (grade === 2 && (!user || user.dept !== dept)) return
-    allLeaves[uid].forEach(function(l) { if (l.status === '대기') pendingLeave++ })
+    allLeaves[uid].forEach(function(l) {
+      if (l.status !== '대기') return
+      var y = (l.startDate || '').slice(0, 4)
+      if (y && parseInt(y) !== curYear) return
+      pendingLeave++
+    })
   })
 
-  // 출퇴근 승인 대기
+  // 출퇴근 승인 대기 (본인 제외, 현재 연도만, 명시적 pending 체크)
   var allAttend = _getAttendRecords()
   Object.keys(allAttend).forEach(function(uid) {
+    if (uid === myUid) return
     var user = (_allUsers || []).find(function(u) { return u.uid === uid })
     if (grade === 2 && (!user || user.dept !== dept)) return
     allAttend[uid].forEach(function(r) {
-      if (r.lateRequested && !r.lateApproved) pendingAttend++
-      if (r.earlyRequested && !r.earlyApproved) pendingAttend++
+      var y = (r.date || '').slice(0, 4)
+      if (y && parseInt(y) !== curYear) return
+      if (r.lateRequested === true && r.lateApproved !== 'approved' && r.lateApproved !== 'rejected') pendingAttend++
+      if (r.earlyRequested === true && r.earlyApproved !== 'approved' && r.earlyApproved !== 'rejected') pendingAttend++
     })
   })
 
@@ -1539,16 +1550,27 @@ window.checkHrPendingItems = function() {
   html += '</div>'
   body.innerHTML = html
 
+  // 확인 버튼 라우팅: 대기가 1종류만 있으면 해당 탭으로 이동, 둘 다면 연차부터
+  var primarySub = pendingLeave > 0 ? 'leaveApproval' : 'teamAttend'
+  modal._hrPrimarySub = primarySub
+
+  function navToHr(sub) {
+    modal.close()
+    if (typeof openTab === 'function') openTab('hradmin')
+    // openTab이 renderHrAdminTab → switchHrAdminTab('teamLeave') 동기 호출
+    // 이후 우리가 원하는 sub로 다시 전환
+    if (typeof switchHrAdminTab === 'function') {
+      try { switchHrAdminTab(sub) } catch(e) { console.error('[HR] switch failed:', e) }
+    }
+  }
+
   body.querySelectorAll('.hr-pending-row').forEach(function(row) {
     row.addEventListener('click', function() {
-      var sub = row.getAttribute('data-hrpending')
-      modal.close()
-      if (typeof openTab === 'function') openTab('hradmin')
-      setTimeout(function() {
-        if (typeof switchHrAdminTab === 'function') switchHrAdminTab(sub)
-      }, 350)
+      navToHr(row.getAttribute('data-hrpending'))
     })
   })
+
+  modal._hrNavToHr = navToHr
 
   modal.showModal()
   if (typeof centerModal === 'function') centerModal(modal)
@@ -1557,7 +1579,13 @@ window.checkHrPendingItems = function() {
 window.dismissHrPending = function(skipToday) {
   if (skipToday) localStorage.setItem('lemango_hr_pending_dismissed_v1', fmtDate(new Date()))
   var modal = document.getElementById('hrPendingModal')
-  if (modal) modal.close()
+  if (!modal) return
+  // 확인 버튼 클릭 시 대기 탭으로 이동 (skipToday=false일 때만)
+  if (!skipToday && modal._hrNavToHr && modal._hrPrimarySub) {
+    modal._hrNavToHr(modal._hrPrimarySub)
+  } else {
+    modal.close()
+  }
 }
 
 // ===== 팀원 출퇴근 =====
