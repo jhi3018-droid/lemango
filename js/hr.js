@@ -1523,14 +1523,14 @@ window.checkHrPendingItems = function() {
 
   var html = '<div style="padding:4px 0">'
   if (pendingLeave > 0) {
-    html += '<div class="hr-pending-row" onclick="document.getElementById(\'hrPendingModal\').close();openTab(\'hradmin\');setTimeout(function(){if(typeof switchHrAdminTab===\'function\')switchHrAdminTab(\'leaveApproval\')},300)">'
+    html += '<div class="hr-pending-row" data-hrpending="leaveApproval">'
     html += '<span class="hr-pending-icon">📋</span>'
     html += '<span class="hr-pending-label">연차 승인 대기</span>'
     html += '<span class="hr-pending-count">' + pendingLeave + '건</span>'
     html += '</div>'
   }
   if (pendingAttend > 0) {
-    html += '<div class="hr-pending-row" onclick="document.getElementById(\'hrPendingModal\').close();openTab(\'hradmin\');setTimeout(function(){if(typeof switchHrAdminTab===\'function\')switchHrAdminTab(\'teamAttend\')},300)">'
+    html += '<div class="hr-pending-row" data-hrpending="teamAttend">'
     html += '<span class="hr-pending-icon">⏰</span>'
     html += '<span class="hr-pending-label">출퇴근 승인 대기</span>'
     html += '<span class="hr-pending-count">' + pendingAttend + '건</span>'
@@ -1538,6 +1538,17 @@ window.checkHrPendingItems = function() {
   }
   html += '</div>'
   body.innerHTML = html
+
+  body.querySelectorAll('.hr-pending-row').forEach(function(row) {
+    row.addEventListener('click', function() {
+      var sub = row.getAttribute('data-hrpending')
+      modal.close()
+      if (typeof openTab === 'function') openTab('hradmin')
+      setTimeout(function() {
+        if (typeof switchHrAdminTab === 'function') switchHrAdminTab(sub)
+      }, 350)
+    })
+  })
 
   modal.showModal()
   if (typeof centerModal === 'function') centerModal(modal)
