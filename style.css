@@ -51,7 +51,7 @@ table { border-collapse: collapse; width: 100%; }
   height: 56px;
   min-width: 0;
 }
-.logo { display: flex; align-items: center; gap: 8px; }
+.logo { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .logo-main {
   font-family: 'Inter', sans-serif;
   font-size: 18px;
@@ -64,7 +64,6 @@ table { border-collapse: collapse; width: 100%; }
   color: rgba(255,255,255,0.5);
   letter-spacing: 1px;
 }
-.logo { flex-shrink: 0; }
 .tab-nav { display: flex; gap: 1px; flex: 0 1 auto; flex-wrap: nowrap; white-space: nowrap; min-width: 0; overflow: hidden; }
 .tab-btn {
   padding: 6px 10px;
@@ -80,7 +79,6 @@ table { border-collapse: collapse; width: 100%; }
   flex-shrink: 0;
 }
 .header-right { display: flex; align-items: center; gap: 3px !important; flex-shrink: 0 !important; margin-left: 0 !important; padding-right: 82px !important; white-space: nowrap; overflow: visible !important; flex: 1 1 auto; }
-.header-date { margin-left: auto !important; }
 .gsearch-wrap { flex: 0 1 160px !important; min-width: 60px !important; max-width: 160px !important; margin: 0 !important; padding: 0 !important; position: relative; }
 .gsearch-input { width: 100%; padding: 7px 8px !important; font-size: 10px !important; }
 .header-user-area { display: flex; align-items: center; gap: 4px; flex-shrink: 0 !important; overflow: visible !important; }
@@ -88,7 +86,7 @@ table { border-collapse: collapse; width: 100%; }
 .tab-btn:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.85); }
 .tab-btn[data-tab="board"] { color: rgba(255,255,255,0.55) !important; font-weight: normal !important; }
 .tab-btn.active { background: var(--accent); color: var(--primary); font-weight: 700; }
-.header-date { color: rgba(255,255,255,0.4); font-size: 10px; white-space: nowrap; flex-shrink: 0 !important; }
+.header-date { color: rgba(255,255,255,0.4); font-size: 10px; white-space: nowrap; flex-shrink: 0 !important; margin-left: auto !important; }
 .header-right .grade-badge { font-size: 9px; padding: 1px 5px; flex-shrink: 0 !important; white-space: nowrap; }
 .header-logout-btn { flex-shrink: 0 !important; white-space: nowrap; font-size: 11px; padding: 4px 8px; }
 .notif-wrap, .notif-global-toggle, .notif-bell { flex-shrink: 0 !important; }

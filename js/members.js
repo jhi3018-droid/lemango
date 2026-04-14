@@ -12,7 +12,13 @@ const STATUS_DEFS = {
 // ===== Load members from Firestore =====
 window.loadMembers = async function() {
   try {
-    const snapshot = await db.collection('users').orderBy('createdAt', 'desc').get()
+    // 캐시 우회 — 항상 서버 최신 데이터 (승인/수정 즉시 반영)
+    let snapshot
+    try {
+      snapshot = await db.collection('users').orderBy('createdAt', 'desc').get({ source: 'server' })
+    } catch (e) {
+      snapshot = await db.collection('users').orderBy('createdAt', 'desc').get()
+    }
     State.members = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
     renderMembersKPI()
     renderMembersTable()

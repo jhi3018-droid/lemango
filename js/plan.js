@@ -5,6 +5,27 @@ let _planTempImages = [] // [{url, type:'url'|'file', name, path?, _file?, _pend
 let _planTempImagesToDelete = [] // Storage 경로 삭제 예약
 let _planSelected = new Set()
 
+// 신규기획 localStorage 영속화
+function savePlanItems() {
+  try {
+    localStorage.setItem('lemango_plan_items_v1', JSON.stringify(State.planItems))
+  } catch (e) {
+    console.warn('savePlanItems 실패:', e.message)
+  }
+}
+
+function loadPlanItems() {
+  try {
+    const raw = localStorage.getItem('lemango_plan_items_v1')
+    if (raw) State.planItems = JSON.parse(raw) || []
+  } catch (e) {
+    console.warn('loadPlanItems 실패:', e.message)
+    State.planItems = []
+  }
+}
+window.savePlanItems = savePlanItems
+window.loadPlanItems = loadPlanItems
+
 
 
 function openPlanRegisterModal(item) {
@@ -397,6 +418,7 @@ async function submitPlanRegister(e) {
   stampCreated(item)
   State.planItems.push(item)
   State.plan.filtered = State.planItems.filter(p => !p.confirmed)
+  savePlanItems()
   _planTempImages = []
   renderPlanTable()
   closePlanRegisterModal(true)
@@ -871,6 +893,7 @@ function _planDrop(e) {
       State.plan.filtered.splice(fTo, 0, m2)
     }
   }
+  savePlanItems()
   if (typeof showToast === 'function') showToast('기획 순서가 변경되었습니다')
   renderPlanTable()
 }
@@ -950,7 +973,7 @@ async function clonePlanItem(no) {
   cloned.confirmedAt = ''
   if (typeof stampCreated === 'function') stampCreated(cloned)
   State.planItems.push(cloned)
-  localStorage.setItem('lemango_plan_items_v1', JSON.stringify(State.planItems))
+  savePlanItems()
   closePlanDetailModal(true)
   if (typeof renderPlanTable === 'function') renderPlanTable()
   setTimeout(() => { openPlanDetailModal(cloned.no) }, 300)
@@ -1228,6 +1251,7 @@ async function savePlanDetailEdit() {
   await _flushPlanStorageDeletions()
 
   stampModified(item)
+  savePlanItems()
 
   buildPlanDetailContent(item)
   renderPlanTempImageGrid()
@@ -1308,6 +1332,7 @@ async function confirmPlanToProduct() {
   State.allProducts.push(newProduct)
   item.confirmed = true
   stampModified(item)
+  savePlanItems()
 
   // 상품조회 필터 갱신
   State.product.filtered = [...State.allProducts]

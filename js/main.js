@@ -128,6 +128,7 @@ async function initApp() {
       fetch('data/products_noir.json').then(r => r.json())
     ])
     State.allProducts = [...lem, ...noir]
+    if (typeof loadPlanItems === 'function') loadPlanItems()
     State.product.filtered = [...State.allProducts]
     State.stock.filtered   = [...State.allProducts]
     State.sales.filtered   = [...State.allProducts]
@@ -197,6 +198,37 @@ async function initApp() {
   // 자동 백업 시스템 시작
   if (typeof scheduleBackupTimer === 'function') scheduleBackupTimer()
   if (typeof runAutoBackup === 'function') runAutoBackup()
+
+  // ===== 5분 자동 새로고침 (사용자 작업 방해 없이 백그라운드 갱신) =====
+  setInterval(async () => {
+    // 모달 열려있으면 skip (편집 중)
+    if (document.querySelector('dialog[open]')) return
+    // 입력 중이면 skip
+    const ae = document.activeElement
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return
+    // 탭 비활성(다른 창 보는 중)이면 skip
+    if (document.hidden) return
+
+    try {
+      // 회원/알림 관련은 항상 갱신 (헤더 벨/배지 반영)
+      if (typeof loadMembers === 'function') await loadMembers()
+      if (typeof checkMemberAlerts === 'function') checkMemberAlerts()
+      if (typeof checkEventAlerts === 'function') checkEventAlerts()
+      if (typeof checkPlanAlerts === 'function') checkPlanAlerts()
+      if (typeof checkWorkMentionAlerts === 'function') checkWorkMentionAlerts()
+      if (typeof checkPersonalScheduleAlerts === 'function') checkPersonalScheduleAlerts()
+      if (typeof renderNotifications === 'function') renderNotifications()
+
+      // 활성 탭별 데이터 갱신
+      const tab = State.activeTab
+      if (tab === 'dashboard' && typeof renderDashboard === 'function') renderDashboard()
+      if (tab === 'board' && typeof loadBoardPosts === 'function') await loadBoardPosts()
+      if (tab === 'members' && typeof renderMembersTable === 'function') renderMembersTable()
+      if (tab === 'work' && typeof loadPersonalSchedules === 'function') await loadPersonalSchedules()
+    } catch (e) {
+      console.warn('자동 새로고침 실패:', e.message)
+    }
+  }, 5 * 60 * 1000)
 }
 
 document.addEventListener('wheel', function(e) {

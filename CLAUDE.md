@@ -2431,14 +2431,53 @@ Established the reference style that every dashboard-opened srm-modal should fol
 
 ---
 
+### 2026-04-14 (session 2 — 안정화 + 권한)
+
+#### 신규기획 데이터 영속화 버그 수정 (`js/plan.js`)
+- 기존 `clonePlanItem`만 localStorage 직접 저장 → 다른 CRUD에서 누락되어 새로고침 시 데이터 손실
+- `savePlanItems()` / `loadPlanItems()` 헬퍼 신설 (`lemango_plan_items_v1`)
+- `submitPlanRegister` / 드래그 reorder / `clonePlanItem` / `savePlanDetailEdit` / `confirmPlanToProduct` 5곳에 `savePlanItems()` 추가
+- `js/main.js` initApp 데이터 로드 직전에 `loadPlanItems()` 호출
+
+#### 회원가입 원자성 + 중복 이메일 정확 안내 (`js/auth.js`)
+- **Auth/Firestore 원자성**: Firestore set 실패 시 `cred.user.delete()` 자동 롤백 (orphan Auth 계정 방지)
+- **`auth/email-already-in-use` 분기 처리**:
+  - Firestore 조회로 실제 가입자 vs Auth-only orphan 구분
+  - 메시지 차별화: "이미 가입된 이메일입니다" vs "이전 가입 시도가 미완료된 계정입니다. 관리자에게 문의하세요"
+- 추가 에러 처리: `auth/weak-password`, `auth/invalid-email`, `auth/network-request-failed`
+- `signupBtn` ID로 disable/enable + finally 블록으로 버튼 상태 보장 (중복 클릭 차단)
+- `index.html` — 가입 신청 버튼에 `id="signupBtn"` 추가
+
+#### 회원 승인 즉시 반영 — Firestore 캐시 우회
+- `checkApproval()` (`js/auth.js`) — `docRef.get({ source: 'server' })` + fallback (이전 세션)
+- `loadMembers()` (`js/members.js`) — `db.collection('users').get({ source: 'server' })` + fallback
+- 원인: Firestore SDK 로컬 캐시 때문에 승인/수정 후 즉시 반영 안 됨
+
+#### checkApproval 보안 구멍 차단 (`js/auth.js`)
+- 기존: Firestore doc 없으면 자동으로 grade:4(시스템 관리자)로 생성 → Auth만 있는 누구든 관리자 권한 획득 가능
+- 수정: `db.collection('users').limit(1).get()` 결과가 비어있는 **첫 사용자 케이스**에만 grade:4 자동 생성 허용, 그 외에는 `auth.signOut()` + 안내 토스트
+
+#### 5분 자동 새로고침 (`js/main.js`)
+- `setInterval(5 * 60 * 1000)` initApp 말미에 등록
+- **Skip 조건**: `dialog[open]` (편집 중), INPUT/TEXTAREA/contenteditable 포커스, `document.hidden` (탭 비활성)
+- 갱신 항목: 알림 5종(`checkMemberAlerts/EventAlerts/PlanAlerts/WorkMentionAlerts/PersonalScheduleAlerts`) + `renderNotifications()` + 활성 탭 데이터(`dashboard/board/members/work`)
+
+#### 업무일정 수정/삭제 권한 (`js/work.js`)
+- `canEditWork(w)` 헬퍼 — 작성자 본인(`w.createdBy === uid`) OR `grade >= 3` (관리자 이상)만 true
+- `openWorkDetailModal()` — 권한 없으면 수정/삭제 버튼 자체 표시 안 됨 (대시보드 경유 동일)
+- `editWorkFromDetail(no)` / `deleteWork(no)` 진입 시 권한 재확인 (UI 우회 방지) — 토스트 후 차단
+- 과거 `createdBy` 누락 항목은 관리자만 수정/삭제 가능
+
+#### Working rules 업데이트
+- ~~No deployment by Claude unless explicitly asked~~ → 사용자가 명시 요청 시 배포·푸시 모두 수행 OK
+
+---
+
 ## 다음 작업 후보 (미구현)
 - [ ] 면세점 주문 업로드 포맷
-- [ ] 데이터 영속성 (localStorage 또는 서버 연동)
 - [ ] 인쇄/PDF 출력
 - [ ] 이미지합치기 웹 통합 (테스트 후)
-- [ ] 업무일정 수정 권한 관리 (작성자/관리자/인사담당자만 수정 가능)
 - [ ] 권한 기반 UI 숨김 (등급별 탭/기능 접근 제어)
-- [ ] Firestore rules 배포 (`firebase deploy --only firestore:rules`)
 
 ---
 

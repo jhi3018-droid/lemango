@@ -533,6 +533,17 @@ function submitWork(e) {
 }
 
 // ===== 상세 모달 =====
+// 업무일정 수정/삭제 권한: 작성자 본인 OR 관리자(grade>=3) 이상
+function canEditWork(w) {
+  if (!w) return false
+  const u = State.currentUser
+  if (!u) return false
+  if ((u.grade || 0) >= 3) return true
+  const uid = (typeof firebase !== 'undefined' && firebase.auth().currentUser) ? firebase.auth().currentUser.uid : null
+  return !!uid && w.createdBy === uid
+}
+window.canEditWork = canEditWork
+
 function openWorkDetailModal(no, fromDash = false) {
   const w = State.workItems.find(x => x.no === no)
   if (!w) return
@@ -547,10 +558,13 @@ function openWorkDetailModal(no, fromDash = false) {
   // 헤더 액션 버튼 주입
   const hbtns = document.getElementById('wkDetailHeaderBtns')
   if (hbtns) {
+    const canEdit = canEditWork(w)
     const actionBtns = fromDash
-      ? `<button class="btn btn-sm btn-primary" onclick="goToWorkEdit(${w.no})">업무일정에서 수정</button>`
-      : `<button class="btn btn-sm btn-primary" onclick="editWorkFromDetail(${w.no})">수정</button>
-         <button class="btn btn-sm btn-outline" style="color:var(--danger);border-color:var(--danger)" onclick="deleteWork(${w.no})">삭제</button>`
+      ? (canEdit ? `<button class="btn btn-sm btn-primary" onclick="goToWorkEdit(${w.no})">업무일정에서 수정</button>` : '')
+      : (canEdit
+        ? `<button class="btn btn-sm btn-primary" onclick="editWorkFromDetail(${w.no})">수정</button>
+           <button class="btn btn-sm btn-outline" style="color:var(--danger);border-color:var(--danger)" onclick="deleteWork(${w.no})">삭제</button>`
+        : '')
     const watchLabel = (typeof isWatching === 'function' && isWatching('work', w.no)) ? '💛' : '🤍'
     const watchActive = (typeof isWatching === 'function' && isWatching('work', w.no)) ? ' active' : ''
     const watchBtn = `<button class="btn btn-sm btn-outline watch-btn${watchActive}" id="wkWatchBtn" onclick="toggleWatch('work', ${w.no}, '${(w.title||'').replace(/'/g,"\\'")}'); _wkSyncWatchBtn(${w.no})" title="변경 알림">${watchLabel}</button>`
@@ -803,6 +817,12 @@ function _wkSyncWatchBtn(no) {
 window._wkSyncWatchBtn = _wkSyncWatchBtn
 
 function editWorkFromDetail(no) {
+  const w = State.workItems.find(x => x.no === no)
+  if (!w) return
+  if (!canEditWork(w)) {
+    showToast('수정 권한이 없습니다. (작성자 또는 관리자 이상)', 'warn')
+    return
+  }
   const info = (typeof getEditLockInfo === 'function') ? getEditLockInfo('work', no) : null
   if (info) {
     showToast(`${info.userName || '다른 사용자'}님이 편집 중입니다`, 'warn')
@@ -810,8 +830,6 @@ function editWorkFromDetail(no) {
   }
   if (typeof acquireEditLock === 'function') acquireEditLock('work', no)
   closeWorkDetailModal()
-  const w = State.workItems.find(x => x.no === no)
-  if (!w) return
   const modal = document.getElementById('workRegisterModal')
   if (!modal) return
 
@@ -863,6 +881,12 @@ function closeWorkDetailModal() {
 }
 
 async function deleteWork(no) {
+  const target = State.workItems.find(w => w.no === no)
+  if (!target) return
+  if (!canEditWork(target)) {
+    showToast('삭제 권한이 없습니다. (작성자 또는 관리자 이상)', 'warn')
+    return
+  }
   if (!await korConfirm('이 업무일정을 삭제하시겠습니까?')) return
   State.workItems = State.workItems.filter(w => w.no !== no)
   _workItems = State.workItems

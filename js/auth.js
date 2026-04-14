@@ -95,26 +95,39 @@ window.handleLogin = async function() {
 
 async function checkApproval(user) {
   const docRef = db.collection('users').doc(user.uid)
-  let doc = await docRef.get()
+  // 항상 서버에서 직접 조회 (캐시 회피 — 승인 직후 즉시 반영)
+  let doc
+  try { doc = await docRef.get({ source: 'server' }) }
+  catch (e) { doc = await docRef.get() }
 
   console.log('[checkApproval] uid:', user.uid, 'doc.exists:', doc.exists)
   if (doc.exists) console.log('[checkApproval] doc.data():', JSON.stringify(doc.data()))
 
-  // Auth에는 있지만 Firestore 문서가 없는 경우 → 자동 생성
+  // Auth에는 있지만 Firestore 문서가 없는 경우 — 첫 시스템 초기화(users 컬렉션이 비어있음)일 때만 자동 관리자 생성
   if (!doc.exists) {
-    const userData = {
-      uid: user.uid,
-      email: user.email,
-      name: user.email.split('@')[0],
-      phone: '',
-      dept: '',
-      grade: 4,          // 직접 생성 = 시스템 관리자
-      status: 'approved',
-      createdAt: new Date(),
-      lastLogin: new Date()
+    let isFirstUser = false
+    try {
+      const snap = await db.collection('users').limit(1).get()
+      isFirstUser = snap.empty
+    } catch (e) { console.warn('users limit check 실패:', e.message) }
+
+    if (isFirstUser) {
+      const userData = {
+        uid: user.uid,
+        email: user.email,
+        name: user.email.split('@')[0],
+        phone: '', dept: '', position: '대표이사',
+        grade: 4, status: 'approved',
+        createdAt: new Date(), lastLogin: new Date()
+      }
+      await docRef.set(userData)
+      showApp(userData)
+      return
     }
-    await docRef.set(userData)
-    showApp(userData)
+    // 일반 케이스: 이전 가입 시 Firestore 저장 실패 등 — 안전하게 거부
+    console.warn('[checkApproval] Firestore 문서 없음 — 안전 거부')
+    await auth.signOut()
+    showLoginError('회원 정보를 찾을 수 없습니다. 관리자에게 문의하거나 다시 가입해주세요.')
     return
   }
 
@@ -131,7 +144,7 @@ async function checkApproval(user) {
     return
   }
   console.log('[checkApproval] 승인 확인 — showApp 호출')
-  docRef.update({ lastLogin: new Date() })
+  try { await docRef.update({ lastLogin: new Date() }) } catch (e) { console.warn('lastLogin update 실패:', e.message) }
   showApp(data)
   logActivity('login', '', '로그인 성공')
 }
@@ -153,8 +166,14 @@ function showApp(userData) {
     _appInitialized = true
     initApp()
   }
-  // URL 해시 무시하고 무조건 대시보드로
-  try { if (typeof openTab === 'function') openTab('dashboard') } catch(e){}
+  // URL 해시가 있으면 해당 탭 유지 (새로고침 시), 없으면 대시보드
+  try {
+    if (typeof openTab === 'function') {
+      const hashTab = (location.hash || '').replace('#', '').split('/')[0]
+      const validTab = hashTab && TAB_LABELS && TAB_LABELS[hashTab] ? hashTab : 'dashboard'
+      openTab(validTab)
+    }
+  } catch(e){}
   // HR 미처리건 체크 (grade >= 2)
   setTimeout(function() { if (typeof checkHrPendingItems === 'function') checkHrPendingItems() }, 2000)
   // 생일 알림
@@ -266,29 +285,56 @@ window.handleSignup = async function() {
   if (pw !== pwConfirm) return showSignupError('비밀번호가 일치하지 않습니다.')
   if (!agree) return showSignupError('개인정보 수집에 동의해주세요.')
 
+  const btn = document.getElementById('signupBtn')
+  if (btn) { btn.disabled = true; btn.textContent = '가입 중...' }
+  let cred = null
   try {
-    const cred = await auth.createUserWithEmailAndPassword(email, pw)
-    await db.collection('users').doc(cred.user.uid).set({
-      uid: cred.user.uid,
-      email: email,
-      name: name,
-      phone: phone,
-      dept: dept,
-      position: '사원',
-      grade: 1,
-      status: 'pending',
-      createdAt: new Date(),
-      lastLogin: null
-    })
+    cred = await auth.createUserWithEmailAndPassword(email, pw)
+    try {
+      await db.collection('users').doc(cred.user.uid).set({
+        uid: cred.user.uid,
+        email: email,
+        name: name,
+        phone: phone,
+        dept: dept,
+        position: '사원',
+        grade: 1,
+        status: 'pending',
+        createdAt: new Date(),
+        lastLogin: null
+      })
+    } catch (firestoreErr) {
+      // Firestore 저장 실패 — Auth 계정 롤백 (다음 가입 시 "이미 등록" 방지)
+      try { await cred.user.delete() } catch (e) { console.warn('Auth rollback 실패:', e.message) }
+      throw new Error('회원 정보 저장 실패: ' + firestoreErr.message)
+    }
     await auth.signOut()
     closeSignupModal()
     showLoginError('가입 신청이 완료되었습니다. 관리자 승인 후 로그인할 수 있습니다.', 'success')
   } catch (err) {
     if (err.code === 'auth/email-already-in-use') {
-      showSignupError('이미 등록된 이메일입니다.')
+      // Firestore에 해당 이메일 문서가 있는지 확인 → 안내 분기
+      let existsInFirestore = false
+      try {
+        const snap = await db.collection('users').where('email', '==', email).limit(1).get()
+        existsInFirestore = !snap.empty
+      } catch (e) { console.warn('email 중복 확인 실패:', e.message) }
+      if (existsInFirestore) {
+        showSignupError('이미 등록된 이메일입니다. 비밀번호를 잊으셨다면 로그인 화면의 "비밀번호 찾기"를 사용해주세요.')
+      } else {
+        showSignupError('이전 가입이 미완료된 이메일입니다. 관리자에게 문의해주세요. (Firebase Auth 정리 필요)')
+      }
+    } else if (err.code === 'auth/weak-password') {
+      showSignupError('비밀번호가 너무 약합니다. 6자 이상 입력해주세요.')
+    } else if (err.code === 'auth/invalid-email') {
+      showSignupError('이메일 형식이 올바르지 않습니다.')
+    } else if (err.code === 'auth/network-request-failed') {
+      showSignupError('네트워크 연결을 확인해주세요.')
     } else {
       showSignupError('가입 중 오류: ' + err.message)
     }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '가입하기' }
   }
 }
 

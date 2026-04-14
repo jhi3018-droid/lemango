@@ -338,18 +338,21 @@ window.renderLeaveTab = function() {
 
   // 사용 이력 테이블
   var allMyLeaves = (leaves[uid] || []).slice().sort(function(a, b) { return (b.startDate || '').localeCompare(a.startDate || '') })
+  var canDelete = grade >= 3
   html += '<div class="hr-section">'
   html += '<div class="hr-section-title">연차 사용 이력 <span class="hr-section-badge">' + allMyLeaves.length + '건</span></div>'
-  html += '<table class="hr-table"><thead><tr><th>날짜</th><th>유형</th><th>사유</th><th>상태</th><th>승인자</th></tr></thead><tbody>'
+  html += '<table class="hr-table"><thead><tr><th>날짜</th><th>유형</th><th>사유</th><th>상태</th><th>승인자</th>' + (canDelete ? '<th></th>' : '') + '</tr></thead><tbody>'
   allMyLeaves.forEach(function(l) {
     var dateStr = l.startDate === l.endDate ? l.startDate.slice(5) : l.startDate.slice(5) + '~' + l.endDate.slice(5)
     var statusCls = l.status === '확인완료' ? 'hr-status-ok' : l.status === '승인' ? 'hr-status-info' : l.status === '대기' ? 'hr-status-wait' : 'hr-status-no'
     html += '<tr><td>' + dateStr + '</td><td>' + esc(l.type) + ' (' + l.days + '일)</td>'
     html += '<td>' + esc(l.reason || '-') + '</td>'
     html += '<td><span class="hr-status ' + statusCls + '">' + l.status + '</span></td>'
-    html += '<td>' + esc(l.approverName || '-') + '</td></tr>'
+    html += '<td>' + esc(l.approverName || '-') + '</td>'
+    if (canDelete) html += '<td><button class="hradmin-btn-reject" onclick="deleteLeave(\'' + uid + '\',\'' + l.id + '\')">삭제</button></td>'
+    html += '</tr>'
   })
-  if (allMyLeaves.length === 0) html += '<tr><td colspan="5" style="text-align:center;color:#b4b2a9">사용 이력이 없습니다</td></tr>'
+  if (allMyLeaves.length === 0) html += '<tr><td colspan="' + (canDelete ? 6 : 5) + '" style="text-align:center;color:#b4b2a9">사용 이력이 없습니다</td></tr>'
   html += '</tbody></table></div>'
 
   document.getElementById('hrContent').innerHTML = html
@@ -618,6 +621,44 @@ window.rejectLeave = async function(uid, leaveId) {
   showToast('연차 반려 처리됨')
   var leaveUser = (_allUsers || []).find(function(u) { return u.uid === uid }) || {}
   if (typeof logActivity === 'function') logActivity('approve', '인사관리', '연차 반려: ' + (leaveUser.name || uid) + ' ' + entry.type + ' ' + entry.startDate)
+  if (State.activeTab === 'hradmin' && typeof renderLeaveApprovalTab === 'function') renderLeaveApprovalTab()
+  else renderLeaveTab()
+}
+
+// ===== 연차 사용내역 삭제 (관리자 이상, grade >= 3) =====
+window.deleteLeave = async function(uid, leaveId) {
+  var grade = (State.currentUser && State.currentUser.grade) || 1
+  if (grade < 3) { showToast('관리자 이상만 삭제할 수 있습니다', 'warning'); return }
+
+  var leaves = _getLeaveRecords()
+  if (!leaves[uid]) return
+  var idx = leaves[uid].findIndex(function(l) { return l.id === leaveId })
+  if (idx < 0) return
+  var entry = leaves[uid][idx]
+
+  var dateStr = entry.startDate === entry.endDate ? entry.startDate : entry.startDate + '~' + entry.endDate
+  var ok = await korConfirm(entry.type + ' ' + dateStr + ' (' + (entry.days || 0) + '일) 사용내역을 삭제하시겠습니까?\n연차 개수가 자동 조정됩니다.', '삭제', '취소')
+  if (!ok) return
+
+  // 연결된 업무일정 삭제
+  if (entry._workNo) {
+    var wIdx = State.workItems.findIndex(function(w) { return w.no === entry._workNo })
+    if (wIdx >= 0) {
+      State.workItems.splice(wIdx, 1)
+      _workItems = State.workItems
+      saveWorkItems()
+    }
+  }
+
+  // Firestore + 캐시에서 제거
+  try {
+    if (db && entry._docId) await db.collection('leaves').doc(entry._docId).delete()
+  } catch (e) { console.error('연차 삭제 실패:', e) }
+  leaves[uid].splice(idx, 1)
+
+  showToast('연차 사용내역 삭제됨')
+  var leaveUser = (_allUsers || []).find(function(u) { return u.uid === uid }) || {}
+  if (typeof logActivity === 'function') logActivity('delete', '인사관리', '연차 삭제: ' + (leaveUser.name || uid) + ' ' + entry.type + ' ' + entry.startDate + ' (' + (entry.days || 0) + '일)')
   if (State.activeTab === 'hradmin' && typeof renderLeaveApprovalTab === 'function') renderLeaveApprovalTab()
   else renderLeaveTab()
 }
