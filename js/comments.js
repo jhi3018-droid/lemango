@@ -13,7 +13,12 @@ const EMOJI_CATS = [
   { key: 'work',   label: '업무', emojis: ['✅','❌','⚠️','📌','📝','💼','📊','📈','📉','🔔','🔕','⏰','📅','🗂️','💡','🔧','🚀','📢'] }
 ]
 
-const _EMOJI_RECENT_KEY = 'lemango_emoji_recent'
+const _EMOJI_RECENT_KEY = 'lemango_emoji_recent_v1'
+// 마이그레이션
+if (!localStorage.getItem('lemango_emoji_recent_v1') && localStorage.getItem('lemango_emoji_recent')) {
+  localStorage.setItem('lemango_emoji_recent_v1', localStorage.getItem('lemango_emoji_recent'))
+  localStorage.removeItem('lemango_emoji_recent')
+}
 const _EMOJI_RECENT_MAX = 12
 
 function _loadRecentEmojis() {
@@ -25,6 +30,7 @@ function _saveRecentEmoji(emoji) {
   arr.unshift(emoji)
   if (arr.length > _EMOJI_RECENT_MAX) arr = arr.slice(0, _EMOJI_RECENT_MAX)
   localStorage.setItem(_EMOJI_RECENT_KEY, JSON.stringify(arr))
+  if (typeof _fsSaveUserPrefs === 'function') _fsSaveUserPrefs({ emojiRecent: arr })
 }
 
 let _emojiPickerTarget = null  // textarea element
@@ -187,16 +193,17 @@ async function loadComments(modalType, targetId) {
       const dateStr = `${y}-${mo}-${day} ${h}:${mi}`
       const isEdited = c.updatedAt && c.createdAt &&
         (c.updatedAt.toDate ? c.updatedAt.toDate().getTime() : 0) !== (c.createdAt.toDate ? c.createdAt.toDate().getTime() : 0)
-      const canEdit = (currentUid === c.uid) || (currentGrade >= 3)
+      const canEdit = !!currentUid
+      const canDelete = (currentUid === c.uid) || (currentGrade >= 3)
 
       return `<div class="comment-item" data-comment-id="${c.id}">
         <div class="comment-meta">
           <span class="comment-author clickable-author" onclick="event.stopPropagation();showUserProfile('${c.uid}',this)">${esc(formatUserName(c.userName, c.authorPosition))}</span>
           <span class="comment-grade-badge comment-grade-${c.userGrade}">${commentGradeName(c.userGrade)}</span>
           <span class="comment-date">${dateStr}${isEdited ? ' (수정됨)' : ''}</span>
-          ${canEdit ? `<span class="comment-actions">
-            <button class="comment-edit-btn" onclick="editComment('${c.id}','${modalType}','${esc(String(targetId))}')">수정</button>
-            <button class="comment-delete-btn" onclick="deleteComment('${c.id}','${modalType}','${esc(String(targetId))}')">삭제</button>
+          ${(canEdit || canDelete) ? `<span class="comment-actions">
+            ${canEdit ? `<button class="comment-edit-btn" onclick="editComment('${c.id}','${modalType}','${esc(String(targetId))}')">수정</button>` : ''}
+            ${canDelete ? `<button class="comment-delete-btn" onclick="deleteComment('${c.id}','${modalType}','${esc(String(targetId))}')">삭제</button>` : ''}
           </span>` : ''}
         </div>
         <div class="comment-content" id="commentContent-${c.id}">${esc(c.content)}</div>
@@ -235,11 +242,22 @@ window.submitComment = async function(modalType, targetId) {
     loadComments(modalType, targetId)
     logActivity('create', '댓글', `댓글 등록 — ${modalType}/${targetId}`)
     try { checkCommentMentions(content, modalType, targetId) } catch(e) {}
-    // 게시판 댓글수 동기화
+    // 게시판 댓글수 동기화 + 작성자 알림
     if (modalType === 'board') {
-      db.collection('posts').doc(String(targetId)).update({
+      const postRef = db.collection('posts').doc(String(targetId))
+      postRef.update({
         commentCount: firebase.firestore.FieldValue.increment(1)
       }).catch(() => {})
+      // 게시글 작성자에게 댓글 알림
+      try {
+        const postSnap = await postRef.get()
+        if (postSnap.exists) {
+          const post = postSnap.data()
+          if (post.authorUid && post.authorUid !== auth.currentUser.uid) {
+            addNotification('comment_mention', `💬 내 글에 새 댓글`, `${State.currentUser.name || ''}님이 "${esc(post.title || '')}" 글에 댓글을 남겼습니다.`, '#board:' + targetId)
+          }
+        }
+      } catch(e) {}
     }
   } catch (e) {
     _showCommentError(key, '댓글 등록 실패: ' + e.message)
@@ -269,6 +287,13 @@ window.saveCommentEdit = async function(commentId, modalType, targetId) {
   if (!content) return
 
   try {
+    const snap = await db.collection('comments').doc(commentId).get()
+    if (!snap.exists) { _showCommentError(key, '댓글을 찾을 수 없습니다.'); return }
+    const c = snap.data()
+    const currentUid = auth?.currentUser?.uid
+    const currentGrade = (State.currentUser?.grade) || 0
+    if (currentUid !== c.uid && currentGrade < 3) { showToast('수정 권한이 없습니다. (작성자 또는 관리자 이상)', 'warning'); return }
+
     const updateData = { content }
     stampModified(updateData)
     await db.collection('comments').doc(commentId).update(updateData)
@@ -281,6 +306,18 @@ window.saveCommentEdit = async function(commentId, modalType, targetId) {
 
 // 댓글 삭제
 window.deleteComment = async function(commentId, modalType, targetId) {
+  try {
+    const snap = await db.collection('comments').doc(commentId).get()
+    if (!snap.exists) { showToast('댓글을 찾을 수 없습니다.', 'warning'); return }
+    const c = snap.data()
+    const currentUid = auth?.currentUser?.uid
+    const currentGrade = (State.currentUser?.grade) || 0
+    const canDel = (currentUid === c.uid) || (currentGrade >= 3)
+    if (!canDel) { showToast('삭제 권한이 없습니다. (작성자 또는 관리자 이상)', 'warning'); return }
+  } catch (e) {
+    _showCommentError(`${modalType}-${targetId}`, '권한 확인 실패: ' + e.message)
+    return
+  }
   const ok = await korConfirm('댓글을 삭제하시겠습니까?')
   if (!ok) return
 
@@ -319,7 +356,7 @@ function checkCommentMentions(content, targetType, targetId) {
         try {
           const curName = (typeof _currentUserName !== 'undefined' && _currentUserName) ? _currentUserName : '누군가'
           if (typeof addNotification === 'function') {
-            addNotification('comment_mention', '댓글 멘션', `${curName}님이 댓글에서 회원님을 멘션했습니다`, `#${targetType}:${targetId}`)
+            addNotification('comment_mention', '댓글 멘션', `${curName}님이 댓글에서 회원님을 멘션했습니다`, `#${targetType}:${targetId}`, { targetUid: u.uid })
           }
         } catch(e) {}
       }

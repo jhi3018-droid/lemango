@@ -285,15 +285,19 @@ function renderSettings() {
     </div>` : ''}
   </div>`
 
-  // 업무일정 카테고리 카드
+  // 업무일정 카테고리 카드 (관리자 이상만 수정/추가/삭제)
+  const curGradeWk = (State.currentUser && State.currentUser.grade) || 1
+  const canEditWkCat = curGradeWk >= 3
   const wkCatListHtml = _workCategories.map((cat, idx) => {
     const color = getWorkCatColor(cat)
     return `<div class="set-item" id="wkCatItem_${idx}">
       <div class="set-item-view">
         <span class="wk-cat-badge" style="background:${color.bg};color:${color.text}">${cat}</span>
         <span style="flex:1"></span>
-        <button class="set-item-action set-item-edit" onclick="editWorkCategorySetting(${idx})" title="수정">&#9998;</button>
-        <button class="set-item-action set-item-del" onclick="removeWorkCategorySetting(${idx})" title="삭제">&#10005;</button>
+        ${canEditWkCat ? `
+          <button class="set-item-action set-item-edit" onclick="editWorkCategorySetting(${idx})" title="수정">&#9998;</button>
+          <button class="set-item-action set-item-del" onclick="removeWorkCategorySetting(${idx})" title="삭제">&#10005;</button>
+        ` : ''}
       </div>
       <div class="set-item-editrow" style="display:none">
         <input type="text" class="set-edit-input" value="${cat}" data-field="val" style="flex:1" />
@@ -309,11 +313,11 @@ function renderSettings() {
       <span class="set-card-count">${_workCategories.length}</span>
     </div>
     <div class="set-list set-list-scroll">${wkCatListHtml}</div>
-    <div class="set-add-row">
+    ${canEditWkCat ? `<div class="set-add-row">
       <input type="text" id="setWkCatName" placeholder="카테고리명 (예: 출장)" class="set-add-input" style="flex:1"
         onkeydown="if(event.key==='Enter')addWorkCategorySetting()" />
       <button class="btn btn-new set-add-btn" onclick="addWorkCategorySetting()">+ 추가</button>
-    </div>
+    </div>` : ''}
   </div>`
 
   // 기획 일정 단계 카드 (판매 채널과 동일한 인라인 에디트 패턴)
@@ -398,6 +402,66 @@ function renderSettings() {
     </div>`
   }
 
+  // 출퇴근 허용 IP 카드 (시스템 관리자/대표이사 grade 4+)
+  let ipSection = ''
+  if (isTopAdmin) {
+    const ipListHtml = (_allowedIps || []).map((entry, idx) => `
+      <div class="set-item" id="ipItem_${idx}">
+        <div class="set-item-view">
+          <span class="set-item-label" style="font-family:monospace;min-width:130px">${entry.ip || ''}</span>
+          <span class="set-item-label" style="color:#888;font-size:11px;flex:1">${entry.label || ''}</span>
+          <label class="notif-switch notif-switch-sm" style="margin:0 8px">
+            <input type="checkbox" ${entry.active ? 'checked' : ''} onchange="toggleAllowedIpActive(${idx}, this.checked)">
+            <span class="notif-slider"></span>
+          </label>
+          <button class="set-item-action set-item-edit" onclick="editAllowedIp(${idx})" title="수정">&#9998;</button>
+          <button class="set-item-action set-item-del" onclick="removeAllowedIp(${idx})" title="삭제">&#10005;</button>
+        </div>
+        <div class="set-item-editrow" style="display:none">
+          <input type="text" class="set-edit-input" value="${entry.ip || ''}" data-field="ip" style="flex:0 0 140px;font-family:monospace" placeholder="IP" />
+          <input type="text" class="set-edit-input" value="${entry.label || ''}" data-field="label" style="flex:1" placeholder="라벨" />
+          <button class="set-edit-save" onclick="saveAllowedIpEdit(${idx})">저장</button>
+          <button class="set-edit-cancel" onclick="renderSettings()">취소</button>
+        </div>
+      </div>`).join('') || '<div class="set-empty">등록된 IP 없음</div>'
+
+    const mode = _ipEnforceMode || 'off'
+    const ipCard = `<div class="set-card set-card-wide">
+      <div class="set-card-header">
+        <span class="set-card-title">허용 IP 목록</span>
+        <span class="set-card-count">${(_allowedIps || []).length}</span>
+      </div>
+      <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:12px;color:#555">IP 정책</span>
+        <select onchange="setIpEnforceMode(this.value)" style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px">
+          <option value="off" ${mode==='off'?'selected':''}>기록만 (검증 없음)</option>
+          <option value="warn" ${mode==='warn'?'selected':''}>경고 (허용 외 IP는 경고만)</option>
+          <option value="block" ${mode==='block'?'selected':''}>차단 (허용 외 IP 불가, 관리자 우회)</option>
+        </select>
+        <span id="currentIpDisplay" style="font-size:11px;color:#888;margin-left:auto">현재 IP: <span id="currentIpValue">확인 중…</span></span>
+        <button type="button" class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="checkCurrentIp()">새로고침</button>
+      </div>
+      <div class="set-list set-list-scroll">${ipListHtml}</div>
+      <div class="set-add-row" style="flex-wrap:wrap">
+        <input type="text" id="setIpAddr" placeholder="IP (예: 192.168.1.10, 192.168.1.*)" class="set-add-input" style="flex:0 0 200px;font-family:monospace"
+          onkeydown="if(event.key==='Enter')addAllowedIp()" />
+        <input type="text" id="setIpLabel" placeholder="라벨 (예: 사무실, 재택)" class="set-add-input" style="flex:1"
+          onkeydown="if(event.key==='Enter')addAllowedIp()" />
+        <button class="btn btn-new set-add-btn" onclick="addAllowedIp()">+ 추가</button>
+        <button class="btn btn-ghost set-add-btn" onclick="addCurrentIpAsAllowed()" title="현재 접속 IP를 허용 목록에 추가">현재 IP 추가</button>
+      </div>
+    </div>`
+
+    ipSection = `<div class="set-section">
+      <button class="set-section-btn" onclick="toggleSetSection(this)">
+        <span>🌐 출퇴근 허용 IP</span><span class="set-section-arrow">▼</span>
+      </button>
+      <div class="set-section-body">
+        <div class="set-grid">${ipCard}</div>
+      </div>
+    </div>`
+  }
+
   container.innerHTML = `
     <div class="settings-header">
       <h2 class="settings-title">기본 옵션 관리</h2>
@@ -462,6 +526,8 @@ function renderSettings() {
 
     ${deptSection}
 
+    ${ipSection}
+
     <div class="set-section">
       <button class="set-section-btn" onclick="toggleSetSection(this)">
         <span>🔔 알림 설정</span><span class="set-section-arrow">▼</span>
@@ -475,20 +541,21 @@ function renderSettings() {
 }
 
 const NOTIF_TYPE_LABELS = {
-  event_upcoming: { label: '행사 임박 (D-3)', desc: '행사 시작 3일 전 알림' },
-  event_end: { label: '행사 종료', desc: '행사 종료일 알림' },
-  plan_deadline: { label: '기획 마감 (D-3)', desc: '기획 마감 3일 전 알림' },
-  member_pending: { label: '회원 승인 대기', desc: '신규 가입 승인 요청' },
-  member_pending_urgent: { label: '회원 승인 긴급', desc: '신규 가입 최우선 알림' },
+  event_start: { label: '행사 시작 (D-3)', desc: '행사 시작 3일 전·당일 알림' },
+  event_end: { label: '행사 종료 (D-3)', desc: '행사 종료 3일 전·당일 알림' },
+  plan_deadline: { label: '기획 마감 (D-3)', desc: '기획 단계 마감 3일 전·당일·지연 알림' },
+  member_pending_urgent: { label: '회원 승인 긴급', desc: '신규 가입 최우선 알림 (관리자 전용)' },
   board_notice: { label: '게시판 공지', desc: '새 공지사항 등록' },
   comment_mention: { label: '@멘션 댓글', desc: '댓글에서 나를 언급' },
   watch_change: { label: '워치 변경', desc: '관심 상품/기획 변경' },
   work_mention: { label: '업무 참조', desc: '업무일정에서 나를 참조' },
   work_start: { label: '업무 시작일', desc: '참조된 업무 시작일 알림' },
   work_upcoming: { label: '업무 내일 시작', desc: '참조된 업무 내일 시작' },
-  deadline_urgent: { label: '마감 긴급 (D-1)', desc: '마감일 하루 전' },
-  deadline_today: { label: '마감 오늘', desc: '오늘 마감인 항목' },
-  deadline_overdue: { label: '마감 초과', desc: '마감일 지난 항목' },
+  personal_schedule: { label: '개인일정 공유', desc: '나를 참조한 개인일정 등록' },
+  birthday: { label: '생일 알림', desc: '오늘 생일인 동료 안내' },
+  leave_pending: { label: '연차 승인 대기', desc: '부서원 연차 신청 대기 (부서장/관리자)' },
+  attend_pending: { label: '출퇴근 승인 대기', desc: '부서원 지각/조퇴 승인 대기 (부서장/관리자)' },
+  late_arrival: { label: '지각 알림', desc: '부서원 지각 발생 시 즉시 알림 (부서장/관리자)' },
 };
 
 window.renderNotifSettingsCard = function() {
@@ -911,7 +978,13 @@ function uploadDesignCodes(input) {
 // =============================================
 // ===== 업무일정 카테고리 CRUD =====
 // =============================================
+function _canEditWkCat() {
+  const g = (State.currentUser && State.currentUser.grade) || 1
+  if (g < 3) { showToast('관리자 이상만 사용할 수 있습니다.', 'error'); return false }
+  return true
+}
 function addWorkCategorySetting() {
+  if (!_canEditWkCat()) return
   const name = document.getElementById('setWkCatName')?.value.trim()
   if (!name) { showToast('카테고리명을 입력해주세요.', 'warning'); return }
   if (_workCategories.includes(name)) { showToast(`"${name}"은 이미 존재합니다.`, 'error'); return }
@@ -924,6 +997,7 @@ function addWorkCategorySetting() {
 }
 
 function editWorkCategorySetting(idx) {
+  if (!_canEditWkCat()) return
   const el = document.getElementById('wkCatItem_' + idx)
   if (!el) return
   el.querySelector('.set-item-view').style.display = 'none'
@@ -932,6 +1006,7 @@ function editWorkCategorySetting(idx) {
 }
 
 function saveWorkCategoryEdit(idx) {
+  if (!_canEditWkCat()) return
   const el = document.getElementById('wkCatItem_' + idx)
   if (!el) return
   const newName = el.querySelector('[data-field="val"]')?.value.trim()
@@ -954,6 +1029,7 @@ function saveWorkCategoryEdit(idx) {
 }
 
 async function removeWorkCategorySetting(idx) {
+  if (!_canEditWkCat()) return
   const name = _workCategories[idx]
   if (!await korConfirm(`"${name}" 카테고리를 삭제하시겠습니까?\n해당 카테고리의 기존 일정은 "기타"로 이전됩니다.`)) return
   // 기존 일정 → '기타'로 이전
@@ -1134,3 +1210,136 @@ window.editPlanPhase = editPlanPhase
 window.savePlanPhaseEdit = savePlanPhaseEdit
 window.cancelPlanPhaseEdit = cancelPlanPhaseEdit
 window.deletePlanPhase = deletePlanPhase
+
+// =============================================
+// ===== 출퇴근 허용 IP CRUD (시스템 관리자 전용) =====
+// =============================================
+function _ipAdminCheck() {
+  const g = (State.currentUser && State.currentUser.grade) || 1
+  if (g < 4) { showToast('시스템 관리자만 변경할 수 있습니다.', 'error'); return false }
+  return true
+}
+
+function _validateIp(ip) {
+  if (!ip) return false
+  // 정확한 IPv4 또는 마지막 옥텟 와일드카드 (예: 192.168.1.*)
+  const re = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3}|\*)$/
+  const m = ip.match(re)
+  if (!m) return false
+  for (let i = 1; i <= 3; i++) {
+    const n = parseInt(m[i])
+    if (isNaN(n) || n < 0 || n > 255) return false
+  }
+  if (m[4] !== '*') {
+    const n = parseInt(m[4])
+    if (isNaN(n) || n < 0 || n > 255) return false
+  }
+  return true
+}
+
+function addAllowedIp() {
+  if (!_ipAdminCheck()) return
+  const ip = document.getElementById('setIpAddr')?.value.trim()
+  const label = document.getElementById('setIpLabel')?.value.trim()
+  if (!ip) { showToast('IP를 입력해주세요.', 'warning'); return }
+  if (!_validateIp(ip)) { showToast('올바른 IP 형식이 아닙니다. (예: 192.168.1.10 또는 192.168.1.*)', 'error'); return }
+  if (_allowedIps.some(e => e.ip === ip)) { showToast(`"${ip}"는 이미 등록됐습니다.`, 'error'); return }
+  _allowedIps.push({ ip, label, active: true })
+  saveAllowedIps()
+  renderSettings()
+  showToast(`"${ip}" 추가됐습니다.`, 'success')
+  if (typeof logActivity === 'function') logActivity('setting', '설정', `허용 IP 추가: ${ip}${label ? ' (' + label + ')' : ''}`)
+}
+
+function editAllowedIp(idx) {
+  const el = document.getElementById('ipItem_' + idx)
+  if (!el) return
+  el.querySelector('.set-item-view').style.display = 'none'
+  el.querySelector('.set-item-editrow').style.display = ''
+  el.querySelector('[data-field="ip"]')?.focus()
+}
+
+function saveAllowedIpEdit(idx) {
+  if (!_ipAdminCheck()) return
+  const el = document.getElementById('ipItem_' + idx)
+  if (!el) return
+  const ip = el.querySelector('[data-field="ip"]')?.value.trim()
+  const label = el.querySelector('[data-field="label"]')?.value.trim()
+  if (!ip) { showToast('IP를 입력해주세요.', 'warning'); return }
+  if (!_validateIp(ip)) { showToast('올바른 IP 형식이 아닙니다.', 'error'); return }
+  const exists = _allowedIps.findIndex((e, i) => i !== idx && e.ip === ip)
+  if (exists >= 0) { showToast(`"${ip}"는 이미 등록됐습니다.`, 'error'); return }
+  const old = _allowedIps[idx]
+  _allowedIps[idx] = { ip, label, active: old.active !== false }
+  saveAllowedIps()
+  renderSettings()
+  showToast('수정됐습니다.', 'success')
+  if (typeof logActivity === 'function') logActivity('setting', '설정', `허용 IP 수정: ${old.ip} → ${ip}`)
+}
+
+function toggleAllowedIpActive(idx, active) {
+  if (!_ipAdminCheck()) { renderSettings(); return }
+  if (!_allowedIps[idx]) return
+  _allowedIps[idx].active = !!active
+  saveAllowedIps()
+  showToast(`${_allowedIps[idx].ip} ${active ? '활성화' : '비활성화'}`, 'success')
+  if (typeof logActivity === 'function') logActivity('setting', '설정', `허용 IP ${active ? '활성' : '비활성'}: ${_allowedIps[idx].ip}`)
+}
+
+async function removeAllowedIp(idx) {
+  if (!_ipAdminCheck()) return
+  const entry = _allowedIps[idx]
+  if (!entry) return
+  if (!await korConfirm(`"${entry.ip}"${entry.label ? ' (' + entry.label + ')' : ''} 를 삭제하시겠습니까?`)) return
+  _allowedIps.splice(idx, 1)
+  saveAllowedIps()
+  renderSettings()
+  showToast('삭제됐습니다.', 'success')
+  if (typeof logActivity === 'function') logActivity('setting', '설정', `허용 IP 삭제: ${entry.ip}`)
+}
+
+function setIpEnforceMode(mode) {
+  if (!_ipAdminCheck()) { renderSettings(); return }
+  if (!['off', 'warn', 'block'].includes(mode)) return
+  _ipEnforceMode = mode
+  saveIpEnforceMode()
+  const label = { off: '기록만', warn: '경고', block: '차단' }[mode]
+  showToast(`IP 정책: ${label}`, 'success')
+  if (typeof logActivity === 'function') logActivity('setting', '설정', `IP 정책 변경: ${label}`)
+}
+
+async function checkCurrentIp() {
+  const el = document.getElementById('currentIpValue')
+  if (el) el.textContent = '확인 중…'
+  try {
+    const res = await fetch('https://api.ipify.org?format=json')
+    const data = await res.json()
+    if (el) el.textContent = data.ip || '알 수 없음'
+    return data.ip || ''
+  } catch (e) {
+    if (el) el.textContent = '조회 실패'
+    return ''
+  }
+}
+
+async function addCurrentIpAsAllowed() {
+  if (!_ipAdminCheck()) return
+  const ip = await checkCurrentIp()
+  if (!ip) { showToast('현재 IP를 가져올 수 없습니다.', 'error'); return }
+  if (_allowedIps.some(e => e.ip === ip)) { showToast(`"${ip}"는 이미 등록됐습니다.`, 'warning'); return }
+  const label = prompt('라벨을 입력하세요 (예: 사무실, 재택):', '') || ''
+  _allowedIps.push({ ip, label: label.trim(), active: true })
+  saveAllowedIps()
+  renderSettings()
+  showToast(`"${ip}" 추가됐습니다.`, 'success')
+  if (typeof logActivity === 'function') logActivity('setting', '설정', `허용 IP 추가(현재): ${ip}`)
+}
+
+window.addAllowedIp = addAllowedIp
+window.editAllowedIp = editAllowedIp
+window.saveAllowedIpEdit = saveAllowedIpEdit
+window.toggleAllowedIpActive = toggleAllowedIpActive
+window.removeAllowedIp = removeAllowedIp
+window.setIpEnforceMode = setIpEnforceMode
+window.checkCurrentIp = checkCurrentIp
+window.addCurrentIpAsAllowed = addCurrentIpAsAllowed

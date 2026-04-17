@@ -116,7 +116,7 @@ async function _cleanOldBackups() {
 async function runAutoBackup() {
   const today = new Date()
   const dateStr = today.toISOString().slice(0, 10) // YYYY-MM-DD
-  const backupFlag = 'lemango_last_backup_date'
+  const backupFlag = 'lemango_last_backup_date_v1'
 
   // 이미 오늘 백업했으면 skip
   if (localStorage.getItem(backupFlag) === dateStr) return
@@ -304,7 +304,7 @@ window.manualBackup = async function() {
   showToast('백업 진행 중...', 'info')
   const result = await _saveBackup('daily', dateStr)
   if (result) {
-    localStorage.setItem('lemango_last_backup_date', dateStr)
+    localStorage.setItem('lemango_last_backup_date_v1', dateStr)
     showToast('수동 백업 완료', 'success')
     renderBackupPanel()
   }

@@ -221,13 +221,16 @@ function renderSalesTable() {
   const active = State.sales.activePlatforms
 
   // tfoot 합계 (전체 필터 결과 기준, 전체 _platforms 기준)
-  const allPlatTotals = {}, allPlatRevTotals = {}
+  const allPlatTotals = {}, allPlatRevTotals = {}, allPlatNetTotals = {}
   _platforms.forEach(pl => {
+    const feeRate = (typeof getChannelFeeRate === 'function') ? getChannelFeeRate(pl) : 0
     allPlatTotals[pl]    = data.reduce((s, p) => s + (p.sales?.[pl] || 0), 0)
     allPlatRevTotals[pl] = data.reduce((s, p) => s + (p.sales?.[pl] || 0) * (p.salePrice || 0), 0)
+    allPlatNetTotals[pl] = Math.round(allPlatRevTotals[pl] * (1 - feeRate / 100))
   })
   const grandQty = _platforms.reduce((s, pl) => s + allPlatTotals[pl], 0)
   const grandRev = _platforms.reduce((s, pl) => s + allPlatRevTotals[pl], 0)
+  const grandNet = _platforms.reduce((s, pl) => s + allPlatNetTotals[pl], 0)
 
   // 2단 헤더 — 1행 (rowspan=2 columns get sort+filter via initTableFeatures, colspan=2 groups are skipped)
   let h1 = `
@@ -235,35 +238,46 @@ function renderSalesTable() {
     <th rowspan="2" data-key="productCode" style="width:145px">품번</th>
     <th rowspan="2" data-key="nameKr">상품명</th>
     <th rowspan="2" data-key="salePrice" style="text-align:right">판매가</th>
-    <th colspan="2" class="sales-group-th">합계</th>`
+    <th colspan="3" class="sales-group-th">합계</th>`
   active.forEach((pl, i) => {
-    h1 += `<th colspan="2" class="sales-group-th sl-plat-th" draggable="true" data-platform="${pl}" data-pidx="${i}">${pl}</th>`
+    h1 += `<th colspan="3" class="sales-group-th sl-plat-th" draggable="true" data-platform="${pl}" data-pidx="${i}">${pl}${(typeof getChannelFeeRate==='function'&&getChannelFeeRate(pl))?'<span style="font-size:9px;opacity:0.7;margin-left:3px">('+getChannelFeeRate(pl)+'%)</span>':''}</th>`
   })
 
   // 2단 헤더 — 2행
   let h2 = `
     <th class="sales-sub-th" data-key="totalSales" style="text-align:right">수량</th>
-    <th class="sales-sub-th" data-key="totalRevenue" style="text-align:right">매출액</th>`
+    <th class="sales-sub-th" data-key="totalRevenue" style="text-align:right">매출액</th>
+    <th class="sales-sub-th" data-key="totalNetRevenue" style="text-align:right">순매출</th>`
   active.forEach(pl => {
     h2 += `<th class="sales-sub-th" data-key="sales.${pl}" style="text-align:right">수량</th>` +
-      `<th class="sales-sub-th" data-key="rev.${pl}" style="text-align:right">매출액</th>`
+      `<th class="sales-sub-th" data-key="rev.${pl}" style="text-align:right">매출액</th>` +
+      `<th class="sales-sub-th" data-key="net.${pl}" style="text-align:right">순매출</th>`
   })
 
   // tbody
   const tbody = pageData.map(p => {
     const totalQty = getTotalSales(p)
     const totalRev = totalQty * (p.salePrice || 0)
+    const totalNet = _platforms.reduce((s, pl) => {
+      const q = p.sales?.[pl] || 0
+      const r = q * (p.salePrice || 0)
+      const fee = (typeof getChannelFeeRate === 'function') ? getChannelFeeRate(pl) : 0
+      return s + Math.round(r * (1 - fee / 100))
+    }, 0)
     let row = `<tr>
       <td>${renderThumb(p)}</td>
       <td><span class="code-link" onclick="openDetailModal('${p.productCode}')">${p.productCode}</span></td>
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis" title="${p.nameKr}">${p.nameKr}</td>
       <td style="text-align:right"><span class="price">${fmtPrice(p.salePrice)}</span></td>
       <td class="sl-qty sl-total-col">${fmtNum(totalQty)}</td>
-      <td class="sl-rev sl-total-col">${fmtNum(totalRev)}</td>`
+      <td class="sl-rev sl-total-col">${fmtNum(totalRev)}</td>
+      <td class="sl-rev sl-total-col" style="color:var(--success)">${fmtNum(totalNet)}</td>`
     active.forEach(pl => {
       const qty = p.sales?.[pl] || 0
       const rev = qty * (p.salePrice || 0)
-      row += `<td class="sl-qty">${fmtNum(qty)}</td><td class="sl-rev">${fmtNum(rev)}</td>`
+      const fee = (typeof getChannelFeeRate === 'function') ? getChannelFeeRate(pl) : 0
+      const net = Math.round(rev * (1 - fee / 100))
+      row += `<td class="sl-qty">${fmtNum(qty)}</td><td class="sl-rev">${fmtNum(rev)}</td><td class="sl-rev" style="color:var(--success)">${fmtNum(net)}</td>`
     })
     return row + '</tr>'
   }).join('')
@@ -271,9 +285,10 @@ function renderSalesTable() {
   // tfoot
   let tf = `<tr><td colspan="3" style="text-align:right">합계</td><td></td>
     <td class="sl-qty sl-total-col">${fmtNum(grandQty)}</td>
-    <td class="sl-rev sl-total-col">${fmtNum(grandRev)}</td>`
+    <td class="sl-rev sl-total-col">${fmtNum(grandRev)}</td>
+    <td class="sl-rev sl-total-col" style="color:var(--success)">${fmtNum(grandNet)}</td>`
   active.forEach(pl => {
-    tf += `<td class="sl-qty">${fmtNum(allPlatTotals[pl])}</td><td class="sl-rev">${fmtNum(allPlatRevTotals[pl])}</td>`
+    tf += `<td class="sl-qty">${fmtNum(allPlatTotals[pl])}</td><td class="sl-rev">${fmtNum(allPlatRevTotals[pl])}</td><td class="sl-rev" style="color:var(--success)">${fmtNum(allPlatNetTotals[pl])}</td>`
   })
   tf += '</tr>'
 

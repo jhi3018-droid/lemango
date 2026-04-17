@@ -36,7 +36,7 @@ function findStockProduct() {
   const p = findProductByKeyword(keyword)
   const body = document.getElementById('sipBody')
   if (!p) {
-    body.innerHTML = `<div class="sip-empty sip-notfound">품번 <b>${keyword}</b>을(를) 찾을 수 없습니다.</div>`
+    body.innerHTML = `<div class="sip-empty sip-notfound">품번 <b>${esc(keyword)}</b>을(를) 찾을 수 없습니다.</div>`
     return
   }
 
@@ -125,7 +125,7 @@ function findSrmProduct() {
   const p = findProductByKeyword(keyword)
   const area = document.getElementById('srmProductArea')
   if (!p) {
-    area.innerHTML = `<div class="srm-empty srm-notfound">품번 <b>${keyword}</b>을(를) 찾을 수 없습니다.</div>`
+    area.innerHTML = `<div class="srm-empty srm-notfound">품번 <b>${esc(keyword)}</b>을(를) 찾을 수 없습니다.</div>`
     return
   }
   area.innerHTML = buildSrmProductArea(p)
@@ -244,6 +244,7 @@ function saveSrmStock(productCode) {
   showToast(`${p.nameKr} 입고 ${total}개 저장 완료`, 'success')
   logActivity('create', '재고관리', `입고: ${p.productCode} ${p.nameKr} ${total}개`)
   try { if (typeof addProductHistory === 'function') addProductHistory(p.productCode, '입고', `총 ${total}개`) } catch(e) {}
+  if (typeof saveProducts === 'function') saveProducts()
   // 저장 후 동일 상품 다시 렌더 (현재 재고 + 입고 이력 포함)
   document.getElementById('srmProductArea').innerHTML = buildSrmProductArea(p)
 }
@@ -349,6 +350,7 @@ function confirmStockUpload() {
   renderStockTable()
   showToast(`${cnt}개 상품 입고 저장 완료`, 'success')
   logActivity('create', '재고관리', `일괄입고: ${cnt}개 상품`)
+  if (typeof saveProducts === 'function') saveProducts()
   document.getElementById('stockRegisterModal').close()
   _stockUploadData = null
 }
@@ -382,7 +384,7 @@ function findOutgoingProduct() {
   const p = findProductByKeyword(keyword)
   const area = document.getElementById('ougProductArea')
   if (!p) {
-    area.innerHTML = `<div class="srm-empty srm-notfound">품번 <b>${keyword}</b>을(를) 찾을 수 없습니다.</div>`
+    area.innerHTML = `<div class="srm-empty srm-notfound">품번 <b>${esc(keyword)}</b>을(를) 찾을 수 없습니다.</div>`
     return
   }
   const sizes = SIZES
@@ -469,6 +471,7 @@ function submitOutgoing(productCode) {
   showToast(`${p.nameKr} 출고 ${total}개 처리 완료`, 'success')
   logActivity('create', '재고관리', `출고: ${p.productCode} ${p.nameKr} ${total}개`)
   try { if (typeof addProductHistory === 'function') addProductHistory(p.productCode, '출고', `총 ${total}개`) } catch(e) {}
+  if (typeof saveProducts === 'function') saveProducts()
   closeOutgoingModal(true)
 }
 

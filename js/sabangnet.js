@@ -549,6 +549,11 @@ function confirmSabangnetUpload() {
   document.getElementById('sabangnetPreviewModal').close()
   _sbRows = []
   _sbColFilters = {}
+  // 자동 생성된 상품 포함 전체 탭 갱신
+  State.product.filtered = [...State.allProducts]
+  State.stock.filtered   = [...State.allProducts]
+  renderProductTable()
+  renderStockTable()
   renderSalesTable()
   renderDashboard()
 
@@ -568,4 +573,5 @@ function confirmSabangnetUpload() {
     showToast(msg, 'success')
     logActivity('upload', '매출현황', `사방넷 업로드: ${parts.join(', ')}`)
   }
+  if (typeof saveProducts === 'function') saveProducts()
 }

@@ -55,6 +55,7 @@ async function initApp() {
   makeDraggableResizable(document.getElementById('dashInfoModal'))
   makeDraggableResizable(document.getElementById('memberEditModal'))
   makeDraggableResizable(document.getElementById('memberAddModal'))
+  makeDraggableResizable(document.getElementById('salaryFormModal'))
   makeDraggableResizable(document.getElementById('memberProfileModal'))
   makeDraggableResizable(document.getElementById('detailModal'), 480, 300)
   makeDraggableResizable(document.getElementById('compareModal'), 600, 400)
@@ -76,6 +77,7 @@ async function initApp() {
   makeDraggableResizable(document.getElementById('barcodeUploadModal'), 500, 300)
   makeDraggableResizable(document.getElementById('downloadFormatModal'), 400, 300)
   makeDraggableResizable(document.getElementById('downloadFormatEditorModal'), 600, 400)
+  makeDraggableResizable(document.getElementById('bulkEditPreviewModal'), 600, 400)
   makeDraggableResizable(document.getElementById('bulkScheduleModal'), 400, 300)
   makeDraggableResizable(document.getElementById('attendancePopup'), 300, 200)
   makeDraggableResizable(document.getElementById('leaveRequestModal'), 400, 300)
@@ -123,12 +125,108 @@ async function initApp() {
   applyTabState()
 
   try {
-    const [lem, noir] = await Promise.all([
-      fetch('data/products_lemango.json').then(r => r.json()),
-      fetch('data/products_noir.json').then(r => r.json())
-    ])
-    State.allProducts = [...lem, ...noir]
-    if (typeof loadPlanItems === 'function') loadPlanItems()
+    // ===== Firestore 우선 로드 (공유 데이터) =====
+    let fsData = {}
+    try {
+      if (typeof _fsLoadAllSharedData === 'function') {
+        fsData = await _fsLoadAllSharedData()
+      }
+    } catch (e) { console.warn('Firestore 공유 데이터 로드 실패:', e.message) }
+
+    // 설정 데이터 Firestore → localStorage 동기화
+    if (fsData.settings && typeof fsData.settings === 'object') {
+      Object.assign(_settings, fsData.settings)
+      localStorage.setItem('lemango_settings_v1', JSON.stringify(_settings))
+    }
+    if (Array.isArray(fsData.channels) && fsData.channels.length) {
+      _channels.length = 0; fsData.channels.forEach(c => _channels.push(c))
+      _platforms = _channels.filter(c => c.active).map(c => c.name)
+      localStorage.setItem('lemango_channels_v1', JSON.stringify(_channels))
+      savePlatforms()
+    }
+    if (Array.isArray(fsData.depts) && fsData.depts.length) {
+      _depts.length = 0; fsData.depts.forEach(d => _depts.push(d))
+      localStorage.setItem('lemango_depts_v1', JSON.stringify(_depts))
+    }
+    if (Array.isArray(fsData.planPhases) && fsData.planPhases.length) {
+      _planPhases = fsData.planPhases
+      localStorage.setItem('lemango_plan_phases_v1', JSON.stringify(_planPhases))
+    }
+    if (Array.isArray(fsData.workCategories) && fsData.workCategories.length) {
+      _workCategories.length = 0; fsData.workCategories.forEach(c => _workCategories.push(c))
+      localStorage.setItem('lemango_work_categories_v1', JSON.stringify(_workCategories))
+    }
+    if (Array.isArray(fsData.designCodes) && fsData.designCodes.length) {
+      _designCodes.length = 0; fsData.designCodes.forEach(c => _designCodes.push(c))
+      localStorage.setItem('lemango_design_codes_v1', JSON.stringify(_designCodes))
+    }
+    if (Array.isArray(fsData.allowedIps)) {
+      _allowedIps.length = 0; fsData.allowedIps.forEach(ip => _allowedIps.push(ip))
+      localStorage.setItem('lemango_allowed_ips_v1', JSON.stringify(_allowedIps))
+    }
+    if (typeof fsData.ipEnforceMode === 'string') {
+      _ipEnforceMode = fsData.ipEnforceMode
+      localStorage.setItem('lemango_ip_enforce_v1', _ipEnforceMode)
+    }
+    if (Array.isArray(fsData.events)) {
+      _events.length = 0; fsData.events.forEach(e => _events.push(e))
+      localStorage.setItem('lemango_events_v1', JSON.stringify(_events))
+    }
+    if (Array.isArray(fsData.workItems)) {
+      _workItems.length = 0; fsData.workItems.forEach(w => _workItems.push(w))
+      localStorage.setItem('lemango_work_items_v1', JSON.stringify(_workItems))
+    }
+    if (Array.isArray(fsData.planItems) && fsData.planItems.length) {
+      State.planItems = fsData.planItems
+      localStorage.setItem('lemango_plan_items_v1', JSON.stringify(State.planItems))
+    } else if (typeof loadPlanItems === 'function') {
+      loadPlanItems()
+    }
+
+    // ===== 상품 데이터: Firestore 우선, 없으면 JSON 파일 =====
+    let fsProducts = null
+    let productsFromJson = false
+    try {
+      if (typeof _fsLoadProducts === 'function') fsProducts = await _fsLoadProducts()
+    } catch (e) { console.warn('Firestore 상품 로드 실패:', e.message) }
+
+    if (fsProducts && fsProducts.length) {
+      State.allProducts = fsProducts
+    } else {
+      const [lem, noir] = await Promise.all([
+        fetch('data/products_lemango.json').then(r => r.json()),
+        fetch('data/products_noir.json').then(r => r.json())
+      ])
+      State.allProducts = [...lem, ...noir]
+      productsFromJson = true
+    }
+
+    // ===== Firestore에 상품이 없으면 항상 강제 업로드 =====
+    if (productsFromJson && State.allProducts.length > 0) {
+      console.log('[FORCE] JSON에서 로드된 상품 ' + State.allProducts.length + '개 Firestore 업로드...')
+      try { await _forceUploadProducts() } catch (e) { console.warn('강제 상품 업로드 실패:', e.message) }
+    }
+
+    // ===== localStorage → Firestore 초기 마이그레이션 (Firestore에 데이터 없을 때만) =====
+    // Firestore가 주 저장소. Firestore에 이미 데이터가 로드되었으면 재동기화 불필요.
+    const _fsWasEmpty = !fsData || Object.keys(fsData).length === 0
+    if (_fsWasEmpty && typeof _fsSync === 'function') {
+      try {
+        console.log('[MIGRATE] Firestore 비어있음 — localStorage 데이터 업로드')
+        if (_events.length) _fsSync('events', _events)
+        if (_workItems.length) _fsSync('workItems', _workItems)
+        if (_workCategories.length) _fsSync('workCategories', _workCategories)
+        if (Object.keys(_settings).length) _fsSync('settings', _settings)
+        if (_channels.length) _fsSync('channels', _channels)
+        if (_depts && _depts.length) _fsSync('depts', _depts)
+        if (State.planItems.length) _fsSync('planItems', State.planItems)
+        if (_planPhases) _fsSync('planPhases', _planPhases)
+        if (typeof _designCodes !== 'undefined' && _designCodes.length) _fsSync('designCodes', _designCodes)
+        if (typeof _allowedIps !== 'undefined') _fsSync('allowedIps', _allowedIps)
+        if (typeof _ipEnforceMode !== 'undefined') _fsSync('ipEnforceMode', _ipEnforceMode)
+      } catch (e) { console.warn('초기 마이그레이션 실패:', e.message) }
+    }
+
     State.product.filtered = [...State.allProducts]
     State.stock.filtered   = [...State.allProducts]
     State.sales.filtered   = [...State.allProducts]
@@ -150,7 +248,16 @@ async function initApp() {
     const el = document.getElementById(id)
     if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') el.closest('.tab-content')?.querySelector('.btn-primary')?.click() })
   })
-  // 알림 초기화
+  // 알림 초기화 — Firestore 에서 다기기 동기화된 알림 먼저 로드
+  if (typeof _fsLoadNotifications === 'function') await _fsLoadNotifications()
+  // 편집 잠금 Firestore 로드 (다른 사용자가 편집 중인 것 확인)
+  if (typeof _fsLoadEditLocks === 'function') await _fsLoadEditLocks()
+  // 사용자 프리퍼런스 (favorites/emojiRecent/notifSettings) Firestore 로드
+  if (typeof _fsLoadUserPrefs === 'function') await _fsLoadUserPrefs()
+  // Watches 공유 Firestore 로드 (notifyWatchers가 다른 사용자의 워치도 조회해야 함)
+  if (typeof _fsLoadWatches === 'function') await _fsLoadWatches()
+  // 상품 히스토리 공유 로드
+  if (typeof _fsLoadProductHistory === 'function') await _fsLoadProductHistory()
   cleanOldNotifications()
   renderNotifications()
   checkMemberAlerts()
@@ -199,6 +306,12 @@ async function initApp() {
   if (typeof scheduleBackupTimer === 'function') scheduleBackupTimer()
   if (typeof runAutoBackup === 'function') runAutoBackup()
 
+  // 편집 잠금 30초 백그라운드 폴링 (다른 사용자 편집 상태 반영)
+  setInterval(() => {
+    if (document.hidden) return
+    if (typeof _fsLoadEditLocks === 'function') _fsLoadEditLocks()
+  }, 30 * 1000)
+
   // ===== 5분 자동 새로고침 (사용자 작업 방해 없이 백그라운드 갱신) =====
   setInterval(async () => {
     // 모달 열려있으면 skip (편집 중)
@@ -212,11 +325,22 @@ async function initApp() {
     try {
       // 회원/알림 관련은 항상 갱신 (헤더 벨/배지 반영)
       if (typeof loadMembers === 'function') await loadMembers()
+      // 전체 승인 사용자 캐시 갱신 (연차 승인 대기 목록의 신청자 매칭용)
+      if (typeof loadAllUsers === 'function') await loadAllUsers(true)
+      // HR 데이터(출퇴근/연차) 재로딩 — 타 사용자가 제출한 사유/승인신청 건 반영
+      if (typeof loadHrData === 'function') await loadHrData()
+      // Firestore 알림 재동기화 (다기기/멘션 수신)
+      if (typeof _fsLoadNotifications === 'function') await _fsLoadNotifications()
+      // 편집 잠금 동기화
+      if (typeof _fsLoadEditLocks === 'function') await _fsLoadEditLocks()
+      // 팀 공유 설정 (events/workItems/planItems/settings/channels/depts/등) 재로드
+      if (typeof _fsReloadSharedSettings === 'function') await _fsReloadSharedSettings()
       if (typeof checkMemberAlerts === 'function') checkMemberAlerts()
       if (typeof checkEventAlerts === 'function') checkEventAlerts()
       if (typeof checkPlanAlerts === 'function') checkPlanAlerts()
       if (typeof checkWorkMentionAlerts === 'function') checkWorkMentionAlerts()
       if (typeof checkPersonalScheduleAlerts === 'function') checkPersonalScheduleAlerts()
+      if (typeof checkHrPendingItems === 'function') checkHrPendingItems()
       if (typeof renderNotifications === 'function') renderNotifications()
 
       // 활성 탭별 데이터 갱신

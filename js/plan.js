@@ -5,9 +5,10 @@ let _planTempImages = [] // [{url, type:'url'|'file', name, path?, _file?, _pend
 let _planTempImagesToDelete = [] // Storage 경로 삭제 예약
 let _planSelected = new Set()
 
-// 신규기획 localStorage 영속화
+// 신규기획 Firestore 주 저장소 + localStorage 캐시
 function savePlanItems() {
   try {
+    if (typeof _fsSync === 'function') _fsSync('planItems', State.planItems)
     localStorage.setItem('lemango_plan_items_v1', JSON.stringify(State.planItems))
   } catch (e) {
     console.warn('savePlanItems 실패:', e.message)
@@ -796,13 +797,25 @@ function renderPlanTable() {
     `<th class="schedule-sub-th" data-key="schedule.${c.scheduleKey}.end">완료예정일</th>`
   ).join('')
 
+  const _today = new Date().toISOString().slice(0, 10)
   const tbodyHtml = pageData.map(p => {
     const isChecked = _planSelected.has(p.no)
     const regTds = activeRegular.map(c => c.td(p)).join('')
     const schTds = activeSchedule.map(c => {
       const sch = p.schedule?.[c.scheduleKey] || {}
-      return `<td class="schedule-date-cell${sch.start?' has-date':''}">${fmtD(sch.start)}</td>` +
-             `<td class="schedule-date-cell${sch.end?' has-date':''}">${fmtD(sch.end)}</td>`
+      let cellCls = 'schedule-date-cell'
+      if (sch.start) cellCls += ' has-date'
+      // 지연 표시: 완료일이 오늘 이전이고 미이전 상품
+      let delayBadge = ''
+      if (!p.confirmed && sch.end && sch.end < _today) {
+        cellCls += ' schedule-overdue'
+        const daysLate = Math.ceil((new Date(_today) - new Date(sch.end)) / 86400000)
+        delayBadge = `<span class="plan-delay-badge">+${daysLate}일</span>`
+      } else if (!p.confirmed && sch.end && sch.end === _today) {
+        cellCls += ' schedule-today'
+      }
+      return `<td class="${cellCls}">${fmtD(sch.start)}</td>` +
+             `<td class="${cellCls}">${fmtD(sch.end)}${delayBadge}</td>`
     }).join('')
     const cls = [isChecked ? 'np-selected' : '', p.confirmed ? '' : ''].filter(Boolean).join(' ')
     return `<tr class="${cls}" data-no="${p.no}"${p.confirmed?' style="opacity:0.6"':''}><td><input type="checkbox" class="np-check" data-no="${p.no}" ${isChecked?'checked':''} onchange="updatePlanSelection()"></td>${regTds}${schTds}</tr>`
@@ -907,11 +920,14 @@ window.initPlanDragSort = initPlanDragSort
 // ===== 신규기획 상세 모달 =====
 let _editingPlanNo = null
 
-function openPlanDetailModal(no) {
+async function openPlanDetailModal(no) {
   const item = State.planItems.find(p => p.no === no)
   if (!item) return
   _editingPlanNo = no
   _planTempImages = Array.isArray(item.tempImages) ? item.tempImages.map(x => ({ ...x })) : []
+  if ((!window._allUsers || window._allUsers.length === 0) && typeof loadAllUsers === 'function') {
+    try { await loadAllUsers() } catch(e) {}
+  }
   buildPlanDetailContent(item)
   renderPlanTempImageGrid()
   // 뷰 모드로 초기화
@@ -1339,6 +1355,7 @@ async function confirmPlanToProduct() {
   State.stock.filtered   = [...State.allProducts]
   renderProductTable()
   renderStockTable()
+  if (typeof renderSalesTable === 'function') renderSalesTable()
   renderDashboard()
   renderPlanTable()
 
@@ -1351,6 +1368,7 @@ async function confirmPlanToProduct() {
   showToast(`"${newProduct.productCode}" 상품이 상품조회로 이전됐습니다.`, 'success')
   logActivity('create', '신규기획', `상품이전: ${newProduct.productCode}`)
   try { if (typeof addProductHistory === 'function') addProductHistory(newProduct.productCode, '기획이전', '기획→상품 확정') } catch(e) {}
+  if (typeof saveProducts === 'function') saveProducts()
 }
 
 function buildPlanDetailContent(item) {
@@ -1467,7 +1485,28 @@ function buildPlanDetailContent(item) {
   const plAssigneeName = item.assigneeName || (item.assignee ? (_plUsers.find(u=>u.uid===item.assignee)?.name || '') : '')
   const plAssigneePos  = item.assigneePosition || (item.assignee ? (_plUsers.find(u=>u.uid===item.assignee)?.position || '') : '')
   const plAssigneeView = (plAssigneeName && typeof formatUserName === 'function') ? formatUserName(plAssigneeName, plAssigneePos) : (plAssigneeName || '-')
-  const plAssigneeOpts = `<option value="">- 미지정 -</option>` + _plUsers.map(u => `<option value="${u.uid}"${item.assignee===u.uid?' selected':''}>${esc((typeof formatUserName==='function')?formatUserName(u.name, u.position):u.name)}</option>`).join('')
+  const plAssigneeCurrentLabel = plAssigneeName ? plAssigneeView : ''
+  const plAssigneeField = `
+    <div class="dfield">
+      <span class="dfield-label">담당자</span>
+      <span class="dfield-value${!plAssigneeCurrentLabel ? ' empty' : ''}">${plAssigneeCurrentLabel || '-'}</span>
+      <div class="assignee-combo" data-combo="assignee">
+        <input type="hidden" data-pkey="assignee" value="${item.assignee || ''}" />
+        <input type="text" class="assignee-search" value="${esc(plAssigneeCurrentLabel)}" placeholder="이름·직급·부서 검색" autocomplete="off"
+          oninput="filterAssigneeDropdown(this)" onfocus="showAssigneeDropdown(this)" onkeydown="assigneeKeyNav(event, this)" />
+        <button type="button" class="assignee-clear" title="미지정으로" onclick="clearAssignee(this)">✕</button>
+        <div class="assignee-dd" style="display:none">
+          <div class="assignee-opt" data-uid="" onmousedown="selectAssignee(this)">- 미지정 -</div>
+          ${_plUsers.map(u => {
+            const lbl = (typeof formatUserName==='function') ? formatUserName(u.name, u.position) : (u.name||'')
+            const dept = u.dept || ''
+            return `<div class="assignee-opt" data-uid="${u.uid}" data-name="${esc(lbl)}" data-dept="${esc(dept)}" onmousedown="selectAssignee(this)">
+              <span class="aopt-name">${esc(lbl)}</span>${dept ? `<span class="aopt-dept">${esc(dept)}</span>` : ''}
+            </div>`
+          }).join('')}
+        </div>
+      </div>
+    </div>`
   const plPinnedMemoBlock = `
     <div class="pinned-memo">📌 ${esc(item.pinnedMemo || '')}</div>
     <div class="pinned-memo-edit">
@@ -1502,7 +1541,7 @@ function buildPlanDetailContent(item) {
         ${pf('상품명 (영문)', 'nameEn',     item.nameEn,  'text',   '', 'dfield-span2')}
         ${pf('색상 (한글)',   'colorKr',    item.colorKr)}
         ${pf('색상 (영문)',   'colorEn',    item.colorEn)}
-        ${pf('담당자', 'assignee', plAssigneeView, 'select', plAssigneeOpts, '', plAssigneeView)}
+        ${plAssigneeField}
       </div>
     </div>
     <div class="pd-section">
@@ -1718,6 +1757,7 @@ function applyBulkSchedule() {
     count++
   })
 
+  savePlanItems()
   showToast(`${count}건 일정 일괄 적용 완료`, 'success')
   logActivity('update', '신규기획', `일괄 일정 설정 — ${count}건`)
 

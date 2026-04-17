@@ -55,6 +55,7 @@ let _designCodes = (() => {
   } catch { return __designCodes_DEFAULT.map(r => [...r]) }
 })()
 function saveDesignCodes() {
+  if (typeof _fsSync === 'function') _fsSync('designCodes', _designCodes)
   localStorage.setItem('lemango_design_codes_v1', JSON.stringify(_designCodes))
 }
 

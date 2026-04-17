@@ -9,10 +9,19 @@ var _quotaCache = {}    // { uid: { total, year } }
 var _hrDataLoaded = false
 
 // 초기 로드 (앱 시작 시 호출)
+// 서버 우선 조회 헬퍼 (stale 캐시 방지)
+async function _fetchCollection(colName) {
+  try {
+    return await db.collection(colName).get({ source: 'server' })
+  } catch(e) {
+    return await db.collection(colName).get()
+  }
+}
+
 window.loadHrData = async function() {
   if (!db) return
   try {
-    var snap = await db.collection('attendance').get()
+    var snap = await _fetchCollection('attendance')
     var att = {}
     snap.docs.forEach(function(doc) {
       var d = doc.data()
@@ -24,10 +33,41 @@ window.loadHrData = async function() {
       rec._docId = doc.id
       att[uid].push(rec)
     })
+    // 정합성 정리: 사유가 비었는데 신청 플래그가 남아있는 레코드 정리 (승인 안 된 건만)
+    var _fixBatch = []
+    Object.keys(att).forEach(function(uid) {
+      (att[uid] || []).forEach(function(r) {
+        var dirty = false
+        if (r.lateRequested === true && !r.lateApproved && !(r.checkInMemo && r.checkInMemo.trim())) {
+          r.lateRequested = false
+          delete r.lateRequestedAt
+          dirty = true
+        }
+        if (r.earlyRequested === true && !r.earlyApproved && !(r.checkOutMemo && r.checkOutMemo.trim())) {
+          r.earlyRequested = false
+          delete r.earlyRequestedAt
+          dirty = true
+        }
+        if (dirty && r._docId) {
+          _fixBatch.push({ docId: r._docId, lateRequested: r.lateRequested, earlyRequested: r.earlyRequested })
+        }
+      })
+    })
     _attendCache = att
+    // Firestore 일괄 반영 (fire-and-forget)
+    if (_fixBatch.length > 0) {
+      try {
+        var fb = db.batch()
+        _fixBatch.forEach(function(f) {
+          var update = { lateRequested: f.lateRequested, earlyRequested: f.earlyRequested, lateRequestedAt: firebase.firestore.FieldValue.delete(), earlyRequestedAt: firebase.firestore.FieldValue.delete() }
+          fb.update(db.collection('attendance').doc(f.docId), update)
+        })
+        fb.commit().catch(function(e) { console.warn('attendance flag cleanup failed:', e) })
+      } catch(e) { console.warn('attendance flag cleanup setup failed:', e) }
+    }
   } catch(e) { console.error('loadHrData attendance error:', e) }
   try {
-    var snap2 = await db.collection('leaves').get()
+    var snap2 = await _fetchCollection('leaves')
     var lv = {}
     snap2.docs.forEach(function(doc) {
       var d = doc.data()
@@ -42,7 +82,7 @@ window.loadHrData = async function() {
     _leaveCache = lv
   } catch(e) { console.error('loadHrData leave error:', e) }
   try {
-    var snap3 = await db.collection('leaveQuotas').get()
+    var snap3 = await _fetchCollection('leaveQuotas')
     var qt = {}
     snap3.docs.forEach(function(doc) { qt[doc.id] = doc.data() })
     _quotaCache = qt
@@ -159,21 +199,34 @@ async function _saveAttendRecord(uid, rec) {
 
 // ===== 헬퍼: 연차 저장 =====
 async function _saveLeaveRecord(uid, entry) {
-  if (!db) return
+  if (!db) throw new Error('Firebase Firestore 초기화 실패 — 재로그인 또는 새로고침 후 다시 시도해주세요.')
   if (!_leaveCache[uid]) _leaveCache[uid] = []
   var existing = _leaveCache[uid].find(function(l) { return l.id === entry.id })
-  if (existing) {
+  if (existing && existing._docId) {
+    // 기존 Firestore 문서 업데이트
     Object.assign(existing, entry)
-    if (existing._docId) {
-      var saveData = Object.assign({ uid: uid }, entry)
-      delete saveData._docId
-      await db.collection('leaves').doc(existing._docId).set(saveData, { merge: true })
-    }
-  } else {
     var saveData = Object.assign({ uid: uid }, entry)
+    delete saveData._docId
+    await db.collection('leaves').doc(existing._docId).set(saveData, { merge: true })
+    // 저장 검증
+    var verify = await db.collection('leaves').doc(existing._docId).get({ source: 'server' })
+    if (!verify.exists) throw new Error('Firestore 저장 검증 실패(업데이트): 문서를 찾을 수 없습니다.')
+    console.log('[leave] update OK docId=' + existing._docId + ' id=' + entry.id)
+  } else {
+    // 신규: Firestore add → _docId 취득 → 캐시에 반영
+    var saveData = Object.assign({ uid: uid }, entry)
+    delete saveData._docId
     var ref = await db.collection('leaves').add(saveData)
     entry._docId = ref.id
-    _leaveCache[uid].push(entry)
+    // 저장 검증 (Firestore 서버에서 실제 읽기)
+    var verify = await db.collection('leaves').doc(ref.id).get({ source: 'server' })
+    if (!verify.exists) throw new Error('Firestore 저장 검증 실패(신규): 문서가 서버에 없습니다.')
+    console.log('[leave] add OK docId=' + ref.id + ' id=' + entry.id + ' uid=' + uid)
+    if (existing) {
+      Object.assign(existing, entry)
+    } else {
+      _leaveCache[uid].push(entry)
+    }
   }
 }
 
@@ -297,9 +350,14 @@ window.buildHrProfileCard = function() {
 // =============================================
 // ===== 연차 관리 =====
 // =============================================
-window.renderLeaveTab = function() {
+window.renderLeaveTab = async function() {
   var uid = firebase.auth().currentUser ? firebase.auth().currentUser.uid : null
   var grade = (State.currentUser && State.currentUser.grade) || 1
+
+  // Firestore 최신 데이터 재조회 (다기기 동기화)
+  try {
+    if (typeof loadHrData === 'function') await loadHrData()
+  } catch(e) { console.warn('renderLeaveTab refresh 실패:', e) }
 
   var quota = _getQuotaRecords()
   var myQuota = quota[uid] || { total: 15, year: 2026 }
@@ -338,10 +396,12 @@ window.renderLeaveTab = function() {
 
   // 사용 이력 테이블
   var allMyLeaves = (leaves[uid] || []).slice().sort(function(a, b) { return (b.startDate || '').localeCompare(a.startDate || '') })
-  var canDelete = grade >= 3
+  var canAdmin = grade >= 3
+  // 행 액션 컬럼: 본인 대기건 수정 버튼 OR 관리자 승인취소/삭제 버튼
+  var showActionCol = true // 본인 대기건은 항상 수정 가능
   html += '<div class="hr-section">'
   html += '<div class="hr-section-title">연차 사용 이력 <span class="hr-section-badge">' + allMyLeaves.length + '건</span></div>'
-  html += '<table class="hr-table"><thead><tr><th>날짜</th><th>유형</th><th>사유</th><th>상태</th><th>승인자</th>' + (canDelete ? '<th></th>' : '') + '</tr></thead><tbody>'
+  html += '<table class="hr-table"><thead><tr><th>날짜</th><th>유형</th><th>사유</th><th>상태</th><th>승인자</th><th></th></tr></thead><tbody>'
   allMyLeaves.forEach(function(l) {
     var dateStr = l.startDate === l.endDate ? l.startDate.slice(5) : l.startDate.slice(5) + '~' + l.endDate.slice(5)
     var statusCls = l.status === '확인완료' ? 'hr-status-ok' : l.status === '승인' ? 'hr-status-info' : l.status === '대기' ? 'hr-status-wait' : 'hr-status-no'
@@ -349,65 +409,176 @@ window.renderLeaveTab = function() {
     html += '<td>' + esc(l.reason || '-') + '</td>'
     html += '<td><span class="hr-status ' + statusCls + '">' + l.status + '</span></td>'
     html += '<td>' + esc(l.approverName || '-') + '</td>'
-    if (canDelete) html += '<td><button class="hradmin-btn-reject" onclick="deleteLeave(\'' + uid + '\',\'' + l.id + '\')">삭제</button></td>'
+    // 액션: 대기 = 수정 (본인), 승인/확인완료 = 승인취소 (관리자), 관리자 = 삭제
+    var actBtns = ''
+    if (l.status === '대기') {
+      actBtns += '<button class="srm-btn-outline" style="padding:3px 10px;font-size:11px;margin-right:4px" onclick="openLeaveRequestModal(\'' + l.id + '\')">수정</button>'
+    }
+    if (canAdmin && (l.status === '승인' || l.status === '확인완료')) {
+      actBtns += '<button style="padding:3px 10px;font-size:11px;border:1px solid #F09595;background:#fff;color:#A32D2D;border-radius:4px;cursor:pointer;margin-right:4px" onclick="cancelLeaveApproval(\'' + uid + '\',\'' + l.id + '\')">승인취소</button>'
+    }
+    if (canAdmin) {
+      actBtns += '<button class="hradmin-btn-reject" onclick="deleteLeave(\'' + uid + '\',\'' + l.id + '\')">삭제</button>'
+    }
+    html += '<td style="white-space:nowrap">' + (actBtns || '-') + '</td>'
     html += '</tr>'
   })
-  if (allMyLeaves.length === 0) html += '<tr><td colspan="' + (canDelete ? 6 : 5) + '" style="text-align:center;color:#b4b2a9">사용 이력이 없습니다</td></tr>'
+  if (allMyLeaves.length === 0) html += '<tr><td colspan="6" style="text-align:center;color:#b4b2a9">사용 이력이 없습니다</td></tr>'
   html += '</tbody></table></div>'
 
   document.getElementById('hrContent').innerHTML = html
+  if (typeof bindLeaveCalendarClicks === 'function') bindLeaveCalendarClicks()
 }
 
 // ===== 연차 캘린더 =====
+// 날짜 클릭:
+//   - 빈 날짜 → 연차 신청 모달 (해당 날짜 프리셋)
+//   - 대기 상태 연차 → 수정/삭제 가능 모달
+//   - 승인/확인완료 연차 → 상세 조회 (읽기전용)
 window.buildLeaveCalendar = function(myLeaves) {
   var now = new Date()
-  var y = now.getFullYear(), m = now.getMonth()
+  var y = _leaveCalYear != null ? _leaveCalYear : now.getFullYear()
+  var m = _leaveCalMonth != null ? _leaveCalMonth : now.getMonth()
   var first = new Date(y, m, 1)
   var last = new Date(y, m + 1, 0)
   var startDow = first.getDay()
+  var todayStr = fmtDate(now)
 
-  var html = '<div class="hr-section"><div class="hr-section-title">' + y + '년 ' + (m + 1) + '월</div>'
+  var html = '<div class="hr-section">'
+  html += '<div class="hr-cal-header">'
+  html += '<button class="hr-cal-nav" onclick="shiftLeaveCal(-1)">◀</button>'
+  html += '<div class="hr-section-title" style="margin:0">' + y + '년 ' + (m + 1) + '월</div>'
+  html += '<button class="hr-cal-nav" onclick="shiftLeaveCal(1)">▶</button>'
+  html += '<button class="hr-cal-today-btn" onclick="shiftLeaveCal(0)">오늘</button>'
+  html += '</div>'
+  html += '<div class="hr-cal-legend">'
+  html += '<span class="hr-cal-lg-item"><span class="hr-cal-lg-sw hr-cal-lg-pending"></span>대기</span>'
+  html += '<span class="hr-cal-lg-item"><span class="hr-cal-lg-sw hr-cal-lg-leave"></span>연차</span>'
+  html += '<span class="hr-cal-lg-item"><span class="hr-cal-lg-sw hr-cal-lg-half"></span>반차</span>'
+  html += '</div>'
   html += '<div class="hr-calendar">'
   var days = ['일','월','화','수','목','금','토']
   days.forEach(function(d) { html += '<div class="hr-cal-h">' + d + '</div>' })
 
-  // 빈 칸
   for (var i = 0; i < startDow; i++) html += '<div class="hr-cal-d hr-cal-empty"></div>'
 
   for (var d = 1; d <= last.getDate(); d++) {
     var dateStr = y + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0')
-    var isToday = d === now.getDate()
-    var leaveOnDay = myLeaves.find(function(l) { return (l.status === '승인' || l.status === '확인완료') && l.startDate <= dateStr && l.endDate >= dateStr })
-    var cls = 'hr-cal-d'
+    var isToday = dateStr === todayStr
+    // 반려(rejected) 제외, 대기/승인/확인완료 모두 캘린더에 표시
+    var leaveOnDay = myLeaves.find(function(l) { return l.status !== '반려' && l.startDate <= dateStr && l.endDate >= dateStr })
+    var cls = 'hr-cal-d hr-cal-clickable'
     if (isToday) cls += ' hr-cal-today'
+    var labelHtml = String(d)
+    var attrs = ' data-date="' + dateStr + '"'
     if (leaveOnDay) {
-      cls += leaveOnDay.type.indexOf('반차') >= 0 ? ' hr-cal-half' : ' hr-cal-leave'
+      if (leaveOnDay.status === '대기') cls += ' hr-cal-pending'
+      else if ((leaveOnDay.type || '').indexOf('반차') >= 0) cls += ' hr-cal-half'
+      else cls += ' hr-cal-leave'
+      attrs += ' data-leave-id="' + esc(leaveOnDay.id) + '"'
+      var subLabel = (leaveOnDay.type || '') + (leaveOnDay.status === '대기' ? ' ⏳' : '')
+      labelHtml = '<div class="hr-cal-num">' + d + '</div><div class="hr-cal-sub">' + esc(subLabel) + '</div>'
     }
-    html += '<div class="' + cls + '">' + d + '</div>'
+    html += '<div class="' + cls + '"' + attrs + '>' + labelHtml + '</div>'
   }
   html += '</div></div>'
   return html
 }
 
+var _leaveCalYear = null, _leaveCalMonth = null
+window.shiftLeaveCal = function(delta) {
+  var now = new Date()
+  if (delta === 0) {
+    _leaveCalYear = now.getFullYear()
+    _leaveCalMonth = now.getMonth()
+  } else {
+    if (_leaveCalYear == null) _leaveCalYear = now.getFullYear()
+    if (_leaveCalMonth == null) _leaveCalMonth = now.getMonth()
+    _leaveCalMonth += delta
+    if (_leaveCalMonth < 0) { _leaveCalMonth = 11; _leaveCalYear-- }
+    else if (_leaveCalMonth > 11) { _leaveCalMonth = 0; _leaveCalYear++ }
+  }
+  renderLeaveTab()
+}
+
+// 캘린더 셀 클릭 이벤트 위임 바인더
+window.bindLeaveCalendarClicks = function() {
+  var cal = document.querySelector('#hrContent .hr-calendar')
+  if (!cal || cal._leaveBound) return
+  cal._leaveBound = true
+  cal.addEventListener('click', function(e) {
+    var cell = e.target.closest('.hr-cal-clickable')
+    if (!cell) return
+    var leaveId = cell.getAttribute('data-leave-id')
+    var dateStr = cell.getAttribute('data-date')
+    if (leaveId) {
+      openLeaveRequestModal(leaveId)
+    } else if (dateStr) {
+      openLeaveRequestModal(null, dateStr)
+    }
+  })
+}
+
 // ===== 연차 신청 모달 =====
-window.openLeaveRequestModal = function() {
+var _editingLeaveId = null
+
+window.openLeaveRequestModal = function(editLeaveId, presetDate) {
   var modal = document.getElementById('leaveRequestModal')
   if (!modal) return
-  document.getElementById('leaveType').value = '연차'
-  document.getElementById('leaveStart').value = ''
-  document.getElementById('leaveEnd').value = ''
-  document.getElementById('leaveEnd').disabled = false
+
+  _editingLeaveId = editLeaveId || null
+  var titleEl = modal.querySelector('.srm-header span')
+  var submitBtn = modal.querySelector('button.srm-btn-gold[onclick*="submitLeaveRequest"]')
+
+  var preset = null
+  var isReadOnly = false
+  if (_editingLeaveId) {
+    var uid = firebase.auth().currentUser ? firebase.auth().currentUser.uid : null
+    var leaves = _getLeaveRecords()
+    preset = (leaves[uid] || []).find(function(l) { return l.id === _editingLeaveId })
+    if (!preset) { showToast('연차 기록을 찾을 수 없습니다.', 'error'); _editingLeaveId = null; return }
+    // 대기 상태만 편집 가능, 나머지(승인/확인완료/반려)는 읽기 전용 조회
+    isReadOnly = preset.status !== '대기'
+  }
+
+  if (titleEl) {
+    titleEl.textContent = isReadOnly
+      ? '연차 상세 (' + (preset.status || '') + ')'
+      : (_editingLeaveId ? '연차 수정' : '연차 신청')
+  }
+  if (submitBtn) {
+    submitBtn.textContent = _editingLeaveId ? '수정' : '신청'
+    submitBtn.style.display = isReadOnly ? 'none' : ''
+  }
+  var delBtn = document.getElementById('leaveDeleteBtn')
+  if (delBtn) delBtn.style.display = (_editingLeaveId && !isReadOnly) ? '' : 'none'
+
+  var typeEl = document.getElementById('leaveType')
+  var startEl = document.getElementById('leaveStart')
+  var endEl = document.getElementById('leaveEnd')
   var reasonWrap = document.getElementById('leaveReasonWrap')
   var reasonInp = document.getElementById('leaveReason')
-  if (reasonWrap) reasonWrap.style.display = 'none'
-  if (reasonInp) reasonInp.value = ''
-  document.getElementById('leaveType').onchange = function() {
+
+  typeEl.value = preset ? preset.type : '연차'
+  startEl.value = preset ? preset.startDate : (presetDate || '')
+  endEl.value = preset ? preset.endDate : (presetDate || '')
+  endEl.disabled = preset ? preset.type.indexOf('반차') >= 0 : false
+  if (reasonWrap) reasonWrap.style.display = (preset && preset.type === '대체연차') ? '' : 'none'
+  if (reasonInp) reasonInp.value = (preset && preset.type === '대체연차') ? (preset.reason || '') : ''
+
+  // 읽기 전용 토글
+  typeEl.disabled = isReadOnly
+  startEl.disabled = isReadOnly || (preset && preset.type && preset.type.indexOf('반차') >= 0 && isReadOnly)
+  endEl.disabled = isReadOnly || endEl.disabled
+  if (reasonInp) reasonInp.disabled = isReadOnly
+
+  typeEl.onchange = isReadOnly ? null : function() {
     var v = this.value
     if (v.indexOf('반차') >= 0) {
-      document.getElementById('leaveEnd').value = document.getElementById('leaveStart').value
-      document.getElementById('leaveEnd').disabled = true
+      endEl.value = startEl.value
+      endEl.disabled = true
     } else {
-      document.getElementById('leaveEnd').disabled = false
+      endEl.disabled = false
     }
     if (reasonWrap) reasonWrap.style.display = v === '대체연차' ? '' : 'none'
     if (reasonInp && v !== '대체연차') reasonInp.value = ''
@@ -416,7 +587,35 @@ window.openLeaveRequestModal = function() {
   if (typeof centerModal === 'function') centerModal(modal)
 }
 
-window.submitLeaveRequest = function() {
+window.deleteMyLeaveRequest = async function() {
+  if (!_editingLeaveId) return
+  var uid = firebase.auth().currentUser ? firebase.auth().currentUser.uid : null
+  if (!uid) return
+
+  var leaves = _getLeaveRecords()
+  var list = leaves[uid] || []
+  var idx = list.findIndex(function(l) { return l.id === _editingLeaveId })
+  if (idx < 0) { showToast('삭제할 연차를 찾을 수 없습니다.', 'error'); return }
+  var entry = list[idx]
+  if (entry.status !== '대기') { showToast('대기 상태만 삭제할 수 있습니다.', 'warning'); return }
+
+  var dateStr = entry.startDate === entry.endDate ? entry.startDate : entry.startDate + '~' + entry.endDate
+  var ok = await korConfirm(entry.type + ' ' + dateStr + ' (' + (entry.days || 0) + '일) 신청을 삭제하시겠습니까?', '삭제', '취소')
+  if (!ok) return
+
+  try {
+    if (db && entry._docId) await db.collection('leaves').doc(entry._docId).delete()
+  } catch (e) { console.error('연차 삭제 실패:', e); showToast('삭제 실패. 다시 시도해주세요.', 'error'); return }
+  list.splice(idx, 1)
+
+  document.getElementById('leaveRequestModal').close()
+  _editingLeaveId = null
+  showToast('연차 신청 삭제됨')
+  if (typeof logActivity === 'function') logActivity('delete', '인사관리', '연차 신청 삭제: ' + entry.type + ' ' + entry.startDate + (entry.startDate !== entry.endDate ? '~' + entry.endDate : ''))
+  renderLeaveTab()
+}
+
+window.submitLeaveRequest = async function() {
   var uid = firebase.auth().currentUser ? firebase.auth().currentUser.uid : null
   if (!uid) return
 
@@ -447,8 +646,37 @@ window.submitLeaveRequest = function() {
     if (!reason) { showToast('대체연차 사유를 입력해주세요.', 'warning'); return }
   }
 
+  // ===== 수정 모드 =====
+  if (_editingLeaveId) {
+    var entry = leaves[uid].find(function(l) { return l.id === _editingLeaveId })
+    if (!entry) { showToast('수정할 연차를 찾을 수 없습니다.', 'error'); _editingLeaveId = null; return }
+    if (entry.status !== '대기') { showToast('대기 상태만 수정할 수 있습니다.', 'warning'); _editingLeaveId = null; return }
+
+    entry.type = type
+    entry.startDate = startDate
+    entry.endDate = endDate
+    entry.days = days
+    entry.reason = reason
+    entry.updatedAt = new Date().toISOString()
+
+    await _saveLeaveRecord(uid, entry)
+
+    document.getElementById('leaveRequestModal').close()
+    var editedId = _editingLeaveId
+    _editingLeaveId = null
+    showToast('연차 수정 완료 (' + type + ' ' + days + '일)')
+    if (typeof logActivity === 'function') logActivity('update', '인사관리', '연차 수정: ' + type + ' ' + startDate + (startDate !== endDate ? '~' + endDate : ''))
+    renderLeaveTab()
+    return
+  }
+
+  // ===== 신규 신청 =====
   var entry = {
     id: 'lv_' + Date.now(),
+    uid: uid,
+    applicantName: (State.currentUser && State.currentUser.name) || _currentUserName || '',
+    applicantDept: (State.currentUser && State.currentUser.dept) || _currentUserDept || '',
+    applicantPosition: (State.currentUser && State.currentUser.position) || _currentUserPosition || '',
     type: type,
     startDate: startDate,
     endDate: endDate,
@@ -459,26 +687,58 @@ window.submitLeaveRequest = function() {
     approverName: '',
     createdAt: new Date().toISOString()
   }
-  leaves[uid].push(entry)
-  _saveLeaveRecord(uid, entry)
+
+  try {
+    await _saveLeaveRecord(uid, entry)
+  } catch (e) {
+    console.error('연차 신청 저장 실패:', e)
+    showToast('연차 신청 저장에 실패했습니다. 다시 시도해주세요.', 'error')
+    return
+  }
 
   document.getElementById('leaveRequestModal').close()
   showToast('연차 신청 완료 (' + type + ' ' + days + '일)')
   if (typeof logActivity === 'function') logActivity('create', '인사관리', '연차 신청: ' + type + ' ' + startDate + (startDate !== endDate ? '~' + endDate : ''))
+
+  // 부서장·관리자에게 즉시 알림
+  if (typeof addNotification === 'function') {
+    try {
+      if (typeof loadAllUsers === 'function' && (!_allUsers || _allUsers.length === 0)) {
+        await loadAllUsers(true)
+      }
+    } catch(e) {}
+    var applicantLabel = entry.applicantName + (entry.applicantPosition ? ' ' + entry.applicantPosition : '')
+    var dateStr = startDate === endDate ? startDate : startDate + '~' + endDate
+    var targets = (_allUsers || []).filter(function(u) {
+      if (!u || !u.uid || u.uid === uid) return false
+      var g = u.grade || 1
+      if (g >= 3) return true                                   // 관리자 이상 전원
+      if (g === 2 && entry.applicantDept && u.dept === entry.applicantDept) return true  // 같은 부서 부서장
+      return false
+    }).map(function(u) { return u.uid })
+    if (targets.length > 0) {
+      addNotification('leave_request',
+        '📋 연차 신청',
+        applicantLabel + ' — ' + type + ' ' + dateStr + ' (' + days + '일)',
+        '#hradmin:leaveApproval',
+        { targetUids: targets })
+    }
+  }
+
   renderLeaveTab()
 }
 
 // ===== 연차 승인/반려 =====
 window.buildLeaveApprovalSection = function() {
   var grade = (State.currentUser && State.currentUser.grade) || 1
-  var dept = _currentUserDept || ''
+  var dept = _currentUserDept || (State.currentUser && State.currentUser.dept) || ''
   var allLeaves = _getLeaveRecords()
 
   var pendingList = []
   Object.keys(allLeaves).forEach(function(uid) {
     var leaves = allLeaves[uid]
     var user = (_allUsers || []).find(function(u) { return u.uid === uid })
-    if (!user) return
+    if (!user) user = { name: '(알 수 없음)', position: '', dept: '' }
     if (grade === 2 && user.dept !== dept) return
 
     leaves.filter(function(l) { return l.status === '대기' }).forEach(function(l) {
@@ -539,6 +799,15 @@ window.approveLeave = function(uid, leaveId) {
   _saveLeaveRecord(uid, entry)
   showToast('연차 승인 완료 (캘린더 반영)')
   if (typeof logActivity === 'function') logActivity('approve', '인사관리', '연차 승인: ' + (leaveUser.name || uid) + ' ' + entry.type + ' ' + entry.startDate)
+  // 신청자에게 알림
+  if (typeof addNotification === 'function') {
+    var dateStr = entry.startDate === entry.endDate ? entry.startDate : entry.startDate + '~' + entry.endDate
+    addNotification('leave_approved',
+      '✅ 연차 승인',
+      entry.type + ' ' + dateStr + ' 이 ' + entry.approverName + '님에 의해 승인되었습니다.',
+      '#hr:leave',
+      { targetUid: uid })
+  }
   if (State.activeTab === 'hradmin' && typeof renderLeaveApprovalTab === 'function') renderLeaveApprovalTab()
   else renderLeaveTab()
 }
@@ -621,6 +890,88 @@ window.rejectLeave = async function(uid, leaveId) {
   showToast('연차 반려 처리됨')
   var leaveUser = (_allUsers || []).find(function(u) { return u.uid === uid }) || {}
   if (typeof logActivity === 'function') logActivity('approve', '인사관리', '연차 반려: ' + (leaveUser.name || uid) + ' ' + entry.type + ' ' + entry.startDate)
+  // 신청자에게 반려 알림
+  if (typeof addNotification === 'function') {
+    var dateStr = entry.startDate === entry.endDate ? entry.startDate : entry.startDate + '~' + entry.endDate
+    addNotification('leave_rejected',
+      '❌ 연차 반려',
+      entry.type + ' ' + dateStr + ' 이 ' + rejectorName + '님에 의해 반려되었습니다.',
+      '#hr:leave',
+      { targetUid: uid })
+  }
+  if (State.activeTab === 'hradmin' && typeof renderLeaveApprovalTab === 'function') renderLeaveApprovalTab()
+  else renderLeaveTab()
+}
+
+// ===== 연차 승인 취소 (관리자 이상, grade >= 3) =====
+// 승인 상태를 대기 상태로 되돌리고, 연결된 업무일정을 제거한다.
+window.cancelLeaveApproval = async function(uid, leaveId) {
+  var grade = (State.currentUser && State.currentUser.grade) || 1
+  if (grade < 3) { showToast('관리자 이상만 승인 취소할 수 있습니다', 'warning'); return }
+
+  var leaves = _getLeaveRecords()
+  if (!leaves[uid]) return
+  var entry = leaves[uid].find(function(l) { return l.id === leaveId })
+  if (!entry) return
+  if (entry.status !== '승인' && entry.status !== '확인완료') {
+    showToast('승인 상태만 취소할 수 있습니다.', 'warning'); return
+  }
+
+  var dateStr = entry.startDate === entry.endDate ? entry.startDate : entry.startDate + '~' + entry.endDate
+  var ok = await korConfirm(entry.type + ' ' + dateStr + ' 승인을 취소하시겠습니까?\n대기 상태로 되돌아가고 캘린더 반영이 제거됩니다.', '승인 취소', '취소')
+  if (!ok) return
+
+  // 연결된 업무일정 제거
+  if (entry._workNo) {
+    var wIdx = State.workItems.findIndex(function(w) { return w.no === entry._workNo })
+    if (wIdx >= 0) {
+      State.workItems.splice(wIdx, 1)
+      _workItems = State.workItems
+      saveWorkItems()
+    }
+    delete entry._workNo
+  }
+
+  // 상태 롤백
+  entry.status = '대기'
+  entry.approver = ''
+  entry.approverName = ''
+  delete entry.approvedAt
+  delete entry.managerConfirmer
+  delete entry.managerConfirmerName
+  delete entry.managerConfirmedAt
+  delete entry.ceoConfirmer
+  delete entry.ceoConfirmerName
+  delete entry.ceoConfirmedAt
+  delete entry.confirmer
+  delete entry.confirmerName
+  delete entry.confirmedAt
+
+  // 승인 취소자 기록
+  entry.cancelledBy = firebase.auth().currentUser ? firebase.auth().currentUser.uid : ''
+  entry.cancelledByName = formatUserName(_currentUserName, _currentUserPosition)
+  entry.cancelledAt = new Date().toISOString()
+
+  // Firestore에서 삭제된 필드를 실제로 제거하기 위해 문서를 교체
+  try {
+    if (db && entry._docId) {
+      var saveData = Object.assign({ uid: uid }, entry)
+      delete saveData._docId
+      await db.collection('leaves').doc(entry._docId).set(saveData)
+    } else {
+      await _saveLeaveRecord(uid, entry)
+    }
+  } catch (e) {
+    console.error('연차 승인 취소 저장 실패:', e)
+    await _saveLeaveRecord(uid, entry)
+  }
+
+  var leaveUser = (_allUsers || []).find(function(u) { return u.uid === uid }) || {}
+  showToast('연차 승인 취소 완료')
+  if (typeof logActivity === 'function') logActivity('update', '인사관리', '연차 승인 취소: ' + (leaveUser.name || uid) + ' ' + entry.type + ' ' + entry.startDate)
+  if (typeof addNotification === 'function') {
+    addNotification('leave_cancel', '연차 승인 취소', entry.type + ' ' + dateStr + ' 승인이 취소되었습니다.', '#hr:leave', { targetUid: uid })
+  }
   if (State.activeTab === 'hradmin' && typeof renderLeaveApprovalTab === 'function') renderLeaveApprovalTab()
   else renderLeaveTab()
 }
@@ -675,27 +1026,68 @@ function _getLeaveOnDate(uid, dateStr) {
   })
 }
 
+// 반차(오전/오후) 반영한 출퇴근 기준시간
+function _getAttendThresholds(uid, date) {
+  var result = { lateH: 9, lateM: 0, earlyH: 18, earlyM: 0, leaveType: '', isHalfAm: false, isHalfPm: false }
+  if (!uid || !date) return result
+  var leave = _getLeaveOnDate(uid, date)
+  if (!leave) return result
+  result.leaveType = leave.type || ''
+  if (result.leaveType.indexOf('반차(오전)') >= 0) {
+    result.isHalfAm = true
+    result.lateH = 13; result.lateM = 0
+  } else if (result.leaveType.indexOf('반차(오후)') >= 0) {
+    result.isHalfPm = true
+    result.earlyH = 13; result.earlyM = 0
+  }
+  return result
+}
+
+// 과거 날짜 여부 (오늘 이전)
+function _isPastDate(dateStr) {
+  if (!dateStr) return false
+  return dateStr < fmtDate(new Date())
+}
+
 // 출퇴근 상태 계산 헬퍼
 function _attendStatus(r, uid) {
-  if (!r || !r.checkIn) return { status: '', cls: '' }
+  if (!r) return { status: '', cls: '' }
 
-  // 연차 체크 — 승인된 연차가 있으면 연차 내용 표시
-  if (uid) {
-    var leave = _getLeaveOnDate(uid, r.date)
-    if (leave) {
-      return { status: leave.type, cls: 'hr-status-info', isLeave: true }
-    }
+  var th = _getAttendThresholds(uid, r.date)
+  var isPast = _isPastDate(r.date)
+
+  // 풀데이 연차 — 출근 기록 없어도 연차로 표시
+  if (th.leaveType && !th.isHalfAm && !th.isHalfPm) {
+    return { status: th.leaveType, cls: 'hr-status-info', isLeave: true }
   }
 
-  if (r.checkIn && !r.checkOut) return { status: '근무중', cls: 'hr-status-wait' }
+  // 출근 기록 없음
+  if (!r.checkIn) {
+    if (th.isHalfAm || th.isHalfPm) return { status: th.leaveType, cls: 'hr-status-info', isLeave: true }
+    if (isPast) return { status: '미처리', cls: 'hr-status-no' }
+    return { status: '', cls: '' }
+  }
+
+  // 출근만 있고 퇴근 없음 — 과거 날짜면 미처리, 오늘이면 근무중
+  if (r.checkIn && !r.checkOut) {
+    if (isPast) return { status: '미처리', cls: 'hr-status-no' }
+    return { status: '근무중', cls: 'hr-status-wait' }
+  }
+
   var ip = r.checkIn.split(':').map(Number)
   var op = r.checkOut.split(':').map(Number)
   var mins = (op[0] * 60 + op[1]) - (ip[0] * 60 + ip[1])
-  var late = ip[0] > 9 || (ip[0] === 9 && ip[1] > 0)
-  var early = op[0] < 18
+  var late = ip[0] > th.lateH || (ip[0] === th.lateH && ip[1] > th.lateM)
+  var early = op[0] < th.earlyH || (op[0] === th.earlyH && op[1] < th.earlyM)
   // 승인된 지각/조기퇴근은 정상 처리
   if (late && r.lateApproved === 'approved') late = false
   if (early && r.earlyApproved === 'approved') early = false
+
+  // 반차인데 정시 근무 → 반차 상태로 표시
+  if ((th.isHalfAm || th.isHalfPm) && !late && !early) {
+    return { status: th.leaveType, cls: 'hr-status-info', isLeave: true }
+  }
+
   // 반려된 건은 지각/조퇴 유지 (lateApproved === 'rejected')
   if (late && early) return { status: '지각/조퇴', cls: 'hr-status-wait', late: true, early: true }
   if (late) return { status: '지각', cls: 'hr-status-wait', late: true }
@@ -720,9 +1112,14 @@ window.renderAttendanceTab = function() {
   html += '</div>'
 
   // 버튼
+  var isMobile = typeof window._isMobileDevice === 'function' && window._isMobileDevice()
   html += '<div class="hr-attend-btns">'
   if (!todayRecord || !todayRecord.checkIn) {
-    html += '<button class="hr-attend-btn hr-attend-btn-in" onclick="doCheckIn()">출근 체크</button>'
+    if (isMobile) {
+      html += '<div class="hr-attend-mobile-block">📵 출근 체크는 사무실 PC에서만 가능합니다.</div>'
+    } else {
+      html += '<button class="hr-attend-btn hr-attend-btn-in" onclick="doCheckIn()">출근 체크</button>'
+    }
   }
   if (todayRecord && todayRecord.checkIn && !todayRecord.checkOut) {
     html += '<button class="hr-attend-btn hr-attend-btn-out" onclick="openCheckOutPrompt()">퇴근 체크</button>'
@@ -745,12 +1142,14 @@ window.renderAttendanceTab = function() {
       workHours = Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm'
     }
 
-    // 출근 상태
+    var myTh = _getAttendThresholds(uid, r.date)
+
+    // 출근 상태 (반차 오전이면 13:00 기준)
     var isLate = false
     var inStatusHtml = '-'
     if (r.checkIn) {
       var ipChk = r.checkIn.split(':').map(Number)
-      isLate = ipChk[0] > 9 || (ipChk[0] === 9 && ipChk[1] > 0)
+      isLate = ipChk[0] > myTh.lateH || (ipChk[0] === myTh.lateH && ipChk[1] > myTh.lateM)
       if (isLate) {
         if (r.lateApproved === 'approved') inStatusHtml = '<span class="hr-status hr-status-ok" style="font-size:9px">정상처리</span>'
         else if (r.lateApproved === 'rejected') inStatusHtml = '<span class="hr-status hr-status-no" style="font-size:9px">반려</span>'
@@ -761,12 +1160,12 @@ window.renderAttendanceTab = function() {
       }
     }
 
-    // 퇴근 상태
+    // 퇴근 상태 (반차 오후이면 13:00 기준)
     var isEarly = false
     var outStatusHtml = '-'
     if (r.checkOut) {
       var opChk = r.checkOut.split(':').map(Number)
-      isEarly = opChk[0] < 18
+      isEarly = opChk[0] < myTh.earlyH || (opChk[0] === myTh.earlyH && opChk[1] < myTh.earlyM)
       if (isEarly) {
         if (r.earlyApproved === 'approved') outStatusHtml = '<span class="hr-status hr-status-ok" style="font-size:9px">정상처리</span>'
         else if (r.earlyApproved === 'rejected') outStatusHtml = '<span class="hr-status hr-status-no" style="font-size:9px">반려</span>'
@@ -784,11 +1183,18 @@ window.renderAttendanceTab = function() {
     var outMemoHtml = '<span class="hr-memo-text">' + esc(r.checkOutMemo || '-') + '</span>'
 
     // 전체 상태
+    var isHalfLeave = leave && (leave.type || '').indexOf('반차') >= 0
+    var isFullLeave = leave && !isHalfLeave
     var totalStatusHtml = ''
-    if (leave) {
+    var isPastDay = _isPastDate(r.date)
+    if (isFullLeave) {
       totalStatusHtml = '<span class="hr-status hr-status-info" style="font-size:9px">' + esc(leave.type) + '</span>'
+    } else if (!r.checkIn) {
+      if (isHalfLeave) totalStatusHtml = '<span class="hr-status hr-status-info" style="font-size:9px">' + esc(leave.type) + '</span>'
+      else if (isPastDay) totalStatusHtml = '<span class="hr-status hr-status-no" style="font-size:9px">미처리</span>'
     } else if (r.checkIn && !r.checkOut) {
-      totalStatusHtml = '<span class="hr-status hr-status-wait" style="font-size:9px">근무중</span>'
+      if (isPastDay) totalStatusHtml = '<span class="hr-status hr-status-no" style="font-size:9px">미처리</span>'
+      else totalStatusHtml = '<span class="hr-status hr-status-wait" style="font-size:9px">근무중</span>'
     } else if (r.checkIn && r.checkOut) {
       var effectiveLate = isLate && r.lateApproved !== 'approved'
       var effectiveEarly = isEarly && r.earlyApproved !== 'approved'
@@ -797,7 +1203,8 @@ window.renderAttendanceTab = function() {
       else if (effectiveEarly) totalStatusHtml = '<span class="hr-status hr-status-warn" style="font-size:9px">조퇴</span>'
       else {
         var minsT2 = (op[0] * 60 + op[1]) - (ip[0] * 60 + ip[1])
-        if (minsT2 > 540) totalStatusHtml = '<span class="hr-status hr-status-info" style="font-size:9px">야근</span>'
+        if (isHalfLeave) totalStatusHtml = '<span class="hr-status hr-status-info" style="font-size:9px">' + esc(leave.type) + '</span>'
+        else if (minsT2 > 540) totalStatusHtml = '<span class="hr-status hr-status-info" style="font-size:9px">야근</span>'
         else totalStatusHtml = '<span class="hr-status hr-status-ok" style="font-size:9px">정상</span>'
       }
     }
@@ -819,10 +1226,191 @@ window.renderAttendanceTab = function() {
   document.getElementById('hrContent').innerHTML = html
 }
 
+// ===== 지각 알림: 부서장/관리자 로그인·정기체크 시 호출 =====
+// 규칙: grade === 2 (부서장) 본인 부서 지각만 / grade >= 3 (관리자) 전체 지각
+// 대상: 오늘 날짜 + checkIn 09:00 초과 + lateApproved !== 'approved'
+// 호출 주기: checkHrPendingItems() 안에서 함께 실행 (로그인 + 5분 자동 새로고침)
+window.checkLateArrivalAlerts = async function() {
+  try {
+    if (!State.currentUser) return
+    var grade = State.currentUser.grade || 1
+    if (grade < 2) return
+    if (typeof addNotification !== 'function') return
+
+    var myUid = State.currentUser.uid
+    var myDept = _currentUserDept || ''
+    var today = fmtDate(new Date())
+
+    // 오늘 출퇴근 기록에서 지각자 수집
+    var records = _getAttendRecords()
+    var lateList = []
+    Object.keys(records).forEach(function(uid) {
+      if (uid === myUid) return
+      var todayRec = (records[uid] || []).find(function(r) { return r.date === today })
+      if (!todayRec || !todayRec.checkIn) return
+      var ip = todayRec.checkIn.split(':').map(Number)
+      var th2 = _getAttendThresholds(uid, today)
+      var isLate = ip[0] > th2.lateH || (ip[0] === th2.lateH && ip[1] > th2.lateM)
+      if (!isLate) return
+      if (todayRec.lateApproved === 'approved') return
+
+      // 부서장(grade==2)은 본인 부서만
+      if (grade === 2) {
+        var user = (_allUsers || []).find(function(u) { return u.uid === uid })
+        if (!user || user.dept !== myDept) return
+      }
+      var uInfo = (_allUsers || []).find(function(u) { return u.uid === uid }) || {}
+      lateList.push({ uid: uid, name: uInfo.name || '-', dept: uInfo.dept || '-', time: todayRec.checkIn })
+    })
+
+    // 결정적 doc ID: late_arrival_{uid}_{YYYYMMDD} — 사용자/날짜 당 1개 문서만 존재
+    // set({merge:true}) idempotent 사용 → 5분 새로고침마다 호출되어도 같은 문서 덮어쓰기
+    var dayKey = today.replace(/-/g, '')
+    var canonicalId = 'late_arrival_' + myUid + '_' + dayKey
+
+    // 1) 레거시 late_arrival 문서 전부 제거 (canonical ID 가 아닌 것 모두)
+    //    — 과거에 addNotification(.add()) 로 생긴 랜덤 ID 누적분 정리
+    var removedFsIds = []
+    try {
+      if (db && myUid) {
+        var snap = await db.collection('notifications')
+          .where('uid', '==', myUid)
+          .where('type', '==', 'late_arrival')
+          .get({ source: 'server' })
+        if (snap) {
+          var deletions = []
+          snap.forEach(function(d) {
+            if (d.id !== canonicalId) { deletions.push(d.id); removedFsIds.push(d.id) }
+          })
+          for (var i = 0; i < deletions.length; i++) {
+            try { await db.collection('notifications').doc(deletions[i]).delete() } catch(e) {}
+          }
+          if (deletions.length) console.log('[late_arrival] removed ' + deletions.length + ' legacy docs')
+        }
+      }
+    } catch(e) { console.warn('[late_arrival] cleanup failed:', e) }
+
+    // 2) 로컬 캐시에서 제거된 fsId 싹 빼기 + canonicalId 외 late_arrival 항목 중복 제거
+    if (typeof _notifications !== 'undefined' && Array.isArray(_notifications)) {
+      var seen = false
+      _notifications = _notifications.filter(function(n) {
+        if (n.type !== 'late_arrival') return true
+        if (n.fsId && removedFsIds.indexOf(n.fsId) >= 0) return false
+        if (n.fsId === canonicalId || n.id === canonicalId) {
+          if (seen) return false
+          seen = true
+          return true
+        }
+        // 제거된 fsId 가 캐시에 이미 누적돼있던 건들 제거
+        return false
+      })
+    }
+
+    // 3) 지각자가 없으면 오늘 canonical 문서도 삭제하고 종료
+    if (!lateList.length) {
+      try {
+        if (db && myUid) await db.collection('notifications').doc(canonicalId).delete()
+      } catch(e) {}
+      if (typeof _notifications !== 'undefined') {
+        _notifications = _notifications.filter(function(n) { return !(n.type === 'late_arrival') })
+      }
+      if (typeof saveNotifications === 'function') saveNotifications()
+      if (typeof renderNotifications === 'function') renderNotifications()
+      return
+    }
+
+    var title = '🕐 지각 ' + lateList.length + '명'
+    var body = lateList.slice(0, 5).map(function(x) { return x.name + '(' + x.dept + ') ' + x.time }).join(', ')
+    if (lateList.length > 5) body += ' 외 ' + (lateList.length - 5) + '명'
+
+    // 4) 알림 설정 OFF 체크 (addNotification 우회하므로 직접 수행)
+    try {
+      var ns = (typeof getNotifSettings === 'function') ? getNotifSettings() : null
+      if (ns && ns.globalEnabled === false) return
+      if (typeof isNotifEnabled === 'function' && !isNotifEnabled('late_arrival')) return
+    } catch(e) {}
+
+    // 5) canonicalId 에 idempotent set (중복 생성 원천 차단)
+    var nowTs = Date.now()
+    var existingLocal = (_notifications || []).find(function(n) { return n.type === 'late_arrival' && (n.fsId === canonicalId || n.id === canonicalId) })
+    var readFlag = existingLocal ? !!existingLocal.read : false
+    try {
+      if (db && myUid) {
+        await db.collection('notifications').doc(canonicalId).set({
+          uid: myUid, type: 'late_arrival', title: title, body: body, link: '#hradmin:teamAttend',
+          priority: '', ts: nowTs, read: readFlag,
+          createdAt: (existingLocal && existingLocal.ts) ? new Date(existingLocal.ts).toISOString() : new Date(nowTs).toISOString()
+        }, { merge: true })
+      }
+    } catch(e) { console.warn('[late_arrival] set failed:', e) }
+
+    // 6) 로컬 캐시 업데이트 (항상 1개만 유지)
+    if (typeof _notifications !== 'undefined') {
+      _notifications = _notifications.filter(function(n) { return n.type !== 'late_arrival' })
+      _notifications.unshift({
+        id: canonicalId, fsId: canonicalId,
+        type: 'late_arrival', title: title, body: body, link: '#hradmin:teamAttend',
+        priority: '', ts: existingLocal ? existingLocal.ts : nowTs, read: readFlag
+      })
+      if (typeof saveNotifications === 'function') saveNotifications()
+      if (typeof renderNotifications === 'function') renderNotifications()
+    }
+  } catch (e) { console.warn('[checkLateArrivalAlerts] error:', e) }
+}
+
+// ===== 출근/퇴근 공통: IP 검증 =====
+// 반환: { ip, allowed, proceed }
+//   proceed === false 면 체크 중단
+async function _verifyAttendIp(action) {
+  var ip = ''
+  try {
+    var res = await fetch('https://api.ipify.org?format=json')
+    var data = await res.json()
+    ip = data.ip || ''
+  } catch(e) { ip = 'unknown' }
+
+  var mode = (typeof _ipEnforceMode !== 'undefined') ? _ipEnforceMode : 'off'
+  if (mode === 'off') return { ip: ip, allowed: true, proceed: true }
+
+  var allowed = (typeof isIpAllowed === 'function') ? isIpAllowed(ip) : true
+  if (allowed) return { ip: ip, allowed: true, proceed: true }
+
+  var grade = (State.currentUser && State.currentUser.grade) || 1
+  var msg = '허용되지 않은 IP에서 ' + action + ' 시도: ' + (ip || '알 수 없음')
+
+  if (mode === 'warn') {
+    var ok = await korConfirm(msg + '\n\n계속 진행하시겠습니까?', '진행', '취소')
+    return { ip: ip, allowed: false, proceed: !!ok }
+  }
+  // mode === 'block'
+  if (grade >= 3) {
+    var ok2 = await korConfirm(msg + '\n\n관리자 권한으로 우회 진행하시겠습니까?', '우회 진행', '취소')
+    return { ip: ip, allowed: false, proceed: !!ok2 }
+  }
+  showToast(msg + ' — 허용된 IP에서만 가능합니다.', 'error')
+  return { ip: ip, allowed: false, proceed: false }
+}
+
+// 모바일 기기 감지 — UA 또는 좁은 화면
+window._isMobileDevice = function() {
+  try {
+    if (/Mobi|Android|iPhone|iPad|iPod|IEMobile|BlackBerry|Opera Mini/i.test(navigator.userAgent || '')) return true
+    if (window.matchMedia && window.matchMedia('(max-width: 768px)').matches) return true
+  } catch (e) {}
+  return false
+}
+
 // ===== 출근 체크 =====
 window.doCheckIn = async function() {
   var uid = firebase.auth().currentUser ? firebase.auth().currentUser.uid : null
   if (!uid) return
+
+  if (window._isMobileDevice()) {
+    showToast('출근 체크는 사무실 PC에서만 가능합니다.', 'warning')
+    var popupEl = document.getElementById('attendancePopup')
+    if (popupEl && popupEl.open) popupEl.close()
+    return
+  }
 
   var today = fmtDate(new Date())
   var time = new Date().toTimeString().slice(0, 5)
@@ -830,12 +1418,9 @@ window.doCheckIn = async function() {
   var memoEl = document.getElementById('attendPopupMemo')
   if (memoEl) { memo = memoEl.value.trim(); memoEl.value = '' }
 
-  var ip = ''
-  try {
-    var res = await fetch('https://api.ipify.org?format=json')
-    var data = await res.json()
-    ip = data.ip || ''
-  } catch(e) { ip = 'unknown' }
+  var ipCheck = await _verifyAttendIp('출근')
+  if (!ipCheck.proceed) return
+  var ip = ipCheck.ip
 
   var records = _getAttendRecords()
   if (!records[uid]) records[uid] = []
@@ -854,7 +1439,7 @@ window.doCheckIn = async function() {
   var popup = document.getElementById('attendancePopup')
   if (popup && popup.open) popup.close()
   showToast('출근 체크 완료 — ' + time)
-  if (typeof logActivity === 'function') logActivity('hr', '인사관리', '출근 체크 ' + time + (memo ? ' (' + memo + ')' : ''))
+  if (typeof logActivity === 'function') logActivity('hr', '인사관리', '출근 체크 ' + time + ' [IP: ' + (ip || '알 수 없음') + ']' + (memo ? ' (' + memo + ')' : ''))
 
   _refreshAttendanceView()
 }
@@ -888,6 +1473,9 @@ window.doCheckOut = async function(memo) {
   var time = new Date().toTimeString().slice(0, 5)
   if (typeof memo !== 'string') memo = ''
 
+  var ipCheck = await _verifyAttendIp('퇴근')
+  if (!ipCheck.proceed) return
+
   var records = _getAttendRecords()
   if (!records[uid]) records[uid] = []
 
@@ -898,6 +1486,7 @@ window.doCheckOut = async function(memo) {
   }
 
   todayRecord.checkOut = time
+  todayRecord.checkOutIp = ipCheck.ip
   todayRecord.checkOutMemo = memo
 
   _saveAttendRecord(uid, todayRecord)
@@ -905,7 +1494,7 @@ window.doCheckOut = async function(memo) {
   var menu = document.getElementById('userDropdownMenu')
   if (menu) menu.classList.remove('user-menu-open')
   showToast('퇴근 체크 완료 — ' + time)
-  if (typeof logActivity === 'function') logActivity('hr', '인사관리', '퇴근 체크 ' + time + (memo ? ' (' + memo + ')' : ''))
+  if (typeof logActivity === 'function') logActivity('hr', '인사관리', '퇴근 체크 ' + time + ' [IP: ' + (ipCheck.ip || '알 수 없음') + ']' + (memo ? ' (' + memo + ')' : ''))
 
   _refreshAttendanceView()
 }
@@ -945,6 +1534,8 @@ window.requestAttendApproval = function(date, type) {
   var label = type === 'late' ? '지각' : '조퇴'
   showToast(label + ' 사유 승인 신청 완료')
   if (typeof logActivity === 'function') logActivity('create', '인사관리', label + ' 승인 신청: ' + date + ' (' + memo.trim() + ')')
+  // 본인이 approver(grade>=2)면 즉시 알림 재계산
+  if (typeof checkHrPendingItems === 'function') { try { checkHrPendingItems() } catch(e) {} }
   renderAttendanceTab()
 }
 
@@ -986,29 +1577,39 @@ window.saveMyAttendEdit = function() {
   rec.checkInMemo = inMemo
   rec.checkOutMemo = outMemo
 
-  // 지각인데 사유가 있으면 자동 승인 신청
+  var editTh = _getAttendThresholds(uid, date)
+
+  // 지각인데 사유가 있으면 자동 승인 신청 / 사유 비면 신청 철회 (반차 기준 반영)
   if (rec.checkIn) {
     var ipChk = rec.checkIn.split(':').map(Number)
-    var isLate = ipChk[0] > 9 || (ipChk[0] === 9 && ipChk[1] > 0)
+    var isLate = ipChk[0] > editTh.lateH || (ipChk[0] === editTh.lateH && ipChk[1] > editTh.lateM)
     if (isLate && inMemo && !rec.lateApproved && !rec.lateRequested) {
       rec.lateRequested = true
       rec.lateRequestedAt = new Date().toISOString()
+    } else if (!inMemo && rec.lateRequested && !rec.lateApproved) {
+      rec.lateRequested = false
+      delete rec.lateRequestedAt
     }
   }
 
-  // 조퇴인데 사유가 있으면 자동 승인 신청
+  // 조퇴인데 사유가 있으면 자동 승인 신청 / 사유 비면 신청 철회 (반차 기준 반영)
   if (rec.checkOut) {
     var opChk = rec.checkOut.split(':').map(Number)
-    var isEarly = opChk[0] < 18
+    var isEarly = opChk[0] < editTh.earlyH || (opChk[0] === editTh.earlyH && opChk[1] < editTh.earlyM)
     if (isEarly && outMemo && !rec.earlyApproved && !rec.earlyRequested) {
       rec.earlyRequested = true
       rec.earlyRequestedAt = new Date().toISOString()
+    } else if (!outMemo && rec.earlyRequested && !rec.earlyApproved) {
+      rec.earlyRequested = false
+      delete rec.earlyRequestedAt
     }
   }
 
   _saveAttendRecord(uid, rec)
   showToast('사유 신청 완료')
   if (typeof logActivity === 'function') logActivity('create', '인사관리', '사유 신청: ' + date + (inMemo ? ' (출근: ' + inMemo + ')' : '') + (outMemo ? ' (퇴근: ' + outMemo + ')' : ''))
+  // 본인이 approver(grade>=2)면 즉시 알림 재계산
+  if (typeof checkHrPendingItems === 'function') { try { checkHrPendingItems() } catch(e) {} }
   closeMyAttendEditModal()
   renderAttendanceTab()
 }
@@ -1069,6 +1670,16 @@ window.saveAttendWrite = function() {
   if (checkIn) { rec.checkIn = checkIn; rec.checkInMemo = checkInMemo }
   if (checkOut) { rec.checkOut = checkOut; rec.checkOutMemo = checkOutMemo }
 
+  // 사유가 비었으면 신청 플래그 초기화 (승인되지 않은 건만)
+  if (!checkInMemo && rec.lateRequested && !rec.lateApproved) {
+    rec.lateRequested = false
+    delete rec.lateRequestedAt
+  }
+  if (!checkOutMemo && rec.earlyRequested && !rec.earlyApproved) {
+    rec.earlyRequested = false
+    delete rec.earlyRequestedAt
+  }
+
   _saveAttendRecord(uid, rec)
   var user = (_allUsers || []).find(function(u) { return u.uid === uid })
   showToast('출퇴근 기록 저장 — ' + (user ? user.name : uid) + ' ' + date)
@@ -1082,6 +1693,9 @@ window.saveAttendWrite = function() {
 window.checkAttendancePopup = function() {
   var uid = firebase.auth().currentUser ? firebase.auth().currentUser.uid : null
   if (!uid) return
+
+  // 모바일에서는 자동 팝업 안 띄움
+  if (typeof window._isMobileDevice === 'function' && window._isMobileDevice()) return
 
   var today = fmtDate(new Date())
   var records = _getAttendRecords()
@@ -1114,11 +1728,18 @@ window.buildTeamAttendanceSection = function() {
   ;(_allUsers || []).forEach(function(user) {
     if (grade === 2 && user.dept !== dept) return
     var rec = (records[user.uid] || []).find(function(r) { return r.date === today })
-    var st = _attendStatus(rec)
+    // _attendStatus가 연차/반차/미처리/근무중/지각/조퇴/정상 모두 반환
+    var stObj = _attendStatus(rec || { date: today }, user.uid)
     var status = '', statusCls = ''
-    if (!rec || !rec.checkIn) { status = '미출근'; statusCls = 'hr-status-no' }
-    else if (!rec.checkOut) { status = '근무중'; statusCls = 'hr-status-wait' }
-    else { status = st.status; statusCls = st.cls }
+    if (stObj.status) {
+      status = stObj.status
+      statusCls = stObj.cls
+    } else if (!rec || !rec.checkIn) {
+      status = '미출근'; statusCls = 'hr-status-no'
+    } else {
+      status = stObj.status || '-'
+      statusCls = stObj.cls || ''
+    }
 
     html += '<tr><td>' + esc(formatUserName(user.name, user.position)) + '</td>'
     html += '<td>' + esc(user.dept || '-') + '</td>'
@@ -1276,34 +1897,353 @@ window.submitChangePassword = async function() {
 }
 
 // =============================================
-// ===== 급여 명세 =====
+// ===== 급여 명세 (본인 보기) =====
 // =============================================
-window.renderSalaryTab = function() {
+window.renderSalaryTab = async function() {
   var uid = firebase.auth().currentUser ? firebase.auth().currentUser.uid : null
-  var salaries = JSON.parse(localStorage.getItem('lemango_salary_v1') || '{}')
-  var mySalaries = (salaries[uid] || []).sort(function(a, b) { return b.month.localeCompare(a.month) })
-
   var html = buildHrProfileCard()
-
   html += '<div class="hr-section">'
   html += '<div class="hr-section-title">급여 명세</div>'
-
-  if (mySalaries.length === 0) {
-    html += '<div style="text-align:center;padding:24px;color:#b4b2a9;font-size:12px">등록된 급여 명세가 없습니다</div>'
-  } else {
-    html += '<table class="hr-table"><thead><tr><th>월</th><th>기본급</th><th>수당</th><th>공제</th><th>실수령액</th></tr></thead><tbody>'
-    mySalaries.forEach(function(s) {
-      html += '<tr><td>' + s.month + '</td>'
-      html += '<td>' + (s.baseSalary || 0).toLocaleString() + '</td>'
-      html += '<td>' + (s.allowance || 0).toLocaleString() + '</td>'
-      html += '<td style="color:#A32D2D">-' + (s.deduction || 0).toLocaleString() + '</td>'
-      html += '<td style="font-weight:500">' + (s.netPay || 0).toLocaleString() + '</td></tr>'
-    })
-    html += '</tbody></table>'
-  }
+  html += '<div id="mySalaryTable" style="min-height:80px"><div style="text-align:center;padding:24px;color:#b4b2a9;font-size:12px">로딩 중...</div></div>'
   html += '</div>'
-
   document.getElementById('hrContent').innerHTML = html
+
+  try {
+    var snap = await db.collection('salaries').where('uid', '==', uid).get({ source: 'server' }).catch(function() {
+      return db.collection('salaries').where('uid', '==', uid).get()
+    })
+    var list = []
+    snap.forEach(function(doc) { list.push(Object.assign({ _id: doc.id }, doc.data())) })
+    list.sort(function(a, b) { return (b.month || '').localeCompare(a.month || '') })
+
+    var area = document.getElementById('mySalaryTable')
+    if (!area) return
+    if (!list.length) {
+      area.innerHTML = '<div style="text-align:center;padding:24px;color:#b4b2a9;font-size:12px">등록된 급여 명세가 없습니다</div>'
+      return
+    }
+    var h = '<table class="hr-table"><thead><tr><th>월</th><th>기본급</th><th>수당</th><th>공제</th><th>실수령액</th><th>메모</th></tr></thead><tbody>'
+    list.forEach(function(s) {
+      h += '<tr><td>' + (s.month || '') + '</td>'
+      h += '<td>' + (s.baseSalary || 0).toLocaleString() + '</td>'
+      h += '<td>' + (s.allowance || 0).toLocaleString() + '</td>'
+      h += '<td style="color:#A32D2D">-' + (s.deduction || 0).toLocaleString() + '</td>'
+      h += '<td style="font-weight:500">' + (s.netPay || 0).toLocaleString() + '</td>'
+      h += '<td style="color:#6b6b6b">' + (s.memo || '') + '</td></tr>'
+    })
+    h += '</tbody></table>'
+    area.innerHTML = h
+  } catch(e) {
+    console.warn('renderSalaryTab error:', e)
+    var area = document.getElementById('mySalaryTable')
+    if (area) area.innerHTML = '<div style="padding:16px;color:#A32D2D;font-size:12px">급여 정보 로드 실패: ' + e.message + '</div>'
+  }
+}
+
+// =============================================
+// ===== 급여 관리 (관리자) =====
+// =============================================
+var _salaryCache = []
+
+window.renderSalaryAdminTab = async function() {
+  console.log('[salary] renderSalaryAdminTab 시작')
+  var panel = document.getElementById('hrAdminContent')
+  if (!panel) return
+  panel.innerHTML = '<div style="padding:24px;color:#6b6b6b;font-size:12px">로딩 중...</div>'
+
+  // 권한 체크 (UI 안내용 — 실제 보안은 Firestore 규칙)
+  if (!State.currentUser || !State.currentUser.grade || State.currentUser.grade < 3) {
+    panel.innerHTML = '<div style="padding:24px;color:#A32D2D;font-size:13px">급여 관리는 관리자(grade 3+)만 접근 가능합니다.<br><small style="color:#6b6b6b">현재 등급: ' + (State.currentUser && State.currentUser.grade || '?') + '</small></div>'
+    return
+  }
+
+  try {
+    // 회원 목록 로드 (members)
+    var usersSnap = await db.collection('users').where('status', '==', 'approved').get({ source: 'server' }).catch(function() {
+      return db.collection('users').where('status', '==', 'approved').get()
+    })
+    var users = []
+    usersSnap.forEach(function(doc) { users.push(Object.assign({ uid: doc.id }, doc.data())) })
+    users.sort(function(a, b) { return (a.name || '').localeCompare(b.name || '') })
+    console.log('[salary] approved 회원 수:', users.length)
+
+    // 급여 목록 로드
+    var salSnap = await db.collection('salaries').get({ source: 'server' }).catch(function() {
+      return db.collection('salaries').get()
+    })
+    _salaryCache = []
+    salSnap.forEach(function(doc) { _salaryCache.push(Object.assign({ _id: doc.id }, doc.data())) })
+    _salaryCache.sort(function(a, b) {
+      var m = (b.month || '').localeCompare(a.month || '')
+      if (m !== 0) return m
+      return (a.targetName || '').localeCompare(b.targetName || '')
+    })
+
+    // 필터 UI
+    var userOptions = '<option value="">전체 회원</option>' + users.map(function(u) {
+      return '<option value="' + u.uid + '">' + (u.name || u.email) + (u.dept ? ' (' + u.dept + ')' : '') + '</option>'
+    }).join('')
+
+    var years = []
+    var curYear = new Date().getFullYear()
+    for (var y = curYear - 3; y <= curYear + 1; y++) years.push(y)
+    var yearOptions = '<option value="">전체 연도</option>' + years.map(function(y) {
+      return '<option value="' + y + '"' + (y === curYear ? ' selected' : '') + '>' + y + '년</option>'
+    }).join('')
+
+    var html = ''
+    html += '<div class="sal-toolbar" style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap">'
+    html += '  <select id="salFilterUser" onchange="renderSalaryAdminList()" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;min-width:200px">' + userOptions + '</select>'
+    html += '  <select id="salFilterYear" onchange="renderSalaryAdminList()" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px">' + yearOptions + '</select>'
+    html += '  <input type="text" id="salFilterKeyword" placeholder="검색 (이름/메모)" oninput="renderSalaryAdminList()" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;flex:1;min-width:160px" />'
+    html += '  <button class="btn btn-new" onclick="openSalaryAddModal()">＋ 급여 추가</button>'
+    html += '</div>'
+    html += '<div id="salAdminTableArea"></div>'
+    panel.innerHTML = html
+
+    // 회원 리스트 window 공유 (모달에서 사용)
+    window._salaryUsers = users
+
+    renderSalaryAdminList()
+  } catch(e) {
+    console.warn('renderSalaryAdminTab error:', e)
+    panel.innerHTML = '<div style="padding:24px;color:#A32D2D;font-size:12px">급여 관리 로드 실패: ' + e.message + '</div>'
+  }
+}
+
+window.renderSalaryAdminList = function() {
+  var area = document.getElementById('salAdminTableArea')
+  if (!area) return
+  var fUser = (document.getElementById('salFilterUser') || {}).value || ''
+  var fYear = (document.getElementById('salFilterYear') || {}).value || ''
+  var fKw = ((document.getElementById('salFilterKeyword') || {}).value || '').trim().toLowerCase()
+
+  var filtered = _salaryCache.filter(function(s) {
+    if (fUser && s.uid !== fUser) return false
+    if (fYear && (s.month || '').indexOf(fYear + '-') !== 0) return false
+    if (fKw) {
+      var hay = ((s.targetName || '') + ' ' + (s.memo || '')).toLowerCase()
+      if (hay.indexOf(fKw) < 0) return false
+    }
+    return true
+  })
+
+  if (!filtered.length) {
+    area.innerHTML = '<div style="text-align:center;padding:40px;color:#b4b2a9;font-size:12px">등록된 급여 내역이 없습니다</div>'
+    return
+  }
+
+  // 집계
+  var totalBase = 0, totalAllow = 0, totalDeduct = 0, totalNet = 0
+  filtered.forEach(function(s) {
+    totalBase += (s.baseSalary || 0)
+    totalAllow += (s.allowance || 0)
+    totalDeduct += (s.deduction || 0)
+    totalNet += (s.netPay || 0)
+  })
+
+  var h = '<div class="table-wrap card" style="margin-top:0">'
+  h += '<table class="hr-table"><thead><tr>'
+  h += '<th style="width:90px">월</th><th style="width:120px">대상</th><th style="width:90px">부서</th>'
+  h += '<th style="width:110px">기본급</th><th style="width:110px">수당</th><th style="width:110px">공제</th><th style="width:120px">실수령액</th>'
+  h += '<th>메모</th><th style="width:110px">등록자</th><th style="width:120px">관리</th></tr></thead><tbody>'
+  filtered.forEach(function(s) {
+    h += '<tr>'
+    h += '<td>' + (s.month || '') + '</td>'
+    h += '<td>' + (s.targetName || '') + '</td>'
+    h += '<td style="color:#6b6b6b">' + (s.targetDept || '') + '</td>'
+    h += '<td>' + (s.baseSalary || 0).toLocaleString() + '</td>'
+    h += '<td>' + (s.allowance || 0).toLocaleString() + '</td>'
+    h += '<td style="color:#A32D2D">-' + (s.deduction || 0).toLocaleString() + '</td>'
+    h += '<td style="font-weight:500">' + (s.netPay || 0).toLocaleString() + '</td>'
+    h += '<td style="color:#6b6b6b;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(s.memo || '') + '">' + esc(s.memo || '') + '</td>'
+    h += '<td style="color:#6b6b6b;font-size:11px">' + (s.createdByName || '') + '</td>'
+    h += '<td>'
+    h += '<button class="btn btn-sm" onclick="openSalaryEditModal(\'' + s._id + '\')" style="margin-right:4px">수정</button>'
+    h += '<button class="btn btn-sm btn-danger" onclick="deleteSalary(\'' + s._id + '\')">삭제</button>'
+    h += '</td>'
+    h += '</tr>'
+  })
+  h += '</tbody><tfoot><tr style="font-weight:600;background:#f5f4f1">'
+  h += '<td colspan="3">합계 (' + filtered.length + '건)</td>'
+  h += '<td>' + totalBase.toLocaleString() + '</td>'
+  h += '<td>' + totalAllow.toLocaleString() + '</td>'
+  h += '<td style="color:#A32D2D">-' + totalDeduct.toLocaleString() + '</td>'
+  h += '<td>' + totalNet.toLocaleString() + '</td>'
+  h += '<td colspan="3"></td></tr></tfoot></table></div>'
+  area.innerHTML = h
+}
+
+var _editingSalaryId = null
+
+window.openSalaryAddModal = function() {
+  try {
+    console.log('[salary] openSalaryAddModal 시작')
+    _editingSalaryId = null
+    var users = window._salaryUsers || []
+    console.log('[salary] users 수:', users.length)
+    if (!users.length) {
+      showToast('회원 목록을 불러오지 못했습니다. 급여관리 탭을 다시 열어주세요.', 'warning')
+      return
+    }
+    var userOpts = '<option value="">선택하세요</option>' + users.map(function(u) {
+      return '<option value="' + u.uid + '">' + (u.name || u.email) + (u.dept ? ' (' + u.dept + ')' : '') + '</option>'
+    }).join('')
+    var titleEl = document.getElementById('salModalTitle')
+    var userEl = document.getElementById('salFormUser')
+    var monthEl = document.getElementById('salFormMonth')
+    var baseEl = document.getElementById('salFormBase')
+    var allowEl = document.getElementById('salFormAllow')
+    var deductEl = document.getElementById('salFormDeduct')
+    var netEl = document.getElementById('salFormNet')
+    var memoEl = document.getElementById('salFormMemo')
+    var modal = document.getElementById('salaryFormModal')
+    if (!modal || !userEl || !monthEl) {
+      console.error('[salary] 필수 DOM 없음', { modal: !!modal, userEl: !!userEl, monthEl: !!monthEl })
+      showToast('급여 모달을 찾을 수 없습니다. 페이지를 새로고침해주세요.', 'error')
+      return
+    }
+    if (titleEl) titleEl.textContent = '급여 추가'
+    userEl.innerHTML = userOpts
+    userEl.disabled = false
+    var now = new Date()
+    monthEl.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0')
+    if (baseEl) baseEl.value = ''
+    if (allowEl) allowEl.value = ''
+    if (deductEl) deductEl.value = ''
+    if (netEl) netEl.value = ''
+    if (memoEl) memoEl.value = ''
+    // 이미 열린 경우 먼저 닫기
+    if (modal.open) modal.close()
+    modal.showModal()
+    if (typeof centerModal === 'function') centerModal(modal)
+    console.log('[salary] 모달 열림')
+  } catch(e) {
+    console.error('[salary] openSalaryAddModal error:', e)
+    showToast('급여 추가 모달 열기 실패: ' + e.message, 'error')
+  }
+}
+
+window.openSalaryEditModal = function(docId) {
+  var row = _salaryCache.find(function(s) { return s._id === docId })
+  if (!row) return
+  _editingSalaryId = docId
+  var users = window._salaryUsers || []
+  var userOpts = '<option value="">선택하세요</option>' + users.map(function(u) {
+    return '<option value="' + u.uid + '"' + (u.uid === row.uid ? ' selected' : '') + '>' + (u.name || u.email) + (u.dept ? ' (' + u.dept + ')' : '') + '</option>'
+  }).join('')
+  document.getElementById('salModalTitle').textContent = '급여 수정'
+  document.getElementById('salFormUser').innerHTML = userOpts
+  document.getElementById('salFormUser').disabled = true
+  document.getElementById('salFormMonth').value = row.month || ''
+  document.getElementById('salFormBase').value = row.baseSalary || 0
+  document.getElementById('salFormAllow').value = row.allowance || 0
+  document.getElementById('salFormDeduct').value = row.deduction || 0
+  document.getElementById('salFormNet').value = row.netPay || 0
+  document.getElementById('salFormMemo').value = row.memo || ''
+  var modal = document.getElementById('salaryFormModal')
+  if (modal) { modal.showModal(); if (typeof centerModal === 'function') centerModal(modal) }
+}
+
+window.closeSalaryFormModal = function() {
+  var modal = document.getElementById('salaryFormModal')
+  if (modal) modal.close()
+  _editingSalaryId = null
+}
+
+window.autoCalcSalaryNet = function() {
+  var b = parseInt(document.getElementById('salFormBase').value) || 0
+  var a = parseInt(document.getElementById('salFormAllow').value) || 0
+  var d = parseInt(document.getElementById('salFormDeduct').value) || 0
+  document.getElementById('salFormNet').value = b + a - d
+}
+
+window.saveSalary = async function() {
+  console.log('[salary] saveSalary 시작')
+  var uid = document.getElementById('salFormUser').value
+  var month = document.getElementById('salFormMonth').value
+  var baseSalary = parseInt(document.getElementById('salFormBase').value) || 0
+  var allowance = parseInt(document.getElementById('salFormAllow').value) || 0
+  var deduction = parseInt(document.getElementById('salFormDeduct').value) || 0
+  var netPay = parseInt(document.getElementById('salFormNet').value) || 0
+  var memo = document.getElementById('salFormMemo').value.trim()
+  console.log('[salary] 입력값:', { uid: uid, month: month, base: baseSalary, allow: allowance, deduct: deduction, net: netPay })
+
+  if (!uid) return showToast('대상 회원을 선택해주세요.', 'warning')
+  if (!month || !/^\d{4}-\d{2}$/.test(month)) return showToast('월을 YYYY-MM 형식으로 입력해주세요.', 'warning')
+  if (!State.currentUser || !State.currentUser.grade || State.currentUser.grade < 3) {
+    return showToast('급여 등록 권한이 없습니다. (관리자 이상만 가능)', 'error')
+  }
+  if (!db || !firebase.auth || !firebase.auth().currentUser) {
+    return showToast('로그인 상태를 확인해주세요.', 'error')
+  }
+
+  // 대상 회원 정보 스탬프
+  var users = window._salaryUsers || []
+  var target = users.find(function(u) { return u.uid === uid })
+  var targetName = target ? (target.name || target.email) : ''
+  var targetDept = target ? (target.dept || '') : ''
+
+  var payload = {
+    uid: uid,
+    targetName: targetName,
+    targetDept: targetDept,
+    month: month,
+    baseSalary: baseSalary,
+    allowance: allowance,
+    deduction: deduction,
+    netPay: netPay,
+    memo: memo,
+    updatedAt: new Date().toISOString()
+  }
+
+  try {
+    if (_editingSalaryId) {
+      await db.collection('salaries').doc(_editingSalaryId).update(payload)
+      if (typeof logActivity === 'function') logActivity('update', '인사관리', '급여 수정: ' + targetName + ' ' + month)
+    } else {
+      // 중복 체크 (같은 uid+month)
+      var dup = _salaryCache.find(function(s) { return s.uid === uid && s.month === month })
+      if (dup) {
+        var ok = await korConfirm(targetName + '님의 ' + month + ' 급여가 이미 존재합니다. 덮어쓰시겠습니까?', '덮어쓰기', '취소')
+        if (!ok) return
+        await db.collection('salaries').doc(dup._id).update(payload)
+        if (typeof logActivity === 'function') logActivity('update', '인사관리', '급여 덮어쓰기: ' + targetName + ' ' + month)
+      } else {
+        payload.createdAt = new Date().toISOString()
+        payload.createdBy = firebase.auth().currentUser.uid
+        payload.createdByName = (typeof _currentUserName !== 'undefined' && _currentUserName) ? _currentUserName : ''
+        await db.collection('salaries').add(payload)
+        if (typeof logActivity === 'function') logActivity('create', '인사관리', '급여 등록: ' + targetName + ' ' + month)
+      }
+    }
+    showToast('저장되었습니다.', 'success')
+    closeSalaryFormModal()
+    // 알림: 대상자에게 급여 등록 알림
+    if (typeof addNotification === 'function' && uid !== firebase.auth().currentUser.uid) {
+      addNotification('salary', month + ' 급여가 등록되었습니다', '실수령액 ' + netPay.toLocaleString() + '원', '#hradmin', { targetUid: uid })
+    }
+    renderSalaryAdminTab()
+  } catch(e) {
+    console.error('saveSalary error:', e)
+    showToast('저장 실패: ' + e.message, 'error')
+  }
+}
+
+window.deleteSalary = async function(docId) {
+  var row = _salaryCache.find(function(s) { return s._id === docId })
+  if (!row) return
+  var ok = await korConfirm(row.targetName + ' ' + row.month + ' 급여를 삭제하시겠습니까?', '삭제', '취소')
+  if (!ok) return
+  try {
+    await db.collection('salaries').doc(docId).delete()
+    if (typeof logActivity === 'function') logActivity('delete', '인사관리', '급여 삭제: ' + row.targetName + ' ' + row.month)
+    showToast('삭제되었습니다.', 'success')
+    renderSalaryAdminTab()
+  } catch(e) {
+    console.error('deleteSalary error:', e)
+    showToast('삭제 실패: ' + e.message, 'error')
+  }
 }
 
 // =============================================
@@ -1326,8 +2266,10 @@ window.renderHrAdminTab = function() {
   var memberBtn = document.getElementById('hrAdminMemberBtn')
   var activityBtn = document.getElementById('hrAdminActivityBtn')
   var backupBtn = document.getElementById('hrAdminBackupBtn')
+  var salaryBtn = document.getElementById('hrAdminSalaryBtn')
   if (memberBtn) memberBtn.style.display = grade >= 3 ? '' : 'none'
   if (activityBtn) activityBtn.style.display = grade >= 3 ? '' : 'none'
+  if (salaryBtn) salaryBtn.style.display = grade >= 3 ? '' : 'none'
   if (backupBtn) backupBtn.style.display = grade >= 4 ? '' : 'none'
   window.switchHrAdminTab('teamLeave')
 }
@@ -1343,6 +2285,7 @@ window.switchHrAdminTab = function(tab) {
   var memberPanel = document.getElementById('memberListPanel')
   var alPanel = document.getElementById('activityLogPanel')
   var bkpPanel = document.getElementById('backupManagePanel')
+  // 급여 관리는 hrAdminContent 를 재사용 (별도 패널 없음)
   var specialTabs = ['memberList', 'activityLog', 'backupManage']
   if (hrContent) hrContent.style.display = specialTabs.indexOf(tab) >= 0 ? 'none' : ''
   if (memberPanel) memberPanel.style.display = tab === 'memberList' ? '' : 'none'
@@ -1354,6 +2297,7 @@ window.switchHrAdminTab = function(tab) {
     else if (tab === 'teamAttend') window.renderTeamAttendTab()
     else if (tab === 'leaveApproval') window.renderLeaveApprovalTab()
     else if (tab === 'attendApproval') window.renderAttendApprovalTab()
+    else if (tab === 'salaryAdmin') { if (typeof renderSalaryAdminTab === 'function') renderSalaryAdminTab() }
     else if (tab === 'memberList') { if (typeof loadMembers === 'function') loadMembers() }
     else if (tab === 'activityLog') { if (typeof loadActivityLog === 'function') loadActivityLog() }
     else if (tab === 'backupManage') { if (typeof renderBackupPanel === 'function') renderBackupPanel() }
@@ -1363,21 +2307,26 @@ window.switchHrAdminTab = function(tab) {
   }
 }
 
-// ===== 팀원 연차 현황 =====
+// ===== 팀원 연차 현황 — 조직도 스타일 부서별 그룹핑 =====
 window.renderTeamLeaveTab = function() {
   var grade = (State.currentUser && State.currentUser.grade) || 1
-  var dept = _currentUserDept || ''
+  var myDept = _currentUserDept || ''
   var quota = _getQuotaRecords()
   var allLeaves = _getLeaveRecords()
   var _noDeduct = ['대체연차', '병가']
 
-  // Collect all departments for filter
-  var depts = []
-  ;(_allUsers || []).forEach(function(u) {
-    if (u.dept && depts.indexOf(u.dept) < 0) depts.push(u.dept)
-  })
-  depts.sort()
+  // 직급 우선순위 (높은 직급이 위)
+  var POS_ORDER = (typeof POSITIONS !== 'undefined' ? POSITIONS : ['사원','주임','대리','과장','차장','실장','팀장','부장','이사','대표이사']).slice().reverse()
+  function posIdx(p) { var i = POS_ORDER.indexOf(p); return i < 0 ? 999 : i }
 
+  // 부서 목록 (필터 select용)
+  var allDepts = []
+  ;(_allUsers || []).forEach(function(u) {
+    if (u.dept && allDepts.indexOf(u.dept) < 0) allDepts.push(u.dept)
+  })
+  allDepts.sort()
+
+  // 이전 필터값 복원
   var prevDept = ''
   var prevSearch = ''
   var deptEl = document.getElementById('hradminLeaveDeptFilter')
@@ -1390,55 +2339,87 @@ window.renderTeamLeaveTab = function() {
     html += '<span class="hradmin-filter-label">부서</span>'
     html += '<select class="hradmin-filter-select" id="hradminLeaveDeptFilter" onchange="renderTeamLeaveTab()">'
     html += '<option value="">전체</option>'
-    depts.forEach(function(d) { html += '<option value="' + esc(d) + '">' + esc(d) + '</option>' })
+    allDepts.forEach(function(d) { html += '<option value="' + esc(d) + '">' + esc(d) + '</option>' })
     html += '</select>'
   }
   html += '<span class="hradmin-filter-label">이름</span>'
   html += '<input type="text" class="hradmin-filter-select" id="hradminLeaveSearch" placeholder="이름 검색" value="' + esc(prevSearch) + '" oninput="renderTeamLeaveTab()" style="width:120px">'
   html += '</div>'
 
-  // Get current filter
   var filterDept = prevDept
   var filterName = prevSearch.trim().toLowerCase()
 
+  // 필터 적용
   var users = (_allUsers || []).filter(function(u) {
-    if (grade === 2 && u.dept !== dept) return false
+    if (grade === 2 && u.dept !== myDept) return false
     if (grade >= 3 && filterDept && u.dept !== filterDept) return false
     if (filterName && (u.name || '').toLowerCase().indexOf(filterName) < 0) return false
     return true
   })
 
+  // 부서별 그룹핑
+  var deptMap = {}
+  users.forEach(function(u) {
+    var d = u.dept || '미지정'
+    if (!deptMap[d]) deptMap[d] = []
+    deptMap[d].push(u)
+  })
+
+  // 부서 정렬: 설정 _depts 순서 우선 → 미지정 부서는 이름순 뒤에
+  var deptOrder = (typeof _depts !== 'undefined' && _depts ? _depts.slice() : []).filter(function(d) { return deptMap[d] })
+  Object.keys(deptMap).forEach(function(d) { if (deptOrder.indexOf(d) < 0) deptOrder.push(d) })
+
+  // 부서 내 직급순 정렬
+  deptOrder.forEach(function(d) {
+    deptMap[d].sort(function(a, b) {
+      return posIdx(a.position) - posIdx(b.position) || (a.name || '').localeCompare(b.name || '')
+    })
+  })
+
   html += '<div class="hradmin-section">'
-  html += '<div class="hradmin-section-title">팀원 연차 현황 <span class="hradmin-badge">' + users.length + '명</span></div>'
+  html += '<div class="hradmin-section-title">팀원 연차 현황 <span class="hradmin-badge">' + users.length + '명 · ' + deptOrder.length + '개 부서</span></div>'
 
   if (users.length === 0) {
     html += '<div style="text-align:center;padding:20px;color:#b4b2a9;font-size:12px">표시할 팀원이 없습니다</div>'
   } else {
-    users.forEach(function(u) {
-      var uQuota = quota[u.uid] || { total: 15, year: 2026 }
-      var uLeaves = (allLeaves[u.uid] || []).filter(function(l) { return (l.status === '승인' || l.status === '확인완료') && _noDeduct.indexOf(l.type) < 0 })
-      var used = uLeaves.reduce(function(s, l) { return s + (l.days || 0) }, 0)
-      var remaining = uQuota.total - used
-      var pct = uQuota.total > 0 ? Math.round(used / uQuota.total * 100) : 0
-      var initial = (u.name || '?')[0]
+    html += '<div class="hrteam-grid">'
+    deptOrder.forEach(function(dept) {
+      var members = deptMap[dept]
+      html += '<div class="hrteam-dept-card">'
+      html += '<div class="hrteam-dept-header">'
+      html += '<span class="hrteam-dept-name">' + esc(dept) + '</span>'
+      html += '<span class="hrteam-dept-count">' + members.length + '명</span>'
+      html += '</div>'
+      html += '<div class="hrteam-members">'
+      members.forEach(function(u) {
+        var uQuota = quota[u.uid] || { total: 15, year: new Date().getFullYear() }
+        var uLeaves = (allLeaves[u.uid] || []).filter(function(l) { return (l.status === '승인' || l.status === '확인완료') && _noDeduct.indexOf(l.type) < 0 })
+        var used = uLeaves.reduce(function(s, l) { return s + (l.days || 0) }, 0)
+        var remaining = uQuota.total - used
+        var pct = uQuota.total > 0 ? Math.round(used / uQuota.total * 100) : 0
+        var initial = (u.name || '?').slice(0, 1)
 
-      html += '<div class="hradmin-team-card" onclick="openLeaveDetail(\'' + u.uid + '\')" style="cursor:pointer">'
-      html += '<div class="hradmin-team-avatar">' + esc(initial) + '</div>'
-      html += '<div class="hradmin-team-name">' + esc(formatUserName(u.name, u.position)) + '</div>'
-      html += '<div class="hradmin-team-dept">' + esc(u.dept || '-') + '</div>'
-      html += '<div class="hradmin-team-info">'
-      html += '<span>총 ' + uQuota.total + '일'
-      if (grade >= 3) {
-        html += ' <button class="hr-quota-edit-btn" onclick="event.stopPropagation();editLeaveQuota(\'' + u.uid + '\',' + uQuota.total + ')">수정</button>'
-      }
-      html += '</span>'
-      html += '<span>사용 ' + used + '일</span>'
-      html += '<span>잔여 ' + remaining + '일</span>'
-      html += '<div class="hradmin-leave-bar">'
-      html += '<div class="hradmin-leave-bg"><div class="hradmin-leave-fill" style="width:' + Math.min(pct, 100) + '%"></div></div>'
-      html += '<span class="hradmin-leave-pct">' + pct + '%</span>'
-      html += '</div></div></div>'
+        html += '<div class="hrteam-member" onclick="openLeaveDetail(\'' + u.uid + '\')" title="상세 보기">'
+        html += '<div class="hrteam-avatar">' + esc(initial) + '</div>'
+        html += '<div class="hrteam-info">'
+        html += '<div class="hrteam-name-row">'
+        html += '<span class="hrteam-name">' + esc(u.name || '') + '</span>'
+        html += '<span class="hrteam-pos">' + esc(u.position || '') + '</span>'
+        html += '</div>'
+        html += '<div class="hrteam-stats">'
+        html += '<span>총 <b>' + uQuota.total + '</b>일</span>'
+        html += '<span>사용 <b>' + used + '</b>일</span>'
+        html += '<span>잔여 <b>' + remaining + '</b>일</span>'
+        html += '</div>'
+        html += '<div class="hrteam-bar">'
+        html += '<div class="hrteam-bar-bg"><div class="hrteam-bar-fill" style="width:' + Math.min(pct, 100) + '%"></div></div>'
+        html += '<span class="hrteam-bar-pct">' + pct + '%</span>'
+        html += '</div>'
+        html += '</div></div>'
+      })
+      html += '</div></div>'
     })
+    html += '</div>'
   }
   html += '</div>'
 
@@ -1483,12 +2464,14 @@ window.openLeaveDetail = function(uid) {
   html += '</div>'
 
   // 사용 이력
+  var curGradeLd = (State.currentUser && State.currentUser.grade) || 1
+  var canDeleteLd = curGradeLd >= 3
   html += '<div class="ld-section-title">연차 사용 이력</div>'
   var sorted = uLeaves.slice().sort(function(a, b) { return (b.startDate || '').localeCompare(a.startDate || '') })
   if (sorted.length === 0) {
     html += '<div style="text-align:center;padding:20px;color:#b4b2a9;font-size:12px">연차 사용 이력이 없습니다</div>'
   } else {
-    html += '<table class="ld-table"><thead><tr><th>유형</th><th>시작일</th><th>종료일</th><th>일수</th><th>상태</th><th>사유</th></tr></thead><tbody>'
+    html += '<table class="ld-table"><thead><tr><th>유형</th><th>시작일</th><th>종료일</th><th>일수</th><th>상태</th><th>사유</th>' + (canDeleteLd ? '<th></th>' : '') + '</tr></thead><tbody>'
     sorted.forEach(function(l) {
       var statusClass = l.status === '승인' || l.status === '확인완료' ? 'ld-st-ok' : l.status === '반려' ? 'ld-st-no' : 'ld-st-wait'
       html += '<tr>'
@@ -1498,6 +2481,7 @@ window.openLeaveDetail = function(uid) {
       html += '<td>' + (l.days || 0) + '일</td>'
       html += '<td><span class="' + statusClass + '">' + esc(l.status || '-') + '</span></td>'
       html += '<td style="font-size:11px;color:#666;max-width:120px;overflow:hidden;text-overflow:ellipsis" title="' + esc(l.reason || '') + '">' + esc(l.reason || '-') + '</td>'
+      if (canDeleteLd) html += '<td><button class="hradmin-btn-reject" onclick="deleteLeaveFromDetail(\'' + uid + '\',\'' + esc(l.id) + '\')">삭제</button></td>'
       html += '</tr>'
     })
     html += '</tbody></table>'
@@ -1508,29 +2492,20 @@ window.openLeaveDetail = function(uid) {
   if (typeof centerModal === 'function') centerModal(modal)
 }
 
-// ===== 연차 일수 수정 (관리자 전용) =====
-window.editLeaveQuota = function(uid, currentTotal) {
-  var newTotal = prompt('연차 일수를 입력하세요 (현재: ' + currentTotal + '일)', currentTotal)
-  if (newTotal === null) return
-  newTotal = parseInt(newTotal)
-  if (isNaN(newTotal) || newTotal < 0) { showToast('올바른 숫자를 입력해주세요.', 'warning'); return }
-  var quota = _getQuotaRecords()
-  if (!quota[uid]) quota[uid] = { total: 15, year: new Date().getFullYear() }
-  quota[uid].total = newTotal
-  _saveQuota(uid, quota[uid])
-  showToast('연차 일수가 ' + newTotal + '일로 변경되었습니다.')
-  if (typeof logActivity === 'function') logActivity('setting', '인사관리', '연차 수정: uid=' + uid + ' → ' + newTotal + '일')
-  renderTeamLeaveTab()
+// ===== 연차 상세 모달에서 삭제 (관리자 전용) =====
+window.deleteLeaveFromDetail = async function(uid, leaveId) {
+  await window.deleteLeave(uid, leaveId)
+  // 삭제 후 상세 모달 재렌더 (여전히 열려있으면)
+  var modal = document.getElementById('leaveDetailModal')
+  if (modal && modal.open) window.openLeaveDetail(uid)
 }
+
+// ===== 연차 일수 수정은 회원관리 탭(grade>=3)에서만 수행 — 팀원 연차 현황에서는 제거 =====
 
 // ===== HR 미처리건 체크 (로그인 시 grade >= 2) =====
 window.checkHrPendingItems = function() {
   var grade = (State.currentUser && State.currentUser.grade) || 1
   if (grade < 2) return
-
-  // 오늘 이미 확인했으면 스킵
-  var dismissed = localStorage.getItem('lemango_hr_pending_dismissed_v1')
-  if (dismissed === fmtDate(new Date())) return
 
   var dept = _currentUserDept || ''
   var myUid = (State.currentUser && State.currentUser.uid) || ''
@@ -1551,22 +2526,64 @@ window.checkHrPendingItems = function() {
     })
   })
 
-  // 출퇴근 승인 대기 (본인 제외, 현재 연도만, 명시적 pending 체크)
+  // 출퇴근 승인 대기 (본인 제외, 현재 연도만)
+  // 조건: (1) 본인이 사유(memo)를 작성하고 (2) 명시적으로 승인 신청(lateRequested/earlyRequested===true) 한 건만
+  // 관찰 대상: 부서장(grade==2)은 본인 부서만, 관리자(grade>=3)는 전체
+  // ※ 단순 지각자는 별도 `late_arrival` 알림에서 처리 — 여기에 포함되면 안 됨
+  var pendingAttendRecords = []  // 개별 알림용
   var allAttend = _getAttendRecords()
   Object.keys(allAttend).forEach(function(uid) {
     if (uid === myUid) return
     var user = (_allUsers || []).find(function(u) { return u.uid === uid })
-    if (grade === 2 && (!user || user.dept !== dept)) return
+    if (!user) return
+    if (grade === 2 && user.dept !== dept) return
     allAttend[uid].forEach(function(r) {
       var y = (r.date || '').slice(0, 4)
       if (y && parseInt(y) !== curYear) return
-      if (r.lateRequested === true && r.lateApproved !== 'approved' && r.lateApproved !== 'rejected') pendingAttend++
-      if (r.earlyRequested === true && r.earlyApproved !== 'approved' && r.earlyApproved !== 'rejected') pendingAttend++
+      var hasLateMemo = !!(r.checkInMemo && r.checkInMemo.trim())
+      var hasEarlyMemo = !!(r.checkOutMemo && r.checkOutMemo.trim())
+      if (r.lateRequested === true && hasLateMemo &&
+          r.lateApproved !== 'approved' && r.lateApproved !== 'rejected') {
+        pendingAttend++
+        pendingAttendRecords.push({ uid: uid, user: user, date: r.date, type: 'late', memo: r.checkInMemo.trim() })
+      }
+      if (r.earlyRequested === true && hasEarlyMemo &&
+          r.earlyApproved !== 'approved' && r.earlyApproved !== 'rejected') {
+        pendingAttend++
+        pendingAttendRecords.push({ uid: uid, user: user, date: r.date, type: 'early', memo: r.checkOutMemo.trim() })
+      }
     })
   })
 
+  // 벨 알림 (부서장=본인부서 / 관리자=전체)
+  var scopeLabel = grade === 2 ? ' [' + (dept || '내 부서') + ']' : ''
+  if (pendingLeave > 0 && typeof addNotification === 'function') {
+    addNotification('leave_pending', '📋 연차 승인 대기 ' + pendingLeave + '건' + scopeLabel,
+      '인사관리 > 연차 승인에서 확인하세요', '#hradmin', { priority: 'urgent' })
+  }
+  // 출퇴근 승인 대기: 개별 알림 (해당 날짜로 바로 이동)
+  if (typeof addNotification === 'function') {
+    pendingAttendRecords.forEach(function(rec) {
+      var userName = typeof formatUserName === 'function' ? formatUserName(rec.user.name, rec.user.position) : (rec.user.name || '')
+      var typeLabel = rec.type === 'late' ? '지각' : '조퇴'
+      var title = '⏰ ' + userName + ' ' + rec.date.slice(5) + ' ' + typeLabel + ' 승인 대기'
+      var body = (rec.user.dept ? '[' + rec.user.dept + '] ' : '') + '사유: ' + rec.memo
+      var link = '#hradmin:attend:' + rec.uid + ':' + rec.date + ':' + rec.type
+      addNotification('attend_pending', title, body, link, { priority: 'urgent' })
+    })
+  }
+
+  // 지각자 알림 (grade>=2)
+  if (typeof window.checkLateArrivalAlerts === 'function') {
+    window.checkLateArrivalAlerts()
+  }
+
   var total = pendingLeave + pendingAttend
   if (total === 0) return
+
+  // 모달: 오늘 이미 확인했으면 스킵 (벨 알림은 이미 등록됨)
+  var dismissed = localStorage.getItem('lemango_hr_pending_dismissed_v1')
+  if (dismissed === fmtDate(new Date())) return
 
   var modal = document.getElementById('hrPendingModal')
   if (!modal) return
@@ -1680,11 +2697,12 @@ window.renderTeamAttendTab = function() {
 
   html += '<div class="hradmin-section">'
   html += '<div class="hradmin-section-title">출퇴근 현황 (' + filterDate + ') <span class="hradmin-badge">' + users.length + '명</span></div>'
-  html += '<table class="hradmin-table"><thead><tr><th>이름</th><th>부서</th><th>출근</th><th>출근상태</th><th>출근사유</th><th>퇴근</th><th>퇴근상태</th><th>퇴근사유</th><th>근무시간</th><th>상태</th></tr></thead><tbody>'
+  html += '<table class="hradmin-table"><thead><tr><th>이름</th><th>부서</th><th>출근</th><th>출근IP</th><th>출근상태</th><th>출근사유</th><th>퇴근</th><th>퇴근IP</th><th>퇴근상태</th><th>퇴근사유</th><th>근무시간</th><th>상태</th></tr></thead><tbody>'
 
   users.forEach(function(u) {
     var rec = (records[u.uid] || []).find(function(r) { return r.date === filterDate })
     var workHours = '-'
+    var uTh = _getAttendThresholds(u.uid, filterDate)
 
     if (rec && rec.checkIn && rec.checkOut) {
       var ip = rec.checkIn.split(':').map(Number)
@@ -1693,12 +2711,12 @@ window.renderTeamAttendTab = function() {
       workHours = Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm'
     }
 
-    // 출근 상태 (지각 여부)
+    // 출근 상태 (지각 여부 — 반차 오전이면 13:00 기준)
     var inStatusHtml = '-'
     var isLate = false
     if (rec && rec.checkIn) {
       var ipChk = rec.checkIn.split(':').map(Number)
-      isLate = ipChk[0] > 9 || (ipChk[0] === 9 && ipChk[1] > 0)
+      isLate = ipChk[0] > uTh.lateH || (ipChk[0] === uTh.lateH && ipChk[1] > uTh.lateM)
       if (isLate) {
         if (rec.lateApproved === 'approved') inStatusHtml = '<span class="hradmin-st hradmin-st-ok" style="font-size:9px">정상처리</span>'
         else if (rec.lateApproved === 'rejected') inStatusHtml = '<span class="hradmin-st hradmin-st-no" style="font-size:9px">반려</span>'
@@ -1719,12 +2737,12 @@ window.renderTeamAttendTab = function() {
       }
     }
 
-    // 퇴근 상태 (조퇴 여부)
+    // 퇴근 상태 (조퇴 여부 — 반차 오후이면 13:00 기준)
     var outStatusHtml = '-'
     var isEarly = false
     if (rec && rec.checkOut) {
       var opChk = rec.checkOut.split(':').map(Number)
-      isEarly = opChk[0] < 18
+      isEarly = opChk[0] < uTh.earlyH || (opChk[0] === uTh.earlyH && opChk[1] < uTh.earlyM)
       if (isEarly) {
         if (rec.earlyApproved === 'approved') outStatusHtml = '<span class="hradmin-st hradmin-st-ok" style="font-size:9px">정상처리</span>'
         else if (rec.earlyApproved === 'rejected') outStatusHtml = '<span class="hradmin-st hradmin-st-no" style="font-size:9px">반려</span>'
@@ -1758,14 +2776,19 @@ window.renderTeamAttendTab = function() {
 
     // 전체 상태
     var leave = _getLeaveOnDate(u.uid, filterDate)
+    var isHalfLeaveT = leave && (leave.type || '').indexOf('반차') >= 0
+    var isFullLeaveT = leave && !isHalfLeaveT
+    var isPastDayT = _isPastDate(filterDate)
     var totalStatusHtml = ''
-    if (!rec || !rec.checkIn) {
-      if (leave) totalStatusHtml = '<span class="hradmin-st hradmin-st-info">' + esc(leave.type) + '</span>'
-      else totalStatusHtml = '<span class="hradmin-st hradmin-st-no">미출근</span>'
-    } else if (leave) {
+    if (isFullLeaveT) {
       totalStatusHtml = '<span class="hradmin-st hradmin-st-info">' + esc(leave.type) + '</span>'
+    } else if (!rec || !rec.checkIn) {
+      if (isHalfLeaveT) totalStatusHtml = '<span class="hradmin-st hradmin-st-info">' + esc(leave.type) + '</span>'
+      else if (isPastDayT) totalStatusHtml = '<span class="hradmin-st hradmin-st-no">미처리</span>'
+      else totalStatusHtml = '<span class="hradmin-st hradmin-st-no">미출근</span>'
     } else if (rec.checkIn && !rec.checkOut) {
-      totalStatusHtml = '<span class="hradmin-st hradmin-st-wait">근무중</span>'
+      if (isPastDayT) totalStatusHtml = '<span class="hradmin-st hradmin-st-no">미처리</span>'
+      else totalStatusHtml = '<span class="hradmin-st hradmin-st-wait">근무중</span>'
     } else {
       var effectiveLate = isLate && rec.lateApproved !== 'approved'
       var effectiveEarly = isEarly && rec.earlyApproved !== 'approved'
@@ -1775,24 +2798,32 @@ window.renderTeamAttendTab = function() {
       else {
         var ipT = rec.checkIn.split(':').map(Number), opT = rec.checkOut.split(':').map(Number)
         var minsT = (opT[0] * 60 + opT[1]) - (ipT[0] * 60 + ipT[1])
-        if (minsT > 540) totalStatusHtml = '<span class="hradmin-st hradmin-st-info">야근</span>'
+        if (isHalfLeaveT) totalStatusHtml = '<span class="hradmin-st hradmin-st-info">' + esc(leave.type) + '</span>'
+        else if (minsT > 540) totalStatusHtml = '<span class="hradmin-st hradmin-st-info">야근</span>'
         else totalStatusHtml = '<span class="hradmin-st hradmin-st-ok">정상</span>'
       }
     }
 
+    var inIp = (rec && rec.ip) ? rec.ip : '-'
+    var outIp = (rec && rec.checkOutIp) ? rec.checkOutIp : '-'
+    var inIpCell = '<td style="font-family:monospace;font-size:11px;color:#555" title="' + esc(inIp) + '">' + esc(inIp) + '</td>'
+    var outIpCell = '<td style="font-family:monospace;font-size:11px;color:#555" title="' + esc(outIp) + '">' + esc(outIp) + '</td>'
+
     html += '<tr><td>' + esc(formatUserName(u.name, u.position)) + '</td>'
     html += '<td>' + esc(u.dept || '-') + '</td>'
     html += '<td>' + (rec && rec.checkIn ? rec.checkIn : '-') + '</td>'
+    html += inIpCell
     html += '<td style="white-space:nowrap">' + inStatusHtml + '</td>'
     html += '<td style="font-size:11px;color:#666;max-width:100px;overflow:hidden;text-overflow:ellipsis" title="' + esc(rec && rec.checkInMemo || '') + '">' + inMemoHtml + '</td>'
     html += '<td>' + (rec && rec.checkOut ? rec.checkOut : '-') + '</td>'
+    html += outIpCell
     html += '<td style="white-space:nowrap">' + outStatusHtml + '</td>'
     html += '<td style="font-size:11px;color:#666;max-width:100px;overflow:hidden;text-overflow:ellipsis" title="' + esc(rec && rec.checkOutMemo || '') + '">' + outMemoHtml + '</td>'
     html += '<td>' + workHours + '</td>'
     html += '<td>' + totalStatusHtml + '</td></tr>'
   })
 
-  if (users.length === 0) html += '<tr><td colspan="10" style="text-align:center;color:#b4b2a9">표시할 팀원이 없습니다</td></tr>'
+  if (users.length === 0) html += '<tr><td colspan="12" style="text-align:center;color:#b4b2a9">표시할 팀원이 없습니다</td></tr>'
   html += '</tbody></table></div>'
 
   var el = document.getElementById('hrAdminContent')
@@ -1808,9 +2839,17 @@ window.renderTeamAttendTab = function() {
 }
 
 // ===== 연차 승인 =====
-window.renderLeaveApprovalTab = function() {
+window.renderLeaveApprovalTab = async function() {
   var grade = (State.currentUser && State.currentUser.grade) || 1
-  var dept = _currentUserDept || ''
+  // _currentUserDept fallback — State.currentUser.dept 도 확인
+  var dept = _currentUserDept || (State.currentUser && State.currentUser.dept) || ''
+
+  // ★ 진입 시 최신 데이터 재조회 (타 사용자 신청 건 즉시 반영)
+  try {
+    if (typeof loadAllUsers === 'function') await loadAllUsers(true)
+    if (typeof loadHrData === 'function') await loadHrData()
+  } catch(e) { console.warn('renderLeaveApprovalTab refresh 실패:', e) }
+
   var allLeaves = _getLeaveRecords()
 
   var pendingList = []   // 부서장 승인 대기 (status === '대기')
@@ -1820,11 +2859,19 @@ window.renderLeaveApprovalTab = function() {
   Object.keys(allLeaves).forEach(function(uid) {
     var leaves = allLeaves[uid]
     var user = (_allUsers || []).find(function(u) { return u.uid === uid })
-    if (!user) return
-    var deptMatch = grade === 2 ? user.dept === dept : true
 
     leaves.forEach(function(l) {
-      var row = Object.assign({}, l, { uid: uid, userName: user.name, userPosition: user.position, userDept: user.dept })
+      // 사용자 정보 우선순위: _allUsers 조회 > entry에 저장된 신청자 정보 > 기본값
+      var uName = (user && user.name) || l.applicantName || '(알 수 없음)'
+      var uPos  = (user && user.position) || l.applicantPosition || ''
+      var uDept = (user && user.dept) || l.applicantDept || ''
+
+      // 부서장(grade 2): 본인 부서만 처리. 부서 정보 없는 건은 관리자 이상에만 노출
+      var deptMatch
+      if (grade === 2) deptMatch = !!dept && uDept === dept
+      else deptMatch = true
+
+      var row = Object.assign({}, l, { uid: uid, userName: uName, userPosition: uPos, userDept: uDept })
       if (l.status === '대기' && deptMatch) pendingList.push(row)
       else if (l.status === '승인' && deptMatch) confirmList.push(row)
       else if ((l.status === '확인완료' || l.status === '반려') && deptMatch) historyList.push(row)
@@ -1868,7 +2915,7 @@ window.renderLeaveApprovalTab = function() {
   if (confirmList.length === 0) {
     html += '<div style="text-align:center;padding:20px;color:#b4b2a9;font-size:12px">확인 대기 중인 연차가 없습니다</div>'
   } else {
-    html += '<table class="hradmin-table"><thead><tr><th>이름</th><th>부서</th><th>날짜</th><th>유형</th><th>일수</th><th>승인자</th><th>관리자</th><th>대표이사</th><th></th></tr></thead><tbody>'
+    html += '<table class="hradmin-table"><thead><tr><th>이름</th><th>부서</th><th>날짜</th><th>유형</th><th>일수</th><th>승인자</th><th>관리자 확인</th><th>대표이사 확인</th><th></th></tr></thead><tbody>'
     confirmList.forEach(function(l) {
       var dateStr = l.startDate === l.endDate ? l.startDate.slice(5) : l.startDate.slice(5) + '~' + l.endDate.slice(5)
       var mgrDone = !!l.managerConfirmer
@@ -1878,30 +2925,36 @@ window.renderLeaveApprovalTab = function() {
       html += '<td>' + dateStr + '</td>'
       html += '<td>' + esc(l.type) + '</td>'
       html += '<td>' + (l.days || 0) + '일</td>'
-      html += '<td style="font-size:10px">' + esc(l.approverName || '-') + '</td>'
-      // 관리자 확인 컬럼
+      // 승인자 (+ 승인 일시)
+      html += '<td style="font-size:10px;line-height:1.35">' + esc(l.approverName || '-')
+      if (l.approvedAt) html += '<div style="color:#8a8880;font-size:9.5px">' + formatDateTime(l.approvedAt) + '</div>'
+      html += '</td>'
+      // 관리자 확인 컬럼 — grade >= 3 바로 활성화
       html += '<td style="white-space:nowrap">'
       if (mgrDone) {
         html += '<span class="hradmin-st hradmin-st-ok">✓ ' + esc(l.managerConfirmerName) + '</span>'
+        if (l.managerConfirmedAt) html += '<div style="color:#8a8880;font-size:9.5px;margin-top:2px">' + formatDateTime(l.managerConfirmedAt) + '</div>'
       } else if (grade >= 3) {
         html += '<button class="hradmin-btn-confirm" onclick="confirmLeaveManager(\'' + l.uid + '\',\'' + l.id + '\')">확인</button>'
       } else {
         html += '<span style="color:#b4b2a9;font-size:10px">대기</span>'
       }
       html += '</td>'
-      // 대표이사 확인 컬럼
+      // 대표이사 확인 컬럼 — grade >= 3 바로 활성화 (관리자 확인과 독립적)
       html += '<td style="white-space:nowrap">'
       if (ceoDone) {
         html += '<span class="hradmin-st hradmin-st-ok">✓ ' + esc(l.ceoConfirmerName) + '</span>'
-      } else if (grade >= 5) {
+        if (l.ceoConfirmedAt) html += '<div style="color:#8a8880;font-size:9.5px;margin-top:2px">' + formatDateTime(l.ceoConfirmedAt) + '</div>'
+      } else if (grade >= 3) {
         html += '<button class="hradmin-btn-confirm-ceo" onclick="confirmLeaveCeo(\'' + l.uid + '\',\'' + l.id + '\')">확인</button>'
       } else {
         html += '<span style="color:#b4b2a9;font-size:10px">대기</span>'
       }
       html += '</td>'
-      // 반려
+      // 승인취소 / 반려
       html += '<td style="white-space:nowrap">'
       if (grade >= 3) {
+        html += '<button style="padding:3px 10px;font-size:11px;border:1px solid #F09595;background:#fff;color:#A32D2D;border-radius:4px;cursor:pointer;margin-right:4px" onclick="cancelLeaveApproval(\'' + l.uid + '\',\'' + l.id + '\')">승인취소</button>'
         html += '<button class="hradmin-btn-reject" onclick="rejectLeave(\'' + l.uid + '\',\'' + l.id + '\')">반려</button>'
       }
       html += '</td></tr>'
@@ -1916,7 +2969,7 @@ window.renderLeaveApprovalTab = function() {
   if (historyList.length === 0) {
     html += '<div style="text-align:center;padding:20px;color:#b4b2a9;font-size:12px">처리 이력이 없습니다</div>'
   } else {
-    html += '<table class="hradmin-table"><thead><tr><th>이름</th><th>부서</th><th>날짜</th><th>유형</th><th>승인자</th><th>관리자</th><th>대표이사</th><th>상태</th></tr></thead><tbody>'
+    html += '<table class="hradmin-table"><thead><tr><th>이름</th><th>부서</th><th>날짜</th><th>유형</th><th>승인자</th><th>관리자 확인</th><th>대표이사 확인</th><th>상태</th></tr></thead><tbody>'
     historyList.forEach(function(l) {
       var dateStr = l.startDate === l.endDate ? l.startDate.slice(5) : l.startDate.slice(5) + '~' + l.endDate.slice(5)
       var stCls = l.status === '확인완료' ? 'hradmin-st-ok' : 'hradmin-st-no'
@@ -1924,9 +2977,24 @@ window.renderLeaveApprovalTab = function() {
       html += '<td>' + esc(l.userDept || '-') + '</td>'
       html += '<td>' + dateStr + '</td>'
       html += '<td>' + esc(l.type) + '</td>'
-      html += '<td style="font-size:10px">' + esc(l.approverName || '-') + '</td>'
-      html += '<td style="font-size:10px">' + (l.managerConfirmerName ? '✓ ' + esc(l.managerConfirmerName) : '-') + '</td>'
-      html += '<td style="font-size:10px">' + (l.ceoConfirmerName ? '✓ ' + esc(l.ceoConfirmerName) : '-') + '</td>'
+      // 승인자 + 일시
+      html += '<td style="font-size:10px;line-height:1.35">' + esc(l.approverName || '-')
+      if (l.approvedAt) html += '<div style="color:#8a8880;font-size:9.5px">' + formatDateTime(l.approvedAt) + '</div>'
+      html += '</td>'
+      // 관리자 확인 + 일시
+      html += '<td style="font-size:10px;line-height:1.35">'
+      if (l.managerConfirmerName) {
+        html += '✓ ' + esc(l.managerConfirmerName)
+        if (l.managerConfirmedAt) html += '<div style="color:#8a8880;font-size:9.5px">' + formatDateTime(l.managerConfirmedAt) + '</div>'
+      } else html += '-'
+      html += '</td>'
+      // 대표이사 확인 + 일시
+      html += '<td style="font-size:10px;line-height:1.35">'
+      if (l.ceoConfirmerName) {
+        html += '✓ ' + esc(l.ceoConfirmerName)
+        if (l.ceoConfirmedAt) html += '<div style="color:#8a8880;font-size:9.5px">' + formatDateTime(l.ceoConfirmedAt) + '</div>'
+      } else html += '-'
+      html += '</td>'
       html += '<td><span class="hradmin-st ' + stCls + '">' + esc(l.status) + '</span></td></tr>'
     })
     html += '</tbody></table>'
@@ -1961,8 +3029,9 @@ window.renderAttendApprovalTab = function() {
       if (!r.checkIn || !r.checkOut) return
       var ip = r.checkIn.split(':').map(Number)
       var op = r.checkOut.split(':').map(Number)
-      var isLate = ip[0] > 9 || (ip[0] === 9 && ip[1] > 0)
-      var isEarly = op[0] < 18
+      var th = _getAttendThresholds(uid, r.date)
+      var isLate = ip[0] > th.lateH || (ip[0] === th.lateH && ip[1] > th.lateM)
+      var isEarly = op[0] < th.earlyH || (op[0] === th.earlyH && op[1] < th.earlyM)
       if (!isLate && !isEarly) return
 
       var row = {
@@ -1975,8 +3044,10 @@ window.renderAttendApprovalTab = function() {
         earlyManagerConfirmer: r.earlyManagerConfirmer, earlyManagerConfirmerName: r.earlyManagerConfirmerName
       }
 
-      var latePending = isLate && r.lateRequested && !r.lateApproved
-      var earlyPending = isEarly && r.earlyRequested && !r.earlyApproved
+      var hasLateMemo = !!(r.checkInMemo && r.checkInMemo.trim())
+      var hasEarlyMemo = !!(r.checkOutMemo && r.checkOutMemo.trim())
+      var latePending = isLate && r.lateRequested === true && hasLateMemo && !r.lateApproved
+      var earlyPending = isEarly && r.earlyRequested === true && hasEarlyMemo && !r.earlyApproved
       var lateNeedConfirm = isLate && r.lateApproved === 'approved' && !r.lateManagerConfirmer
       var earlyNeedConfirm = isEarly && r.earlyApproved === 'approved' && !r.earlyManagerConfirmer
       var lateDone = !isLate || r.lateApproved === 'rejected' || (r.lateApproved === 'approved' && r.lateManagerConfirmer)

@@ -636,6 +636,11 @@ function confirmGonghomUpload() {
   _cafe24Rows = []
   _cafe24Orders = {}
   _cafe24ColFilters = {}
+  // 자동 생성된 상품 포함 전체 탭 갱신
+  State.product.filtered = [...State.allProducts]
+  State.stock.filtered   = [...State.allProducts]
+  renderProductTable()
+  renderStockTable()
   renderSalesTable()
   renderDashboard()
 
@@ -655,4 +660,5 @@ function confirmGonghomUpload() {
     showToast(msg, 'success')
     logActivity('upload', '매출현황', `카페24 업로드: ${parts.join(', ')}`)
   }
+  if (typeof saveProducts === 'function') saveProducts()
 }

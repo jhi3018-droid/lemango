@@ -25,7 +25,12 @@ try {
 }
 
 // 최근 이메일 localStorage 저장/복원
-const _EMAIL_KEY = 'lemango_last_email'
+const _EMAIL_KEY = 'lemango_last_email_v1'
+// 마이그레이션: 기존 키에서 이전
+if (!localStorage.getItem('lemango_last_email_v1') && localStorage.getItem('lemango_last_email')) {
+  localStorage.setItem('lemango_last_email_v1', localStorage.getItem('lemango_last_email'))
+  localStorage.removeItem('lemango_last_email')
+}
 function saveLastEmail(email) { localStorage.setItem(_EMAIL_KEY, email) }
 function getLastEmail() { return localStorage.getItem(_EMAIL_KEY) || '' }
 
@@ -144,9 +149,12 @@ async function checkApproval(user) {
     return
   }
   console.log('[checkApproval] 승인 확인 — showApp 호출')
-  try { await docRef.update({ lastLogin: new Date() }) } catch (e) { console.warn('lastLogin update 실패:', e.message) }
+  // 새로고침(세션 복원)은 로그 남기지 않음 — 실제 로그인 버튼 클릭(_loginInProgress)일 때만 기록
+  const isFreshLogin = _loginInProgress
+  try { if (isFreshLogin) await docRef.update({ lastLogin: new Date() }) } catch (e) { console.warn('lastLogin update 실패:', e.message) }
   showApp(data)
-  logActivity('login', '', '로그인 성공')
+  if (isFreshLogin) logActivity('login', '', '로그인 성공')
+  _loginInProgress = false
 }
 
 let _appInitialized = false

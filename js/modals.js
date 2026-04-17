@@ -101,13 +101,32 @@ function makeDraggableResizable(modal, minW = 420, minH = 300) {
 }
 
 function centerModal(modal) {
+  if (!modal) return
   modal.style.left = ''
   modal.style.top  = ''
-  requestAnimationFrame(() => {
+  const apply = () => {
     modal.style.left = Math.max(0, (window.innerWidth  - modal.offsetWidth)  / 2) + 'px'
     modal.style.top  = Math.max(0, (window.innerHeight - modal.offsetHeight) / 2) + 'px'
-  })
+  }
+  if (modal.offsetWidth && modal.offsetHeight) apply()
+  requestAnimationFrame(apply)
 }
+
+// 모든 .srm-modal 다이얼로그는 showModal() 직후 자동으로 중앙 배치
+;(function patchShowModal() {
+  if (typeof HTMLDialogElement === 'undefined') return
+  const proto = HTMLDialogElement.prototype
+  if (proto.__srmCenterPatched) return
+  proto.__srmCenterPatched = true
+  const orig = proto.showModal
+  proto.showModal = function () {
+    const ret = orig.apply(this, arguments)
+    if (this.classList && this.classList.contains('srm-modal')) {
+      centerModal(this)
+    }
+    return ret
+  }
+})()
 
 function copyFieldUrl(key, btn) {
   const modal = document.getElementById('detailModal')
@@ -144,10 +163,15 @@ function copySingleUrlFromBtn(btn) {
 let _detailCode = null        // 현재 열린 상품 코드
 let _detailPendingCode = null  // 상세 모달 품번 생성 패널에서 임시 예약한 코드
 
-function openDetailModal(productCode) {
+async function openDetailModal(productCode) {
   const p = State.allProducts.find(x => x.productCode === productCode)
   if (!p) return
   _detailCode = productCode
+
+  // 담당자 드롭다운을 위해 사용자 목록 선로드
+  if ((!window._allUsers || window._allUsers.length === 0) && typeof loadAllUsers === 'function') {
+    try { await loadAllUsers() } catch(e) {}
+  }
 
   const modal = document.getElementById('detailModal')
   modal.classList.remove('edit-mode')
@@ -158,12 +182,14 @@ function openDetailModal(productCode) {
     lockBtn.style.display = p.productCodeLocked ? 'none' : 'inline-block'
     lockBtn.textContent = '🔒 품번 확정'
   }
-  // 삭제 버튼 (grade 2+ only)
+  // 삭제 버튼 (작성자 OR grade>=3)
   const deleteBtn = document.getElementById('dDeleteBtn')
-  if (deleteBtn && !(State.currentUser && State.currentUser.grade >= 2)) {
-    deleteBtn.dataset.hidden = '1'
-  } else if (deleteBtn) {
-    delete deleteBtn.dataset.hidden
+  if (deleteBtn) {
+    const uid = typeof firebase !== 'undefined' ? firebase.auth().currentUser?.uid : null
+    const grade = State.currentUser?.grade || 0
+    const canDel = (grade >= 3) || (p.createdBy && p.createdBy === uid)
+    if (canDel) delete deleteBtn.dataset.hidden
+    else deleteBtn.dataset.hidden = '1'
   }
   // 위치 초기화 (매번 열릴 때 중앙으로)
   modal.style.left = ''
@@ -483,6 +509,8 @@ function buildDetailContent(p) {
   const assigneePos  = p.assigneePosition || (p.assignee ? (_users.find(u=>u.uid===p.assignee)?.position || '') : '')
   const assigneeView = (assigneeName && typeof formatUserName === 'function') ? formatUserName(assigneeName, assigneePos) : (assigneeName || '-')
   const assigneeOpts = `<option value="">- 미지정 -</option>` + _users.map(u => `<option value="${u.uid}"${p.assignee===u.uid?' selected':''}>${esc((typeof formatUserName==='function')?formatUserName(u.name, u.position):u.name)}</option>`).join('')
+  // 검색형 콤보박스용 데이터
+  const assigneeCurrentLabel = assigneeName ? ((typeof formatUserName==='function') ? formatUserName(assigneeName, assigneePos) : assigneeName) : ''
 
   const pinnedMemoBlock = `
     <div class="pinned-memo">📌 ${esc(p.pinnedMemo || '')}</div>
@@ -507,7 +535,26 @@ function buildDetailContent(p) {
           `<option value=""${!p.gender?' selected':''}>-</option>` +
           Object.entries(GENDER_MAP).map(([v,l]) => `<option value="${v}"${p.gender===v?' selected':''}>${l}</option>`).join('')
         )}
-        ${field('담당자', 'assignee', assigneeView, 'select', assigneeOpts)}
+        <div class="dfield">
+          <span class="dfield-label">담당자</span>
+          <span class="dfield-value${!assigneeCurrentLabel ? ' empty' : ''}">${assigneeCurrentLabel || '-'}</span>
+          <div class="assignee-combo" data-combo="assignee">
+            <input type="hidden" data-key="assignee" value="${p.assignee || ''}" />
+            <input type="text" class="assignee-search" value="${esc(assigneeCurrentLabel)}" placeholder="이름·직급·부서 검색" autocomplete="off"
+              oninput="filterAssigneeDropdown(this)" onfocus="showAssigneeDropdown(this)" onkeydown="assigneeKeyNav(event, this)" />
+            <button type="button" class="assignee-clear" title="미지정으로" onclick="clearAssignee(this)">✕</button>
+            <div class="assignee-dd" style="display:none">
+              <div class="assignee-opt" data-uid="" onmousedown="selectAssignee(this)">- 미지정 -</div>
+              ${_users.map(u => {
+                const lbl = (typeof formatUserName==='function') ? formatUserName(u.name, u.position) : (u.name||'')
+                const dept = u.dept || ''
+                return `<div class="assignee-opt" data-uid="${u.uid}" data-name="${esc(lbl)}" data-dept="${esc(dept)}" onmousedown="selectAssignee(this)">
+                  <span class="aopt-name">${esc(lbl)}</span>${dept ? `<span class="aopt-dept">${esc(dept)}</span>` : ''}
+                </div>`
+              }).join('')}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -785,6 +832,7 @@ async function deleteProductTempImage(idx) {
   const ok = await korConfirm('이 임시 이미지를 삭제하시겠습니까?', '삭제', '취소')
   if (!ok) return
   p.tempImages.splice(idx, 1)
+  if (typeof saveProducts === 'function') saveProducts()
   openDetailModal(_detailCode)
   showToast('임시 이미지가 삭제되었습니다.', 'success')
 }
@@ -795,6 +843,7 @@ async function deleteAllProductTempImages() {
   const ok = await korConfirm(`임시 이미지 ${p.tempImages.length}개를 모두 삭제하시겠습니까?`, '전체 삭제', '취소')
   if (!ok) return
   p.tempImages = []
+  if (typeof saveProducts === 'function') saveProducts()
   openDetailModal(_detailCode)
   showToast('임시 이미지가 모두 삭제되었습니다.', 'success')
 }
@@ -839,6 +888,11 @@ async function deleteProduct() {
   const p = State.allProducts.find(x => x.productCode === _detailCode)
   if (!p) return
 
+  const uid = typeof firebase !== 'undefined' ? firebase.auth().currentUser?.uid : null
+  const grade = State.currentUser?.grade || 0
+  const canDel = (grade >= 3) || (p.createdBy && p.createdBy === uid)
+  if (!canDel) { showToast('삭제 권한이 없습니다. (작성자 또는 관리자 이상)', 'warning'); return }
+
   // 매출 기록 경고
   const revCount = (p.revenueLog || []).length
   let msg = '상품을 삭제하시겠습니까?\n관련 매출/재고 데이터도 함께 삭제됩니다.\n삭제 후 복구할 수 없습니다.'
@@ -876,8 +930,10 @@ async function deleteProduct() {
   if (typeof renderProductTable === 'function') renderProductTable()
   if (typeof renderStockTable === 'function') renderStockTable()
   if (typeof renderSalesTable === 'function') renderSalesTable()
+  if (typeof renderDashboard === 'function') renderDashboard()
 
   logActivity('delete', '상품조회', `상품 삭제 — ${code} ${name}`)
+  if (typeof saveProducts === 'function') saveProducts()
   showToast('상품이 삭제되었습니다.', 'success')
 }
 
@@ -942,6 +998,118 @@ function toggleDetailEdit() {
     _detailPendingCode = null
   }
 }
+
+// ===== 담당자 검색형 콤보박스 =====
+function _positionAssigneeDd(inputEl, dd) {
+  const r = inputEl.getBoundingClientRect()
+  dd.style.left = r.left + 'px'
+  dd.style.width = r.width + 'px'
+  // 아래 공간 부족 시 위로 표시
+  const spaceBelow = window.innerHeight - r.bottom
+  const ddH = Math.min(dd.scrollHeight || 114, 114)
+  if (spaceBelow < ddH + 8 && r.top > ddH + 8) {
+    dd.style.top = (r.top - ddH - 2) + 'px'
+  } else {
+    dd.style.top = (r.bottom + 2) + 'px'
+  }
+}
+function _assigneeReposHandler(e) {
+  document.querySelectorAll('.assignee-combo .assignee-dd').forEach(dd => {
+    if (dd.style.display === 'none') return
+    const input = dd.parentElement.querySelector('.assignee-search')
+    if (input) _positionAssigneeDd(input, dd)
+  })
+}
+function showAssigneeDropdown(inputEl) {
+  const dd = inputEl.parentElement.querySelector('.assignee-dd')
+  if (!dd) return
+  filterAssigneeDropdown(inputEl)
+  dd.style.display = ''
+  _positionAssigneeDd(inputEl, dd)
+  window.addEventListener('scroll', _assigneeReposHandler, true)
+  window.addEventListener('resize', _assigneeReposHandler)
+}
+function filterAssigneeDropdown(inputEl) {
+  const dd = inputEl.parentElement.querySelector('.assignee-dd')
+  if (!dd) return
+  const q = (inputEl.value || '').trim().toLowerCase()
+  let visible = 0
+  dd.querySelectorAll('.assignee-opt').forEach(opt => {
+    if (!q) { opt.style.display = ''; visible++; return }
+    const name = (opt.dataset.name || opt.textContent || '').toLowerCase()
+    const dept = (opt.dataset.dept || '').toLowerCase()
+    const show = name.includes(q) || dept.includes(q) || (!opt.dataset.uid && '미지정'.includes(q))
+    opt.style.display = show ? '' : 'none'
+    if (show) visible++
+  })
+  dd.style.display = visible > 0 ? '' : 'none'
+  if (visible > 0) _positionAssigneeDd(inputEl, dd)
+}
+function selectAssignee(optEl) {
+  const combo = optEl.closest('.assignee-combo')
+  if (!combo) return
+  const hidden = combo.querySelector('input[type="hidden"][data-key="assignee"], input[type="hidden"][data-pkey="assignee"]')
+  const search = combo.querySelector('.assignee-search')
+  const dd = combo.querySelector('.assignee-dd')
+  const uid = optEl.dataset.uid || ''
+  const label = uid ? (optEl.dataset.name || '') : ''
+  if (hidden) hidden.value = uid
+  if (search) search.value = label
+  if (dd) dd.style.display = 'none'
+  window.removeEventListener('scroll', _assigneeReposHandler, true)
+  window.removeEventListener('resize', _assigneeReposHandler)
+}
+function clearAssignee(btnEl) {
+  const combo = btnEl.closest('.assignee-combo')
+  if (!combo) return
+  const hidden = combo.querySelector('input[type="hidden"][data-key="assignee"], input[type="hidden"][data-pkey="assignee"]')
+  const search = combo.querySelector('.assignee-search')
+  if (hidden) hidden.value = ''
+  if (search) { search.value = ''; search.focus() }
+}
+function assigneeKeyNav(e, inputEl) {
+  const dd = inputEl.parentElement.querySelector('.assignee-dd')
+  if (!dd || dd.style.display === 'none') return
+  const opts = Array.from(dd.querySelectorAll('.assignee-opt')).filter(o => o.style.display !== 'none')
+  if (!opts.length) return
+  let idx = opts.findIndex(o => o.classList.contains('aopt-hover'))
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    idx = (idx + 1) % opts.length
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    idx = (idx - 1 + opts.length) % opts.length
+  } else if (e.key === 'Enter' && idx >= 0) {
+    e.preventDefault()
+    selectAssignee(opts[idx])
+    return
+  } else if (e.key === 'Escape') {
+    dd.style.display = 'none'
+    window.removeEventListener('scroll', _assigneeReposHandler, true)
+    window.removeEventListener('resize', _assigneeReposHandler)
+    return
+  } else return
+  opts.forEach(o => o.classList.remove('aopt-hover'))
+  opts[idx].classList.add('aopt-hover')
+  opts[idx].scrollIntoView({ block: 'nearest' })
+}
+// 바깥 클릭 시 드롭다운 닫기
+document.addEventListener('click', function(e) {
+  let anyOpen = false
+  document.querySelectorAll('.assignee-combo').forEach(combo => {
+    const dd = combo.querySelector('.assignee-dd')
+    if (!dd) return
+    if (!combo.contains(e.target)) {
+      dd.style.display = 'none'
+    } else if (dd.style.display !== 'none') {
+      anyOpen = true
+    }
+  })
+  if (!anyOpen) {
+    window.removeEventListener('scroll', _assigneeReposHandler, true)
+    window.removeEventListener('resize', _assigneeReposHandler)
+  }
+})
 
 function saveDetailEdit() {
   const p = State.allProducts.find(x => x.productCode === _detailCode)
@@ -1027,6 +1195,7 @@ function saveDetailEdit() {
     if (typeof notifyWatchers === 'function') notifyWatchers('product', _detailCode, '수정됨')
     if (typeof releaseEditLock === 'function') releaseEditLock('product', _detailCode)
   } catch(e) {}
+  if (typeof saveProducts === 'function') saveProducts()
 }
 
 async function lockProductCode() {

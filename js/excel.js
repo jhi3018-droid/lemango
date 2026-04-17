@@ -491,6 +491,56 @@ function downloadExcel(type) {
   showToast(`${sheetName} 다운로드 완료`, 'success')
 }
 
+// ===== 입출고 이력 엑셀 다운로드 =====
+window.downloadStockLog = function() {
+  const headers = ['품번', '상품명', '브랜드', '유형', '일자', ...SIZES, '합계', '메모', '등록일']
+  const rows = []
+  State.allProducts.forEach(p => {
+    (p.stockLog || []).forEach(log => {
+      const sizeQtys = SIZES.map(sz => log[sz] || 0)
+      const total = sizeQtys.reduce((s, v) => s + v, 0)
+      rows.push([
+        p.productCode, p.nameKr || '', p.brand || '',
+        log.type === 'in' ? '입고' : '출고',
+        log.date || '', ...sizeQtys, total,
+        log.memo || '', log.registeredAt || ''
+      ])
+    })
+  })
+  if (!rows.length) { showToast('입출고 이력이 없습니다.', 'warning'); return }
+  rows.sort((a, b) => (b[4] || '').localeCompare(a[4] || ''))
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '입출고이력')
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  XLSX.writeFile(wb, `르망고_입출고이력_${today}.xlsx`)
+  showToast('입출고이력 다운로드 완료', 'success')
+}
+
+// ===== 매출 이력 엑셀 다운로드 =====
+window.downloadRevenueLog = function() {
+  const headers = ['품번', '상품명', '브랜드', '유형', '일자', '채널', '주문번호', '수량', '매출액', '등록일']
+  const rows = []
+  State.allProducts.forEach(p => {
+    (p.revenueLog || []).forEach(log => {
+      rows.push([
+        p.productCode, p.nameKr || '', p.brand || '',
+        log.type === 'sale' ? '판매' : '환불',
+        log.date || '', log.channel || '', log.orderNo || '',
+        log.qty || 0, log.revenue || 0, log.registeredAt || ''
+      ])
+    })
+  })
+  if (!rows.length) { showToast('매출 이력이 없습니다.', 'warning'); return }
+  rows.sort((a, b) => (b[4] || '').localeCompare(a[4] || ''))
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '매출이력')
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  XLSX.writeFile(wb, `르망고_매출이력_${today}.xlsx`)
+  showToast('매출이력 다운로드 완료', 'success')
+}
+
 // ===== 상품 업로드용 컬럼 인덱스 (38컬럼 양식) =====
 // 1행 헤더, 데이터는 2행(index 1)부터
 // NO(0) 브랜드(1) 품번(2) 샘플번호(3) 카페24코드(4) 바코드(5)
@@ -740,7 +790,26 @@ function handleUpload(input, type) {
   reader.readAsArrayBuffer(file)
 }
 
+// 업로드 엑셀 → 파싱 → 변경분 있으면 미리보기, 없으면 바로 적용
+let _bulkEditPending = null // { added:[], updated:[] }
+
 function uploadProducts(raw) {
+  const parsed = _parseProductUpload(raw)
+  if (!parsed) return
+
+  // 변경분이 있으면 미리보기 표시
+  if (parsed.updated.length > 0) {
+    _bulkEditPending = parsed
+    _showBulkEditPreview(parsed)
+  } else if (parsed.added.length > 0) {
+    // 신규만 있으면 바로 적용
+    _applyProductUpload(parsed)
+  } else {
+    showToast('변경 사항이 없습니다.', 'info')
+  }
+}
+
+function _parseProductUpload(raw) {
   // 양식 자동 감지: 1행 헤더에 '품번'이 인덱스 2 → 신규양식, 아니면 레거시
   const header0 = String(raw[0]?.[2] || '').trim()
   const isNew = (header0 === '품번')
@@ -761,9 +830,9 @@ function uploadProducts(raw) {
   }
 
   const dataRows = raw.slice(dataStart).filter(r => String(r[COL.code] || '').trim())
-  if (!dataRows.length) { showToast('데이터가 없습니다.', 'error'); return }
+  if (!dataRows.length) { showToast('데이터가 없습니다.', 'error'); return null }
 
-  let added = 0, updated = 0
+  const added = [], updated = []
   dataRows.forEach(row => {
     const code = String(row[COL.code]).trim()
     if (!code) return
@@ -841,25 +910,182 @@ function uploadProducts(raw) {
 
     const idx = State.allProducts.findIndex(p => p.productCode === code)
     if (idx >= 0) {
-      // 기존 품번 → 기본정보/이미지 업데이트, 재고·판매·이력 유지
+      // 기존 품번 — 변경분 수집
       const existing = State.allProducts[idx]
-      State.allProducts[idx] = { ...existing, ...product,
-        no:         existing.no,
-        stock:      existing.stock,
-        stockLog:   existing.stockLog,
-        sales:      existing.sales,
-        revenueLog: existing.revenueLog,
-        scheduleLog: existing.scheduleLog,
-        productCodeLocked: existing.productCodeLocked,
-        barcodes:   existing.barcodes
+      const diffs = _diffProduct(existing, product)
+      if (diffs.length > 0) {
+        updated.push({ code, idx, product, diffs, existing })
       }
-      stampModified(State.allProducts[idx])
-      updated++
     } else {
-      stampCreated(product)
-      State.allProducts.push(product)
-      added++
+      added.push({ code, product })
     }
+  })
+
+  return { added, updated }
+}
+
+// 두 상품 객체 비교 → 변경된 필드 목록
+const _DIFF_FIELDS = [
+  { key:'brand', label:'브랜드' },
+  { key:'sampleNo', label:'샘플번호' },
+  { key:'cafe24Code', label:'카페24코드' },
+  { key:'barcode', label:'바코드' },
+  { key:'nameKr', label:'상품명(한글)' },
+  { key:'nameEn', label:'상품명(영문)' },
+  { key:'colorKr', label:'색상(한글)' },
+  { key:'colorEn', label:'색상(영문)' },
+  { key:'salePrice', label:'판매가' },
+  { key:'costPrice', label:'원가' },
+  { key:'type', label:'타입' },
+  { key:'backStyle', label:'백스타일' },
+  { key:'legCut', label:'레그컷' },
+  { key:'guide', label:'가이드' },
+  { key:'fabricType', label:'원단타입' },
+  { key:'chestLine', label:'가슴선' },
+  { key:'transparency', label:'비침' },
+  { key:'lining', label:'안감' },
+  { key:'capRing', label:'캡고리' },
+  { key:'material', label:'소재' },
+  { key:'comment', label:'코멘트' },
+  { key:'washMethod', label:'세탁방법' },
+  { key:'bust', label:'가슴(cm)' },
+  { key:'waist', label:'허리(cm)' },
+  { key:'hip', label:'엉덩이(cm)' },
+  { key:'modelSize', label:'모델사이즈' },
+  { key:'madeMonth', label:'제조년월' },
+  { key:'madeBy', label:'제조사' },
+  { key:'madeIn', label:'제조국' },
+  { key:'saleStatus', label:'판매상태' },
+  { key:'productionStatus', label:'생산상태' },
+  { key:'mainImage', label:'대표이미지' },
+  { key:'videoUrl', label:'영상URL' },
+]
+function _diffProduct(existing, uploaded) {
+  const diffs = []
+  _DIFF_FIELDS.forEach(f => {
+    const oldVal = String(existing[f.key] ?? '')
+    const newVal = String(uploaded[f.key] ?? '')
+    if (oldVal !== newVal) {
+      diffs.push({ key: f.key, label: f.label, oldVal, newVal })
+    }
+  })
+  // 이미지 배열 비교
+  const imgSections = ['sum','lemango','noir','external','design','shoot']
+  imgSections.forEach(sec => {
+    const oldArr = (existing.images?.[sec] || []).join('\n')
+    const newArr = (uploaded.images?.[sec] || []).join('\n')
+    if (oldArr !== newArr) {
+      diffs.push({ key: 'images.' + sec, label: '이미지(' + sec + ')', oldVal: oldArr, newVal: newArr })
+    }
+  })
+  // mallCodes 비교
+  const allMallKeys = new Set([...Object.keys(existing.mallCodes || {}), ...Object.keys(uploaded.mallCodes || {})])
+  allMallKeys.forEach(k => {
+    const oldV = (existing.mallCodes?.[k] || '')
+    const newV = (uploaded.mallCodes?.[k] || '')
+    if (oldV !== newV) {
+      diffs.push({ key: 'mallCodes.' + k, label: k + ' 쇼핑몰코드', oldVal: oldV, newVal: newV })
+    }
+  })
+  return diffs
+}
+
+// 일괄 수정 미리보기 모달
+function _showBulkEditPreview(parsed) {
+  const modal = document.getElementById('bulkEditPreviewModal')
+  if (!modal) return _applyProductUpload(parsed) // 모달 없으면 바로 적용
+  const body = modal.querySelector('.srm-body')
+  if (!body) return
+
+  let html = '<div class="be-summary">'
+  if (parsed.updated.length) html += '<span class="be-badge be-badge-update">수정 ' + parsed.updated.length + '건</span>'
+  if (parsed.added.length) html += '<span class="be-badge be-badge-add">신규 ' + parsed.added.length + '건</span>'
+  html += '</div>'
+
+  // 수정 목록
+  if (parsed.updated.length) {
+    html += '<div class="be-section-title">변경 사항</div>'
+    parsed.updated.forEach((item, i) => {
+      const nameKr = item.existing.nameKr || ''
+      html += '<div class="be-product">'
+      html += '<div class="be-product-header" onclick="this.nextElementSibling.classList.toggle(\'be-hidden\')">'
+      html += '<span class="be-code">' + esc(item.code) + '</span>'
+      html += '<span class="be-name">' + esc(nameKr) + '</span>'
+      html += '<span class="be-diff-count">' + item.diffs.length + '개 필드 변경</span>'
+      html += '<span class="be-toggle">▾</span>'
+      html += '</div>'
+      html += '<div class="be-diff-table">'
+      html += '<table><thead><tr><th>필드</th><th>기존값</th><th>새값</th></tr></thead><tbody>'
+      item.diffs.forEach(d => {
+        const oldDisp = d.oldVal.length > 60 ? d.oldVal.slice(0,60) + '...' : d.oldVal
+        const newDisp = d.newVal.length > 60 ? d.newVal.slice(0,60) + '...' : d.newVal
+        html += '<tr><td class="be-field">' + esc(d.label) + '</td>'
+        html += '<td class="be-old">' + esc(oldDisp || '(없음)') + '</td>'
+        html += '<td class="be-new">' + esc(newDisp || '(없음)') + '</td></tr>'
+      })
+      html += '</tbody></table></div></div>'
+    })
+  }
+
+  // 신규 목록
+  if (parsed.added.length) {
+    html += '<div class="be-section-title">신규 등록</div>'
+    parsed.added.forEach(item => {
+      html += '<div class="be-add-row"><span class="be-code">' + esc(item.code) + '</span>'
+      html += '<span class="be-name">' + esc(item.product.nameKr || '') + '</span>'
+      html += '<span class="be-add-label">신규</span></div>'
+    })
+  }
+
+  html += '<div class="be-actions">'
+  html += '<button class="btn btn-primary" onclick="confirmBulkEdit()">확정 적용</button>'
+  html += '<button class="btn" onclick="cancelBulkEdit()">취소</button>'
+  html += '</div>'
+
+  body.innerHTML = html
+  centerModal(modal)
+  modal.showModal()
+}
+
+function confirmBulkEdit() {
+  if (!_bulkEditPending) return
+  _applyProductUpload(_bulkEditPending)
+  _bulkEditPending = null
+  document.getElementById('bulkEditPreviewModal')?.close()
+}
+
+function cancelBulkEdit() {
+  _bulkEditPending = null
+  document.getElementById('bulkEditPreviewModal')?.close()
+  showToast('업로드가 취소되었습니다.', 'info')
+}
+
+function _applyProductUpload(parsed) {
+  let added = 0, updated = 0
+
+  // 신규 상품 추가
+  parsed.added.forEach(item => {
+    stampCreated(item.product)
+    State.allProducts.push(item.product)
+    added++
+  })
+
+  // 기존 상품 업데이트
+  parsed.updated.forEach(item => {
+    const existing = State.allProducts[item.idx]
+    if (!existing) return
+    State.allProducts[item.idx] = { ...existing, ...item.product,
+      no:         existing.no,
+      stock:      existing.stock,
+      stockLog:   existing.stockLog,
+      sales:      existing.sales,
+      revenueLog: existing.revenueLog,
+      scheduleLog: existing.scheduleLog,
+      productCodeLocked: existing.productCodeLocked,
+      barcodes:   existing.barcodes
+    }
+    stampModified(State.allProducts[item.idx])
+    updated++
   })
 
   State.product.filtered = [...State.allProducts]
@@ -869,8 +1095,13 @@ function uploadProducts(raw) {
   renderStockTable()
   renderSalesTable()
   renderDashboard()
-  showToast(`업로드 완료: 신규 ${added}건 / 업데이트 ${updated}건`, 'success')
+  if (typeof saveProducts === 'function') saveProducts()
+  if (typeof logActivity === 'function') logActivity('upload', '상품', '엑셀 업로드: 신규 ' + added + '건, 수정 ' + updated + '건')
+  showToast('업로드 완료: 신규 ' + added + '건 / 수정 ' + updated + '건', 'success')
 }
+
+window.confirmBulkEdit = confirmBulkEdit
+window.cancelBulkEdit = cancelBulkEdit
 
 function uploadStock(raw) {
   // 헤더 1행, 데이터 index 1부터. 컬럼: 품번(0) 상품명(1) 사이즈별(2~)
@@ -886,6 +1117,7 @@ function uploadStock(raw) {
   State.stock.filtered = [...State.allProducts]
   renderStockTable()
   renderDashboard()
+  if (typeof saveProducts === 'function') saveProducts()
   showToast(`재고 업데이트: ${cnt}건`, 'success')
 }
 
@@ -905,5 +1137,6 @@ function uploadSales(raw) {
   State.sales.filtered = [...State.allProducts]
   renderSalesTable()
   renderDashboard()
+  if (typeof saveProducts === 'function') saveProducts()
   showToast(`판매 업데이트: ${cnt}건`, 'success')
 }

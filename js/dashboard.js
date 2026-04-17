@@ -13,6 +13,20 @@ function renderDashboard() {
   checkEventAlerts()
   checkPlanAlerts()
   checkBirthdayAlerts()
+  checkLowStockAlerts()
+}
+
+// ===== 알림 자동 생성: 재고 부족 =====
+function checkLowStockAlerts() {
+  const LOW_THRESHOLD = 3
+  State.allProducts.forEach(p => {
+    if (!p.stock || p.saleStatus === '종료' || p.productionStatus === '생산중단') return
+    const totalStock = SIZES.reduce((s, sz) => s + (p.stock[sz] || 0), 0)
+    const totalSales = _platforms.reduce((s, pl) => s + (p.sales?.[pl] || 0), 0)
+    if (totalStock > 0 && totalStock <= LOW_THRESHOLD && totalSales > 0) {
+      addNotification('plan_deadline', `⚠️ 재고 부족: ${p.productCode}`, `${p.nameKr || ''} 잔여재고 ${totalStock}개`, '#stock')
+    }
+  })
 }
 
 // ===== 생일 알림 =====
@@ -30,7 +44,55 @@ function checkBirthdayAlerts() {
 }
 
 /* ===== Grade-based daily activity view ===== */
-function _loadRecentActivity() {
+// Firestore 캐시 — 날짜별 (grade >= 2 는 전체 부서/팀 활동을 조회해야 함)
+const _activityFsByDate = new Map()      // 'YYYY-MM-DD' → array
+const _activityFsFetchedAt = new Map()   // 'YYYY-MM-DD' → ts
+const _activityFsFetching = new Set()    // 'YYYY-MM-DD' currently fetching
+const _ACT_TODAY = () => (typeof fmtDate === 'function') ? fmtDate(new Date()) : new Date().toISOString().slice(0,10)
+async function _refreshActivityFsCache(dateStr, force) {
+  if (!db || !auth || !auth.currentUser) return
+  const d = dateStr || _ACT_TODAY()
+  const now = Date.now()
+  const last = _activityFsFetchedAt.get(d) || 0
+  if (!force && _activityFsFetching.has(d)) return
+  if (!force && _activityFsByDate.has(d) && (now - last) < 60000) return
+  _activityFsFetching.add(d)
+  try {
+    const start = new Date(d + 'T00:00:00')
+    const end = new Date(d + 'T23:59:59.999')
+    const snap = await db.collection('activityLogs')
+      .where('timestamp', '>=', start)
+      .where('timestamp', '<=', end)
+      .orderBy('timestamp', 'desc')
+      .limit(1000)
+      .get()
+    const arr = snap.docs.map(doc => {
+      const x = doc.data() || {}
+      const ts = (x.timestamp && x.timestamp.toDate) ? x.timestamp.toDate().toISOString() : (x.timestamp || '')
+      return { ...x, timestamp: ts }
+    })
+    _activityFsByDate.set(d, arr)
+    _activityFsFetchedAt.set(d, now)
+    if (d === _ACT_TODAY() && typeof buildDailyTeamSummary === 'function') buildDailyTeamSummary()
+    const modal = document.getElementById('activityDetailModal')
+    if (modal && modal.open && typeof filterActivityLogs === 'function') filterActivityLogs()
+  } catch (e) {
+    console.warn('activity firestore cache fetch 실패:', e && e.message)
+  } finally {
+    _activityFsFetching.delete(d)
+  }
+}
+window._refreshActivityFsCache = _refreshActivityFsCache
+
+function _loadRecentActivity(dateStr) {
+  // grade >= 2: Firestore 캐시 사용 (없으면 비동기 로드 후 재렌더)
+  const info = _currentGradeInfo()
+  if (info.grade >= 2) {
+    const d = dateStr || _ACT_TODAY()
+    if (!_activityFsByDate.has(d)) { _refreshActivityFsCache(d); return [] }
+    return _activityFsByDate.get(d) || []
+  }
+  // grade 1 (본인): localStorage 로 충분
   try {
     const raw = localStorage.getItem('lemango_recent_activity_v1')
     return raw ? JSON.parse(raw) : []
@@ -104,9 +166,9 @@ function filterActivityLogs() {
   const listEl = document.getElementById('activityModalList')
   if (!listEl) return
   const info = _currentGradeInfo()
-  const all = _loadRecentActivity()
-  let data = _filterByGrade(all, info)
   const dateVal = (document.getElementById('activityDateFilter') || {}).value || ''
+  const all = _loadRecentActivity(dateVal)
+  let data = _filterByGrade(all, info)
   const kw = ((document.getElementById('activitySearchInput') || {}).value || '').trim().toLowerCase()
   if (dateVal) data = data.filter(l => String(l.timestamp || '').slice(0,10) === dateVal)
   if (kw) data = data.filter(l => {
@@ -225,6 +287,8 @@ async function renderDashNotice() {
     // pinned 공지 우선, composite index 회피 — client sort
     const snap = await db.collection('posts')
       .where('boardType', '==', 'notice')
+      .orderBy('createdAt', 'desc')
+      .limit(10)
       .get()
     let posts = snap.docs.map(d => ({ id: d.id, ...d.data() }))
     // pinned first, then createdAt desc
@@ -235,7 +299,7 @@ async function renderDashNotice() {
       const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()
       return tb - ta
     })
-    posts = posts.slice(0, 5)
+    posts = posts.slice(0, 3)
 
     if (!posts.length) {
       el.querySelector('.dash-mini-body').innerHTML = '<div style="color:#bbb;font-size:12px;padding:8px 0">공지사항이 없습니다.</div>'
@@ -267,14 +331,14 @@ async function renderDashFree() {
   el.innerHTML = `<div class="dash-mini-header"><span class="dash-mini-title">자유게시판</span><span class="dash-mini-more" onclick="openTab('board');switchBoardType('free')">더보기</span></div><div class="dash-mini-body" style="color:#bbb;font-size:12px">로딩 중...</div>`
   if (!db) return
   try {
-    const snap = await db.collection('posts').where('boardType', '==', 'free').get()
+    const snap = await db.collection('posts').where('boardType', '==', 'free').orderBy('createdAt', 'desc').limit(10).get()
     let posts = snap.docs.map(d => ({ id: d.id, ...d.data() }))
     posts.sort((a, b) => {
       const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()
       const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()
       return tb - ta
     })
-    posts = posts.slice(0, 5)
+    posts = posts.slice(0, 3)
     if (!posts.length) {
       el.querySelector('.dash-mini-body').innerHTML = '<div style="color:#bbb;font-size:12px;padding:8px 0">게시글이 없습니다.</div>'
       return
@@ -368,7 +432,7 @@ async function openDashInfoModal(type) {
   if (type === 'notice' || type === 'free') {
     if (!db) { body.innerHTML = '<div style="color:#999">DB 연결 없음</div>'; return }
     try {
-      const snap = await db.collection('posts').where('boardType', '==', type).get()
+      const snap = await db.collection('posts').where('boardType', '==', type).orderBy('createdAt', 'desc').limit(20).get()
       let posts = snap.docs.map(d => ({ id: d.id, ...d.data() }))
       posts.sort((a, b) => {
         if (type === 'notice') {
@@ -487,6 +551,11 @@ function openDashActivityPreview(type, no) {
     if (item.category) parts.push('카테고리: ' + item.category)
     if (item.startDate) parts.push('기간: ' + item.startDate + ' ~ ' + (item.endDate || item.startDate))
     if (item.startTime) parts.push('시간: ' + item.startTime + (item.endTime ? ' ~ ' + item.endTime : ''))
+    // 업무 미러된 개인일정도 차량 사용 표기
+    if (item.sourceType === 'work' && item.sourceWorkNo != null) {
+      const srcWork = (State.workItems || []).find(w => w.no === item.sourceWorkNo)
+      if (srcWork && srcWork.useVehicle === true) parts.push('🚗 차량 사용')
+    }
     if (item.memo) parts.push('\n' + item.memo)
     content = parts.join('\n')
   } else if (type === 'work') {
@@ -498,6 +567,8 @@ function openDashActivityPreview(type, no) {
     const parts = []
     if (item.category) parts.push('카테고리: ' + item.category)
     if (item.startDate) parts.push('기간: ' + item.startDate + ' ~ ' + (item.endDate || ''))
+    if (item.startTime) parts.push('시간: ' + item.startTime + (item.endTime ? ' ~ ' + item.endTime : ''))
+    if (item.useVehicle === true) parts.push('🚗 차량 사용')
     if (item.memo) parts.push('\n' + item.memo)
     content = parts.join('\n')
   } else return
@@ -565,7 +636,7 @@ function renderDashActivity() {
 
   // Sort by date desc, take top 7
   items.sort((a, b) => b.sortTs - a.sortTs)
-  const top = items.slice(0, 7)
+  const top = items.slice(0, 3)
 
   el.innerHTML = `<div class="dash-mini-header"><span class="dash-mini-title">최근 등록</span></div><div class="dash-mini-body">${
     top.length ? top.map(item => {
@@ -580,23 +651,53 @@ function renderDashActivity() {
   }</div>`
 }
 
-function renderBestList() {
-  const top10 = [...State.allProducts]
-    .sort((a,b) => getTotalSales(b) - getTotalSales(a))
-    .slice(0,10)
+let _bestPeriod = 'all'
+window.changeBestPeriod = function(period) {
+  _bestPeriod = period
+  renderBestList()
+}
 
-  document.getElementById('bestList').innerHTML = top10.map((p,i) => {
+function _getSalesInPeriod(p, period) {
+  if (period === 'all') return getTotalSales(p)
+  const now = new Date()
+  let from
+  if (period === 'month') {
+    from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
+  } else if (period === 'season') {
+    // 현재 시즌: SS(1~6월) or FW(7~12월) 시작일
+    const m = now.getMonth()
+    from = new Date(now.getFullYear(), m < 6 ? 0 : 6, 1).toISOString().slice(0, 10)
+  }
+  return (p.revenueLog || [])
+    .filter(r => r.type === 'sale' && r.date >= from)
+    .reduce((s, r) => s + (r.qty || 0), 0)
+}
+
+function renderBestList() {
+  const periodLabels = { all: '전체', month: '이번 달', season: '이번 시즌' }
+  const periodBtns = ['all', 'month', 'season'].map(k =>
+    `<button class="best-period-btn${_bestPeriod === k ? ' active' : ''}" onclick="changeBestPeriod('${k}')">${periodLabels[k]}</button>`
+  ).join('')
+
+  const top10 = [...State.allProducts]
+    .map(p => ({ ...p, _periodSales: _getSalesInPeriod(p, _bestPeriod) }))
+    .sort((a, b) => b._periodSales - a._periodSales)
+    .slice(0, 10)
+
+  const container = document.getElementById('bestList')
+  if (!container) return
+  container.innerHTML = `<div class="best-period-row">${periodBtns}</div>` + top10.map((p, i) => {
     const thumb = getThumbUrl(p) || PLACEHOLDER_IMG
-    const rankClass = i < 3 ? `rank-${i+1}` : ''
+    const rankClass = i < 3 ? `rank-${i + 1}` : ''
     return `<div class="best-item" onclick="goToSales('${p.productCode}')">
-      <span class="rank ${rankClass}">${i+1}</span>
+      <span class="rank ${rankClass}">${i + 1}</span>
       <img src="${thumb}" class="best-thumb" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'" />
       <div class="best-info">
         <span class="best-brand">${p.brand}</span>
         <span class="best-code">${p.productCode}</span>
         <span class="best-name">${p.nameKr}</span>
       </div>
-      <span class="best-sales">${getTotalSales(p).toLocaleString()}개</span>
+      <span class="best-sales">${p._periodSales.toLocaleString()}개</span>
     </div>`
   }).join('')
 }
@@ -802,10 +903,12 @@ function renderDashCalendar() {
   })
 
   const todayStr = fmtDate(new Date())
+  const _todayRef = new Date()
+  const isCurrentMonthView = (_dashCalYear === _todayRef.getFullYear() && _dashCalMonth === _todayRef.getMonth())
 
   cells.forEach(cell => {
     const di = dateItems[cell.date] || { events: [], plans: [], works: [], personal: [] }
-    const isPast   = cell.date < todayStr
+    const isPast   = isCurrentMonthView && cell.date < todayStr
     const hasItems = di.events.length > 0 || di.plans.length > 0 || di.works.length > 0 || (di.personal && di.personal.length > 0)
 
     const holiday = getHolidayName(cell.date)
@@ -838,7 +941,8 @@ function renderDashCalendar() {
       if (w.createdByName && labelRaw.indexOf(w.createdByName) >= 0) labelRaw = labelRaw.replace(w.createdByName, '').replace(/\s*[-–]\s*$/, '').trim()
       const label = labelRaw
       if (isPast) {
-        html += `<div class="dcal-bar dcal-bar-mini" style="background:${wColor.bg};" title="${esc(label)}" onclick="openDashActivityPreview('work',${w.no})"></div>`
+        const vehIcon = w.useVehicle === true ? '<span class="bar-vehicle-mini">🚗</span>' : ''
+        html += `<div class="dcal-bar dcal-bar-mini" style="background:${wColor.bg};" title="${esc(label)}${w.useVehicle===true?' 🚗':''}" onclick="openDashActivityPreview('work',${w.no})">${vehIcon}</div>`
       } else {
         let wRight = ''
         if (wAuthor) wRight += `<span class="bar-author">${esc(wAuthor)}</span>`
@@ -1012,7 +1116,7 @@ function openDashDayModal(dateStr) {
       <div class="ddm-section-title">업무일정 <span class="ddm-count">${works.length}</span></div>
       ${works.map(w => `<div class="ddm-row" onclick="document.getElementById('dashDayModal').close();openDashActivityPreview('work',${w.no})">
         <span class="ddm-badge" style="background:${getWorkCatColor(w.category).bg};color:${getWorkCatColor(w.category).text}">${esc(w.category || '')}</span>
-        <span class="ddm-item-name">${esc(w.title)}</span>
+        <span class="ddm-item-name">${esc(w.title)}${w.useVehicle===true?' <span class="ddm-vehicle">🚗</span>':''}</span>
         <span class="ddm-item-period">${w.startDate} ~ ${w.endDate || w.startDate}</span>
       </div>`).join('')}
     </div>`)

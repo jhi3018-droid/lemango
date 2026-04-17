@@ -105,8 +105,8 @@ function renderEventCalendar() {
     })
   }
 
-  // 이벤트 바 배치 (최대 10줄)
-  const MAX_ROWS = 9999
+  // 이벤트 바 배치 (최대 5줄, 초과분은 +N건)
+  const MAX_ROWS = 5
   const barRows  = placeEventBars(cells[0].date, cells[cells.length - 1].date, MAX_ROWS)
 
   // HTML
@@ -118,9 +118,11 @@ function renderEventCalendar() {
   })
 
   const todayStr = fmtDate(new Date())
+  const _todayRef = new Date()
+  const isCurrentMonthView = (_evYear === _todayRef.getFullYear() && _evMonth === _todayRef.getMonth())
 
   cells.forEach(cell => {
-    const isPast = cell.date < todayStr
+    const isPast = isCurrentMonthView && cell.date < todayStr
     // 이 셀에 실제 행사가 몇 개 있는지 세기
     const cellBars = barRows[cell.date] || {}
     let barCount = 0
@@ -168,6 +170,10 @@ function renderEventCalendar() {
       }
     }
 
+    const overflow = cellBars._overflow || 0
+    if (overflow > 0) {
+      html += `<div class="evcal-more" title="외 ${overflow}건" onclick="event.stopPropagation()">+${overflow}건</div>`
+    }
 
     html += '</div></div>'
   })
@@ -265,7 +271,14 @@ function resetEvent()  { renderEventCalendar() }
 
 function _evUpdateHeaderBtns(mode) {
   const modal = document.getElementById('eventRegisterModal')
-  modal.querySelectorAll('.ev-view-btn').forEach(b => b.style.display = mode === 'view' ? 'inline-block' : 'none')
+  const ev = _editingEventNo != null ? _events.find(e => e.no === _editingEventNo) : null
+  const canDel = ev ? canDeleteEvent(ev) : false
+  modal.querySelectorAll('.ev-view-btn').forEach(b => {
+    if (mode !== 'view') { b.style.display = 'none'; return }
+    // 삭제 버튼만 권한 체크 (srm-btn-danger 클래스로 식별)
+    if (b.classList.contains('srm-btn-danger') && !canDel) { b.style.display = 'none'; return }
+    b.style.display = 'inline-block'
+  })
   modal.querySelectorAll('.ev-edit-btn').forEach(b => b.style.display = mode === 'edit' ? 'inline-block' : 'none')
   modal.querySelectorAll('.ev-new-btn').forEach(b => b.style.display = mode === 'new' ? 'inline-block' : 'none')
   const backBtn = modal.querySelector('.ev-back-btn')
@@ -278,6 +291,7 @@ function openEventDetailModal(no, fromDash) {
   if (!ev) return
   _editingEventNo = ev.no
   _eventOpenedFromDash = !!fromDash
+  if (typeof loadAllUsers === 'function') loadAllUsers()
 
   const modal = document.getElementById('eventRegisterModal')
   modal.querySelector('.rmodal-title').textContent = '행사일정'
@@ -301,6 +315,7 @@ function openEventDetailModal(no, fromDash) {
 /* ---------- 신규 등록 (빈 폼, 바로 편집 상태) ---------- */
 function openEventRegisterModal(dateStr) {
   _editingEventNo = null
+  if (typeof loadAllUsers === 'function') loadAllUsers()
   const modal = document.getElementById('eventRegisterModal')
   modal.querySelector('.rmodal-title').textContent = '행사 등록'
   modal.classList.add('edit-mode')
@@ -352,6 +367,16 @@ function buildEventDetailContent(ev) {
     html += `<div class="srm-divider"></div><div class="srm-memo-label">메모</div><div class="srm-memo-text">${esc(ev.memo)}</div>`
   }
 
+  // 참조자 (보기)
+  const mList = Array.isArray(ev.mentions) ? ev.mentions : []
+  if (mList.length) {
+    const mTags = mList.map(m => {
+      if (m.type === 'user') return `<span class="ps-mention-tag ps-mention-user">@${esc(formatUserName(m.name, m.position))}</span>`
+      return `<span class="ps-mention-tag ps-mention-dept">@${esc(m.dept)}</span>`
+    }).join(' ')
+    html += `<div class="srm-divider"></div><div class="srm-memo-label">참조</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${mTags}</div>`
+  }
+
   // 이미지 (보기)
   const imgs = (ev.tempImages || []).filter(i => i && i.url)
   if (imgs.length) {
@@ -382,6 +407,23 @@ function buildEventDetailContent(ev) {
   </div>`
   html += `<div class="srm-field"><label class="srm-field-label">메모</label><textarea id="evMemo">${esc(ev.memo || '')}</textarea></div>`
 
+  // 참조 (@멘션) — 편집 모드
+  const evMentionTags = (Array.isArray(ev.mentions) ? ev.mentions : []).map(m => {
+    if (m.type === 'user') {
+      return `<span class="ps-mention-tag ps-mention-user" data-type="user" data-uid="${esc(m.uid)}" data-name="${esc(m.name)}" data-position="${esc(m.position || '')}">@${esc(formatUserName(m.name, m.position))} <span class="ps-mention-x" onclick="this.parentElement.remove()">&#10005;</span></span>`
+    }
+    return `<span class="ps-mention-tag ps-mention-dept" data-type="dept" data-dept="${esc(m.dept)}">@${esc(m.dept)} <span class="ps-mention-x" onclick="this.parentElement.remove()">&#10005;</span></span>`
+  }).join('')
+  html += `<div class="srm-field" style="position:relative"><label class="srm-field-label">참조 (@이름, @부서로 공유)</label>
+    <div style="flex:1">
+      <div class="ps-mention-area" id="evMentionArea" style="display:flex;flex-wrap:wrap;gap:6px;padding:6px;border:0.5px solid #e8e6e0;border-radius:6px;min-height:36px;background:#fff">
+        ${evMentionTags}
+        <input class="ps-mention-input" id="evMentionInput" placeholder="@입력..." oninput="searchMention(this.value, 'ev')" onkeydown="mentionKeyDown(event, 'ev')" style="display:inline-block;flex:1;min-width:120px;border:none;outline:none;font-size:13px;padding:2px 4px;background:transparent">
+      </div>
+      <div class="ps-mention-dropdown" id="evMentionDropdown" style="display:none"></div>
+      <div style="font-size:11px;color:#b4b2a9;margin-top:6px">참조자에게 알림이 전송됩니다</div>
+    </div></div>`
+
   // 이미지 (편집) — URL 추가 + 파일 업로드 + 썸네일 그리드
   _evImages = (ev.tempImages || []).map(i => ({...i}))
   html += `<div class="srm-field"><label class="srm-field-label">이미지</label>
@@ -399,10 +441,6 @@ function buildEventDetailContent(ev) {
     <div id="evChecklistEditArea" style="flex:1">${buildEventChecklistHtml(ev.checklist || [], true)}</div></div>`
 
   html += '</div>'
-
-  if (canDeleteEvent(ev)) {
-    html += `<div class="ev-detail-actions" style="margin-top:12px"><button class="srm-btn-danger" onclick="deleteEvent(${ev.no})">삭제</button></div>`
-  }
 
   html += renderStampInfo(ev)
   html += `<div class="ev-comment-area">${buildCommentSection('event', ev.no)}</div>`
@@ -441,6 +479,16 @@ function buildEventNewForm(dateStr) {
     <span class="dfield-value"></span>
     <textarea id="evMemo" rows="3" placeholder="행사 메모"></textarea></div>`
 
+  html += `<div class="dfield" style="position:relative"><span class="dfield-label">참조</span>
+    <span class="dfield-value"></span>
+    <div style="flex:1">
+      <div class="ps-mention-area" id="evMentionArea" style="display:flex;flex-wrap:wrap;gap:6px;padding:6px;border:0.5px solid #e8e6e0;border-radius:6px;min-height:36px;background:#fff">
+        <input class="ps-mention-input" id="evMentionInput" placeholder="@이름 또는 @부서" oninput="searchMention(this.value, 'ev')" onkeydown="mentionKeyDown(event, 'ev')" style="display:inline-block;flex:1;min-width:120px;border:none;outline:none;font-size:13px;padding:2px 4px;background:transparent">
+      </div>
+      <div class="ps-mention-dropdown" id="evMentionDropdown" style="display:none"></div>
+      <div style="font-size:11px;color:#b4b2a9;margin-top:6px">참조자에게 알림이 전송됩니다</div>
+    </div></div>`
+
   html += '</div>'
   body.innerHTML = html
 }
@@ -476,7 +524,9 @@ function toggleEventEdit() {
     loadComments('event', _editingEventNo)
     _evSyncLockWarn()
   } else {
-    // 수정 모드 진입
+    // 수정 모드 진입 (로그인만 하면 누구나 가능)
+    const ev = _events.find(e => e.no === _editingEventNo)
+    if (!ev) return
     const info = (typeof getEditLockInfo === 'function') ? getEditLockInfo('event', _editingEventNo) : null
     if (info) {
       showToast(`${info.userName || '다른 사용자'}님이 편집 중입니다`, 'warn')
@@ -502,6 +552,9 @@ function saveEventEdit() {
   const ev = _events.find(e => e.no === _editingEventNo)
   if (!ev) return
 
+  const prevMentions = Array.isArray(ev.mentions) ? ev.mentions : []
+  const newMentions = (typeof collectMentions === 'function') ? collectMentions('ev') : []
+
   ev.name = name
   ev.channel = document.getElementById('evChannel')?.value.trim() || ''
   ev.startDate = start
@@ -510,6 +563,7 @@ function saveEventEdit() {
   ev.support = document.getElementById('evSupport')?.value || ''
   ev.memo = document.getElementById('evMemo')?.value.trim() || ''
   ev.tempImages = (_evImages || []).map(i => ({...i}))
+  ev.mentions = newMentions
   // checklist already mutated in-place via ev.checklist
 
   stampModified(ev)
@@ -523,6 +577,7 @@ function saveEventEdit() {
     if (typeof notifyWatchers === 'function') notifyWatchers('event', ev.no, '수정됨')
     if (typeof releaseEditLock === 'function') releaseEditLock('event', ev.no)
   } catch(e) {}
+  _notifyEventMentions(ev, prevMentions, newMentions)
 }
 
 /* ---------- 신규 등록 저장 ---------- */
@@ -534,6 +589,7 @@ function submitEventNew() {
   if (!start || !end) { showToast('기간을 입력해주세요.', 'warning'); return }
 
   const no = _events.length ? Math.max(..._events.map(ev => ev.no)) + 1 : 1
+  const mentions = (typeof collectMentions === 'function') ? collectMentions('ev') : []
   const ev = {
     no,
     name,
@@ -542,7 +598,8 @@ function submitEventNew() {
     endDate: end,
     discount: document.getElementById('evDiscount')?.value || '',
     support: document.getElementById('evSupport')?.value || '',
-    memo: document.getElementById('evMemo')?.value.trim() || ''
+    memo: document.getElementById('evMemo')?.value.trim() || '',
+    mentions
   }
   stampCreated(ev)
 
@@ -553,6 +610,41 @@ function submitEventNew() {
   renderDashCalendar()
   showToast('행사가 등록되었습니다.', 'success')
   logActivity('create', '행사일정', `행사등록: ${ev.name}`)
+  _notifyEventMentions(ev, [], mentions)
+}
+
+/* ---------- 참조자 알림 ---------- */
+function _notifyEventMentions(ev, prevMentions, newMentions) {
+  if (typeof addNotification !== 'function') return
+  const user = typeof firebase !== 'undefined' && firebase.auth ? firebase.auth().currentUser : null
+  const myUid = user ? user.uid : ''
+  const authorName = (typeof formatUserNameHonorific === 'function')
+    ? formatUserNameHonorific(_currentUserName || '', _currentUserPosition || '')
+    : (_currentUserName || '사용자')
+  const prevUids = new Set((prevMentions || []).filter(m => m && m.type === 'user').map(m => m.uid))
+  const prevDepts = new Set((prevMentions || []).filter(m => m && m.type === 'dept').map(m => m.dept))
+  const added = (newMentions || []).filter(m => {
+    if (!m) return false
+    if (m.type === 'user') return m.uid && m.uid !== myUid && !prevUids.has(m.uid)
+    if (m.type === 'dept') return m.dept && !prevDepts.has(m.dept)
+    return false
+  })
+  if (!added.length) return
+  const body = `${authorName}이 행사를 공유했습니다: ${ev.name}`
+  const link = '#event:' + ev.no
+  // 수신자 UID 수집 (user 타입 직접 + dept 타입은 해당 부서 소속 사용자들)
+  const targetUids = new Set()
+  added.forEach(m => {
+    if (m.type === 'user' && m.uid) targetUids.add(m.uid)
+    else if (m.type === 'dept' && m.dept && Array.isArray(_allUsers)) {
+      _allUsers.forEach(u => {
+        if (u.uid && u.uid !== myUid && u.dept === m.dept) targetUids.add(u.uid)
+      })
+    }
+  })
+  if (targetUids.size) {
+    addNotification('event_share', '🎪 행사 공유', body, link, { targetUids: Array.from(targetUids) })
+  }
 }
 
 /* ---------- 뒤로 (대시보드 행사 조회로 복귀) ---------- */
@@ -591,8 +683,10 @@ function canDeleteEvent(ev) {
   const grade = cu?.grade || 1
   if (grade >= 3) return true
   if (ev.createdBy && ev.createdBy === user.uid) return true
-  if (!ev.createdBy) return grade >= 3
   return false
+}
+function canEditEvent(ev) {
+  return !!(typeof firebase !== 'undefined' && firebase.auth().currentUser)
 }
 
 /* ---------- 닫기 ---------- */
@@ -609,9 +703,11 @@ function closeEventRegisterModal(force) {
 
 /* ---------- 삭제 ---------- */
 async function deleteEvent(no) {
+  const ev = _events.find(x => x.no === no)
+  if (!ev) return
+  if (!canDeleteEvent(ev)) { showToast('삭제 권한이 없습니다.', 'warning'); return }
   const ok = await korConfirm('이 행사를 삭제하시겠습니까?')
   if (!ok) return
-  const ev = _events.find(x => x.no === no)
   _events = _events.filter(x => x.no !== no)
   saveEvents()
   closeEventRegisterModal(true)
@@ -793,9 +889,4 @@ if (typeof window !== 'undefined') {
   window.evRemoveImage = evRemoveImage
 }
 
-/* ---------- HTML 이스케이프 ---------- */
-function esc(s) {
-  const d = document.createElement('div')
-  d.textContent = s
-  return d.innerHTML
-}
+/* esc() — utils.js에서 전역 정의 */

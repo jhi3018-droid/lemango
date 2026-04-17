@@ -249,7 +249,8 @@ function renderBoardDetail(post) {
   const ts = post.createdAt?.toDate ? post.createdAt.toDate() : new Date(post.createdAt)
   const dateStr = ts.toISOString().slice(0, 16).replace('T', ' ')
   const catClass = getCategoryClass(post.category)
-  const canEdit = (auth?.currentUser?.uid === post.authorUid) || (State.currentUser && State.currentUser.grade >= 3)
+  const canEdit = !!(auth?.currentUser)
+  const canDelete = (auth?.currentUser?.uid === post.authorUid) || (State.currentUser && State.currentUser.grade >= 3)
 
   // 수정일
   let editedStr = ''
@@ -313,10 +314,8 @@ function renderBoardDetail(post) {
       ${attachHtml}
       <div class="brd-detail-actions">
         <div class="brd-detail-actions-left">
-          ${canEdit ? `
-            <button class="brd-btn brd-btn-outline" onclick="openBoardWrite('${post.id}')">수정</button>
-            <button class="brd-btn brd-btn-danger" onclick="deleteBoardPost('${post.id}')">삭제</button>
-          ` : ''}
+          ${canEdit ? `<button class="brd-btn brd-btn-outline" onclick="openBoardWrite('${post.id}')">수정</button>` : ''}
+          ${canDelete ? `<button class="brd-btn brd-btn-danger" onclick="deleteBoardPost('${post.id}')">삭제</button>` : ''}
         </div>
         <button class="brd-btn brd-btn-list" onclick="boardBackToList()">목록으로</button>
       </div>
@@ -506,7 +505,16 @@ window.submitBoardPost = async function() {
       showToast('게시글이 등록되었습니다.', 'success')
       logActivity('create', '게시판', `게시글 등록: ${title}`)
       if (State.boardType === 'notice') {
-        addNotification('board_notice', `새 공지: ${title}`, `${State.currentUser?.name || ''} 님이 공지사항을 등록했습니다.`, '#board:' + _bdRef.id)
+        // 전체 승인된 사용자(본인 제외)에게 알림 전송
+        const myUid = auth.currentUser.uid
+        const targetUids = (Array.isArray(_allUsers) ? _allUsers : [])
+          .filter(u => u && u.uid && u.uid !== myUid && u.status === 'approved')
+          .map(u => u.uid)
+        if (targetUids.length) {
+          addNotification('board_notice', `새 공지: ${title}`, `${State.currentUser?.name || ''} 님이 공지사항을 등록했습니다.`, '#board:' + _bdRef.id, { targetUids })
+        } else {
+          addNotification('board_notice', `새 공지: ${title}`, `${State.currentUser?.name || ''} 님이 공지사항을 등록했습니다.`, '#board:' + _bdRef.id)
+        }
       }
     }
     loadBoardPosts()
@@ -517,11 +525,13 @@ window.submitBoardPost = async function() {
 
 // ===== 삭제 =====
 window.deleteBoardPost = async function(postId) {
+  const post = State.currentPost
+  const canDel = post && ((auth?.currentUser?.uid === post.authorUid) || (State.currentUser && State.currentUser.grade >= 3))
+  if (!canDel) { showToast('삭제 권한이 없습니다. (작성자 또는 관리자 이상)', 'warning'); return }
   const ok = await korConfirm('게시글을 삭제하시겠습니까?\n관련 댓글도 함께 삭제됩니다.')
   if (!ok) return
 
   try {
-    const post = State.currentPost
     // Storage 첨부파일 삭제
     if (post && Array.isArray(post.attachments)) {
       const paths = post.attachments.filter(a => a && a.path).map(a => a.path)

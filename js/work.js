@@ -6,6 +6,33 @@ let _wkYear  = new Date().getFullYear()
 let _wkMonth = new Date().getMonth() // 0-based
 let _wkCatFilter = 'all'
 let _wkCursor = new Date()  // used as base date for week/day views
+
+// ---------- 시/분 select 기반 시간 피커 ----------
+// value: 'HH:MM' 또는 '' — 빈값이면 미선택 상태
+function fillTimeSelects(hourId, minId, value) {
+  const hEl = document.getElementById(hourId)
+  const mEl = document.getElementById(minId)
+  if (!hEl || !mEl) return
+  const pad = n => String(n).padStart(2, '0')
+  let [h, m] = (value || '').split(':')
+  let hOpts = '<option value="">--</option>'
+  for (let i = 0; i < 24; i++) hOpts += `<option value="${pad(i)}">${pad(i)}</option>`
+  let mOpts = '<option value="">--</option>'
+  for (let i = 0; i < 60; i += 5) mOpts += `<option value="${pad(i)}">${pad(i)}</option>`
+  hEl.innerHTML = hOpts
+  mEl.innerHTML = mOpts
+  hEl.value = h || ''
+  mEl.value = m || ''
+}
+
+function readTimeSelects(hourId, minId) {
+  const h = document.getElementById(hourId)?.value || ''
+  const m = document.getElementById(minId)?.value || ''
+  if (!h || !m) return ''
+  return h + ':' + m
+}
+window.fillTimeSelects = fillTimeSelects
+window.readTimeSelects = readTimeSelects
 if (typeof State !== 'undefined') {
   State.workCalView = State.workCalView || 'month'
   State.eventCalView = State.eventCalView || 'month'
@@ -291,8 +318,8 @@ function renderWorkCalendar() {
     ? State.workItems
     : State.workItems.filter(w => w.category === _wkCatFilter)
 
-  // 바 배치
-  const MAX_ROWS = 9999
+  // 바 배치 (최대 5줄, 초과분은 +N건)
+  const MAX_ROWS = 5
   const barRows = placeWorkBars(cells[0].date, cells[cells.length - 1].date, items, MAX_ROWS)
 
   // HTML
@@ -304,9 +331,11 @@ function renderWorkCalendar() {
   })
 
   const todayStr = fmtDate(new Date())
+  const _todayRef = new Date()
+  const isCurrentMonthView = (_wkYear === _todayRef.getFullYear() && _wkMonth === _todayRef.getMonth())
 
   cells.forEach(cell => {
-    const isPast = cell.date < todayStr
+    const isPast = isCurrentMonthView && cell.date < todayStr
     const cellBars = barRows[cell.date] || {}
     let barCount = 0
     for (let r = 0; r < MAX_ROWS; r++) { if (cellBars[r]) barCount++ }
@@ -357,6 +386,11 @@ function renderWorkCalendar() {
       }
     }
 
+    const overflow = cellBars._overflow || 0
+    if (overflow > 0) {
+      html += `<div class="evcal-more" title="외 ${overflow}건" onclick="event.stopPropagation()">+${overflow}건</div>`
+    }
+
     html += '</div></div>'
   })
 
@@ -365,7 +399,8 @@ function renderWorkCalendar() {
 
   // 셀 더블클릭 → 등록 모달 (해당 날짜 자동 입력)
   container.querySelectorAll('.evcal-cell[data-date]').forEach(cell => {
-    cell.addEventListener('dblclick', () => {
+    cell.addEventListener('dblclick', e => {
+      if (e.target.closest('.evcal-bar') || e.target.closest('.evcal-more')) return
       openWorkRegisterModal(cell.dataset.date)
     })
   })
@@ -439,6 +474,8 @@ function openWorkRegisterModal(dateStr) {
     document.getElementById('wkRegStart').value = dateStr
     document.getElementById('wkRegEnd').value = dateStr
   }
+  fillTimeSelects('wkRegStartHour', 'wkRegStartMin', '')
+  fillTimeSelects('wkRegEndHour', 'wkRegEndMin', '')
   _currentWorkItem = { checklist: [] }
   const chkArea = document.getElementById('wkRegChecklistArea')
   if (chkArea) chkArea.innerHTML = buildChecklistHtml([], true)
@@ -460,6 +497,57 @@ function closeWorkRegisterModal(force) {
   safeCloseModal(modal, () => true, () => modal.close())
 }
 
+// 업무일정 → 개인일정 동기화: 작성자 + 참조자 모두에게 보이도록
+// 미러 문서는 sourceWorkNo로 식별 (mentions 가시성 + 작성자 가시성으로 자동 노출)
+async function _syncWorkToPersonal(workItem) {
+  if (typeof firebase === 'undefined' || !firebase.firestore) return
+  try {
+    const fs = firebase.firestore()
+    const data = {
+      title: workItem.title || '',
+      startDate: workItem.startDate || '',
+      endDate: workItem.endDate || workItem.startDate || '',
+      startTime: workItem.startTime || '',
+      endTime: workItem.endTime || '',
+      category: '업무',
+      memo: workItem.memo || '',
+      mentions: workItem.mentions || [],
+      createdBy: workItem.createdBy || '',
+      createdByName: workItem.createdByName || '',
+      createdByPosition: workItem.createdByPosition || (typeof _currentUserPosition !== 'undefined' ? _currentUserPosition : '') || '',
+      createdByDept: workItem.createdByDept || (typeof _currentUserDept !== 'undefined' ? _currentUserDept : '') || '',
+      sourceType: 'work',
+      sourceWorkNo: workItem.no,
+      updatedAt: new Date().toISOString()
+    }
+    const snap = await fs.collection('personalSchedules').where('sourceWorkNo', '==', workItem.no).get()
+    if (snap.empty) {
+      data.createdAt = new Date().toISOString()
+      await fs.collection('personalSchedules').add(data)
+    } else {
+      const batch = fs.batch()
+      snap.docs.forEach(d => batch.update(d.ref, data))
+      await batch.commit()
+    }
+    if (typeof loadPersonalSchedules === 'function') await loadPersonalSchedules()
+  } catch(err) { console.error('_syncWorkToPersonal error:', err) }
+}
+
+async function _removeWorkPersonalMirror(workNo) {
+  if (typeof firebase === 'undefined' || !firebase.firestore) return
+  try {
+    const fs = firebase.firestore()
+    const snap = await fs.collection('personalSchedules').where('sourceWorkNo', '==', workNo).get()
+    if (snap.empty) return
+    const batch = fs.batch()
+    snap.docs.forEach(d => batch.delete(d.ref))
+    await batch.commit()
+    if (typeof loadPersonalSchedules === 'function') await loadPersonalSchedules()
+  } catch(err) { console.error('_removeWorkPersonalMirror error:', err) }
+}
+window._syncWorkToPersonal = _syncWorkToPersonal
+window._removeWorkPersonalMirror = _removeWorkPersonalMirror
+
 function submitWork(e) {
   e.preventDefault()
   const noField = document.getElementById('wkRegNo')
@@ -472,8 +560,8 @@ function submitWork(e) {
     title:        document.getElementById('wkRegTitle').value.trim(),
     startDate:    document.getElementById('wkRegStart').value,
     endDate:      document.getElementById('wkRegEnd').value || document.getElementById('wkRegStart').value,
-    startTime:    document.getElementById('wkRegStartTime')?.value || '',
-    endTime:      document.getElementById('wkRegEndTime')?.value || '',
+    startTime:    readTimeSelects('wkRegStartHour', 'wkRegStartMin'),
+    endTime:      readTimeSelects('wkRegEndHour', 'wkRegEndMin'),
     memo:         document.getElementById('wkRegMemo').value.trim(),
     useVehicle:   document.getElementById('wkRegVehicle')?.dataset?.active === 'true',
     mentions:     collectMentions('work'),
@@ -512,6 +600,11 @@ function submitWork(e) {
   renderWorkCalendar()
   showToast(isEdit ? '업무일정이 수정되었습니다.' : '업무일정이 등록되었습니다.', 'success')
   logActivity(isEdit ? 'update' : 'create', '업무일정', `${isEdit ? '업무수정' : '업무등록'}: ${item.title}`)
+  // 개인일정 미러 동기화 (fire-and-forget)
+  _syncWorkToPersonal(item).then(() => {
+    if (State.activeTab === 'work' && typeof renderPersonalCalendar === 'function') renderPersonalCalendar()
+    if (State.activeTab === 'dashboard' && typeof renderDashCalendar === 'function') renderDashCalendar()
+  })
   if (isEdit) {
     try {
       if (typeof notifyWatchers === 'function') notifyWatchers('work', item.no, '수정됨')
@@ -519,22 +612,31 @@ function submitWork(e) {
     } catch(e) {}
   }
 
-  // 참조자에게 즉시 알림
+  // 참조자에게 즉시 알림 (user 타입 + dept 타입 → 해당 부서 사용자)
   if (!isEdit && item.mentions && item.mentions.length) {
     const myUid = (typeof firebase !== 'undefined' && firebase.auth().currentUser) ? firebase.auth().currentUser.uid : null
+    const targetUids = new Set()
     item.mentions.forEach(m => {
-      if (m.type === 'user' && m.uid !== myUid) {
-        addNotification('work_mention', '업무일정 참조',
-          formatUserNameHonorific(_currentUserName, _currentUserPosition) + '이 업무일정을 공유했습니다: ' + item.title,
-          '#work:' + item.no)
+      if (m.type === 'user' && m.uid && m.uid !== myUid) targetUids.add(m.uid)
+      else if (m.type === 'dept' && m.dept && Array.isArray(_allUsers)) {
+        _allUsers.forEach(u => { if (u.uid && u.uid !== myUid && u.dept === m.dept) targetUids.add(u.uid) })
       }
     })
+    if (targetUids.size) {
+      addNotification('work_mention', '업무일정 참조',
+        formatUserNameHonorific(_currentUserName, _currentUserPosition) + '이 업무일정을 공유했습니다: ' + item.title,
+        '#work:' + item.no,
+        { targetUids: Array.from(targetUids) })
+    }
   }
 }
 
 // ===== 상세 모달 =====
-// 업무일정 수정/삭제 권한: 작성자 본인 OR 관리자(grade>=3) 이상
+// 업무일정 수정: 로그인만 하면 누구나 / 삭제: 작성자 OR 관리자(grade>=3)
 function canEditWork(w) {
+  return !!(State.currentUser)
+}
+function canDeleteWork(w) {
   if (!w) return false
   const u = State.currentUser
   if (!u) return false
@@ -543,6 +645,7 @@ function canEditWork(w) {
   return !!uid && w.createdBy === uid
 }
 window.canEditWork = canEditWork
+window.canDeleteWork = canDeleteWork
 
 function openWorkDetailModal(no, fromDash = false) {
   const w = State.workItems.find(x => x.no === no)
@@ -559,11 +662,12 @@ function openWorkDetailModal(no, fromDash = false) {
   const hbtns = document.getElementById('wkDetailHeaderBtns')
   if (hbtns) {
     const canEdit = canEditWork(w)
+    const canDel = canDeleteWork(w)
+    const delBtn = canDel ? `<button class="btn btn-sm btn-outline" style="color:var(--danger);border-color:var(--danger)" onclick="deleteWork(${w.no})">삭제</button>` : ''
     const actionBtns = fromDash
       ? (canEdit ? `<button class="btn btn-sm btn-primary" onclick="goToWorkEdit(${w.no})">업무일정에서 수정</button>` : '')
       : (canEdit
-        ? `<button class="btn btn-sm btn-primary" onclick="editWorkFromDetail(${w.no})">수정</button>
-           <button class="btn btn-sm btn-outline" style="color:var(--danger);border-color:var(--danger)" onclick="deleteWork(${w.no})">삭제</button>`
+        ? `<button class="btn btn-sm btn-primary" onclick="editWorkFromDetail(${w.no})">수정</button>${delBtn}`
         : '')
     const watchLabel = (typeof isWatching === 'function' && isWatching('work', w.no)) ? '💛' : '🤍'
     const watchActive = (typeof isWatching === 'function' && isWatching('work', w.no)) ? ' active' : ''
@@ -838,8 +942,8 @@ function editWorkFromDetail(no) {
   document.getElementById('wkRegTitle').value     = w.title || ''
   document.getElementById('wkRegStart').value     = w.startDate || ''
   document.getElementById('wkRegEnd').value       = w.endDate || ''
-  const wkST = document.getElementById('wkRegStartTime'); if (wkST) wkST.value = w.startTime || ''
-  const wkET = document.getElementById('wkRegEndTime');   if (wkET) wkET.value = w.endTime || ''
+  fillTimeSelects('wkRegStartHour', 'wkRegStartMin', w.startTime || '')
+  fillTimeSelects('wkRegEndHour', 'wkRegEndMin', w.endTime || '')
   document.getElementById('wkRegMemo').value      = w.memo || ''
   const vBtnE = document.getElementById('wkRegVehicle')
   if (vBtnE) {
@@ -883,7 +987,7 @@ function closeWorkDetailModal() {
 async function deleteWork(no) {
   const target = State.workItems.find(w => w.no === no)
   if (!target) return
-  if (!canEditWork(target)) {
+  if (!canDeleteWork(target)) {
     showToast('삭제 권한이 없습니다. (작성자 또는 관리자 이상)', 'warn')
     return
   }
@@ -895,6 +999,10 @@ async function deleteWork(no) {
   renderWorkCalendar()
   showToast('업무일정이 삭제되었습니다.', 'success')
   logActivity('delete', '업무일정', `업무삭제: no=${no}`)
+  _removeWorkPersonalMirror(no).then(() => {
+    if (State.activeTab === 'work' && typeof renderPersonalCalendar === 'function') renderPersonalCalendar()
+    if (State.activeTab === 'dashboard' && typeof renderDashCalendar === 'function') renderDashCalendar()
+  })
 }
 
 function checkWorkMentionAlerts() {
@@ -1062,13 +1170,21 @@ async function loadPersonalSchedules() {
   } catch(e) { console.error('loadPersonalSchedules error:', e) }
 }
 
-async function loadAllUsers() {
-  if (_allUsers.length > 0) return
+async function loadAllUsers(force) {
+  if (!force && _allUsers.length > 0) { window._allUsers = _allUsers; return }
   try {
-    const snapshot = await firebase.firestore().collection('users').where('status', '==', 'approved').get()
+    // 서버에서 직접 조회 (캐시 우회) — 신규 승인 사용자 즉시 반영
+    let snapshot
+    try {
+      snapshot = await firebase.firestore().collection('users').where('status', '==', 'approved').get({ source: 'server' })
+    } catch(e) {
+      snapshot = await firebase.firestore().collection('users').where('status', '==', 'approved').get()
+    }
     _allUsers = snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() }))
+    window._allUsers = _allUsers
   } catch(e) { console.error('loadAllUsers error:', e) }
 }
+window.loadAllUsers = loadAllUsers
 
 function getVisibleSchedules() {
   const uid = firebase.auth().currentUser?.uid
@@ -1139,6 +1255,8 @@ function renderPersonalCalendar() {
   const MAX_ROWS = 9999
   const barRows = placePsBars(cells[0].date, cells[cells.length - 1].date, visible, MAX_ROWS)
   const todayStr = fmtDate(new Date())
+  const _todayRef = new Date()
+  const isCurrentMonthView = (_psYear === _todayRef.getFullYear() && _psMonth === _todayRef.getMonth())
 
   let html = '<div class="evcal-grid">'
   const DOW = ['일','월','화','수','목','금','토']
@@ -1148,7 +1266,7 @@ function renderPersonalCalendar() {
   })
 
   cells.forEach(cell => {
-    const isPast = cell.date < todayStr
+    const isPast = isCurrentMonthView && cell.date < todayStr
     const cellBars = barRows[cell.date] || {}
     let barCount = 0
     for (let r = 0; r < MAX_ROWS; r++) { if (cellBars[r]) barCount++ }
@@ -1236,6 +1354,8 @@ function openPersonalRegisterModal(dateStr) {
   console.log('[ps] buildPsForm length:', html.length)
   body.innerHTML = html
   console.log('[ps] body children after set:', body.children.length)
+  fillTimeSelects('psStartHour', 'psStartMin', '')
+  fillTimeSelects('psEndHour', 'psEndMin', '')
   if (dateStr) {
     const s = document.getElementById('psStartDate'); if (s) s.value = dateStr
     const e = document.getElementById('psEndDate');   if (e) e.value = dateStr
@@ -1253,7 +1373,7 @@ function openPersonalDetailModal(id) {
   _editingPsId = ps.id
   const modal = document.getElementById('personalScheduleModal')
   const uid = firebase.auth().currentUser?.uid
-  const canEdit = (ps.createdBy === uid) || (State.currentUser?.grade >= 4)
+  const canEdit = !!State.currentUser
 
   document.getElementById('psModalHeader').querySelector('span').textContent = formatUserName(ps.createdByName, ps.createdByPosition) + '의 일정'
   document.getElementById('psModalBody').innerHTML = buildPsView(ps)
@@ -1281,7 +1401,7 @@ function closePersonalScheduleModal(force) {
 function canDeletePs(ps) {
   const uid = firebase.auth().currentUser?.uid
   if (!uid) return false
-  if (State.currentUser?.grade >= 4) return true
+  if ((State.currentUser?.grade || 0) >= 3) return true
   if (ps.createdBy === uid) return true
   return false
 }
@@ -1302,6 +1422,8 @@ function togglePsEdit() {
   } else {
     modal.classList.add('edit-mode')
     document.getElementById('psModalBody').innerHTML = buildPsForm(ps)
+    fillTimeSelects('psStartHour', 'psStartMin', ps.startTime || '')
+    fillTimeSelects('psEndHour', 'psEndMin', ps.endTime || '')
     loadAllUsers()
     const btns = document.getElementById('psHeaderBtns')
     btns.innerHTML = '<button class="btn btn-primary btn-sm" onclick="savePersonalSchedule()">저장</button><button class="btn btn-outline btn-sm" onclick="togglePsEdit()">취소</button><button class="modal-close" onclick="closePersonalScheduleModal()">✕</button>'
@@ -1333,6 +1455,15 @@ function buildPsView(ps) {
     </div>`
   }
   html += `<div class="srm-view-field"><div class="srm-view-label">참조</div><div class="srm-view-value">${mentionHtml}</div></div>`
+  // 업무일정에서 미러된 경우 차량 사용 여부 표시
+  let useVehicleFlag = false
+  if (ps.sourceType === 'work' && ps.sourceWorkNo != null) {
+    const srcWork = (State.workItems || []).find(w => w.no === ps.sourceWorkNo)
+    if (srcWork && srcWork.useVehicle === true) useVehicleFlag = true
+  }
+  if (useVehicleFlag) {
+    html += `<div class="dfield"><span class="dfield-label">차량 사용</span><span class="dfield-value"><span class="vehicle-badge">🚗 사용</span></span></div>`
+  }
   if (ps.memo) {
     html += `<div class="srm-divider"></div><div class="srm-memo-label">메모</div><div class="srm-memo-text">${esc(ps.memo)}</div>`
   }
@@ -1359,11 +1490,19 @@ function buildPsForm(ps) {
       <div class="srm-field"><label class="srm-field-label">시작일</label>
       <input type="date" id="psStartDate" value="${ps.startDate || ''}"></div>
       <div class="srm-field"><label class="srm-field-label">시작시간</label>
-      <input type="time" id="psStartTime" min="00:00" max="23:59" value="${ps.startTime || ''}"></div>
+      <div class="time-picker">
+        <select id="psStartHour" class="time-picker-hour"></select>
+        <span class="time-picker-sep">:</span>
+        <select id="psStartMin" class="time-picker-min"></select>
+      </div></div>
       <div class="srm-field"><label class="srm-field-label">종료일</label>
       <input type="date" id="psEndDate" value="${ps.endDate || ''}"></div>
       <div class="srm-field"><label class="srm-field-label">종료시간</label>
-      <input type="time" id="psEndTime" min="00:00" max="23:59" value="${ps.endTime || ''}"></div>
+      <div class="time-picker">
+        <select id="psEndHour" class="time-picker-hour"></select>
+        <span class="time-picker-sep">:</span>
+        <select id="psEndMin" class="time-picker-min"></select>
+      </div></div>
     </div>
 
     <div class="srm-field"><label class="srm-field-label">카테고리</label>
@@ -1508,8 +1647,8 @@ async function savePersonalSchedule() {
   const startDate = document.getElementById('psStartDate').value
   if (!startDate) { showToast('시작일을 입력해주세요.', 'warning'); return }
   const endDate = document.getElementById('psEndDate').value || startDate
-  const startTime = document.getElementById('psStartTime')?.value || ''
-  const endTime = document.getElementById('psEndTime')?.value || ''
+  const startTime = readTimeSelects('psStartHour', 'psStartMin')
+  const endTime = readTimeSelects('psEndHour', 'psEndMin')
 
   const user = firebase.auth().currentUser
   const mentions = collectMentions('ps')
@@ -1534,11 +1673,19 @@ async function savePersonalSchedule() {
       showToast('일정이 등록되었습니다.', 'success')
       logActivity('create', '개인일정', `일정등록: ${title}`)
       addNotification('ps_created', '📅 개인일정 등록', title + ' (' + startDate + (endDate !== startDate ? ' ~ ' + endDate : '') + ')', '#work:personal:' + _psDocRef.id)
+      // 멘션된 사용자(user 타입 + dept 소속 사용자)에게 Firestore 알림 전송
+      const shareBody = formatUserNameHonorific(_currentUserName, _currentUserPosition) + '이 일정을 공유했습니다: ' + title
+      const shareLink = '#work:personal:' + _psDocRef.id
+      const targetUids = new Set()
       mentions.forEach(m => {
-        if (m.type === 'user' && m.uid !== user.uid) {
-          addNotification('personal_schedule', '일정 참조', formatUserNameHonorific(_currentUserName, _currentUserPosition) + '이 일정을 공유했습니다: ' + title, '#work:personal:' + _psDocRef.id)
+        if (m.type === 'user' && m.uid && m.uid !== user.uid) targetUids.add(m.uid)
+        else if (m.type === 'dept' && m.dept && Array.isArray(_allUsers)) {
+          _allUsers.forEach(u => { if (u.uid && u.uid !== user.uid && u.dept === m.dept) targetUids.add(u.uid) })
         }
       })
+      if (targetUids.size) {
+        addNotification('personal_schedule', '일정 참조', shareBody, shareLink, { targetUids: Array.from(targetUids) })
+      }
     }
     closePersonalScheduleModal(true)
     await loadPersonalSchedules()

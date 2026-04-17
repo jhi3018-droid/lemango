@@ -2,6 +2,9 @@
 // ===== 유틸 함수들 =====
 // =============================================
 
+/* HTML 이스케이프 (전역 단일 소스) */
+function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;') }
+
 // getStartOfWeek — returns Date representing Sunday (00:00) of the week containing `date`
 function getStartOfWeek(date) {
   const d = (date instanceof Date) ? new Date(date) : new Date(date)
@@ -325,6 +328,18 @@ function resolveValue(p, key) {
   if (key === 'lastInDate') {
     const ins = (p.stockLog || []).filter(l => l.type === 'in')
     return ins.length ? ins.reduce((m, l) => l.date > m ? l.date : m, '') : ''
+  }
+  if (key === 'totalNetRevenue') {
+    return _platforms.reduce((s, pl) => {
+      const q = p.sales?.[pl] || 0; const r = q * (p.salePrice || 0)
+      const fee = (typeof getChannelFeeRate === 'function') ? getChannelFeeRate(pl) : 0
+      return s + Math.round(r * (1 - fee / 100))
+    }, 0)
+  }
+  if (key.startsWith('net.')) {
+    const pl = key.slice(4); const qty = p.sales?.[pl] || 0; const rev = qty * (p.salePrice || 0)
+    const fee = (typeof getChannelFeeRate === 'function') ? getChannelFeeRate(pl) : 0
+    return Math.round(rev * (1 - fee / 100))
   }
   if (key.startsWith('rev.')) return (p.sales?.[key.slice(4)] || 0) * (p.salePrice || 0)
   if (key.includes('.'))      return key.split('.').reduce((o,k) => o?.[k], p)
@@ -1058,6 +1073,7 @@ function clickNotification(id) {
   if (!n) return
   n.read = true
   saveNotifications()
+  if (n.fsId && typeof _fsUpdateNotificationRead === 'function') _fsUpdateNotificationRead(n.fsId, true)
   renderNotifications()
   document.getElementById('notifDropdown').style.display = 'none'
   console.log('[notif click]', { link: n.link, type: n.type })
@@ -1096,18 +1112,44 @@ function clickNotification(id) {
         const fn = window.openBoardPost || openBoardPost
         fn && fn(sub)
       }
+      else if (tab === 'hradmin') {
+        if (sub === 'attend') {
+          const uid = parts[2], date = parts[3]
+          if (window.switchHrAdminTab) window.switchHrAdminTab('teamAttend')
+          setTimeout(() => {
+            const dateEl = document.getElementById('hradminAttendDateFilter')
+            if (dateEl && date) dateEl.value = date
+            const searchEl = document.getElementById('hradminAttendSearch')
+            if (searchEl && uid) {
+              try {
+                const u = (typeof _allUsers !== 'undefined' ? _allUsers : []).find(x => x.uid === uid)
+                if (u && u.name) searchEl.value = u.name
+              } catch(e) {}
+            }
+            if (window.renderTeamAttendTab) window.renderTeamAttendTab()
+          }, 300)
+        }
+        else if (sub === 'teamAttend' || sub === 'teamLeave' || sub === 'leaveApproval' || sub === 'attendApproval' || sub === 'salaryAdmin' || sub === 'memberList' || sub === 'activityLog' || sub === 'backupManage') {
+          if (window.switchHrAdminTab) window.switchHrAdminTab(sub)
+        }
+      }
     } catch(e) { console.error('notification nav error', e) }
   }, 600)
 }
 
 function dismissNotification(id) {
+  const n = _notifications.find(x => x.id === id)
+  if (n && n.fsId && typeof _fsDeleteNotification === 'function') _fsDeleteNotification(n.fsId)
   _notifications = _notifications.filter(n => n.id !== id)
   saveNotifications()
   renderNotifications()
 }
 
 function clearAllNotifications() {
-  _notifications.forEach(n => n.read = true)
+  _notifications.forEach(n => {
+    n.read = true
+    if (n.fsId && typeof _fsUpdateNotificationRead === 'function') _fsUpdateNotificationRead(n.fsId, true)
+  })
   saveNotifications()
   renderNotifications()
 }

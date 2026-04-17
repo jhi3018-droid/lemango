@@ -38,7 +38,8 @@ async function logActivity(action, target, detail) {
     localStorage.setItem('lemango_recent_activity_v1', JSON.stringify(arr))
   } catch(e) {}
   try {
-    await db.collection('activityLogs').add({
+    const docId = uid + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
+    await db.collection('activityLogs').doc(docId).set({
       timestamp: new Date(),
       uid,
       userName,

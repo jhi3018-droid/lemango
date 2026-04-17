@@ -9,6 +9,62 @@ const STATUS_DEFS = {
   rejected:  { label: '거절',     dotClass: 'status-dot-suspended' }
 }
 
+// ===== 신규 입사자 연차 자동 계산 =====
+// 한국 근로기준법 기준:
+//  - 입사일 기준 경과 개월 수 = 연차 (최대 11일)
+//  - 입사 1년(12개월) 이상 경과 시 15일, isNewHire 자동 해제
+// 반환: { total, expired, months }
+//  - total: 부여할 연차 일수
+//  - expired: true면 1년 경과 → 호출자가 isNewHire=false로 세팅
+//  - months: 경과 개월 수 (표시용)
+window.calcNewHireQuota = function(joinDate) {
+  const now = new Date()
+  if (!joinDate) return { total: 15, expired: false, months: 0 }
+  const join = new Date(joinDate)
+  if (isNaN(join.getTime())) return { total: 15, expired: false, months: 0 }
+  let months = (now.getFullYear() - join.getFullYear()) * 12 + (now.getMonth() - join.getMonth())
+  if (now.getDate() < join.getDate()) months--
+  if (months < 0) months = 0
+  if (months >= 12) return { total: 15, expired: true, months }
+  return { total: Math.min(months, 11), expired: false, months }
+}
+
+// ===== 체크박스/입사일 변경 시 연차 필드 자동 업데이트 =====
+// isInit=true 로 호출 시: 체크 해제 상태면 기존 값 유지 (모달 오픈 초기화용)
+// isInit 생략(사용자 동작)시: 체크 해제 시 무조건 15로 리셋
+window.onNewHireInputChange = function(mode, isInit) {
+  const cbId    = mode === 'add' ? 'maIsNewHire'   : 'meEditIsNewHire'
+  const jdId    = mode === 'add' ? 'maJoinDate'    : 'meEditJoinDate'
+  const lqId    = mode === 'add' ? 'maLeaveQuota'  : 'meEditLeaveQuota'
+  const hintId  = mode === 'add' ? 'maQuotaHint'   : 'meEditQuotaHint'
+  const cb   = document.getElementById(cbId)
+  const jd   = document.getElementById(jdId)
+  const lq   = document.getElementById(lqId)
+  const hint = document.getElementById(hintId)
+  if (!lq) return
+  if (cb && cb.checked) {
+    const q = calcNewHireQuota(jd ? jd.value : '')
+    if (q.expired) {
+      // 1년 경과 → 자동 15일로 전환 + 체크박스 해제
+      lq.value = 15
+      cb.checked = false
+      lq.disabled = false
+      if (hint) hint.textContent = `입사 ${q.months}개월 경과 → 정규 15일로 자동 전환`
+    } else {
+      lq.value = q.total
+      lq.disabled = true
+      if (hint) hint.textContent = jd && jd.value
+        ? `입사 ${q.months}개월 경과 → ${q.total}일 자동 계산`
+        : '입사일을 먼저 입력하세요'
+    }
+  } else {
+    lq.disabled = false
+    if (hint) hint.textContent = ''
+    // 사용자가 체크 해제 시 무조건 15로 리셋 (초기화 호출은 기존 값 유지)
+    if (!isInit) lq.value = 15
+  }
+}
+
 // ===== Load members from Firestore =====
 window.loadMembers = async function() {
   try {
@@ -21,6 +77,7 @@ window.loadMembers = async function() {
     }
     State.members = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
     renderMembersKPI()
+    populateMemberDeptFilter()
     renderMembersTable()
   } catch (e) {
     console.error('회원 로드 실패:', e)
@@ -68,14 +125,53 @@ function renderMembersKPI() {
   `
 }
 
+// ===== Dept filter populate =====
+function populateMemberDeptFilter() {
+  const sel = document.getElementById('memberFilterDept')
+  if (!sel) return
+  const prev = sel.value
+  const deptsFromMembers = [...new Set((State.members || []).map(m => m.dept).filter(Boolean))]
+  const deptList = (typeof _depts !== 'undefined' && _depts && _depts.length)
+    ? [..._depts, ...deptsFromMembers.filter(d => !_depts.includes(d))]
+    : deptsFromMembers
+  sel.innerHTML = '<option value="">전체 부서</option>' +
+    deptList.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('')
+  if (prev && deptList.includes(prev)) sel.value = prev
+}
+
+window.filterMembers = function() { renderMembersTable() }
+window.resetMemberFilter = function() {
+  const deptEl = document.getElementById('memberFilterDept'); if (deptEl) deptEl.value = ''
+  const nameEl = document.getElementById('memberFilterName'); if (nameEl) nameEl.value = ''
+  const statusEl = document.getElementById('memberFilterStatus'); if (statusEl) statusEl.value = ''
+  renderMembersTable()
+}
+
 // ===== Members Table =====
 function renderMembersTable() {
   const tbody = document.getElementById('membersTbody')
   if (!tbody) return
-  const members = State.members || []
+  let members = State.members || []
+
+  // 필터 적용
+  const deptEl = document.getElementById('memberFilterDept')
+  const nameEl = document.getElementById('memberFilterName')
+  const statusEl = document.getElementById('memberFilterStatus')
+  const fDept = deptEl ? deptEl.value : ''
+  const fName = nameEl ? nameEl.value.trim().toLowerCase() : ''
+  const fStatus = statusEl ? statusEl.value : ''
+  if (fDept) members = members.filter(m => (m.dept || '') === fDept)
+  if (fName) members = members.filter(m => (m.name || '').toLowerCase().includes(fName))
+  if (fStatus) members = members.filter(m => (m.status || '') === fStatus)
+
+  const countEl = document.getElementById('memberFilterCount')
+  if (countEl) {
+    const total = (State.members || []).length
+    countEl.textContent = (fDept || fName || fStatus) ? `${members.length} / ${total} 명` : `${total} 명`
+  }
 
   if (!members.length) {
-    tbody.innerHTML = '<tr><td colspan="10" class="empty-row">등록된 회원이 없습니다.</td></tr>'
+    tbody.innerHTML = '<tr><td colspan="10" class="empty-row">조건에 맞는 회원이 없습니다.</td></tr>'
     return
   }
 
@@ -135,9 +231,11 @@ function formatTimestamp(ts) {
 // ===== Approve / Reject / Suspend =====
 window.approveMember = async function(uid) {
   if (!State.currentUser || State.currentUser.grade < 2) return showToast('권한이 없습니다.', 'warning')
+  const m = (State.members || []).find(x => x.uid === uid) || {}
+  const label = (typeof formatUserName === 'function') ? formatUserName(m.name || '', m.position || '') : (m.name || uid)
   await db.collection('users').doc(uid).update({ status: 'approved' })
   showToast('회원이 승인되었습니다.')
-  logActivity('approve', '회원관리', `회원승인: uid=${uid}`)
+  logActivity('approve', '회원관리', `회원승인: ${label}`)
   loadMembers()
 }
 
@@ -151,6 +249,7 @@ window.rejectMember = async function(uid) {
 }
 
 window.suspendMember = async function(uid) {
+  if (!State.currentUser || State.currentUser.grade < 3) { showToast('권한이 없습니다. (관리자 이상)', 'warning'); return }
   const ok = await korConfirm('이 회원을 정지하시겠습니까?')
   if (!ok) return
   await db.collection('users').doc(uid).update({ status: 'suspended' })
@@ -159,6 +258,7 @@ window.suspendMember = async function(uid) {
 }
 
 window.unsuspendMember = async function(uid) {
+  if (!State.currentUser || State.currentUser.grade < 3) { showToast('권한이 없습니다. (관리자 이상)', 'warning'); return }
   await db.collection('users').doc(uid).update({ status: 'approved' })
   showToast('회원 정지가 해제되었습니다.')
   loadMembers()
@@ -166,11 +266,14 @@ window.unsuspendMember = async function(uid) {
 
 // ===== Delete =====
 window.deleteMember = async function(uid) {
+  if (!State.currentUser || State.currentUser.grade < 3) { showToast('권한이 없습니다. (관리자 이상)', 'warning'); return }
+  const m = (State.members || []).find(x => x.uid === uid) || {}
+  const label = (typeof formatUserName === 'function') ? formatUserName(m.name || '', m.position || '') : (m.name || uid)
   const ok = await korConfirm('이 회원을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')
   if (!ok) return
   await db.collection('users').doc(uid).delete()
   showToast('회원이 삭제되었습니다.')
-  logActivity('delete', '회원관리', `회원삭제: uid=${uid}`)
+  logActivity('delete', '회원관리', `회원삭제: ${label}`)
   loadMembers()
 }
 
@@ -202,6 +305,18 @@ window.openMemberEditModal = function(uid) {
   const gradeSelect = document.getElementById('meEditGrade')
   gradeSelect.disabled = !(State.currentUser && State.currentUser.grade >= 4)
 
+  // 신규 입사자 체크 — 관리자 이상(grade>=3)만 노출/수정
+  const newHireWrap = document.getElementById('meEditNewHireWrap')
+  const newHireCb = document.getElementById('meEditIsNewHire')
+  const canEditNewHire = !!(State.currentUser && State.currentUser.grade >= 3)
+  if (newHireWrap) newHireWrap.style.display = canEditNewHire ? '' : 'none'
+  if (newHireCb) {
+    newHireCb.checked = !!member.isNewHire
+    newHireCb.disabled = !canEditNewHire
+  }
+  // 초기 UI 상태 반영 (체크된 상태면 자동 계산 값으로 덮어쓰기 + disabled, 체크 해제면 기존값 유지)
+  onNewHireInputChange('edit', true)
+
   const modal = document.getElementById('memberEditModal')
   if (modal) { modal.showModal(); centerModal(modal) }
 }
@@ -223,18 +338,56 @@ window.saveMemberEdit = async function() {
   if (!name) return showToast('이름을 입력해주세요.', 'warning')
 
   const joinDate = document.getElementById('meEditJoinDate') ? document.getElementById('meEditJoinDate').value : ''
-  const leaveQuota = parseInt(document.getElementById('meEditLeaveQuota') ? document.getElementById('meEditLeaveQuota').value : '15') || 15
+  let leaveQuota = parseInt(document.getElementById('meEditLeaveQuota') ? document.getElementById('meEditLeaveQuota').value : '15') || 15
 
   const updates = { name, phone, position, dept, joinDate }
   if (State.currentUser && State.currentUser.grade >= 4) {
     updates.grade = grade
   }
+  // 신규 입사자 체크 (관리자 이상만) — 자동 계산 + 1년 경과 시 해제
+  if (State.currentUser && State.currentUser.grade >= 3) {
+    const newHireCb = document.getElementById('meEditIsNewHire')
+    const checked = !!(newHireCb && newHireCb.checked)
+    if (checked) {
+      const q = calcNewHireQuota(joinDate)
+      if (q.expired) {
+        updates.isNewHire = false          // 1년 경과 → 자동 해제
+        updates.newHireGranted = true      // 더 이상 부여 불필요
+        leaveQuota = 15                    // 정규 15일
+      } else {
+        updates.isNewHire = true
+        leaveQuota = q.total               // 경과 개월 수 (최대 11)
+      }
+    } else {
+      updates.isNewHire = false
+      // 체크 해제 시 연차 수동 입력값 유지 (기본 15)
+    }
+  }
 
-  // 연차 일수 localStorage 저장
+  // 연차 일수 저장 (Firestore + localStorage + HR 캐시 즉시 동기화)
+  const year = new Date().getFullYear()
+  const quotaObj = { total: leaveQuota, year }
+  // HR 캐시(_quotaCache) + Firestore 동시 저장 — _saveQuota 헬퍼 사용
+  if (typeof _saveQuota === 'function') {
+    try { await _saveQuota(_editingMemberUid, quotaObj) } catch (e) { console.warn('_saveQuota error:', e) }
+  } else {
+    try {
+      await db.collection('leaveQuotas').doc(_editingMemberUid).set(quotaObj, { merge: true })
+    } catch (e) { console.warn('leaveQuotas save error:', e) }
+    if (typeof _quotaCache !== 'undefined') _quotaCache[_editingMemberUid] = quotaObj
+  }
+  // window 스코프에도 미러 (팀원 연차 현황이 다른 탭에서 읽을 때 확실히 동기화)
+  if (typeof window !== 'undefined') {
+    window._quotaCache = window._quotaCache || {}
+    window._quotaCache[_editingMemberUid] = quotaObj
+  }
   const quota = JSON.parse(localStorage.getItem('lemango_leave_quota_v1') || '{}')
-  if (!quota[_editingMemberUid]) quota[_editingMemberUid] = { total: 15, year: new Date().getFullYear() }
-  quota[_editingMemberUid].total = leaveQuota
+  quota[_editingMemberUid] = quotaObj
   localStorage.setItem('lemango_leave_quota_v1', JSON.stringify(quota))
+  // 팀원 연차 현황이 DOM에 렌더되어 있으면 무조건 재렌더 (visibility 무관)
+  if (typeof renderTeamLeaveTab === 'function' && document.getElementById('hrAdminContent')) {
+    try { renderTeamLeaveTab() } catch (e) { console.warn('renderTeamLeaveTab error:', e) }
+  }
 
   await db.collection('users').doc(_editingMemberUid).update(updates)
   if (State.currentUser && State.currentUser.uid === _editingMemberUid) {
@@ -243,19 +396,29 @@ window.saveMemberEdit = async function() {
     updateHeaderUser(State.currentUser)
   }
   showToast('회원 정보가 수정되었습니다.')
-  logActivity('update', '회원관리', `회원수정: uid=${_editingMemberUid}`)
+  const editLabel = (typeof formatUserName === 'function') ? formatUserName(name, position) : name
+  logActivity('update', '회원관리', `회원수정: ${editLabel}`)
   closeMemberEditModal()
   loadMembers()
 }
 
 // ===== Add Member Modal =====
 window.openMemberAddModal = function() {
-  ;['maEmail','maName','maPhone','maPassword'].forEach(id => {
+  ;['maEmail','maName','maPhone','maPassword','maJoinDate'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = ''
   })
   const pos = document.getElementById('maPosition'); if (pos) pos.value = '사원'
   const dept = document.getElementById('maDept'); if (dept) dept.value = ''
   const grade = document.getElementById('maGrade'); if (grade) grade.value = '1'
+  const lq = document.getElementById('maLeaveQuota'); if (lq) { lq.value = 15; lq.disabled = false }
+  const hint = document.getElementById('maQuotaHint'); if (hint) hint.textContent = ''
+
+  // 신규 입사자 체크 — 관리자 이상만 노출
+  const newHireWrap = document.getElementById('maNewHireWrap')
+  const newHireCb = document.getElementById('maIsNewHire')
+  const canEditNewHire = !!(State.currentUser && State.currentUser.grade >= 3)
+  if (newHireWrap) newHireWrap.style.display = canEditNewHire ? '' : 'none'
+  if (newHireCb) { newHireCb.checked = false; newHireCb.disabled = !canEditNewHire }
 
   const modal = document.getElementById('memberAddModal')
   if (modal) { modal.showModal(); centerModal(modal) }
@@ -285,6 +448,21 @@ window.saveMemberAdd = async function() {
     // NOTE: 클라이언트에서 다른 사용자 생성 시 현재 세션이 바뀜
     // 복원을 위해 사용자에게 안내
     const cred = await auth.createUserWithEmailAndPassword(email, pw)
+    const joinDate = document.getElementById('maJoinDate') ? document.getElementById('maJoinDate').value : ''
+    const isNewHireCb = document.getElementById('maIsNewHire')
+    let isNewHire = !!(State.currentUser && State.currentUser.grade >= 3 && isNewHireCb && isNewHireCb.checked)
+    let newHireGranted = false
+    let leaveQuota = parseInt(document.getElementById('maLeaveQuota') ? document.getElementById('maLeaveQuota').value : '15') || 15
+    if (isNewHire) {
+      const q = calcNewHireQuota(joinDate)
+      if (q.expired) {
+        isNewHire = false          // 1년 경과 → 정규 전환
+        newHireGranted = true
+        leaveQuota = 15
+      } else {
+        leaveQuota = q.total       // 경과 개월 수
+      }
+    }
     await db.collection('users').doc(cred.user.uid).set({
       uid: cred.user.uid,
       email: email,
@@ -294,9 +472,18 @@ window.saveMemberAdd = async function() {
       dept: dept,
       grade: grade,
       status: 'approved',
+      joinDate: joinDate,
+      isNewHire: isNewHire,
+      newHireGranted: newHireGranted,
       createdAt: new Date(),
       lastLogin: null
     })
+    // 연차 쿼터 초기 저장 + HR 캐시 반영
+    const quotaObjAdd = { total: leaveQuota, year: new Date().getFullYear() }
+    try {
+      await db.collection('leaveQuotas').doc(cred.user.uid).set(quotaObjAdd)
+    } catch (e) { console.warn('leaveQuotas init error:', e) }
+    if (typeof _quotaCache !== 'undefined') _quotaCache[cred.user.uid] = quotaObjAdd
     // 생성 후 원래 사용자로 복원은 Admin SDK 없이 불가
     // 그래서 로그아웃 후 재로그인 필요 알림
     showToast(`${name} 회원이 추가되었습니다. 페이지가 새로고침됩니다.`)
@@ -313,7 +500,7 @@ window.saveMemberAdd = async function() {
   }
 }
 
-function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+/* esc() — utils.js에서 전역 정의 */
 
 // =============================================
 // ===== 회원 프로필 모달 =====
@@ -505,6 +692,49 @@ window.resetMemberPassword = async function() {
   } catch (err) {
     _mpError('이메일 발송 실패: ' + err.message)
   }
+}
+
+// ===== 신규 입사자 연차 자동 재계산 (dormant — 수동/크론 호출용) =====
+// 동작: isNewHire === true 인 모든 회원에 대해 입사일 기준 개월 수로 leaveQuotas.total 재계산
+//   - < 12개월: total = min(months, 11)
+//   - ≥ 12개월: total = 15, isNewHire = false, newHireGranted = true (정규 전환)
+// NOTE: 자동 호출 없음. 추후 크론/관리자 버튼에서 grantNewHireLeave() 호출
+window.grantNewHireLeave = async function() {
+  if (!db) { console.warn('[grantNewHireLeave] db not ready'); return { updated: 0, graduated: 0, skipped: 0 } }
+  const year = new Date().getFullYear()
+  let updated = 0, graduated = 0, skipped = 0
+  try {
+    const snap = await db.collection('users').where('isNewHire', '==', true).get()
+    for (const doc of snap.docs) {
+      const u = doc.data()
+      if (!u.joinDate) { skipped++; continue }
+      const q = calcNewHireQuota(u.joinDate)
+      const quotaRef = db.collection('leaveQuotas').doc(u.uid)
+      const quotaDoc = await quotaRef.get()
+      const cur = quotaDoc.exists ? quotaDoc.data() : { total: 0, year }
+
+      if (q.expired) {
+        // 1년 경과 → 15일로 전환 + 체크 해제
+        await quotaRef.set({ total: 15, year }, { merge: true })
+        await db.collection('users').doc(u.uid).set({ isNewHire: false, newHireGranted: true, newHireGrantedAt: new Date() }, { merge: true })
+        if (typeof logActivity === 'function') {
+          logActivity('setting', '인사관리', `신규→정규 전환: ${u.name || u.uid} (입사 ${u.joinDate}, ${q.months}개월 경과) → 15일`)
+        }
+        graduated++
+      } else if ((cur.total || 0) !== q.total) {
+        // 월별 누적 재계산
+        await quotaRef.set({ total: q.total, year }, { merge: true })
+        if (typeof logActivity === 'function') {
+          logActivity('setting', '인사관리', `신규 입사자 연차 재계산: ${u.name || u.uid} (입사 ${u.joinDate}, ${q.months}개월) → ${q.total}일`)
+        }
+        updated++
+      } else {
+        skipped++
+      }
+    }
+  } catch (e) { console.error('[grantNewHireLeave] error:', e) }
+  console.log(`[grantNewHireLeave] updated=${updated}, graduated=${graduated}, skipped=${skipped}`)
+  return { updated, graduated, skipped }
 }
 
 // ===== 알림: 승인대기 회원 =====
