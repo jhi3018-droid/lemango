@@ -2473,11 +2473,48 @@ Established the reference style that every dashboard-opened srm-modal should fol
 
 ---
 
+### 2026-04-21
+
+#### 권한 기반 탭 접근 제어 (라우터 가드 + 내비 숨김)
+
+등급(grade)에 따라 탭 접근을 이중으로 차단: (1) 내비 버튼 숨김 + (2) 라우터 가드 (`openTab`/`navigateTo`/해시 변경) 에서 `canAccessTab(tab)` 체크.
+
+**TAB_PERMISSIONS 매트릭스** (`js/core.js`)
+
+| 탭 | 최소 등급 | 담당자(1) | 부서장(2) | 관리자(3) | 시스템관리자(4) |
+|----|-----------|-----------|-----------|-----------|-----------------|
+| 대시보드 / 상품조회 / 재고관리 / 매출현황 / 신규기획 / 행사일정 / 업무일정 / 게시판 / 조직도 / 개인정보 | 1 | O | O | O | O |
+| 인사관리 (hradmin) | 2 | X | O | O | O |
+| 회원관리 (members, 현재 hradmin에 병합) | 3 | X | X | O | O |
+| 설정 (settings) | 4 | X | X | X | O |
+
+**변경 파일**
+- `js/core.js` — `_currentUserGrade` 전역 변수 도입, `TAB_PERMISSIONS` 상수 + `canAccessTab(tab)` 전역 함수 추가
+- `js/router.js` — `openTab`/`navigateTo` 첫 줄에 `canAccessTab` 가드 (거부 시 토스트 + 대시보드 이동). `popstate` 리스너에 `raw.split(/[:/]/)[0]` 파싱 + 가드. 신규 `hashchange` 리스너 추가 — URL 직접 입력 시 `location.hash = '#dashboard'` 로 리디렉션
+- `js/main.js` — `updateTabVisibility()` 함수 추가 (grade 기반 `.tab-btn[data-tab]` 각각 `style.display` 토글, 레거시 `hradmin-nav-hidden` 클래스 제거 후 동일 규칙 적용). `initApp()` 말미에서 호출
+- `js/auth.js` — 로그인(`showApp`) 시 `_currentUserGrade = userData.grade || 1` 캐시 + `updateTabVisibility()` 호출. 로그아웃(`handleLogout`) 시 `_currentUserGrade = 1` 리셋
+- `CLAUDE.md` — 본 항목 추가, "다음 작업 후보"에서 "권한 기반 UI 숨김" 체크 완료 표시
+
+**동작 원리**
+1. 로그인 직후 `_currentUserGrade` 세팅 → `updateTabVisibility()` 호출로 nav 버튼 숨김
+2. 탭 전환 시 `openTab(tab)` 첫 줄에서 `canAccessTab` 체크 → 거부 시 토스트 + `openTab('dashboard')` 재귀 호출
+3. 브라우저 주소창에서 `#settings` 직접 입력 → `hashchange` 리스너가 감지 → 토스트 + `location.hash = '#dashboard'`
+4. 뒤로가기(`popstate`)에서도 동일 가드 — 권한 없는 해시로 이동 불가
+
+**하위 호환**
+- `applyGradeAccess(grade)` (`auth.js`) 함수는 그대로 유지. 기존 `tabBtnHrAdmin.classList.add('hradmin-nav-hidden')` 로직 유지하되, `updateTabVisibility()` 가 해당 클래스를 제거하고 `style.display` 로 덮어씀. 결과적으로 동일 동작 (grade ≥ 2 만 표시)
+- `TAB_PERMISSIONS.members = 3` 정의는 향후 `members` 탭 재도입 대비 (현재는 `hradmin` 에 병합돼 DOM 에 버튼 없음)
+
+**Working rule 추가**
+- 신규 탭 추가 시 반드시 `TAB_PERMISSIONS` 에 등록. 미등록 탭은 `canAccessTab` 이 `true` 반환 (all-access).
+
+---
+
 ## 다음 작업 후보 (미구현)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 인쇄/PDF 출력
 - [ ] 이미지합치기 웹 통합 (테스트 후)
-- [ ] 권한 기반 UI 숨김 (등급별 탭/기능 접근 제어)
+- [x] 권한 기반 UI 숨김 (등급별 탭/기능 접근 제어) — 2026-04-21 완료
 
 ---
 

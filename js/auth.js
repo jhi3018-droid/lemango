@@ -167,8 +167,10 @@ function showApp(userData) {
   _currentUserPosition = userData.position || ''
   _currentUserDept = userData.dept || ''
   _currentUserName = userData.name || ''
+  _currentUserGrade = userData.grade || 1
   updateHeaderUser(userData)
   applyGradeAccess(userData.grade)
+  if (typeof updateTabVisibility === 'function') updateTabVisibility()
   // 첫 로그인 시 앱 초기화 (init에서 return된 경우)
   if (!_appInitialized && typeof initApp === 'function') {
     _appInitialized = true
@@ -227,6 +229,7 @@ window.handleLogout = function() {
     _currentUserName = ''
     _currentUserPosition = ''
     _currentUserDept = ''
+    _currentUserGrade = 1
     if (typeof _notifications !== 'undefined') { _notifications = []; if (typeof saveNotifications === 'function') saveNotifications() }
   } catch(e){}
   // 5) 로그인 화면 표시

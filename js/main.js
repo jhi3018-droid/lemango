@@ -299,6 +299,8 @@ async function initApp() {
   if (gradeBadge && State.currentUser) {
     gradeBadge.style.display = State.currentUser.grade >= 3 ? 'inline-block' : 'none'
   }
+  // 권한 기반 탭 가시성 적용
+  updateTabVisibility()
   // 출근 팝업 (로그인 시 1.5초 후)
   setTimeout(() => { if (typeof checkAttendancePopup === 'function') checkAttendancePopup() }, 1500)
 
@@ -354,6 +356,26 @@ async function initApp() {
     }
   }, 5 * 60 * 1000)
 }
+
+// =============================================
+// ===== 권한 기반 탭 가시성 =====
+// =============================================
+function updateTabVisibility() {
+  const grade = (typeof _currentUserGrade !== 'undefined' && _currentUserGrade) ? _currentUserGrade : 1
+  document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
+    const tab = btn.dataset.tab
+    const required = (typeof TAB_PERMISSIONS !== 'undefined') ? TAB_PERMISSIONS[tab] : null
+    if (required && grade < required) btn.style.display = 'none'
+    else btn.style.display = ''
+  })
+  // 레거시 호환: 인사관리 버튼 (hradmin-nav-hidden 클래스 제거)
+  const hrAdminBtn = document.getElementById('tabBtnHrAdmin')
+  if (hrAdminBtn) {
+    hrAdminBtn.classList.remove('hradmin-nav-hidden')
+    hrAdminBtn.style.display = (grade >= 2) ? '' : 'none'
+  }
+}
+window.updateTabVisibility = updateTabVisibility
 
 document.addEventListener('wheel', function(e) {
   const t = e.target

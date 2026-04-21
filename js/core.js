@@ -293,11 +293,30 @@ const SPEC_ROWS = [
 const GENDER_MAP = { W: '여성', M: '남성', U: '공용' }
 const POSITIONS = ['사원','주임','대리','과장','차장','실장','팀장','부장','이사','대표이사']
 let _currentUserPosition = ''
+let _currentUserGrade = 1
 let _personalSchedules = []
 let _allUsers = []
 window._allUsers = _allUsers
 let _currentUserDept = ''
 let _currentUserName = ''
+
+// =============================================
+// ===== 탭 접근 권한 (등급 기반) =====
+// =============================================
+// 1=담당자, 2=부서장, 3=관리자, 4=시스템관리자
+const TAB_PERMISSIONS = {
+  dashboard: 1, product: 1, stock: 1, sales: 1, plan: 1,
+  event: 1, work: 1, board: 1, orgchart: 1, mypage: 1,
+  hradmin: 2, members: 3, settings: 4,
+}
+window.TAB_PERMISSIONS = TAB_PERMISSIONS
+
+window.canAccessTab = function(tab) {
+  const grade = (typeof _currentUserGrade !== 'undefined' && _currentUserGrade) ? _currentUserGrade : 1
+  const required = TAB_PERMISSIONS[tab]
+  if (!required) return true
+  return grade >= required
+}
 
 const PS_CATEGORIES = ['외근','거래처방문','연차','반차','교육','미팅','출장','기타']
 const PS_CAT_COLORS = {

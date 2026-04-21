@@ -35,9 +35,10 @@ function renderTabBar() {
 
 // ===== 탭 열기 (nav 버튼 또는 탭 바 클릭) =====
 function openTab(tab) {
-  // 인사관리 탭 접근 제한: grade 2 이상만
-  if (tab === 'hradmin' && State.currentUser && State.currentUser.grade < 2) {
-    showToast('부서장 이상만 접근할 수 있습니다.', 'warning')
+  // 등급 기반 접근 권한 체크
+  if (typeof canAccessTab === 'function' && !canAccessTab(tab)) {
+    if (typeof showToast === 'function') showToast('접근 권한이 없습니다.', 'warning')
+    if (tab !== 'dashboard') openTab('dashboard')
     return
   }
   // 이미 열려있으면 포커스만 이동
@@ -210,13 +211,34 @@ function bindTabs() {
       return
     }
     const raw = location.hash.replace('#', '') || 'dashboard'
-    const tab = raw.split('/')[0]
+    // 해시 포맷: '#tab' 또는 '#tab:id' 또는 '#tab:personal:id' 또는 'tab/subpath' 지원
+    const tab = raw.split(/[:/]/)[0]
+    if (typeof canAccessTab === 'function' && !canAccessTab(tab)) {
+      if (typeof showToast === 'function') showToast('접근 권한이 없습니다.', 'warning')
+      location.hash = '#dashboard'
+      return
+    }
     openTab(tab)
+  })
+
+  // ===== 해시 변경 직접 접근 감시 (URL 직접 입력 차단) =====
+  window.addEventListener('hashchange', () => {
+    const raw = location.hash.replace('#', '') || 'dashboard'
+    const tab = raw.split(/[:/]/)[0]
+    if (typeof canAccessTab === 'function' && !canAccessTab(tab)) {
+      if (typeof showToast === 'function') showToast('접근 권한이 없습니다.', 'warning')
+      location.hash = '#dashboard'
+      return
+    }
   })
 }
 
 // ===== 기존 호환: navigateTo, switchTab =====
 function navigateTo(tab) {
+  if (typeof canAccessTab === 'function' && !canAccessTab(tab)) {
+    if (typeof showToast === 'function') showToast('접근 권한이 없습니다.', 'warning')
+    return
+  }
   openTab(tab)
 }
 
