@@ -1130,16 +1130,21 @@ body.col-resize-active * { cursor: col-resize !important; }
   border-bottom: 0.5px solid var(--border-light, #e5e5e5);
 }
 
-/* 사이즈 규격 그리드 테이블 */
+/* 사이즈 규격 그리드 테이블 (XS~XXL × 가슴/허리/엉덩이) */
 .size-spec-table-wrap { overflow-x: auto; }
-.size-spec-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: center; }
-.size-spec-table th { background: var(--bg-secondary, #f5f4f1); padding: 6px 8px; font-weight: 500; font-size: 11px; color: var(--text-sub); border: 0.5px solid var(--border); min-width: 48px; }
-.size-spec-table td { padding: 6px 8px; border: 0.5px solid var(--border); }
-.size-spec-label { font-weight: 500; text-align: left !important; min-width: 55px; font-size: 12px; color: var(--text-sub); background: var(--bg-secondary, #f5f4f1); }
-.size-spec-val { font-size: 12px; }
-.size-spec-input { width: 100%; padding: 3px 4px; border: 1px solid var(--border); border-radius: 3px; font-size: 11px; text-align: center; box-sizing: border-box; display: none; }
-.detail-modal.edit-mode .size-spec-val { display: none !important; }
-.detail-modal.edit-mode .size-spec-input { display: block !important; }
+.size-spec-table { width:100%; border-collapse:collapse; font-size:12px; margin-bottom:8px; text-align:center; }
+.size-spec-table th { text-align:center; padding:6px 8px; background:#faf9f7; color:#888; font-weight:500; font-size:11px; border-bottom:1px solid #f0efe9; }
+.size-spec-table td { text-align:center; padding:6px 8px; border-bottom:0.5px solid #f0efe9; }
+.size-spec-label { background:#faf9f7 !important; font-weight:500; color:#1a1a2e; width:60px; }
+.size-spec-input { width:60px; padding:4px 6px; border:1px solid #e8e6e0; border-radius:4px; font-size:12px; text-align:center; box-sizing:border-box; }
+.size-spec-edit td { padding:4px; }
+
+/* 보기/수정 wrapper 토글 — 상세모달 + 기획상세모달 공통 */
+.size-spec-edit-wrap { display: none; }
+.detail-modal.edit-mode .size-spec-view-wrap,
+#planDetailModal.edit-mode .size-spec-view-wrap { display: none; }
+.detail-modal.edit-mode .size-spec-edit-wrap,
+#planDetailModal.edit-mode .size-spec-edit-wrap { display: block; }
 
 .detail-modal.edit-mode .detail-bc-val { display: none !important; }
 .detail-modal.edit-mode .detail-bc-input { display: block !important; }

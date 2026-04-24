@@ -59,22 +59,11 @@ function openPlanRegisterModal(item) {
   fillSel('plLining',       _settings?.linings)
   fillSel('plCapRing',      _settings?.capRings)
 
-  // 사이즈 규격 그리드 동적 생성
+  // 사이즈 규격 그리드 동적 생성 (XS~XXL × 가슴/허리/엉덩이)
   const specWrap = document.getElementById('plSizeSpecGrid')
   if (specWrap) {
-    let h = '<table class="size-spec-table"><thead><tr><th></th>'
-    SIZES.forEach(sz => { h += `<th>${sz}</th>` })
-    h += '</tr></thead><tbody>'
-    SPEC_ROWS.forEach(r => {
-      h += '<tr>'
-      h += `<td class="size-spec-label">${r.label}</td>`
-      SIZES.forEach(sz => {
-        h += `<td><input type="text" class="size-spec-input" id="plSpec_${r.key}_${sz}" style="display:block" /></td>`
-      })
-      h += '</tr>'
-    })
-    h += '</tbody></table>'
-    specWrap.innerHTML = h
+    const existingSpec = (item && item.sizeSpec && typeof item.sizeSpec === 'object' && !Array.isArray(item.sizeSpec)) ? item.sizeSpec : {}
+    specWrap.innerHTML = buildSizeSpecEdit(existingSpec)
   }
 
   // Init image sections
@@ -352,15 +341,9 @@ async function submitPlanRegister(e) {
     return rest
   })
 
-  // sizeSpec 수집
-  const sizeSpec = {}
-  SPEC_ROWS.forEach(r => {
-    sizeSpec[r.key] = {}
-    SIZES.forEach(sz => {
-      const inp = document.getElementById('plSpec_' + r.key + '_' + sz)
-      sizeSpec[r.key][sz] = inp ? inp.value.trim() : ''
-    })
-  })
+  // sizeSpec 수집 (XS~XXL × bust/waist/hip 구조)
+  const _plRegModal = document.getElementById('planRegisterModal')
+  const sizeSpec = collectSizeSpec(_plRegModal)
 
   const val = (id) => document.getElementById(id)?.value.trim() || ''
   const item = {
@@ -1234,13 +1217,9 @@ async function savePlanDetailEdit() {
     }
   })
 
-  // 사이즈 규격 수집
-  ensureSizeSpec(item)
-  modal.querySelectorAll('.size-spec-input[data-spec]').forEach(inp => {
-    const specKey = inp.dataset.spec
-    const sz = inp.dataset.size
-    if (specKey && sz) item.sizeSpec[specKey][sz] = inp.value.trim()
-  })
+  // 사이즈 규격 수집 (XS~XXL × bust/waist/hip 구조)
+  if (Array.isArray(item.sizeSpec) || !item.sizeSpec || typeof item.sizeSpec !== 'object') item.sizeSpec = {}
+  item.sizeSpec = collectSizeSpec(modal)
   // 일정 date inputs (dynamic phases)
   const scheduleKeys = getPlanPhases().map(p => p.key)
   scheduleKeys.forEach(k => {
@@ -1555,12 +1534,7 @@ function buildPlanDetailContent(item) {
         ${pf('성별',   'gender',    item.gender, 'select', genderOpts, '', genderLabel[item.gender] || item.gender)}
         ${pf('원단타입', 'fabricType', item.fabricType, 'select', fabricOpts)}
         ${pf('백스타일', 'backStyle',  item.backStyle)}
-        ${pf('다리파임', 'legCut',     item.legCut, 'select', legCutOpts)}
         ${pf('가이드',   'guide',      item.guide)}
-        ${pf('가슴선',   'chestLine',  item.chestLine, 'select', chestLineOpts)}
-        ${pf('비침',     'transparency', item.transparency, 'select', transparencyOpts)}
-        ${pf('안감',     'lining',     item.lining, 'select', liningOpts)}
-        ${pf('캡고리',   'capRing',    item.capRing, 'select', capRingOpts)}
       </div>
     </div>
     <div class="pd-section">
@@ -1572,28 +1546,21 @@ function buildPlanDetailContent(item) {
       </div>
     </div>
     <div class="pd-section">
-      <div class="pd-section-title">사이즈 규격</div>
+      <div class="pd-section-title">사이즈 규격 <button type="button" class="img-html-btn-all" onclick="event.stopPropagation();copySizeGuideHtml()">사이즈 HTML 복사</button></div>
       <div style="padding:10px 12px">
-        ${(() => {
-          const spec = ensureSizeSpec(item)
-          let h = '<div class="size-spec-table-wrap"><table class="size-spec-table"><thead><tr><th></th>'
-          SIZES.forEach(sz => { h += `<th>${sz}</th>` })
-          h += '</tr></thead><tbody>'
-          SPEC_ROWS.forEach(r => {
-            h += '<tr>'
-            h += `<td class="size-spec-label">${r.label}</td>`
-            SIZES.forEach(sz => {
-              const v = (spec[r.key] && spec[r.key][sz]) || ''
-              h += `<td><span class="dfield-value size-spec-val">${esc(v) || '-'}</span><input type="text" class="size-spec-input" data-spec="${r.key}" data-size="${sz}" value="${(v||'').replace(/"/g,'&quot;')}" /></td>`
-            })
-            h += '</tr>'
-          })
-          h += '</tbody></table></div>'
-          return h
-        })()}
-        <div style="margin-top:10px">
-          ${pf('모델착용사이즈', 'modelSize', item.modelSize)}
-        </div>
+        <div class="size-spec-view-wrap">${buildSizeSpecView(item.sizeSpec)}</div>
+        <div class="size-spec-edit-wrap">${buildSizeSpecEdit(item.sizeSpec)}</div>
+      </div>
+    </div>
+    <div class="pd-section">
+      <div class="pd-section-title">가이드</div>
+      <div class="dfields-grid">
+        ${pf('가슴선',   'chestLine',    item.chestLine,    'select', chestLineOpts)}
+        ${pf('다리파임', 'legCut',       item.legCut,       'select', legCutOpts)}
+        ${pf('비침',     'transparency', item.transparency, 'select', transparencyOpts)}
+        ${pf('안감',     'lining',       item.lining,       'select', liningOpts)}
+        ${pf('캡고리',   'capRing',      item.capRing,      'select', capRingOpts)}
+        ${pf('모델착용사이즈', 'modelSize', item.modelSize)}
       </div>
     </div>
     <div class="pd-section">

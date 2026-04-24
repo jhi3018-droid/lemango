@@ -1226,16 +1226,29 @@
           <input type="text" id="rBackStyle" placeholder="예: Crossed X" />
         </div>
         <div class="rform-field">
-          <label>다리파임</label>
-          <select id="rLegCut"></select>
-        </div>
-        <div class="rform-field">
           <label>가이드</label>
           <input type="text" id="rGuide" placeholder="예: 없음" />
         </div>
+      </div>
+    </div>
+
+    <div class="rform-section">
+      <div class="rform-section-title">사이즈 규격</div>
+      <div style="padding:0 12px">
+        <div id="rSizeSpecGrid"></div>
+      </div>
+    </div>
+
+    <div class="rform-section">
+      <div class="rform-section-title">가이드</div>
+      <div class="rform-grid">
         <div class="rform-field">
           <label>가슴선</label>
           <select id="rChestLine"></select>
+        </div>
+        <div class="rform-field">
+          <label>다리파임</label>
+          <select id="rLegCut"></select>
         </div>
         <div class="rform-field">
           <label>비침</label>
@@ -1249,14 +1262,7 @@
           <label>캡고리</label>
           <select id="rCapRing"></select>
         </div>
-      </div>
-    </div>
-
-    <div class="rform-section">
-      <div class="rform-section-title">사이즈 규격</div>
-      <div style="padding:0 12px">
-        <div id="rSizeSpecGrid"></div>
-        <div class="rform-field" style="margin-top:8px">
+        <div class="rform-field">
           <label>모델 착용사이즈</label>
           <input type="text" id="rModelSize" placeholder="예: M(85)" />
         </div>
@@ -1695,28 +1701,8 @@
           <input type="text" id="plBackStyle" placeholder="예: U넥" />
         </div>
         <div class="rform-field">
-          <label>다리파임</label>
-          <select id="plLegCut"></select>
-        </div>
-        <div class="rform-field">
           <label>가이드</label>
           <input type="text" id="plGuide" />
-        </div>
-        <div class="rform-field">
-          <label>가슴선</label>
-          <select id="plChestLine"></select>
-        </div>
-        <div class="rform-field">
-          <label>비침</label>
-          <select id="plTransparency"></select>
-        </div>
-        <div class="rform-field">
-          <label>안감</label>
-          <select id="plLining"></select>
-        </div>
-        <div class="rform-field">
-          <label>캡고리</label>
-          <select id="plCapRing"></select>
         </div>
         <div class="rform-field" style="grid-column:span 4">
           <label>메모</label>
@@ -1751,7 +1737,34 @@
         <div class="rform-field" style="grid-column:span 4">
           <div id="plSizeSpecGrid"></div>
         </div>
-        <div class="rform-field" style="grid-column:span 4">
+      </div>
+    </div>
+
+    <!-- 가이드 -->
+    <div class="rform-section">
+      <div class="rform-section-title">가이드</div>
+      <div class="rform-grid">
+        <div class="rform-field">
+          <label>가슴선</label>
+          <select id="plChestLine"></select>
+        </div>
+        <div class="rform-field">
+          <label>다리파임</label>
+          <select id="plLegCut"></select>
+        </div>
+        <div class="rform-field">
+          <label>비침</label>
+          <select id="plTransparency"></select>
+        </div>
+        <div class="rform-field">
+          <label>안감</label>
+          <select id="plLining"></select>
+        </div>
+        <div class="rform-field">
+          <label>캡고리</label>
+          <select id="plCapRing"></select>
+        </div>
+        <div class="rform-field">
           <label>모델착용사이즈</label>
           <input type="text" id="plModelSize" />
         </div>

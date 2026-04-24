@@ -5,6 +5,74 @@
 /* HTML 이스케이프 (전역 단일 소스) */
 function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;') }
 
+// ===== 사이즈 규격 헬퍼 (XS~XXL × 가슴/허리/엉덩이) =====
+// 데이터 구조: { XS:{bust,waist,hip}, S:{...}, M:{...}, L:{...}, XL:{...}, XXL:{...} }
+const SIZE_SPEC_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
+
+// 보기모드 — 값이 있는 사이즈만 표시. 데이터 없으면 안내 문구.
+window.buildSizeSpecView = function(sizeSpec) {
+  if (!sizeSpec || typeof sizeSpec !== 'object' || Array.isArray(sizeSpec)) {
+    return '<div style="color:#b4b2a9;font-size:12px">사이즈 규격 미등록</div>'
+  }
+  const sizes = SIZE_SPEC_SIZES
+  const hasData = sizes.some(sz => sizeSpec[sz] && (sizeSpec[sz].bust || sizeSpec[sz].waist || sizeSpec[sz].hip))
+  if (!hasData) return '<div style="color:#b4b2a9;font-size:12px">사이즈 규격 미등록</div>'
+
+  let html = '<table class="size-spec-table">'
+  html += '<thead><tr><th>사이즈</th><th>가슴(cm)</th><th>허리(cm)</th><th>엉덩이(cm)</th></tr></thead>'
+  html += '<tbody>'
+  sizes.forEach(sz => {
+    const spec = sizeSpec[sz] || {}
+    if (!spec.bust && !spec.waist && !spec.hip) return
+    html += '<tr>'
+    html += '<td class="size-spec-label">' + sz + '</td>'
+    html += '<td>' + (esc(spec.bust) || '-') + '</td>'
+    html += '<td>' + (esc(spec.waist) || '-') + '</td>'
+    html += '<td>' + (esc(spec.hip) || '-') + '</td>'
+    html += '</tr>'
+  })
+  html += '</tbody></table>'
+  return html
+}
+
+// 수정모드 — 전체 사이즈 입력 그리드
+window.buildSizeSpecEdit = function(sizeSpec) {
+  const safe = (sizeSpec && typeof sizeSpec === 'object' && !Array.isArray(sizeSpec)) ? sizeSpec : {}
+  const sizes = SIZE_SPEC_SIZES
+  let html = '<table class="size-spec-table size-spec-edit">'
+  html += '<thead><tr><th>사이즈</th><th>가슴(cm)</th><th>허리(cm)</th><th>엉덩이(cm)</th></tr></thead>'
+  html += '<tbody>'
+  sizes.forEach(sz => {
+    const spec = safe[sz] || {}
+    html += '<tr>'
+    html += '<td class="size-spec-label">' + sz + '</td>'
+    html += '<td><input type="number" data-size="' + sz + '" data-part="bust" value="' + esc(spec.bust || '') + '" placeholder="-" class="size-spec-input"></td>'
+    html += '<td><input type="number" data-size="' + sz + '" data-part="waist" value="' + esc(spec.waist || '') + '" placeholder="-" class="size-spec-input"></td>'
+    html += '<td><input type="number" data-size="' + sz + '" data-part="hip" value="' + esc(spec.hip || '') + '" placeholder="-" class="size-spec-input"></td>'
+    html += '</tr>'
+  })
+  html += '</tbody></table>'
+  return html
+}
+
+// 수집 — 현재 DOM의 size-spec-input 값들을 새 구조로 수집.
+// root가 전달되면 root 범위 내에서만 수집 (동일 페이지 다중 그리드 대응), 기본은 document.
+window.collectSizeSpec = function(root) {
+  const scope = (root && root.querySelector) ? root : document
+  const sizes = SIZE_SPEC_SIZES
+  const spec = {}
+  sizes.forEach(sz => {
+    const bust  = scope.querySelector('[data-size="' + sz + '"][data-part="bust"]')
+    const waist = scope.querySelector('[data-size="' + sz + '"][data-part="waist"]')
+    const hip   = scope.querySelector('[data-size="' + sz + '"][data-part="hip"]')
+    const b = bust  ? String(bust.value  || '').trim() : ''
+    const w = waist ? String(waist.value || '').trim() : ''
+    const h = hip   ? String(hip.value   || '').trim() : ''
+    if (b || w || h) spec[sz] = { bust: b, waist: w, hip: h }
+  })
+  return spec
+}
+
 // getStartOfWeek — returns Date representing Sunday (00:00) of the week containing `date`
 function getStartOfWeek(date) {
   const d = (date instanceof Date) ? new Date(date) : new Date(date)
@@ -1288,6 +1356,225 @@ function copyAllImageHtml() {
   navigator.clipboard.writeText(allHtml.trim()).then(() => showToast('전체 이미지 HTML 복사 완료'))
 }
 window.copyAllImageHtml = copyAllImageHtml
+
+// ===== 사이즈/가이드/모델 HTML 복사 (카페24 상세페이지용) =====
+window.copySizeGuideHtml = function() {
+  // 현재 열린 모달 → 상품 또는 기획 데이터
+  let p = null
+  if (typeof _detailCode !== 'undefined' && _detailCode) {
+    p = State.allProducts.find(x => x.productCode === _detailCode) || null
+  }
+  if (!p && typeof _editingPlanNo !== 'undefined' && _editingPlanNo != null) {
+    p = (State.planItems || []).find(x => x.no === _editingPlanNo) || null
+  }
+  if (!p) { showToast('상품 데이터를 찾을 수 없습니다.', 'warning'); return }
+
+  const sizeSpec = (p.sizeSpec && typeof p.sizeSpec === 'object' && !Array.isArray(p.sizeSpec)) ? p.sizeSpec : {}
+  const sizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
+  const activeSizes = sizes.filter(function(sz) {
+    const s = sizeSpec[sz]
+    return s && (s.bust || s.waist || s.hip)
+  })
+
+  if (activeSizes.length === 0) {
+    showToast('사이즈 규격이 입력되지 않았습니다.', 'warning')
+    return
+  }
+
+  const chestLine = p.chestLine || ''
+  const legCut = p.legCut || ''
+  const transparency = p.transparency || ''
+  const lining = p.lining || ''
+  const capRing = p.capRing || ''
+  const modelSize = p.modelSize || ''
+
+  const sizeLabels = { 'XS':'75(XS)', 'S':'80(S)', 'M':'85(M)', 'L':'90(L)', 'XL':'95(XL)', 'XXL':'100(XXL)' }
+
+  // ========== CSS ==========
+  let css = '<style>\n'
+  css += '\t.sg5-wrap {\n\t\tcolor: #171717; font-size: 14px; line-height: 1.6; font-family: \'Pretendard\', \'Noto Sans KR\', sans-serif;\n\t}\n'
+  css += '\t.sg5-wrap .sg5-section { margin-bottom: 28px; }\n'
+  css += '\t.sg5-wrap p { margin: 0 0 10px; }\n'
+  css += '\t.sg5-wrap strong { font-size: 15px; }\n'
+  css += '\t.sg5-wrap table { width: 100%; border-collapse: collapse; table-layout: fixed; }\n'
+  css += '\t.sg5-wrap td { border: 1px solid #ddd; padding: 10px 6px; text-align: center; white-space: nowrap; }\n'
+  css += '\t.sg5-wrap .sg5-bg { background-color: #f3f3f3; }\n'
+  css += '\t.sg5-wrap .sg5-head { background: #f3f3f3; font-weight: 500; }\n'
+  css += '\t.sg5-wrap .sg5-td-label { background: #f3f3f3; font-weight: 500; }\n'
+  // 모바일 사이즈 탭
+  css += '\t.sg5-wrap .sg5-size-card { display: none; }\n'
+  css += '\t.sg5-wrap .sg5-size-tabs { display: flex; gap: 6px; margin-bottom: 10px; }\n'
+  css += '\t.sg5-wrap .sg5-size-tabs label { flex: 1; height: 38px; display: flex; align-items: center; justify-content: center; border: 1px solid #ddd; background: #f9f9f9; font-size: 13px; cursor: pointer; -webkit-tap-highlight-color: transparent; user-select: none; }\n'
+  css += '\t.sg5-wrap .sg5-size-radio { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }\n'
+  css += '\t.sg5-wrap .sg5-size-content { display: none; border: 1px solid #ddd; }\n'
+  css += '\t.sg5-wrap .sg5-size-row { display: flex; justify-content: space-between; gap: 14px; padding: 8px 10px; border-bottom: 1px solid #eee; font-size: 13px; }\n'
+  css += '\t.sg5-wrap .sg5-size-row:last-child { border-bottom: none; }\n'
+  css += '\t.sg5-wrap .sg5-row-label { color: #777; font-weight: 500; }\n'
+  css += '\t.sg5-wrap .sg5-row-val { text-align: right; }\n'
+  // 탭 활성 CSS
+  activeSizes.forEach(function(sz) {
+    const id = sz.toLowerCase()
+    css += '\t#sg5_tab_' + id + ':checked ~ .sg5-size-tabs label[for="sg5_tab_' + id + '"] { background: #171717; color: #fff; border-color: #171717; }\n'
+    css += '\t#sg5_tab_' + id + ':checked ~ .sg5-size-panels #sg5_panel_' + id + ' { display: block; }\n'
+  })
+  // 모바일 가이드 아코디언
+  css += '\t.sg5-wrap .sg5-guide-acc { display: none; }\n'
+  css += '\t.sg5-wrap .sg5-guide-acc details { border-top: 1px solid #ddd; border-bottom: 1px solid #ddd; }\n'
+  css += '\t.sg5-wrap .sg5-guide-acc summary { list-style: none; cursor: pointer; padding: 10px 0 12px; -webkit-tap-highlight-color: transparent; user-select: none; }\n'
+  css += '\t.sg5-wrap .sg5-guide-acc summary::-webkit-details-marker { display: none; }\n'
+  css += '\t.sg5-wrap .sg5-g-head { display: flex; align-items: center; justify-content: space-between; padding: 0 0 6px; }\n'
+  css += '\t.sg5-wrap .sg5-g-head-title { font-weight: 700; font-size: 15px; color: #171717; }\n'
+  css += '\t.sg5-wrap .sg5-g-tri { font-size: 12px; color: #555; line-height: 1; transform: translateY(-1px); }\n'
+  css += '\t.sg5-wrap .sg5-guide-acc details[open] .sg5-g-tri { transform: rotate(180deg) translateY(1px); }\n'
+  css += '\t.sg5-wrap .sg5-g-sum { font-size: 13px; color: #555; line-height: 1.55; word-break: keep-all; }\n'
+  css += '\t.sg5-wrap .sg5-g-body { padding: 10px 0 0; }\n'
+  css += '\t.sg5-wrap .sg5-card { border: 1px solid #ddd; margin-bottom: 12px; }\n'
+  css += '\t.sg5-wrap .sg5-card-title { background: #f3f3f3; padding: 8px 10px; font-weight: 500; font-size: 13px; }\n'
+  css += '\t.sg5-wrap .sg5-card-list { display: flex; gap: 12px; padding: 10px; flex-wrap: wrap; }\n'
+  css += '\t.sg5-wrap .sg5-card-list span { font-size: 13px; color: #171717; }\n'
+  css += '\t@media(max-width:768px) {\n'
+  css += '\t\t.sg5-wrap .sg5-size-table,\n\t\t.sg5-wrap .sg5-guide-table { display: none; }\n'
+  css += '\t\t.sg5-wrap .sg5-size-card { display: block; }\n'
+  css += '\t\t.sg5-wrap .sg5-guide-acc { display: block; }\n'
+  css += '\t\t.sg5-wrap .sg5-guide-title { display: none; }\n'
+  css += '\t}\n'
+  css += '</style>\n\n'
+
+  // ========== BODY ==========
+  let body = '<div class="sg5-wrap">\n'
+
+  // ── 사이즈 정보 ──
+  body += '\t<div class="sg5-section">\n'
+  body += '\t\t<p><strong>사이즈 정보</strong></p>\n'
+
+  // PC 테이블
+  body += '\t\t<table class="sg5-size-table" id="sg5_sizeTable">\n\t\t\t<tbody>\n'
+  body += '\t\t\t\t<tr>\n\t\t\t\t\t<td class="sg5-head">사이즈</td>\n\t\t\t\t\t<td class="sg5-head">가슴</td>\n\t\t\t\t\t<td class="sg5-head">허리</td>\n\t\t\t\t\t<td class="sg5-head">엉덩이</td>\n\t\t\t\t</tr>\n'
+  activeSizes.forEach(function(sz) {
+    const spec = sizeSpec[sz]
+    body += '\t\t\t\t<tr>\n'
+    body += '\t\t\t\t\t<td class="sg5-bg">' + (sizeLabels[sz] || sz) + '</td>\n'
+    body += '\t\t\t\t\t<td>' + (spec.bust || '-') + '</td>\n'
+    body += '\t\t\t\t\t<td>' + (spec.waist || '-') + '</td>\n'
+    body += '\t\t\t\t\t<td>' + (spec.hip || '-') + '</td>\n'
+    body += '\t\t\t\t</tr>\n'
+  })
+  body += '\t\t\t</tbody>\n\t\t</table>\n'
+
+  // 모바일 탭
+  body += '\t\t<div class="sg5-size-card">\n'
+  activeSizes.forEach(function(sz, i) {
+    const id = sz.toLowerCase()
+    body += '\t\t\t<input type="radio" name="sg5_size_tab" id="sg5_tab_' + id + '"' + (i === 0 ? ' checked="true"' : '') + ' class="sg5-size-radio">\n'
+  })
+  body += '\t\t\t<div class="sg5-size-tabs">\n'
+  activeSizes.forEach(function(sz) {
+    body += '\t\t\t\t<label for="sg5_tab_' + sz.toLowerCase() + '">' + (sizeLabels[sz] || sz) + '</label>\n'
+  })
+  body += '\t\t\t</div>\n'
+  body += '\t\t\t<div class="sg5-size-panels">\n'
+  activeSizes.forEach(function(sz) {
+    const id = sz.toLowerCase()
+    const spec = sizeSpec[sz]
+    body += '\t\t\t\t<div class="sg5-size-content" id="sg5_panel_' + id + '">\n'
+    body += '\t\t\t\t\t<div class="sg5-size-row"><span class="sg5-row-label">사이즈</span><span class="sg5-row-val">' + (sizeLabels[sz] || sz) + '</span></div>\n'
+    body += '\t\t\t\t\t<div class="sg5-size-row"><span class="sg5-row-label">가슴</span><span class="sg5-row-val">' + (spec.bust || '-') + 'cm</span></div>\n'
+    body += '\t\t\t\t\t<div class="sg5-size-row"><span class="sg5-row-label">허리</span><span class="sg5-row-val">' + (spec.waist || '-') + 'cm</span></div>\n'
+    body += '\t\t\t\t\t<div class="sg5-size-row"><span class="sg5-row-label">엉덩이</span><span class="sg5-row-val">' + (spec.hip || '-') + 'cm</span></div>\n'
+    body += '\t\t\t\t</div>\n'
+  })
+  body += '\t\t\t</div>\n\t\t</div>\n'
+  body += '\t\t<p>\n\t\t\t* 둘레 기준(cm)\n\t\t\t<br> * 측정 방법과 제품 특성에 따라 1~3cm 정도의 오차가 발생할 수 있습니다.\n\t\t</p>\n'
+  body += '\t</div>\n'
+
+  // ── 가이드 ──
+  if (chestLine || legCut || transparency || lining || capRing) {
+    const chestOpts = ['낮음', '보통', '높음']
+    const legOpts = ['로우컷', '노멀컷', '미들컷', '하이컷']
+    const transOpts = ['없음', '있음', '약간 있음']
+    const liningOpts = ['없음', '있음', '부분 있음']
+    const capOpts = ['없음', '있음']
+
+    function _guideRow(label, value, options) {
+      let r = '\t\t\t\t<tr>\n\t\t\t\t\t<td class="sg5-td-label">' + label + '</td>\n'
+      options.forEach(function(opt) {
+        r += '\t\t\t\t\t<td>' + (opt === value ? '●' : '○') + ' ' + opt + '</td>\n'
+      })
+      for (let i = options.length; i < 4; i++) r += '\t\t\t\t\t<td></td>\n'
+      r += '\t\t\t\t</tr>\n'
+      return r
+    }
+
+    function _guideCard(label, value, options) {
+      let c = '\t\t\t\t\t<div class="sg5-card">\n\t\t\t\t\t\t<div class="sg5-card-title">' + label + '</div>\n\t\t\t\t\t\t<div class="sg5-card-list">\n'
+      options.forEach(function(opt) {
+        c += '\t\t\t\t\t\t\t<span>' + (opt === value ? '●' : '○') + ' ' + opt + '</span>\n'
+      })
+      c += '\t\t\t\t\t\t</div>\n\t\t\t\t\t</div>\n'
+      return c
+    }
+
+    body += '\t<div class="sg5-section">\n'
+    body += '\t\t<p class="sg5-guide-title"><strong>가이드</strong></p>\n'
+
+    // PC 가이드 테이블
+    body += '\t\t<table class="sg5-guide-table" id="sg5_guideTable">\n\t\t\t<tbody>\n'
+    if (chestLine) body += _guideRow('가슴선', chestLine, chestOpts)
+    if (legCut) body += _guideRow('다리파임', legCut, legOpts)
+    if (transparency) body += _guideRow('비침', transparency, transOpts)
+    if (lining) body += _guideRow('안감', lining, liningOpts)
+    if (capRing) body += _guideRow('캡고리', capRing, capOpts)
+    body += '\t\t\t</tbody>\n\t\t</table>\n'
+
+    // 모바일 가이드 아코디언
+    body += '\t\t<div class="sg5-guide-acc">\n\t\t\t<details>\n'
+    body += '\t\t\t\t<summary>\n'
+    body += '\t\t\t\t\t<div class="sg5-g-head">\n\t\t\t\t\t\t<span class="sg5-g-head-title">가이드</span>\n\t\t\t\t\t\t<span aria-hidden="true" class="sg5-g-tri">▼</span>\n\t\t\t\t\t</div>\n'
+    const sumParts = []
+    if (chestLine) sumParts.push('가슴선 : ' + chestLine)
+    if (legCut) sumParts.push('다리파임 : ' + legCut)
+    if (transparency) sumParts.push('비침 : ' + transparency)
+    if (lining) sumParts.push('안감 : ' + lining)
+    if (capRing) sumParts.push('캡고리 : ' + capRing)
+    body += '\t\t\t\t\t<div class="sg5-g-sum">\n\t\t\t\t\t\t' + sumParts.join(' / ') + '\n\t\t\t\t\t</div>\n'
+    body += '\t\t\t\t</summary>\n'
+    body += '\t\t\t\t<div class="sg5-g-body">\n'
+    if (chestLine) body += _guideCard('가슴선', chestLine, chestOpts)
+    if (legCut) body += _guideCard('다리파임', legCut, legOpts)
+    if (transparency) body += _guideCard('비침', transparency, transOpts)
+    if (lining) body += _guideCard('안감', lining, liningOpts)
+    if (capRing) body += _guideCard('캡고리', capRing, capOpts)
+    body += '\t\t\t\t</div>\n\t\t\t</details>\n\t\t</div>\n'
+    body += '\t</div>\n'
+  }
+
+  // ── 모델 사이즈 ──
+  if (modelSize) {
+    body += '\t<div class="sg5-section">\n'
+    body += '\t\t<p><strong>모델 사이즈</strong></p>\n'
+    body += '\t\t<p>' + modelSize.replace(/\n/g, '<br>') + '</p>\n'
+    body += '\t</div>\n'
+  }
+
+  body += '</div>'
+
+  const fullHtml = css + body
+
+  const _fallback = () => {
+    const ta = document.createElement('textarea')
+    ta.value = fullHtml
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+    showToast('사이즈/가이드 HTML 복사 완료')
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(fullHtml).then(() => showToast('사이즈/가이드 HTML 복사 완료')).catch(_fallback)
+  } else {
+    _fallback()
+  }
+}
 
 // ===== Feature 6: Inline cell edit (double-click) =====
 const _INLINE_EDIT_BOUND = new WeakSet()

@@ -2510,6 +2510,69 @@ Established the reference style that every dashboard-opened srm-modal should fol
 
 ---
 
+### 2026-04-24
+
+#### S-01 수정양식에서 카페24/바코드 제거
+- `js/excel.js` `DEFAULT_FORMATS['default-edit'].columns` 에서 `cafe24Code`, `barcode` 제거
+- 데이터 스키마·업로드·샘플 파일은 그대로 유지 (커스텀 양식에서는 여전히 선택 가능)
+- 수정양식에 `sizeSpec` 컬럼 추가 (S-02와 연동, 이후 S-04에서 19개로 교체됨)
+
+#### S-02 사이즈 규격 XS~XXL × 가슴/허리/엉덩이 그리드
+- **데이터 구조 변경**: 기존 `{bust:{XS:...}, waist:..., hip:..., etc:...}` (part-first) → 신규 `{XS:{bust,waist,hip}, S:..., M:..., L:..., XL:..., XXL:...}` (size-first)
+- `js/utils.js`: `buildSizeSpecView(sizeSpec)` / `buildSizeSpecEdit(sizeSpec)` / `collectSizeSpec(root)` 신규 (window 노출)
+  - 상수 `SIZE_SPEC_SIZES = ['XS','S','M','L','XL','XXL']`
+  - view: 값 있는 사이즈만 표시, `hasData` 0이면 "사이즈 규격 미등록" 안내
+  - edit: 전체 사이즈 `<input type="number" data-size data-part>` 그리드
+  - collect: `root` scope 범위에서 `[data-size][data-part]` 쿼리, 값 있는 사이즈만 객체에 포함
+- **적용 위치** — 기존 `SPEC_ROWS`/`ensureSizeSpec` 기반 인라인 빌더 전부 제거:
+  - `js/modals.js`: 상세모달 사이즈 규격 섹션 view/edit wrapper 2개, `saveDetailEdit`의 `collectSizeSpec(_detailModal)`
+  - `js/plan.js`: 기획 등록폼 그리드 (`openPlanRegisterModal`), `submitPlanRegister`, `buildPlanDetailContent`, `savePlanDetailEdit`
+  - `js/register.js`: `openRegisterModal` 그리드, `submitRegister`, 업로드 fallback은 `{}` 빈 객체로
+- **호환성**: 기존 object 형식 데이터는 배열/비객체 가드 통과 후 `sizeSpec[sz]` 접근 시 `undefined` → 빈 표시 (graceful)
+- **CSS** (`style.css:1133-1147`): `.size-spec-table/label/input` 규칙 교체, `.size-spec-view-wrap/.size-spec-edit-wrap` 토글 규칙 추가 (`detail-modal.edit-mode` + `#planDetailModal.edit-mode` 공통)
+- `SPEC_ROWS` / `ensureSizeSpec` (`js/core.js`): 호출부 전부 제거됐으나 본체는 유지 (dead but harmless)
+
+#### S-03 가이드 필드 사이즈 규격 아래로 이동
+- 기존: `가격/디자인` 섹션에 `가슴선/다리파임/비침/안감/캡고리` 포함
+- 변경: 5개 필드를 `사이즈 규격` 섹션 아래 신규 `가이드` 섹션으로 분리, `모델착용사이즈`도 가이드 섹션 말미로 이동
+- **4곳 적용**:
+  - `js/modals.js` `buildDetailContent`: `dsection` → `dsection` (가이드 신규)
+  - `js/plan.js` `buildPlanDetailContent`: `pd-section` → `pd-section` (가이드 신규)
+  - `index.html` `registerModal`: `rform-section` → `rform-section` (가이드 신규)
+  - `index.html` `planRegisterModal`: `rform-section` → `rform-section` (가이드 신규)
+- 최종 순서: 기본정보 → 가격/디자인(백스타일/가이드만 잔존) → 소재 → 사이즈 규격 → **가이드(5개+모델)** → 제조 → 이미지
+
+#### S-02e/S-04 엑셀 다운로드·업로드 19개 개별 컬럼
+- **`ALL_DOWNLOAD_COLUMNS`** (`js/excel.js:31-49`): 단일 `{key:'sizeSpec', label:'사이즈 규격'}` 제거 → 19개 개별 키
+  - `sizeSpec_XS_bust` ~ `sizeSpec_XXL_hip` (18) + `sizeSpec_F` (1)
+- **`DEFAULT_FORMATS['default-edit'].columns`**: 단일 `'sizeSpec'` → 19개 키로 교체
+- **`_getProductValue`**: `key.startsWith('sizeSpec_')` 분기 — `sizeSpec_F`는 object면 bust/waist/hip 중 첫값, 문자열이면 그대로. 나머지는 `rest.split('_')`로 size/part 분해 → `spec[size][part]`
+- **업로드 파서 (`_parseProductUpload`)**:
+  - `sizeSpecColMap` 동적 헤더 스캔 — `{SIZE} 가슴/허리/엉덩이` + `F` 레이블 인식
+  - `_readSizeSpec(row)` — 19셀 → sizeSpec 객체 (숫자만 추출: `replace(/[^\d.]/g, '')`)
+  - 업로드 파일에 컬럼 없으면 `sizeSpec: null` (기존값 보존 시그널)
+- **`_applyProductUpload`** 머지 정책:
+  - 신규: `sizeSpec == null` → `{}` 기본값
+  - 기존: uploaded가 null이면 기존 sizeSpec 보존, 있으면 덮어쓰기 (`barcodes`와 유사한 preserve 패턴)
+- **샘플 파일 (`_downloadProductSample`)**: HEADER에 `sizeSpecHeaders` 19개 삽입 (영상URL 뒤, 쇼핑몰코드 앞), SAMPLE_ROW에 M 사이즈 48/38/52 예시, `!cols` 폭 `wch:10`, 입력 가이드 시트에도 19행 추가
+
+#### S-04 사이즈+가이드 HTML 복사 기능
+- **`js/utils.js` `window.copySizeGuideHtml`** 신규 — 카페24 상세페이지용 완전한 CSS+HTML 조립
+  - 열린 모달 판별: `_detailCode` (상품) 우선, 없으면 `_editingPlanNo` (기획)
+  - `activeSizes` 필터 — 값 없으면 "사이즈 규격이 입력되지 않았습니다" 토스트 후 return
+  - 사이즈 라벨: `XS→75(XS)` ~ `XXL→100(XXL)`
+  - PC: `sg5-size-table` + `sg5-guide-table`
+  - 모바일: `sg5-size-card`(라디오 탭) + `sg5-guide-acc`(`<details>` 아코디언)
+  - 가이드 행: `●` 선택 / `○` 미선택, 옵션 배열은 하드코딩 (`chestOpts=낮음/보통/높음` 등)
+  - 모델사이즈 있으면 하단 섹션 추가 (`\n` → `<br>`)
+  - `navigator.clipboard.writeText` + `execCommand('copy')` fallback
+- **버튼 배치** — `img-html-btn-all` 재활용:
+  - `js/modals.js:584` — 상세모달 `dsection-title` "사이즈 규격" 옆
+  - `js/plan.js:1549` — 기획 상세모달 `pd-section-title` "사이즈 규격" 옆
+- `_detailCode` / `_editingPlanNo` 전역 참조를 그대로 활용 (신규 전역 상태 없음)
+
+---
+
 ## 다음 작업 후보 (미구현)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 인쇄/PDF 출력

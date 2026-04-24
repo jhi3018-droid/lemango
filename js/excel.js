@@ -28,6 +28,25 @@ const ALL_DOWNLOAD_COLUMNS = [
   { key:'material', label:'소재' },
   { key:'comment', label:'디자이너코멘트' },
   { key:'washMethod', label:'세탁방법' },
+  { key:'sizeSpec_XS_bust',  label:'XS 가슴' },
+  { key:'sizeSpec_XS_waist', label:'XS 허리' },
+  { key:'sizeSpec_XS_hip',   label:'XS 엉덩이' },
+  { key:'sizeSpec_S_bust',   label:'S 가슴' },
+  { key:'sizeSpec_S_waist',  label:'S 허리' },
+  { key:'sizeSpec_S_hip',    label:'S 엉덩이' },
+  { key:'sizeSpec_M_bust',   label:'M 가슴' },
+  { key:'sizeSpec_M_waist',  label:'M 허리' },
+  { key:'sizeSpec_M_hip',    label:'M 엉덩이' },
+  { key:'sizeSpec_L_bust',   label:'L 가슴' },
+  { key:'sizeSpec_L_waist',  label:'L 허리' },
+  { key:'sizeSpec_L_hip',    label:'L 엉덩이' },
+  { key:'sizeSpec_XL_bust',  label:'XL 가슴' },
+  { key:'sizeSpec_XL_waist', label:'XL 허리' },
+  { key:'sizeSpec_XL_hip',   label:'XL 엉덩이' },
+  { key:'sizeSpec_XXL_bust', label:'XXL 가슴' },
+  { key:'sizeSpec_XXL_waist',label:'XXL 허리' },
+  { key:'sizeSpec_XXL_hip',  label:'XXL 엉덩이' },
+  { key:'sizeSpec_F',        label:'F' },
   { key:'bust', label:'가슴(cm)' },
   { key:'waist', label:'허리(cm)' },
   { key:'hip', label:'엉덩이(cm)' },
@@ -86,11 +105,18 @@ const DEFAULT_FORMATS = [
   {
     id: 'default-edit', name: '수정양식', type: 'default',
     columns: [
-      'no','brand','productCode','sampleNo','cafe24Code','barcode',
+      'no','brand','productCode','sampleNo',
       'nameKr','nameEn','colorKr','colorEn','salePrice','costPrice',
       'type','backStyle','legCut','guide','fabricType','chestLine','transparency','lining','capRing',
       'material','comment','washMethod',
-      'bust','waist','hip','modelSize',
+      'sizeSpec_XS_bust','sizeSpec_XS_waist','sizeSpec_XS_hip',
+      'sizeSpec_S_bust','sizeSpec_S_waist','sizeSpec_S_hip',
+      'sizeSpec_M_bust','sizeSpec_M_waist','sizeSpec_M_hip',
+      'sizeSpec_L_bust','sizeSpec_L_waist','sizeSpec_L_hip',
+      'sizeSpec_XL_bust','sizeSpec_XL_waist','sizeSpec_XL_hip',
+      'sizeSpec_XXL_bust','sizeSpec_XXL_waist','sizeSpec_XXL_hip',
+      'sizeSpec_F',
+      'modelSize',
       'madeMonth','madeBy','madeIn',
       'saleStatus','productionStatus',
       'mainImage','images.sum','images.lemango','images.noir','images.external','images.design','images.shoot','videoUrl',
@@ -142,6 +168,23 @@ function _getProductValue(p, key, idx) {
   if (key === 'totalSales') return getTotalSales(p)
   if (key === 'exhaustion') return getExhaustion(p)
   if (key === 'lastInDate') return ((p.stockLog||[]).filter(l=>l.type==='in').reduce((m,l)=>l.date>m?l.date:m,''))||''
+  if (key.startsWith('sizeSpec_')) {
+    const spec = (p.sizeSpec && typeof p.sizeSpec === 'object' && !Array.isArray(p.sizeSpec)) ? p.sizeSpec : {}
+    if (key === 'sizeSpec_F') {
+      const f = spec['F']
+      if (f == null) return ''
+      if (typeof f === 'object') return f.bust || f.waist || f.hip || ''
+      return f
+    }
+    const rest = key.slice('sizeSpec_'.length) // e.g. "XS_bust"
+    const usIdx = rest.lastIndexOf('_')
+    if (usIdx < 0) return ''
+    const size = rest.slice(0, usIdx)
+    const part = rest.slice(usIdx + 1)
+    const sizeData = spec[size]
+    if (!sizeData || typeof sizeData !== 'object') return ''
+    return sizeData[part] || ''
+  }
   if (key.startsWith('stock.')) return p.stock ? (p.stock[key.split('.')[1]]||0) : 0
   if (key.startsWith('sales.')) return p.sales ? (p.sales[key.split('.')[1]]||0) : 0
   if (key.startsWith('mallCodes.')) return p.mallCodes ? (p.mallCodes[key.split('.')[1]]||'') : ''
@@ -626,6 +669,25 @@ function _downloadProductSample() {
   const mallHeaders = _platforms.map(pl => '쇼핑몰코드(' + pl + ')')
   const mallSamples = _platforms.map(() => '')
 
+  const sizeSpecHeaders = [
+    'XS 가슴','XS 허리','XS 엉덩이',
+    'S 가슴','S 허리','S 엉덩이',
+    'M 가슴','M 허리','M 엉덩이',
+    'L 가슴','L 허리','L 엉덩이',
+    'XL 가슴','XL 허리','XL 엉덩이',
+    'XXL 가슴','XXL 허리','XXL 엉덩이',
+    'F'
+  ]
+  const sizeSpecSamples = [
+    '', '', '',
+    '', '', '',
+    '48','38','52',
+    '', '', '',
+    '', '', '',
+    '', '', '',
+    ''
+  ]
+
   const HEADER = [
     'NO','브랜드','품번','샘플번호','카페24코드','바코드',
     '상품명(한글)','상품명(영문)','색상(한글)','색상(영문)','판매가','원가',
@@ -634,6 +696,7 @@ function _downloadProductSample() {
     '가슴(cm)','허리(cm)','엉덩이(cm)','모델착용사이즈',
     '제조년월','제조사','제조국','판매상태','생산상태',
     '대표이미지URL','이미지URL(합본)','이미지URL(자사몰)','이미지URL(느와)','이미지URL(외부몰)','이미지URL(디자인)','이미지URL(촬영)','영상URL',
+    ...sizeSpecHeaders,
     ...mallHeaders,
     '등록일','최종입고일'
   ]
@@ -652,6 +715,7 @@ function _downloadProductSample() {
     'https://example.com/lemango1.jpg',
     '','https://example.com/ext1.jpg','','',
     'https://youtube.com/shorts/example',
+    ...sizeSpecSamples,
     ...mallSamples,
     '2026-01-15','2026-03-17'
   ]
@@ -669,7 +733,7 @@ function _downloadProductSample() {
     {wch:12},{wch:16},{wch:10},{wch:10},{wch:10},
     {wch:40},{wch:40},{wch:40},{wch:30},{wch:40},{wch:30},{wch:30},{wch:35}
   ]
-  ws['!cols'] = [...baseCols, ..._platforms.map(() => ({wch:16})), {wch:12},{wch:12}]
+  ws['!cols'] = [...baseCols, ...sizeSpecHeaders.map(() => ({wch:10})), ..._platforms.map(() => ({wch:16})), {wch:12},{wch:12}]
 
   // 헤더 스타일 (네이비 배경, 품번만 골드)
   const navyFill = { fgColor: { rgb: '1A1A2E' } }
@@ -738,6 +802,7 @@ function _downloadProductSample() {
     ['이미지URL(디자인)', '디자인 이미지 URL (줄바꿈 구분)', '', ''],
     ['이미지URL(촬영)', '촬영 이미지 URL (줄바꿈 구분)', '', ''],
     ['영상URL', '영상 링크 (YouTube 등)', '', 'https://youtube.com/shorts/example'],
+    ...sizeSpecHeaders.map(h => [h, h === 'F' ? '프리사이즈(단일)' : (h + ' 규격 (cm, 숫자만)'), '', h === 'M 가슴' ? '48' : h === 'M 허리' ? '38' : h === 'M 엉덩이' ? '52' : '']),
     ..._platforms.map(pl => ['쇼핑몰코드(' + pl + ')', pl + ' 쇼핑몰 상품코드', '', '']),
     ['등록일', '상품 등록일 (YYYY-MM-DD)', '', '2026-01-15'],
     ['최종입고일', '최종 입고일 (참고용)', '', '2026-03-17'],
@@ -816,8 +881,11 @@ function _parseProductUpload(raw) {
   const COL = isNew ? UPLOAD_COL : _LEGACY_COL
   const dataStart = isNew ? 1 : 2
 
-  // 신규양식: 헤더에서 쇼핑몰코드/등록일/최종입고일 동적 인덱스 탐색
+  // 신규양식: 헤더에서 쇼핑몰코드/등록일/최종입고일 + 사이즈 규격 19컬럼 동적 인덱스 탐색
   let mallColMap = {}, registDateCol = null, lastInDateCol = null
+  let sizeSpecColMap = {} // { 'XS_bust': idx, ..., 'F': idx }
+  const SIZE_SPEC_SIZES_UP = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
+  const SIZE_SPEC_PART_LABEL = { bust: '가슴', waist: '허리', hip: '엉덩이' }
   if (isNew) {
     const hdr = raw[0] || []
     hdr.forEach((h, i) => {
@@ -826,7 +894,30 @@ function _parseProductUpload(raw) {
       if (m) mallColMap[m[1]] = i
       if (s === '등록일') registDateCol = i
       if (s === '최종입고일') lastInDateCol = i
+      // sizeSpec 19컬럼: "XS 가슴", "XS 허리", ..., "F"
+      if (s === 'F') { sizeSpecColMap['F'] = i; return }
+      SIZE_SPEC_SIZES_UP.forEach(sz => {
+        Object.entries(SIZE_SPEC_PART_LABEL).forEach(([partKey, partLabel]) => {
+          if (s === sz + ' ' + partLabel) sizeSpecColMap[sz + '_' + partKey] = i
+        })
+      })
     })
+  }
+
+  // 엑셀 행에서 sizeSpec 19컬럼을 읽어 {XS:{bust,waist,hip}, ..., F:{bust,waist,hip}} 구조로 반환
+  function _readSizeSpec(row) {
+    const spec = {}
+    SIZE_SPEC_SIZES_UP.forEach(sz => {
+      const b = sizeSpecColMap[sz + '_bust']  != null ? String(row[sizeSpecColMap[sz + '_bust']]  ?? '').trim().replace(/[^\d.]/g, '') : ''
+      const w = sizeSpecColMap[sz + '_waist'] != null ? String(row[sizeSpecColMap[sz + '_waist']] ?? '').trim().replace(/[^\d.]/g, '') : ''
+      const h = sizeSpecColMap[sz + '_hip']   != null ? String(row[sizeSpecColMap[sz + '_hip']]   ?? '').trim().replace(/[^\d.]/g, '') : ''
+      if (b || w || h) spec[sz] = { bust: b, waist: w, hip: h }
+    })
+    if (sizeSpecColMap['F'] != null) {
+      const fv = String(row[sizeSpecColMap['F']] ?? '').trim().replace(/[^\d.]/g, '')
+      if (fv) spec['F'] = { bust: fv, waist: '', hip: '' }
+    }
+    return spec
   }
 
   const dataRows = raw.slice(dataStart).filter(r => String(r[COL.code] || '').trim())
@@ -882,6 +973,7 @@ function _parseProductUpload(raw) {
       bust:          _s('bust'),
       waist:         _s('waist'),
       hip:           _s('hip'),
+      sizeSpec:      (isNew && Object.keys(sizeSpecColMap).length > 0) ? _readSizeSpec(row) : null,
       modelSize:     _s('modelSize'),
       madeMonth:     _s('madeMonth'),
       madeBy:        _s('madeBy'),
@@ -1065,6 +1157,7 @@ function _applyProductUpload(parsed) {
 
   // 신규 상품 추가
   parsed.added.forEach(item => {
+    if (item.product.sizeSpec == null) item.product.sizeSpec = {}
     stampCreated(item.product)
     State.allProducts.push(item.product)
     added++
@@ -1074,6 +1167,8 @@ function _applyProductUpload(parsed) {
   parsed.updated.forEach(item => {
     const existing = State.allProducts[item.idx]
     if (!existing) return
+    // sizeSpec: 업로드 파일에 컬럼 없으면(null) 기존 보존, 컬럼 있으면 덮어쓰기
+    const mergedSizeSpec = item.product.sizeSpec == null ? existing.sizeSpec : item.product.sizeSpec
     State.allProducts[item.idx] = { ...existing, ...item.product,
       no:         existing.no,
       stock:      existing.stock,
@@ -1082,7 +1177,8 @@ function _applyProductUpload(parsed) {
       revenueLog: existing.revenueLog,
       scheduleLog: existing.scheduleLog,
       productCodeLocked: existing.productCodeLocked,
-      barcodes:   existing.barcodes
+      barcodes:   existing.barcodes,
+      sizeSpec:   mergedSizeSpec || {}
     }
     stampModified(State.allProducts[item.idx])
     updated++

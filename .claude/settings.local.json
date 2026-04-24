@@ -13,7 +13,10 @@
       "Bash(node --check js/work.js)",
       "Bash(node --check js/event.js)",
       "Bash(node --check js/utils.js)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "Bash(ls /mnt)",
+      "Read(//c//**)",
+      "Bash(node -c js/excel.js)"
     ]
   }
 }

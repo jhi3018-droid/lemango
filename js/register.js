@@ -7,22 +7,10 @@ function openRegisterModal() {
   // 오늘 날짜를 등록일 기본값으로
   document.getElementById('rRegistDate').value = new Date().toISOString().slice(0,10)
 
-  // 사이즈 규격 그리드 동적 생성
+  // 사이즈 규격 그리드 동적 생성 (XS~XXL × 가슴/허리/엉덩이)
   const specWrap = document.getElementById('rSizeSpecGrid')
   if (specWrap) {
-    let h = '<table class="size-spec-table"><thead><tr><th></th>'
-    SIZES.forEach(sz => { h += `<th>${sz}</th>` })
-    h += '</tr></thead><tbody>'
-    SPEC_ROWS.forEach(r => {
-      h += '<tr>'
-      h += `<td class="size-spec-label">${r.label}</td>`
-      SIZES.forEach(sz => {
-        h += `<td><input type="text" class="size-spec-input" id="rSpec_${r.key}_${sz}" placeholder="" /></td>`
-      })
-      h += '</tr>'
-    })
-    h += '</tbody></table>'
-    specWrap.innerHTML = h
+    specWrap.innerHTML = buildSizeSpecEdit({})
   }
 
   // 쇼핑몰 코드 동적 생성
@@ -86,15 +74,9 @@ function submitRegister(e) {
   const gender        = document.getElementById('rGender')?.value || ''
   const modelSize     = document.getElementById('rModelSize')?.value.trim() || ''
 
-  // sizeSpec 수집
-  const sizeSpec = {}
-  SPEC_ROWS.forEach(r => {
-    sizeSpec[r.key] = {}
-    SIZES.forEach(sz => {
-      const inp = document.getElementById('rSpec_' + r.key + '_' + sz)
-      sizeSpec[r.key][sz] = inp ? inp.value.trim() : ''
-    })
-  })
+  // sizeSpec 수집 (XS~XXL × bust/waist/hip 구조)
+  const _rRegModal = document.getElementById('registerModal')
+  const sizeSpec = collectSizeSpec(_rRegModal)
   const material      = document.getElementById('rMaterial').value.trim()
   const madeMonth   = document.getElementById('rMadeMonth').value.trim()
   const madeIn      = document.getElementById('rMadeIn').value.trim()
@@ -363,7 +345,7 @@ function confirmRegisterUpload() {
       lining:      '',
       capRing:     '',
       gender:      '',
-      sizeSpec:    { bust: Object.fromEntries(SIZES.map(sz=>[sz,''])), waist: Object.fromEntries(SIZES.map(sz=>[sz,''])), hip: Object.fromEntries(SIZES.map(sz=>[sz,''])), etc: Object.fromEntries(SIZES.map(sz=>[sz,''])) },
+      sizeSpec:    {},
       images:      { sum: sumUrls, lemango: lemonUrls, noir: [], external: extUrls, design: [], shoot: [] },
       mallCodes:   {},
       stock:       Object.fromEntries(SIZES.map(sz => [sz, 0])),

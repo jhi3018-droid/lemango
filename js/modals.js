@@ -566,12 +566,7 @@ function buildDetailContent(p) {
         ${field('타입',       'type',       p.type,     'select', typeOpts)}
         ${field('원단타입',   'fabricType', p.fabricType, 'select', fabricOpts)}
         ${field('백스타일',   'backStyle',  p.backStyle)}
-        ${field('다리파임',   'legCut',     p.legCut,   'select', legOpts)}
         ${field('가이드',     'guide',      p.guide)}
-        ${field('가슴선',     'chestLine',  p.chestLine,'select', chestLineOpts)}
-        ${field('비침',       'transparency',p.transparency,'select', transparencyOpts)}
-        ${field('안감',       'lining',     p.lining,   'select', liningOpts)}
-        ${field('캡고리',     'capRing',    p.capRing,  'select', capRingOpts)}
       </div>
     </div>
 
@@ -586,30 +581,22 @@ function buildDetailContent(p) {
     </div>
 
     <div class="dsection">
-      <div class="dsection-title">사이즈 규격</div>
+      <div class="dsection-title">사이즈 규격 <button type="button" class="img-html-btn-all" onclick="event.stopPropagation();copySizeGuideHtml()">사이즈 HTML 복사</button></div>
       <div style="padding:10px 12px">
-        ${(() => {
-          const spec = ensureSizeSpec(p)
-          let h = '<div class="size-spec-table-wrap"><table class="size-spec-table"><thead><tr><th></th>'
-          SIZES.forEach(sz => { h += `<th>${sz}</th>` })
-          h += '</tr></thead><tbody>'
-          SPEC_ROWS.forEach(r => {
-            h += '<tr>'
-            h += `<td class="size-spec-label">${r.label}</td>`
-            SIZES.forEach(sz => {
-              const v = (spec[r.key] && spec[r.key][sz]) || ''
-              h += `<td><span class="dfield-value size-spec-val">${esc(v) || '-'}</span><input type="text" class="size-spec-input" data-spec="${r.key}" data-size="${sz}" value="${(v||'').replace(/"/g,'&quot;')}" /></td>`
-            })
-            h += '</tr>'
-          })
-          h += '</tbody></table></div>'
-          return h
-        })()}
-        <div class="dfield" style="margin-top:10px">
-          <span class="dfield-label">모델착용사이즈</span>
-          <span class="dfield-value">${esc(p.modelSize) || '-'}</span>
-          <input type="text" data-key="modelSize" value="${(p.modelSize||'').replace(/"/g,'&quot;')}" />
-        </div>
+        <div class="size-spec-view-wrap">${buildSizeSpecView(p.sizeSpec)}</div>
+        <div class="size-spec-edit-wrap">${buildSizeSpecEdit(p.sizeSpec)}</div>
+      </div>
+    </div>
+
+    <div class="dsection">
+      <div class="dsection-title">가이드</div>
+      <div class="dsection-grid">
+        ${field('가슴선',   'chestLine',    p.chestLine,    'select', chestLineOpts)}
+        ${field('다리파임', 'legCut',       p.legCut,       'select', legOpts)}
+        ${field('비침',     'transparency', p.transparency, 'select', transparencyOpts)}
+        ${field('안감',     'lining',       p.lining,       'select', liningOpts)}
+        ${field('캡고리',   'capRing',      p.capRing,      'select', capRingOpts)}
+        ${field('모델착용사이즈', 'modelSize', p.modelSize)}
       </div>
     </div>
 
@@ -1156,13 +1143,10 @@ function saveDetailEdit() {
     if (pl) p.mallCodes[pl] = inp.value.trim()
   })
 
-  // sizeSpec 저장
-  ensureSizeSpec(p)
-  document.querySelectorAll('#detailModal .size-spec-input').forEach(inp => {
-    const specKey = inp.dataset.spec
-    const sz = inp.dataset.size
-    if (specKey && sz) p.sizeSpec[specKey][sz] = inp.value.trim()
-  })
+  // sizeSpec 저장 (XS~XXL × bust/waist/hip 구조)
+  const _detailModal = document.getElementById('detailModal')
+  if (Array.isArray(p.sizeSpec) || !p.sizeSpec || typeof p.sizeSpec !== 'object') p.sizeSpec = {}
+  p.sizeSpec = collectSizeSpec(_detailModal)
 
   // barcodes 저장
   if (!p.barcodes) p.barcodes = Object.fromEntries(SIZES.map(sz => [sz, '']))
