@@ -6,12 +6,15 @@ let _planTempImagesToDelete = [] // Storage 경로 삭제 예약
 let _planSelected = new Set()
 
 // 신규기획 Firestore 주 저장소 + localStorage 캐시
-function savePlanItems() {
+async function savePlanItems() {
+  // localStorage 캐시는 즉시 (동기)
+  try { localStorage.setItem('lemango_plan_items_v1', JSON.stringify(State.planItems)) } catch (e) { console.warn('savePlanItems localStorage 실패:', e.message) }
+  if (typeof _fsSync !== 'function') return
   try {
-    if (typeof _fsSync === 'function') _fsSync('planItems', State.planItems)
-    localStorage.setItem('lemango_plan_items_v1', JSON.stringify(State.planItems))
+    await _fsSync('planItems', State.planItems)
   } catch (e) {
-    console.warn('savePlanItems 실패:', e.message)
+    if (typeof _onSaveFailed === 'function') _onSaveFailed('savePlanItems', e)
+    else console.error('savePlanItems failed:', e)
   }
 }
 
@@ -402,7 +405,7 @@ async function submitPlanRegister(e) {
   stampCreated(item)
   State.planItems.push(item)
   State.plan.filtered = State.planItems.filter(p => !p.confirmed)
-  savePlanItems()
+  savePlanItems().catch(e => console.error(e))
   _planTempImages = []
   renderPlanTable()
   closePlanRegisterModal(true)
@@ -889,7 +892,7 @@ function _planDrop(e) {
       State.plan.filtered.splice(fTo, 0, m2)
     }
   }
-  savePlanItems()
+  savePlanItems().catch(e => console.error(e))
   if (typeof showToast === 'function') showToast('기획 순서가 변경되었습니다')
   renderPlanTable()
 }
@@ -972,7 +975,7 @@ async function clonePlanItem(no) {
   cloned.confirmedAt = ''
   if (typeof stampCreated === 'function') stampCreated(cloned)
   State.planItems.push(cloned)
-  savePlanItems()
+  savePlanItems().catch(e => console.error(e))
   closePlanDetailModal(true)
   if (typeof renderPlanTable === 'function') renderPlanTable()
   setTimeout(() => { openPlanDetailModal(cloned.no) }, 300)
@@ -1246,7 +1249,7 @@ async function savePlanDetailEdit() {
   await _flushPlanStorageDeletions()
 
   stampModified(item)
-  savePlanItems()
+  savePlanItems().catch(e => console.error(e))
 
   buildPlanDetailContent(item)
   renderPlanTempImageGrid()
@@ -1327,7 +1330,7 @@ async function confirmPlanToProduct() {
   State.allProducts.push(newProduct)
   item.confirmed = true
   stampModified(item)
-  savePlanItems()
+  savePlanItems().catch(e => console.error(e))
 
   // 상품조회 필터 갱신
   State.product.filtered = [...State.allProducts]
@@ -1347,7 +1350,7 @@ async function confirmPlanToProduct() {
   showToast(`"${newProduct.productCode}" 상품이 상품조회로 이전됐습니다.`, 'success')
   logActivity('create', '신규기획', `상품이전: ${newProduct.productCode}`)
   try { if (typeof addProductHistory === 'function') addProductHistory(newProduct.productCode, '기획이전', '기획→상품 확정') } catch(e) {}
-  if (typeof saveProducts === 'function') saveProducts()
+  if (typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))
 }
 
 function buildPlanDetailContent(item) {
@@ -1724,7 +1727,7 @@ function applyBulkSchedule() {
     count++
   })
 
-  savePlanItems()
+  savePlanItems().catch(e => console.error(e))
   showToast(`${count}건 일정 일괄 적용 완료`, 'success')
   logActivity('update', '신규기획', `일괄 일정 설정 — ${count}건`)
 

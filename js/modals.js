@@ -819,7 +819,7 @@ async function deleteProductTempImage(idx) {
   const ok = await korConfirm('이 임시 이미지를 삭제하시겠습니까?', '삭제', '취소')
   if (!ok) return
   p.tempImages.splice(idx, 1)
-  if (typeof saveProducts === 'function') saveProducts()
+  if (typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))
   openDetailModal(_detailCode)
   showToast('임시 이미지가 삭제되었습니다.', 'success')
 }
@@ -830,7 +830,7 @@ async function deleteAllProductTempImages() {
   const ok = await korConfirm(`임시 이미지 ${p.tempImages.length}개를 모두 삭제하시겠습니까?`, '전체 삭제', '취소')
   if (!ok) return
   p.tempImages = []
-  if (typeof saveProducts === 'function') saveProducts()
+  if (typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))
   openDetailModal(_detailCode)
   showToast('임시 이미지가 모두 삭제되었습니다.', 'success')
 }
@@ -920,7 +920,7 @@ async function deleteProduct() {
   if (typeof renderDashboard === 'function') renderDashboard()
 
   logActivity('delete', '상품조회', `상품 삭제 — ${code} ${name}`)
-  if (typeof saveProducts === 'function') saveProducts()
+  if (typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))
   showToast('상품이 삭제되었습니다.', 'success')
 }
 
@@ -1179,7 +1179,7 @@ function saveDetailEdit() {
     if (typeof notifyWatchers === 'function') notifyWatchers('product', _detailCode, '수정됨')
     if (typeof releaseEditLock === 'function') releaseEditLock('product', _detailCode)
   } catch(e) {}
-  if (typeof saveProducts === 'function') saveProducts()
+  if (typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))
 }
 
 async function lockProductCode() {

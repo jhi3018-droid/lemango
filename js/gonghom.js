@@ -660,5 +660,5 @@ function confirmGonghomUpload() {
     showToast(msg, 'success')
     logActivity('upload', '매출현황', `카페24 업로드: ${parts.join(', ')}`)
   }
-  if (typeof saveProducts === 'function') saveProducts()
+  if (typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))
 }

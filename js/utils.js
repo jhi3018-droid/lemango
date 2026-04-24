@@ -1657,8 +1657,8 @@ function saveInlineEdit(tabKey, id, key, value) {
   item[key] = value
   if (typeof stampModified === 'function') { try { stampModified(item) } catch(_){} }
   try {
-    if (tabKey === 'product' && typeof saveProducts === 'function') saveProducts()
-    else if (tabKey === 'plan' && typeof savePlanItems === 'function') savePlanItems()
+    if (tabKey === 'product' && typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))
+    else if (tabKey === 'plan' && typeof savePlanItems === 'function') savePlanItems().catch(e => console.error(e))
   } catch(_){}
   if (typeof showToast === 'function') showToast('수정되었습니다')
   if (tabKey === 'product' && typeof renderProductTable === 'function') renderProductTable()

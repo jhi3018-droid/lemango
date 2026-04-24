@@ -1191,7 +1191,7 @@ function _applyProductUpload(parsed) {
   renderStockTable()
   renderSalesTable()
   renderDashboard()
-  if (typeof saveProducts === 'function') saveProducts()
+  if (typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))
   if (typeof logActivity === 'function') logActivity('upload', '상품', '엑셀 업로드: 신규 ' + added + '건, 수정 ' + updated + '건')
   showToast('업로드 완료: 신규 ' + added + '건 / 수정 ' + updated + '건', 'success')
 }
@@ -1213,7 +1213,7 @@ function uploadStock(raw) {
   State.stock.filtered = [...State.allProducts]
   renderStockTable()
   renderDashboard()
-  if (typeof saveProducts === 'function') saveProducts()
+  if (typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))
   showToast(`재고 업데이트: ${cnt}건`, 'success')
 }
 
@@ -1233,6 +1233,6 @@ function uploadSales(raw) {
   State.sales.filtered = [...State.allProducts]
   renderSalesTable()
   renderDashboard()
-  if (typeof saveProducts === 'function') saveProducts()
+  if (typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))
   showToast(`판매 업데이트: ${cnt}건`, 'success')
 }

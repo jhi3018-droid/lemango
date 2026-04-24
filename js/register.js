@@ -187,7 +187,7 @@ function submitRegister(e) {
   showToast(`"${nameKr}" 상품이 등록되었습니다.`, 'success')
   logActivity('create', '상품조회', `신규등록: ${productCode} ${nameKr}`)
   try { if (typeof addProductHistory === 'function') addProductHistory(productCode, '등록', '신규 상품 등록') } catch(e) {}
-  if (typeof saveProducts === 'function') saveProducts()
+  if (typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))
 
   // 상품조회 탭으로 이동 + 방금 등록한 품번으로 검색
   switchTab('product')
@@ -382,6 +382,6 @@ function confirmRegisterUpload() {
 
   document.getElementById('uploadPreviewModal').close()
   _uploadPreviewData = null
-  if (typeof saveProducts === 'function') saveProducts()
+  if (typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))
   showToast(`신규 ${added}건 등록, ${updated}건 업데이트 완료`, 'success')
 }

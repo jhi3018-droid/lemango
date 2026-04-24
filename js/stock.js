@@ -244,7 +244,7 @@ function saveSrmStock(productCode) {
   showToast(`${p.nameKr} 입고 ${total}개 저장 완료`, 'success')
   logActivity('create', '재고관리', `입고: ${p.productCode} ${p.nameKr} ${total}개`)
   try { if (typeof addProductHistory === 'function') addProductHistory(p.productCode, '입고', `총 ${total}개`) } catch(e) {}
-  if (typeof saveProducts === 'function') saveProducts()
+  if (typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))
   // 저장 후 동일 상품 다시 렌더 (현재 재고 + 입고 이력 포함)
   document.getElementById('srmProductArea').innerHTML = buildSrmProductArea(p)
 }
@@ -350,7 +350,7 @@ function confirmStockUpload() {
   renderStockTable()
   showToast(`${cnt}개 상품 입고 저장 완료`, 'success')
   logActivity('create', '재고관리', `일괄입고: ${cnt}개 상품`)
-  if (typeof saveProducts === 'function') saveProducts()
+  if (typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))
   document.getElementById('stockRegisterModal').close()
   _stockUploadData = null
 }
@@ -471,7 +471,7 @@ function submitOutgoing(productCode) {
   showToast(`${p.nameKr} 출고 ${total}개 처리 완료`, 'success')
   logActivity('create', '재고관리', `출고: ${p.productCode} ${p.nameKr} ${total}개`)
   try { if (typeof addProductHistory === 'function') addProductHistory(p.productCode, '출고', `총 ${total}개`) } catch(e) {}
-  if (typeof saveProducts === 'function') saveProducts()
+  if (typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))
   closeOutgoingModal(true)
 }
 

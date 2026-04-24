@@ -54,9 +54,15 @@ let _designCodes = (() => {
     return saved ? JSON.parse(saved) : __designCodes_DEFAULT.map(r => [...r])
   } catch { return __designCodes_DEFAULT.map(r => [...r]) }
 })()
-function saveDesignCodes() {
-  if (typeof _fsSync === 'function') _fsSync('designCodes', _designCodes)
+async function saveDesignCodes() {
   localStorage.setItem('lemango_design_codes_v1', JSON.stringify(_designCodes))
+  if (typeof _fsSync !== 'function') return
+  try {
+    await _fsSync('designCodes', _designCodes)
+  } catch (e) {
+    if (typeof _onSaveFailed === 'function') _onSaveFailed('saveDesignCodes', e)
+    else console.error('saveDesignCodes failed:', e)
+  }
 }
 
 // ===== 백스타일 드롭다운 (디자인번호와 동일 데이터 사용) =====

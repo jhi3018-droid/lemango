@@ -3,12 +3,25 @@
 // =============================================
 const _FS_PRODUCT_CHUNK = 150
 
+// Firestore 단일 문서 동기화 — 쓰기 Promise 반환 (호출자가 await/catch 가능)
 function _fsSync(key, data) {
+  if (!db) return Promise.resolve()
   try {
-    if (!db) return
-    db.collection('sharedData').doc(key).set({ data: JSON.stringify(data), updatedAt: new Date().toISOString() })
-      .catch(e => console.warn('_fsSync(' + key + ') failed:', e.message))
-  } catch (e) { console.warn('_fsSync error:', e.message) }
+    return db.collection('sharedData').doc(key).set({
+      data: JSON.stringify(data),
+      updatedAt: new Date().toISOString()
+    })
+  } catch (e) {
+    return Promise.reject(e)
+  }
+}
+
+// 저장 실패 공통 핸들러 — 에러 로그 + 사용자 토스트 (저장 실패 안내)
+function _onSaveFailed(label, err) {
+  console.error(label + ' failed:', err)
+  if (typeof showToast === 'function') {
+    showToast('저장 실패 — 네트워크를 확인하세요. 새로고침 시 일부 변경이 사라질 수 있습니다.', 'warning')
+  }
 }
 
 async function _fsLoad(key) {
@@ -73,19 +86,23 @@ async function _fsLoadProductHistory() {
 }
 window._fsLoadProductHistory = _fsLoadProductHistory
 
-function saveProducts() {
+async function saveProducts() {
   if (!db || !State.allProducts) return
-  const all = State.allProducts
-  const chunks = Math.ceil(all.length / _FS_PRODUCT_CHUNK)
-  const batch = db.batch()
-  for (let i = 0; i < chunks; i++) {
-    const slice = all.slice(i * _FS_PRODUCT_CHUNK, (i + 1) * _FS_PRODUCT_CHUNK)
-    const ref = db.collection('sharedData').doc('products_' + i)
-    batch.set(ref, { data: JSON.stringify(slice), updatedAt: new Date().toISOString() })
+  try {
+    const all = State.allProducts
+    const chunks = Math.ceil(all.length / _FS_PRODUCT_CHUNK)
+    const batch = db.batch()
+    for (let i = 0; i < chunks; i++) {
+      const slice = all.slice(i * _FS_PRODUCT_CHUNK, (i + 1) * _FS_PRODUCT_CHUNK)
+      const ref = db.collection('sharedData').doc('products_' + i)
+      batch.set(ref, { data: JSON.stringify(slice), updatedAt: new Date().toISOString() })
+    }
+    const metaRef = db.collection('sharedData').doc('products_meta')
+    batch.set(metaRef, { chunks, total: all.length, updatedAt: new Date().toISOString() })
+    await batch.commit()
+  } catch (e) {
+    _onSaveFailed('saveProducts', e)
   }
-  const metaRef = db.collection('sharedData').doc('products_meta')
-  batch.set(metaRef, { chunks, total: all.length, updatedAt: new Date().toISOString() })
-  batch.commit().catch(e => console.warn('saveProducts failed:', e.message))
 }
 window.saveProducts = saveProducts
 
@@ -402,9 +419,13 @@ function getPlanPhases() {
   }
   return _planPhases
 }
-function savePlanPhases() {
-  _fsSync('planPhases', _planPhases || [])
+async function savePlanPhases() {
   localStorage.setItem(PLAN_PHASES_KEY, JSON.stringify(_planPhases || []))
+  try {
+    await _fsSync('planPhases', _planPhases || [])
+  } catch (e) {
+    _onSaveFailed('savePlanPhases', e)
+  }
 }
 // SCHEDULE_DEFS: dynamic proxy — always returns current phases via getPlanPhases()
 // Kept as a "variable" name for backward compatibility. Use as Array.
@@ -506,13 +527,17 @@ function savePlatforms() {
 function getChannels() { return _channels }
 function getActiveChannels() { return _channels.filter(c => c.active) }
 
-function saveChannels() {
+async function saveChannels() {
   _platforms = _channels.filter(c => c.active).map(c => c.name)
-  // Firestore 주 저장소
-  _fsSync('channels', _channels)
-  // localStorage 캐시
+  // localStorage 캐시 (즉시)
   localStorage.setItem('lemango_channels_v1', JSON.stringify(_channels))
   savePlatforms()
+  // Firestore 주 저장소
+  try {
+    await _fsSync('channels', _channels)
+  } catch (e) {
+    _onSaveFailed('saveChannels', e)
+  }
 }
 
 function getChannelFeeRate(channelName) {
@@ -572,9 +597,13 @@ let _settings = (() => {
   } catch { return JSON.parse(JSON.stringify(DEFAULT_SETTINGS)) }
 })()
 
-function saveSettings() {
-  _fsSync('settings', _settings)
+async function saveSettings() {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(_settings))
+  try {
+    await _fsSync('settings', _settings)
+  } catch (e) {
+    _onSaveFailed('saveSettings', e)
+  }
 }
 
 // =============================================
@@ -589,9 +618,13 @@ let _depts = (() => {
   } catch { return [...DEFAULT_DEPTS] }
 })()
 
-function saveDepts() {
-  _fsSync('depts', _depts)
+async function saveDepts() {
   localStorage.setItem('lemango_depts_v1', JSON.stringify(_depts))
+  try {
+    await _fsSync('depts', _depts)
+  } catch (e) {
+    _onSaveFailed('saveDepts', e)
+  }
 }
 
 // =============================================
@@ -615,14 +648,22 @@ let _ipEnforceMode = (() => {
   } catch { return 'off' }
 })()
 
-function saveAllowedIps() {
-  _fsSync('allowedIps', _allowedIps)
+async function saveAllowedIps() {
   localStorage.setItem('lemango_allowed_ips_v1', JSON.stringify(_allowedIps))
+  try {
+    await _fsSync('allowedIps', _allowedIps)
+  } catch (e) {
+    _onSaveFailed('saveAllowedIps', e)
+  }
 }
 
-function saveIpEnforceMode() {
-  _fsSync('ipEnforceMode', _ipEnforceMode)
+async function saveIpEnforceMode() {
   localStorage.setItem('lemango_ip_enforce_v1', _ipEnforceMode)
+  try {
+    await _fsSync('ipEnforceMode', _ipEnforceMode)
+  } catch (e) {
+    _onSaveFailed('saveIpEnforceMode', e)
+  }
 }
 
 // 현재 IP가 허용 목록에 있는지 확인 — active=true 인 항목만 검사
@@ -802,9 +843,13 @@ let _events = (() => {
   try { return JSON.parse(localStorage.getItem('lemango_events_v1')) || [] }
   catch { return [] }
 })()
-function saveEvents() {
-  _fsSync('events', _events)
+async function saveEvents() {
   localStorage.setItem('lemango_events_v1', JSON.stringify(_events))
+  try {
+    await _fsSync('events', _events)
+  } catch (e) {
+    _onSaveFailed('saveEvents', e)
+  }
 }
 
 // =============================================
@@ -818,18 +863,26 @@ let _workCategories = (() => {
     return saved ? JSON.parse(saved) : [...DEFAULT_WORK_CATEGORIES]
   } catch { return [...DEFAULT_WORK_CATEGORIES] }
 })()
-function saveWorkCategories() {
-  _fsSync('workCategories', _workCategories)
+async function saveWorkCategories() {
   localStorage.setItem('lemango_work_categories_v1', JSON.stringify(_workCategories))
+  try {
+    await _fsSync('workCategories', _workCategories)
+  } catch (e) {
+    _onSaveFailed('saveWorkCategories', e)
+  }
 }
 
 let _workItems = (() => {
   try { return JSON.parse(localStorage.getItem('lemango_work_items_v1')) || [] }
   catch { return [] }
 })()
-function saveWorkItems() {
-  _fsSync('workItems', _workItems)
+async function saveWorkItems() {
   localStorage.setItem('lemango_work_items_v1', JSON.stringify(_workItems))
+  try {
+    await _fsSync('workItems', _workItems)
+  } catch (e) {
+    _onSaveFailed('saveWorkItems', e)
+  }
 }
 
 // 업무일정 카테고리별 색상

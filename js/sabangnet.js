@@ -573,5 +573,5 @@ function confirmSabangnetUpload() {
     showToast(msg, 'success')
     logActivity('upload', '매출현황', `사방넷 업로드: ${parts.join(', ')}`)
   }
-  if (typeof saveProducts === 'function') saveProducts()
+  if (typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))
 }
