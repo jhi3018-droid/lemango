@@ -179,6 +179,7 @@ window.forceUploadAll = async function() {
     planItems: State.planItems || [],
     planPhases: typeof _planPhases !== 'undefined' ? _planPhases : null,
     designCodes: typeof _designCodes !== 'undefined' ? _designCodes : [],
+    classCodes: typeof _classCodes !== 'undefined' ? _classCodes : [],
     allowedIps: typeof _allowedIps !== 'undefined' ? _allowedIps : [],
     ipEnforceMode: typeof _ipEnforceMode !== 'undefined' ? _ipEnforceMode : 'warn'
   }
@@ -266,6 +267,10 @@ async function _fsReloadSharedSettings() {
     if (Array.isArray(fsData.designCodes) && typeof _designCodes !== 'undefined') {
       _designCodes.length = 0; fsData.designCodes.forEach(c => _designCodes.push(c))
       localStorage.setItem('lemango_design_codes_v1', JSON.stringify(_designCodes))
+    }
+    if (Array.isArray(fsData.classCodes) && typeof _classCodes !== 'undefined') {
+      _classCodes.length = 0; fsData.classCodes.forEach(c => _classCodes.push(c))
+      localStorage.setItem('lemango_class_codes_v1', JSON.stringify(_classCodes))
     }
     if (Array.isArray(fsData.allowedIps) && typeof _allowedIps !== 'undefined') {
       _allowedIps.length = 0; fsData.allowedIps.forEach(ip => _allowedIps.push(ip))
@@ -511,6 +516,14 @@ window._onSharedDataChanged = function(docId, data) {
             localStorage.setItem('lemango_design_codes_v1', JSON.stringify(_designCodes))
           }
           console.log('[RealtimeSync] 디자인코드 동기화')
+          break
+        case 'classCodes':
+          if (typeof _classCodes !== 'undefined') {
+            _classCodes.length = 0; (parsed || []).forEach(c => _classCodes.push(c))
+            localStorage.setItem('lemango_class_codes_v1', JSON.stringify(_classCodes))
+            if (typeof populateAllSelects === 'function') populateAllSelects()
+          }
+          console.log('[RealtimeSync] 분류코드 동기화')
           break
         case 'planPhases':
           _planPhases = parsed || []
@@ -1057,6 +1070,12 @@ function populateAllSelects() {
   // 신규기획 모달 폼
   populateSelect('plBrand',      s.brands)
   populateSelect('plType',       s.types,           false, true)
+  // 품번 자동생성 분류 select (신규등록 + 신규기획)
+  if (typeof _classCodes !== 'undefined' && Array.isArray(_classCodes)) {
+    const _classItems = _classCodes.map(([code, name]) => [code, code + ' - ' + name])
+    populateSelect('pcClass',   _classItems)
+    populateSelect('plPcClass', _classItems)
+  }
   // 판매조회 플랫폼 필터
   populateSelect('slPlatform',   _platforms,        true)
   // 업무일정 카테고리

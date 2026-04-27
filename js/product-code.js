@@ -54,6 +54,37 @@ let _designCodes = (() => {
     return saved ? JSON.parse(saved) : __designCodes_DEFAULT.map(r => [...r])
   } catch { return __designCodes_DEFAULT.map(r => [...r]) }
 })()
+
+// =============================================
+// ===== 분류코드 관리 [코드2, 이름] (품번 자동생성 1번째 자리) =====
+// =============================================
+const __classCodes_DEFAULT = [
+  ['LS', '르망고 수영복'],
+  ['LW', '르망고 의류'],
+  ['LG', '르망고 굿즈'],
+  ['NS', '느와 수영복'],
+  ['NW', '느와 의류'],
+  ['NG', '느와 굿즈']
+]
+let _classCodes = (() => {
+  try {
+    const saved = localStorage.getItem('lemango_class_codes_v1')
+    return saved ? JSON.parse(saved) : __classCodes_DEFAULT.map(r => [...r])
+  } catch { return __classCodes_DEFAULT.map(r => [...r]) }
+})()
+async function saveClassCodes() {
+  localStorage.setItem('lemango_class_codes_v1', JSON.stringify(_classCodes))
+  if (typeof _fsSync !== 'function') return
+  try {
+    await _fsSync('classCodes', _classCodes)
+    if (!window._lastSharedSaveTime) window._lastSharedSaveTime = {}
+    window._lastSharedSaveTime['classCodes'] = Date.now()
+  } catch (e) {
+    if (typeof _onSaveFailed === 'function') _onSaveFailed('saveClassCodes', e)
+    else console.error('saveClassCodes failed:', e)
+  }
+}
+window.saveClassCodes = saveClassCodes
 async function saveDesignCodes() {
   localStorage.setItem('lemango_design_codes_v1', JSON.stringify(_designCodes))
   if (typeof _fsSync !== 'function') return

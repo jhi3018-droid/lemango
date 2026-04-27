@@ -243,6 +243,39 @@ function renderSettings() {
     </div>
   </div>`
 
+  // 분류코드 카드 (품번 자동생성 1번째 자리: LS, LN, LP 등)
+  const ccListHtml = (typeof _classCodes !== 'undefined' && Array.isArray(_classCodes) ? _classCodes : []).map((cc, idx) => {
+    const [code, name] = cc
+    return `<div class="set-item" id="setCcItem_${idx}">
+      <div class="set-item-view">
+        <span class="set-item-code">${esc(code)}</span>
+        <span class="set-item-label">${esc(name)}</span>
+        <button class="set-item-action set-item-edit" onclick="editClassCodeSetting(${idx})" title="수정">&#9998;</button>
+        <button class="set-item-action set-item-del" onclick="removeClassCodeSetting(${idx})" title="삭제">&#10005;</button>
+      </div>
+      <div class="set-item-editrow" style="display:none">
+        <input type="text" class="set-edit-input" value="${esc(code)}" data-field="code" maxlength="2" style="width:70px" placeholder="코드(2자리)" />
+        <input type="text" class="set-edit-input" value="${esc(name)}" data-field="name" style="flex:1" placeholder="이름" />
+        <button class="set-edit-save" onclick="saveClassCodeEdit(${idx})">저장</button>
+        <button class="set-edit-cancel" onclick="renderSettings()">취소</button>
+      </div>
+    </div>`
+  }).join('') || '<div class="set-empty">항목 없음</div>'
+
+  const ccCard = `<div class="set-card set-card-wide">
+    <div class="set-card-header">
+      <span class="set-card-title">분류코드 (품번 1번째)</span>
+      <span class="set-card-count">${(typeof _classCodes !== 'undefined' ? _classCodes.length : 0)}</span>
+    </div>
+    <div class="set-list set-list-scroll">${ccListHtml}</div>
+    <div class="set-add-row">
+      <input type="text" id="setCcCode" placeholder="코드 (2자리)" class="set-add-input" maxlength="2" style="width:90px" />
+      <input type="text" id="setCcName" placeholder="이름 (예: 르망고 수영복)" class="set-add-input" style="flex:1"
+        onkeydown="if(event.key==='Enter')addClassCodeSetting()" />
+      <button class="btn btn-new set-add-btn" onclick="addClassCodeSetting()">+ 추가</button>
+    </div>
+  </div>`
+
   const infoCards = SETTING_DEFS.filter(d => d.group === 'info').map(_renderSetCard).join('')
 
   // 판매 채널 통합 카드 (이름 + 수수료율 + 비고)
@@ -475,6 +508,7 @@ function renderSettings() {
       <div class="set-section-body">
         <div class="set-grid">
           ${designCards}
+          ${ccCard}
           ${dcCard}
         </div>
       </div>
@@ -1098,6 +1132,67 @@ async function removeDeptSetting(idx) {
   showToast('삭제됐습니다.', 'success')
   logActivity('setting', '설정', `부서 삭제: ${name}`)
 }
+
+// ===== 분류코드 CRUD (인라인 에디트) =====
+function addClassCodeSetting() {
+  const codeEl = document.getElementById('setCcCode')
+  const nameEl = document.getElementById('setCcName')
+  const code = (codeEl?.value || '').trim().toUpperCase()
+  const name = (nameEl?.value || '').trim()
+  if (!code) { showToast('분류 코드를 입력해주세요.', 'warning'); return }
+  if (!/^[A-Z0-9]{1,4}$/.test(code)) { showToast('분류 코드는 영문/숫자 1~4자리로 입력해주세요.', 'warning'); return }
+  if (!name) { showToast('이름을 입력해주세요.', 'warning'); return }
+  if (_classCodes.some(c => c[0] === code)) { showToast(`"${code}"는 이미 존재합니다.`, 'error'); return }
+  _classCodes.push([code, name])
+  saveClassCodes()
+  populateAllSelects()
+  renderSettings()
+  showToast(`"${code} - ${name}" 추가됐습니다.`, 'success')
+  if (typeof logActivity === 'function') logActivity('setting', '설정', `분류코드 추가: ${code} - ${name}`)
+}
+window.addClassCodeSetting = addClassCodeSetting
+
+function editClassCodeSetting(idx) {
+  const el = document.getElementById('setCcItem_' + idx)
+  if (!el) return
+  el.querySelector('.set-item-view').style.display = 'none'
+  el.querySelector('.set-item-editrow').style.display = ''
+  el.querySelector('.set-edit-input[data-field="code"]')?.focus()
+}
+window.editClassCodeSetting = editClassCodeSetting
+
+function saveClassCodeEdit(idx) {
+  const el = document.getElementById('setCcItem_' + idx)
+  if (!el) return
+  const newCode = (el.querySelector('[data-field="code"]')?.value || '').trim().toUpperCase()
+  const newName = (el.querySelector('[data-field="name"]')?.value || '').trim()
+  const [oldCode, oldName] = _classCodes[idx]
+  if (!newCode || !newName) { showToast('코드와 이름을 모두 입력해주세요.', 'warning'); return }
+  if (!/^[A-Z0-9]{1,4}$/.test(newCode)) { showToast('분류 코드는 영문/숫자 1~4자리로 입력해주세요.', 'warning'); return }
+  if (newCode === oldCode && newName === oldName) { renderSettings(); return }
+  if (newCode !== oldCode && _classCodes.some((c, i) => i !== idx && c[0] === newCode)) {
+    showToast(`"${newCode}"는 이미 존재합니다.`, 'error'); return
+  }
+  _classCodes[idx] = [newCode, newName]
+  saveClassCodes()
+  populateAllSelects()
+  renderSettings()
+  showToast(`"${oldCode}" → "${newCode}" 변경됐습니다.`, 'success')
+  if (typeof logActivity === 'function') logActivity('setting', '설정', `분류코드 수정: ${oldCode} → ${newCode} - ${newName}`)
+}
+window.saveClassCodeEdit = saveClassCodeEdit
+
+async function removeClassCodeSetting(idx) {
+  const [code, name] = _classCodes[idx]
+  if (!await korConfirm(`"${code} - ${name}" 분류코드를 삭제하시겠습니까?`)) return
+  _classCodes.splice(idx, 1)
+  saveClassCodes()
+  populateAllSelects()
+  renderSettings()
+  showToast('삭제됐습니다.', 'success')
+  if (typeof logActivity === 'function') logActivity('setting', '설정', `분류코드 삭제: ${code} - ${name}`)
+}
+window.removeClassCodeSetting = removeClassCodeSetting
 
 // ===== 기획 일정 단계 CRUD (인라인 에디트) =====
 function _phAdminCheck() {

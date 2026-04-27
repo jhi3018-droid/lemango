@@ -113,6 +113,7 @@ function centerModal(modal) {
 }
 
 // 모든 .srm-modal 다이얼로그는 showModal() 직후 자동으로 중앙 배치
+// 모든 dialog 는 showModal() 직후 스크롤을 최상단으로 리셋 (이전 위치 기억 안 함)
 ;(function patchShowModal() {
   if (typeof HTMLDialogElement === 'undefined') return
   const proto = HTMLDialogElement.prototype
@@ -124,6 +125,12 @@ function centerModal(modal) {
     if (this.classList && this.classList.contains('srm-modal')) {
       centerModal(this)
     }
+    // 모든 다이얼로그: 스크롤을 최상단으로 리셋
+    try {
+      this.scrollTop = 0
+      const bodies = this.querySelectorAll('.srm-body, .srm-modal-body, [class*="modal-body"], .modal-body, .dlg-body, dialog > div')
+      bodies.forEach(el => { try { el.scrollTop = 0 } catch(e) {} })
+    } catch(e) {}
     return ret
   }
 })()
@@ -694,20 +701,21 @@ function buildDetailContent(p) {
             return first ? `<span class="dimg-preview">${first}</span>` : ''
           }
           return `
-        <div class="dimg-sub">
-          <div class="dimg-sub-title collapsed" onclick="toggleDImg('dImgMain')">대표이미지 ${preview(mainImg)}<span class="dimg-arrow">▶</span>${mainImg ? `<button type="button" class="img-html-btn" onclick="event.stopPropagation();copyImageHtml('mainImage')">HTML</button>` : ''}</div>
-          <div id="dImgMain" class="dimg-hidden">${(() => {
-            const safeVal = (mainImg||'').replace(/"/g, '&quot;')
-            return `<div class="dfield span3">
-              <div class="dfield-label-row">
-                <span class="dfield-label">대표이미지</span>
-                ${mainImg ? `<button type="button" class="btn-copy-url" data-url="${safeVal}" onclick="copySingleUrlFromBtn(this)" title="클립보드 복사">복사</button>` : ''}
-              </div>
-              <span class="dfield-value${!mainImg ? ' empty' : ''}" data-urlkey="mainImage">${mainImg || '-'}</span>
-              <input type="text" data-key="mainImage" value="${safeVal}" />
-            </div>`
-          })()}</div>
-        </div>
+        ${(() => {
+          const safeVal = (mainImg||'').replace(/"/g, '&quot;')
+          const valueHtml = mainImg
+            ? `<span class="dfield-value dimg-link-wrap" data-urlkey="mainImage"><a href="${safeVal}" target="_blank" rel="noopener" class="dimg-link">${esc(mainImg)}</a></span>`
+            : `<span class="dfield-value empty" data-urlkey="mainImage">-</span>`
+          return `<div class="dfield span3 dimg-main-row">
+            <div class="dfield-label-row">
+              <span class="dfield-label">대표이미지URL</span>
+              ${mainImg ? `<button type="button" class="img-html-btn" onclick="event.stopPropagation();copyImageHtml('mainImage')">HTML</button>` : ''}
+              ${mainImg ? `<button type="button" class="btn-copy-url" data-url="${safeVal}" onclick="copySingleUrlFromBtn(this)" title="클립보드 복사">복사</button>` : ''}
+            </div>
+            ${valueHtml}
+            <input type="text" data-key="mainImage" value="${safeVal}" placeholder="https://..." />
+          </div>`
+        })()}
         <div class="dimg-sub">
           <div class="dimg-sub-title collapsed" onclick="toggleDImg('dImgJasa')">자사몰 ${preview(jasaUrls)}<span class="dimg-arrow">▶</span>${jasaUrls.length ? `<button type="button" class="img-html-btn" onclick="event.stopPropagation();copyImageHtml('jasa')">HTML</button>` : ''}</div>
           <div id="dImgJasa" class="dimg-hidden">${urlField('자사몰', 'urlJasa', jasaUrls.join('\n'), 'textarea')}</div>
