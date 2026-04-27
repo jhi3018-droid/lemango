@@ -1077,7 +1077,7 @@ function populateAllSelects() {
 const State = {
   allProducts: [],
   planItems:   [],
-  product: { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {} },
+  product: { filtered: [], sort: { key: null, dir: null }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {} },
   stock:   { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {} },
   sales:   { filtered: [], sort: { key: 'totalSales', dir: 'desc' }, page: 1, pageSize: 10, activePlatforms: [], inactivePlatforms: [], columnFilters: {}, colWidths: {} },
   plan:    { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {} },

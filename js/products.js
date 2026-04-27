@@ -157,6 +157,14 @@ const PRODUCT_COLUMNS = [
 const PRODUCT_FIXED_KEYS = PRODUCT_COLUMNS.filter(c=>c.fixed).map(c=>c.key)
 
 function renderProductTable() {
+  // 사용자가 선택한 정렬이 없으면 등록일(createdAt) 최신순 기본 정렬
+  if (!State.product.sort || !State.product.sort.key) {
+    State.product.filtered.sort(function(a, b) {
+      var ta = a.createdAt || a.registeredAt || ''
+      var tb = b.createdAt || b.registeredAt || ''
+      return String(tb).localeCompare(String(ta))
+    })
+  }
   const _favArea = document.getElementById('productFavArea')
   if (_favArea && typeof renderFavoritesBar === 'function') _favArea.innerHTML = renderFavoritesBar('product')
   const allKeys = PRODUCT_COLUMNS.map(c=>c.key)

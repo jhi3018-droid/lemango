@@ -415,6 +415,7 @@ function resolveValue(p, key) {
 }
 
 function sortData(arr, key, dir) {
+  if (!key) return [...arr]
   return [...arr].sort((a, b) => {
     let va = resolveValue(a, key)
     let vb = resolveValue(b, key)
@@ -1388,6 +1389,19 @@ window.copySizeGuideHtml = function() {
   const capRing = p.capRing || ''
   const modelSize = p.modelSize || ''
 
+  // 영어 → 한글 매핑 (저장된 값이 영어일 때 가이드 옵션 매칭용)
+  const legCutMap = { 'Low': '로우컷', 'Normal': '노멀컷', 'Middle': '미들컷', 'High': '하이컷', 'low cut': '로우컷', 'normal cut': '노멀컷', 'middle cut': '미들컷', 'high cut': '하이컷', 'middle': '미들컷', 'normal': '노멀컷', 'low': '로우컷', 'high': '하이컷' }
+  const chestMap = { 'low': '낮음', 'normal': '보통', 'high': '높음', 'Low': '낮음', 'Normal': '보통', 'High': '높음' }
+  const transMap = { 'none': '없음', 'yes': '있음', 'slight': '약간 있음', 'None': '없음', 'Yes': '있음' }
+  const liningMap = { 'none': '없음', 'yes': '있음', 'partial': '부분 있음', 'None': '없음', 'Yes': '있음' }
+  const capMap = { 'none': '없음', 'yes': '있음', 'None': '없음', 'Yes': '있음' }
+
+  const mappedChestLine = chestMap[chestLine] || chestLine
+  const mappedLegCut = legCutMap[legCut] || legCut
+  const mappedTransparency = transMap[transparency] || transparency
+  const mappedLining = liningMap[lining] || lining
+  const mappedCapRing = capMap[capRing] || capRing
+
   const sizeLabels = { 'XS':'75(XS)', 'S':'80(S)', 'M':'85(M)', 'L':'90(L)', 'XL':'95(XL)', 'XXL':'100(XXL)' }
 
   // ========== CSS ==========
@@ -1519,11 +1533,11 @@ window.copySizeGuideHtml = function() {
 
     // PC 가이드 테이블
     body += '\t\t<table class="sg5-guide-table" id="sg5_guideTable">\n\t\t\t<tbody>\n'
-    if (chestLine) body += _guideRow('가슴선', chestLine, chestOpts)
-    if (legCut) body += _guideRow('다리파임', legCut, legOpts)
-    if (transparency) body += _guideRow('비침', transparency, transOpts)
-    if (lining) body += _guideRow('안감', lining, liningOpts)
-    if (capRing) body += _guideRow('캡고리', capRing, capOpts)
+    if (chestLine) body += _guideRow('가슴선', mappedChestLine, chestOpts)
+    if (legCut) body += _guideRow('다리파임', mappedLegCut, legOpts)
+    if (transparency) body += _guideRow('비침', mappedTransparency, transOpts)
+    if (lining) body += _guideRow('안감', mappedLining, liningOpts)
+    if (capRing) body += _guideRow('캡고리', mappedCapRing, capOpts)
     body += '\t\t\t</tbody>\n\t\t</table>\n'
 
     // 모바일 가이드 아코디언
@@ -1531,19 +1545,19 @@ window.copySizeGuideHtml = function() {
     body += '\t\t\t\t<summary>\n'
     body += '\t\t\t\t\t<div class="sg5-g-head">\n\t\t\t\t\t\t<span class="sg5-g-head-title">가이드</span>\n\t\t\t\t\t\t<span aria-hidden="true" class="sg5-g-tri">▼</span>\n\t\t\t\t\t</div>\n'
     const sumParts = []
-    if (chestLine) sumParts.push('가슴선 : ' + chestLine)
-    if (legCut) sumParts.push('다리파임 : ' + legCut)
-    if (transparency) sumParts.push('비침 : ' + transparency)
-    if (lining) sumParts.push('안감 : ' + lining)
-    if (capRing) sumParts.push('캡고리 : ' + capRing)
+    if (chestLine) sumParts.push('가슴선 : ' + mappedChestLine)
+    if (legCut) sumParts.push('다리파임 : ' + mappedLegCut)
+    if (transparency) sumParts.push('비침 : ' + mappedTransparency)
+    if (lining) sumParts.push('안감 : ' + mappedLining)
+    if (capRing) sumParts.push('캡고리 : ' + mappedCapRing)
     body += '\t\t\t\t\t<div class="sg5-g-sum">\n\t\t\t\t\t\t' + sumParts.join(' / ') + '\n\t\t\t\t\t</div>\n'
     body += '\t\t\t\t</summary>\n'
     body += '\t\t\t\t<div class="sg5-g-body">\n'
-    if (chestLine) body += _guideCard('가슴선', chestLine, chestOpts)
-    if (legCut) body += _guideCard('다리파임', legCut, legOpts)
-    if (transparency) body += _guideCard('비침', transparency, transOpts)
-    if (lining) body += _guideCard('안감', lining, liningOpts)
-    if (capRing) body += _guideCard('캡고리', capRing, capOpts)
+    if (chestLine) body += _guideCard('가슴선', mappedChestLine, chestOpts)
+    if (legCut) body += _guideCard('다리파임', mappedLegCut, legOpts)
+    if (transparency) body += _guideCard('비침', mappedTransparency, transOpts)
+    if (lining) body += _guideCard('안감', mappedLining, liningOpts)
+    if (capRing) body += _guideCard('캡고리', mappedCapRing, capOpts)
     body += '\t\t\t\t</div>\n\t\t\t</details>\n\t\t</div>\n'
     body += '\t</div>\n'
   }
