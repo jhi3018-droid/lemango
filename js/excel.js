@@ -617,6 +617,61 @@ const _LEGACY_COL = {
   urlLemango: 26, urlNoir: 27, urlExternal: 28, urlSum: 29, videoUrl: 30
 }
 
+// 신규양식 헤더 라벨 → 내부 키 매핑 (열 순서/누락 무관 동적 매핑용)
+const HEADER_TO_KEY = {
+  '브랜드': 'brand',
+  '품번': 'code',
+  '샘플번호': 'sampleNo',
+  '카페24코드': 'cafe24Code',
+  '바코드': 'barcode',
+  '상품명(한글)': 'nameKr',
+  '상품명(영문)': 'nameEn',
+  '색상(한글)': 'colorKr',
+  '색상(영문)': 'colorEn',
+  '판매가': 'salePrice',
+  '원가': 'costPrice',
+  '타입': 'type',
+  '백스타일': 'backStyle',
+  '레그컷': 'legCut',
+  '가이드': 'guide',
+  '원단타입': 'fabricType',
+  '가슴선': 'chestLine',
+  '비침': 'transparency',
+  '안감': 'lining',
+  '캡고리': 'capRing',
+  '소재': 'material',
+  '디자이너코멘트': 'comment',
+  '세탁방법': 'washMethod',
+  '가슴(cm)': 'bust',
+  '허리(cm)': 'waist',
+  '엉덩이(cm)': 'hip',
+  '모델착용사이즈': 'modelSize',
+  '제조년월': 'madeMonth',
+  '제조사': 'madeBy',
+  '제조국': 'madeIn',
+  '판매상태': 'saleStatus',
+  '생산상태': 'productionStatus',
+  '대표이미지URL': 'mainImage',
+  '이미지URL(합본)': 'urlSum',
+  '이미지URL(자사몰)': 'urlLemango',
+  '이미지URL(느와)': 'urlNoir',
+  '이미지URL(외부몰)': 'urlExternal',
+  '이미지URL(디자인)': 'urlDesign',
+  '이미지URL(촬영)': 'urlShoot',
+  '영상URL': 'videoUrl'
+}
+
+// 헤더 행에서 라벨을 찾아 { key: colIdx } 맵 생성
+function _buildColMapFromHeader(hdr) {
+  const COL = {}
+  hdr.forEach((h, i) => {
+    const s = String(h ?? '').trim()
+    const k = HEADER_TO_KEY[s]
+    if (k && COL[k] == null) COL[k] = i
+  })
+  return COL
+}
+
 function parseSumUrls(cellValue) {
   if (!cellValue) return []
   const str = String(cellValue)
@@ -875,11 +930,14 @@ function uploadProducts(raw) {
 }
 
 function _parseProductUpload(raw) {
-  // 양식 자동 감지: 1행 헤더에 '품번'이 인덱스 2 → 신규양식, 아니면 레거시
-  const header0 = String(raw[0]?.[2] || '').trim()
-  const isNew = (header0 === '품번')
-  const COL = isNew ? UPLOAD_COL : _LEGACY_COL
+  // 양식 자동 감지: 1행 헤더 어디든 '품번' 라벨이 있으면 신규양식, 아니면 레거시
+  const hdr0 = raw[0] || []
+  const isNew = hdr0.some(h => String(h ?? '').trim() === '품번')
+  // 신규양식은 헤더 라벨 → 컬럼 인덱스 동적 매핑 (열 누락/순서변경 안전)
+  // 레거시는 고정 인덱스 유지
+  const COL = isNew ? _buildColMapFromHeader(hdr0) : _LEGACY_COL
   const dataStart = isNew ? 1 : 2
+  if (COL.code == null) { showToast('품번 컬럼을 찾을 수 없습니다.', 'error'); return null }
 
   // 신규양식: 헤더에서 쇼핑몰코드/등록일/최종입고일 + 사이즈 규격 19컬럼 동적 인덱스 탐색
   let mallColMap = {}, registDateCol = null, lastInDateCol = null
@@ -887,9 +945,8 @@ function _parseProductUpload(raw) {
   const SIZE_SPEC_SIZES_UP = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
   const SIZE_SPEC_PART_LABEL = { bust: '가슴', waist: '허리', hip: '엉덩이' }
   if (isNew) {
-    const hdr = raw[0] || []
-    hdr.forEach((h, i) => {
-      const s = String(h || '').trim()
+    hdr0.forEach((h, i) => {
+      const s = String(h ?? '').trim()
       const m = s.match(/^쇼핑몰코드\((.+)\)$/)
       if (m) mallColMap[m[1]] = i
       if (s === '등록일') registDateCol = i
@@ -922,6 +979,10 @@ function _parseProductUpload(raw) {
 
   const dataRows = raw.slice(dataStart).filter(r => String(r[COL.code] || '').trim())
   if (!dataRows.length) { showToast('데이터가 없습니다.', 'error'); return null }
+
+  // 업로드 파일에 실제 존재하는 필드 키 집합 (누락 컬럼은 기존값 보존용)
+  // 신규양식: 헤더에서 발견된 키만 / 레거시: _LEGACY_COL의 모든 키 (전체 덮어쓰기 유지)
+  const presentKeys = new Set(Object.keys(COL))
 
   const added = [], updated = []
   dataRows.forEach(row => {
@@ -1002,11 +1063,11 @@ function _parseProductUpload(raw) {
 
     const idx = State.allProducts.findIndex(p => p.productCode === code)
     if (idx >= 0) {
-      // 기존 품번 — 변경분 수집
+      // 기존 품번 — 변경분 수집 (업로드에 없는 컬럼은 비교 제외)
       const existing = State.allProducts[idx]
-      const diffs = _diffProduct(existing, product)
+      const diffs = _diffProduct(existing, product, presentKeys)
       if (diffs.length > 0) {
-        updated.push({ code, idx, product, diffs, existing })
+        updated.push({ code, idx, product, diffs, existing, presentKeys })
       }
     } else {
       added.push({ code, product })
@@ -1052,9 +1113,19 @@ const _DIFF_FIELDS = [
   { key:'mainImage', label:'대표이미지' },
   { key:'videoUrl', label:'영상URL' },
 ]
-function _diffProduct(existing, uploaded) {
+// _DIFF_FIELDS의 product field key → 업로드 헤더 key 매핑 (이름이 다른 것만)
+const _DIFF_PRESENT_KEY = { productCode: 'code' }
+// images.* 섹션 → 업로드 헤더 url* key 매핑
+const _IMG_PRESENT_KEY = { sum: 'urlSum', lemango: 'urlLemango', noir: 'urlNoir', external: 'urlExternal', design: 'urlDesign', shoot: 'urlShoot' }
+
+function _diffProduct(existing, uploaded, presentKeys) {
   const diffs = []
   _DIFF_FIELDS.forEach(f => {
+    // presentKeys 있고 해당 필드의 헤더 키가 없으면 비교 스킵 (업로드 파일에 컬럼 없음)
+    if (presentKeys) {
+      const headerKey = _DIFF_PRESENT_KEY[f.key] || f.key
+      if (!presentKeys.has(headerKey)) return
+    }
     const oldVal = String(existing[f.key] ?? '')
     const newVal = String(uploaded[f.key] ?? '')
     if (oldVal !== newVal) {
@@ -1064,6 +1135,7 @@ function _diffProduct(existing, uploaded) {
   // 이미지 배열 비교
   const imgSections = ['sum','lemango','noir','external','design','shoot']
   imgSections.forEach(sec => {
+    if (presentKeys && !presentKeys.has(_IMG_PRESENT_KEY[sec])) return
     const oldArr = (existing.images?.[sec] || []).join('\n')
     const newArr = (uploaded.images?.[sec] || []).join('\n')
     if (oldArr !== newArr) {
@@ -1169,17 +1241,55 @@ function _applyProductUpload(parsed) {
     if (!existing) return
     // sizeSpec: 업로드 파일에 컬럼 없으면(null) 기존 보존, 컬럼 있으면 덮어쓰기
     const mergedSizeSpec = item.product.sizeSpec == null ? existing.sizeSpec : item.product.sizeSpec
-    State.allProducts[item.idx] = { ...existing, ...item.product,
-      no:         existing.no,
-      stock:      existing.stock,
-      stockLog:   existing.stockLog,
-      sales:      existing.sales,
-      revenueLog: existing.revenueLog,
-      scheduleLog: existing.scheduleLog,
-      productCodeLocked: existing.productCodeLocked,
-      barcodes:   existing.barcodes,
-      sizeSpec:   mergedSizeSpec || {}
+
+    // 업로드 파일에 실제 존재한 컬럼만 적용 (누락 컬럼은 기존값 보존)
+    // presentKeys 없으면 (레거시) 전체 덮어쓰기 — 기존 동작 유지
+    const presentKeys = item.presentKeys
+    let merged
+    if (presentKeys) {
+      merged = { ...existing }
+      // 스칼라 필드 매핑 (헤더 키 → product 필드 키)
+      const SCALAR_MAP = {
+        brand:'brand', sampleNo:'sampleNo', cafe24Code:'cafe24Code', barcode:'barcode',
+        nameKr:'nameKr', nameEn:'nameEn', colorKr:'colorKr', colorEn:'colorEn',
+        salePrice:'salePrice', costPrice:'costPrice',
+        type:'type', backStyle:'backStyle', legCut:'legCut', guide:'guide',
+        fabricType:'fabricType', chestLine:'chestLine', transparency:'transparency',
+        lining:'lining', capRing:'capRing', material:'material', comment:'comment',
+        washMethod:'washMethod', bust:'bust', waist:'waist', hip:'hip',
+        modelSize:'modelSize', madeMonth:'madeMonth', madeBy:'madeBy', madeIn:'madeIn',
+        saleStatus:'saleStatus', productionStatus:'productionStatus',
+        mainImage:'mainImage', videoUrl:'videoUrl'
+      }
+      Object.entries(SCALAR_MAP).forEach(([hdrKey, prodKey]) => {
+        if (presentKeys.has(hdrKey)) merged[prodKey] = item.product[prodKey]
+      })
+      // 이미지 섹션: 헤더 키 있을 때만 덮어쓰기
+      const IMG_MAP = { urlSum:'sum', urlLemango:'lemango', urlNoir:'noir', urlExternal:'external', urlDesign:'design', urlShoot:'shoot' }
+      const mergedImages = { ...(existing.images || {}) }
+      Object.entries(IMG_MAP).forEach(([hdrKey, secKey]) => {
+        if (presentKeys.has(hdrKey)) mergedImages[secKey] = item.product.images?.[secKey] || []
+      })
+      merged.images = mergedImages
+      // mallCodes: 업로드된 키만 갱신 (헤더에 없는 채널은 기존값 유지)
+      merged.mallCodes = { ...(existing.mallCodes || {}), ...(item.product.mallCodes || {}) }
+    } else {
+      // 레거시 양식 — 기존 전체 덮어쓰기 동작
+      merged = { ...existing, ...item.product }
     }
+
+    // 항상 보존되는 필드 (스키마 무관)
+    merged.no = existing.no
+    merged.stock = existing.stock
+    merged.stockLog = existing.stockLog
+    merged.sales = existing.sales
+    merged.revenueLog = existing.revenueLog
+    merged.scheduleLog = existing.scheduleLog
+    merged.productCodeLocked = existing.productCodeLocked
+    merged.barcodes = existing.barcodes
+    merged.sizeSpec = mergedSizeSpec || {}
+
+    State.allProducts[item.idx] = merged
     stampModified(State.allProducts[item.idx])
     updated++
   })

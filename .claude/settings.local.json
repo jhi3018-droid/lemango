@@ -16,7 +16,8 @@
       "Bash(git stash *)",
       "Bash(ls /mnt)",
       "Read(//c//**)",
-      "Bash(node -c js/excel.js)"
+      "Bash(node -c js/excel.js)",
+      "Bash(node --check \"C:\\\\Users\\\\LEMANGO\\\\Desktop\\\\lemango=system\\\\js\\\\excel.js\")"
     ]
   }
 }
