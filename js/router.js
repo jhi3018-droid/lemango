@@ -156,11 +156,10 @@ function triggerTabRender(tab) {
   _renderedTabs.add(tab)
 
   // 테이블 탭 첫 진입 시 저장된 필터 기본값을 복원 + 검색 실행
+  // product/plan 은 검색 필터 영속화 안 함 — 항상 빈 상태로 시작
   const filterTabMap = {
-    product: { load: 'product', search: 'searchProduct' },
     stock:   { load: 'stock',   search: 'searchStock' },
-    sales:   { load: 'sales',   search: 'searchSales' },
-    plan:    { load: 'plan',    search: 'searchPlan' }
+    sales:   { load: 'sales',   search: 'searchSales' }
   }
   if (filterTabMap[tab] && typeof applyFilterDefault === 'function') {
     if (applyFilterDefault(filterTabMap[tab].load)) {
@@ -192,11 +191,11 @@ function bindTabs() {
     btn.addEventListener('click', () => openTab(btn.dataset.tab))
   })
 
-  // 로고 클릭 → 전체 리셋
+  // 로고 클릭 → 전체 페이지 새로고침 (모든 세션 상태 초기화)
   const logo = document.querySelector('.logo')
   if (logo) {
     logo.style.cursor = 'pointer'
-    logo.addEventListener('click', resetTabs)
+    logo.addEventListener('click', () => location.reload())
   }
 
   // 뒤로가기/앞으로가기

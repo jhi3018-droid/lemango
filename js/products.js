@@ -82,11 +82,7 @@ function searchProduct() {
   })
   State.product.page = 1
   State.product.filtered = sortData(result, State.product.sort.key, State.product.sort.dir)
-  saveFilterDefault('product', {
-    pKeyword: raw, pSearchField: field, pDateType: dateType, pDateFrom: dateFrom, pDateTo: dateTo,
-    pBrand: brand, pGender: gender, pType: type, pLegCut: legCut,
-    pSaleStatus: document.getElementById('pSaleStatus').value
-  })
+  // 검색 필터는 영속화하지 않음 — 새로고침 시 항상 빈 상태로 시작
   renderProductTable()
 }
 
@@ -128,7 +124,7 @@ window.getProductThumbUrl = getProductThumbUrl
 const PRODUCT_COLUMNS = [
   { key:'_check',     label:'<input type="checkbox" onchange="toggleAllProdCheck(this)">', fixed:true, thAttr:'data-no-sort data-no-filter style="width:36px;text-align:center"',
     td:p=>`<td style="text-align:center"><input type="checkbox" class="prod-check" data-code="${p.productCode}" onclick="event.stopPropagation()"></td>` },
-  { key:'no',         label:'No.',       fixed:false, thAttr:'data-key="no" data-no-filter style="width:45px;text-align:center"', td:p=>`<td style="text-align:center">${p.no}</td>` },
+  { key:'no',         label:'No.',       fixed:false, thAttr:'data-key="no" data-no-filter style="width:45px;text-align:center"', td:(p,n)=>`<td style="text-align:center">${n}</td>` },
   { key:'_image',     label:'이미지',    fixed:true,  thAttr:'data-no-sort data-no-filter style="width:60px"', td:p=>{
     const t = getProductThumbUrl(p)
     const all = getAllImages(p)
@@ -182,6 +178,7 @@ function renderProductTable() {
   const page = State.product.page || 1
   const ps = getPageSize('product')
   const pageData = ps === 0 ? data : data.slice((page - 1) * ps, page * ps)
+  const baseRowNum = ps === 0 ? 1 : (page - 1) * ps + 1
   document.getElementById('pTableMeta').textContent = `검색결과 ${data.length}건`
 
   if (!data.length) {
@@ -195,7 +192,7 @@ function renderProductTable() {
   const totSales = data.reduce((s,p) => s + getTotalSales(p), 0)
 
   const thHtml = activeCols.map(c => `<th ${c.thAttr} data-col-key="${c.key}">${c.label}</th>`).join('')
-  const tbodyHtml = pageData.map(p => `<tr data-code="${p.productCode}">${activeCols.map(c => c.td(p)).join('')}</tr>`).join('')
+  const tbodyHtml = pageData.map((p, i) => `<tr data-code="${p.productCode}">${activeCols.map(c => c.td(p, baseRowNum + i)).join('')}</tr>`).join('')
 
   // tfoot: 합계 행
   const tfootCols = activeCols.map(c => {

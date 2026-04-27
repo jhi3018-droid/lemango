@@ -18,6 +18,12 @@ async function initApp() {
   // 2026-04-13 일회성 마이그레이션 코드 제거됨.
   // (per-device localStorage 게이팅 → 신규 디바이스마다 Firestore posts/comments/activityLogs/personalSchedules 전체 삭제하는 데이터 파괴 버그)
 
+  // 상품조회/신규기획은 검색 필터 영속화 안 함 — 기존 저장값 정리
+  try {
+    localStorage.removeItem('lemango_filter_default_product')
+    localStorage.removeItem('lemango_filter_default_plan')
+  } catch(e) {}
+
   renderDate()
   bindTabs()
   loadAllUsers()

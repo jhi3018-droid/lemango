@@ -663,11 +663,7 @@ function searchPlan() {
   })
   State.plan.page = 1
   State.plan.filtered = result
-  saveFilterDefault('plan', {
-    npKeyword: raw, npSearchField: field, npBrand: brand, npType: type, npYear: year,
-    npSeason: season, npGenderFilter: gender, npConfirmed: confirmed, npPhase: phase,
-    npDateFrom: dateFrom, npDateTo: dateTo
-  })
+  // 검색 필터는 영속화하지 않음 — 새로고침 시 항상 빈 상태로 시작
   renderPlanTable()
 }
 
