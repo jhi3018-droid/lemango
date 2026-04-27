@@ -1343,6 +1343,45 @@ window.updateNotifToggleUI = function() {
   }
 };
 
+// ===== 알림 캔버스 ID 헬퍼 (uid + type + link + 오늘날짜) =====
+// 결정적 ID: 같은 uid/type/link/날짜 조합은 같은 doc. 5분 폴링·onSnapshot 트리거에도 단일 doc 유지.
+function _notifCanonicalId(uid, type, link) {
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  const linkSafe = String(link || 'none').replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 60)
+  return `${type}_${linkSafe}_${today}_${uid}`
+}
+
+// ===== 사용자가 오늘 dismiss 한 알림 ID 저장소 (재생성 차단) =====
+const _NOTIF_DISMISSED_KEY = 'lemango_notif_dismissed_v1'
+function _loadDismissedNotifs() {
+  try {
+    const raw = localStorage.getItem(_NOTIF_DISMISSED_KEY)
+    if (!raw) return {}
+    const data = JSON.parse(raw)
+    const today = new Date().toISOString().slice(0, 10)
+    // 오늘이 아닌 키 제거 (자동 만료)
+    if (data._date !== today) return { _date: today, ids: [] }
+    return data
+  } catch(e) { return { _date: new Date().toISOString().slice(0,10), ids: [] } }
+}
+function _saveDismissedNotifs(data) {
+  try { localStorage.setItem(_NOTIF_DISMISSED_KEY, JSON.stringify(data)) } catch(e) {}
+}
+function _isDismissedToday(canonicalId) {
+  const d = _loadDismissedNotifs()
+  return Array.isArray(d.ids) && d.ids.indexOf(canonicalId) >= 0
+}
+function markNotifDismissed(canonicalId) {
+  const d = _loadDismissedNotifs()
+  if (!Array.isArray(d.ids)) d.ids = []
+  if (d.ids.indexOf(canonicalId) < 0) d.ids.push(canonicalId)
+  if (d.ids.length > 500) d.ids = d.ids.slice(-500)
+  _saveDismissedNotifs(d)
+}
+window.markNotifDismissed = markNotifDismissed
+window._notifCanonicalId = _notifCanonicalId
+window._isDismissedToday = _isDismissedToday
+
 function addNotification(type, title, body, link, opts) {
   // 전체 알림 꺼짐 시 모두 차단 (ps_ 포함)
   try {
@@ -1358,28 +1397,39 @@ function addNotification(type, title, body, link, opts) {
   const targetUids = (opts && Array.isArray(opts.targetUids)) ? opts.targetUids : null
   const singleTarget = (opts && opts.targetUid) ? opts.targetUid : null
 
-  // Firestore에 저장 (대상 사용자별)
+  // Firestore에 저장 (대상 사용자별, 결정적 ID + set merge → 중복 방지)
   if (db) {
     const recipients = targetUids || (singleTarget ? [singleTarget] : (myUid ? [myUid] : []))
+    const nowTs = Date.now()
+    const nowIso = new Date(nowTs).toISOString()
     recipients.forEach(uid => {
       if (!uid) return
+      const canonicalId = _notifCanonicalId(uid, type, link || '')
+      // 본인이 오늘 dismiss 한 알림이면 재생성 차단
+      if (uid === myUid && _isDismissedToday(canonicalId)) return
       try {
-        db.collection('notifications').add({
+        db.collection('notifications').doc(canonicalId).set({
           uid, type, title, body: body || '', link: link || '',
-          priority, ts: Date.now(), read: false,
-          createdAt: new Date().toISOString()
-        }).catch(e => console.warn('notification add failed:', e.message))
-      } catch(e) { console.warn('notification add error:', e.message) }
+          priority, ts: nowTs, read: false,
+          createdAt: nowIso
+        }, { merge: true }).catch(e => console.warn('notification set failed:', e.message))
+      } catch(e) { console.warn('notification set error:', e.message) }
     })
   }
 
   // 로컬 캐시: 본인에게 향한 알림이거나, targetUid 지정 없음(본인용)일 때만
   const isForMe = !singleTarget && !targetUids || (singleTarget && singleTarget === myUid) || (targetUids && myUid && targetUids.includes(myUid))
-  if (isForMe) {
-    // 동일 type+title 중복 방지 (최근 1시간 이내)
-    const oneHourAgo = Date.now() - 3600000
-    if (_notifications.some(n => n.type === type && n.title === title && n.ts > oneHourAgo)) return
-    _notifications.unshift({ id: Date.now() + '_' + Math.random().toString(36).slice(2,6), type, title, body, link, priority, ts: Date.now(), read: false })
+  if (isForMe && myUid) {
+    const canonicalId = _notifCanonicalId(myUid, type, link || '')
+    if (_isDismissedToday(canonicalId)) return
+    // 동일 canonical ID 가 이미 캐시에 있으면 갱신만 (중복 추가 X)
+    const existIdx = _notifications.findIndex(n => (n.fsId === canonicalId || n.id === canonicalId))
+    if (existIdx >= 0) {
+      const old = _notifications[existIdx]
+      _notifications[existIdx] = { ...old, type, title, body, link, priority, ts: Date.now() }
+    } else {
+      _notifications.unshift({ id: canonicalId, fsId: canonicalId, type, title, body, link, priority, ts: Date.now(), read: false })
+    }
     if (_notifications.length > NOTIF_MAX) _notifications.length = NOTIF_MAX
     saveNotifications()
     renderNotifications()

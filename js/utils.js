@@ -1208,6 +1208,11 @@ function clickNotification(id) {
 
 function dismissNotification(id) {
   const n = _notifications.find(x => x.id === id)
+  // 결정적 canonical ID 를 dismissed 목록에 기록 → 같은 알림 재생성 차단 (오늘 한정)
+  if (n && typeof markNotifDismissed === 'function') {
+    const cid = n.fsId || n.id
+    if (cid) markNotifDismissed(cid)
+  }
   if (n && n.fsId && typeof _fsDeleteNotification === 'function') _fsDeleteNotification(n.fsId)
   _notifications = _notifications.filter(n => n.id !== id)
   saveNotifications()
