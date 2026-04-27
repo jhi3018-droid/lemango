@@ -5300,3 +5300,36 @@ td[data-editable]:hover { background: #FAEEDA; }
 .be-add-row { display:flex; align-items:center; gap:10px; padding:8px 14px; border:1px solid #e8f5e9; border-radius:6px; margin-bottom:4px; }
 .be-add-label { font-size:11px; background:#e8f5e9; color:#1b5e20; padding:2px 8px; border-radius:10px; font-weight:600; }
 .be-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:18px; padding-top:14px; border-top:1px solid var(--border); }
+
+/* === 상품 업로드 결과 모달 === */
+.upload-result-modal { width:700px; max-width:95vw; max-height:85vh; padding:0; border-radius:10px; overflow:hidden; }
+.upload-result-header { padding:14px 20px; display:flex; align-items:center; justify-content:space-between; cursor:move; border-bottom:1px solid var(--border); }
+.upload-result-title { font-size:15px; font-weight:700; color:#fff; }
+.upload-result-body { padding:18px 22px; overflow-y:auto; max-height:70vh; }
+
+.upload-result-cards { display:flex; gap:8px; margin-bottom:16px; }
+.upload-result-card { flex:1; text-align:center; padding:12px 8px; border-radius:8px; background:#faf9f7; }
+.upload-result-card-value { font-size:22px; font-weight:500; color:#1a1a2e; }
+.upload-result-card-label { font-size:10px; color:#888; margin-top:2px; }
+.upload-result-new { background:#EAF3DE; }
+.upload-result-new .upload-result-card-value { color:#27500A; }
+.upload-result-update { background:#E6F1FB; }
+.upload-result-update .upload-result-card-value { color:#0C447C; }
+.upload-result-fail { background:#FCEBEB; }
+.upload-result-fail .upload-result-card-value { color:#A32D2D; }
+.upload-result-skip { background:#faf9f7; }
+
+.upload-result-section { margin-bottom:14px; }
+.upload-result-section-title { font-size:13px; font-weight:500; padding:6px 10px; border-radius:6px; margin-bottom:6px; }
+.upload-result-section-fail { background:#FCEBEB; color:#A32D2D; }
+.upload-result-section-skip { background:#faf9f7; color:#888; }
+.upload-result-section-new { background:#EAF3DE; color:#27500A; }
+.upload-result-section-update { background:#E6F1FB; color:#0C447C; }
+
+.upload-result-table { width:100%; border-collapse:collapse; font-size:12px; }
+.upload-result-table th { text-align:left; padding:6px 8px; background:#faf9f7; color:#888; font-weight:500; font-size:11px; border-bottom:1px solid #f0efe9; }
+.upload-result-table td { padding:6px 8px; border-bottom:0.5px solid #f0efe9; }
+.upload-result-row-fail { background:#FFF5F5; }
+.upload-result-reason { color:#A32D2D; font-size:11px; }
+.upload-result-changes { font-size:10px; color:#888; }
+.upload-result-empty { text-align:center; padding:20px; color:#b4b2a9; }

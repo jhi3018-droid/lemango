@@ -17,7 +17,14 @@
       "Bash(ls /mnt)",
       "Read(//c//**)",
       "Bash(node -c js/excel.js)",
-      "Bash(node --check \"C:\\\\Users\\\\LEMANGO\\\\Desktop\\\\lemango=system\\\\js\\\\excel.js\")"
+      "Bash(node --check \"C:\\\\Users\\\\LEMANGO\\\\Desktop\\\\lemango=system\\\\js\\\\excel.js\")",
+      "Bash(node --check \"C:\\\\Users\\\\LEMANGO\\\\Desktop\\\\lemango=system\\\\js\\\\main.js\")",
+      "Bash(node --check js/excel.js)",
+      "Bash(node --check js/main.js)",
+      "Bash(node --check js/core.js)",
+      "Bash(node --check js/auth.js)",
+      "Bash(node --check js/plan.js)",
+      "Bash(node --check js/product-code.js)"
     ]
   }
 }

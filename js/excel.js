@@ -924,9 +924,36 @@ function uploadProducts(raw) {
   } else if (parsed.added.length > 0) {
     // 신규만 있으면 바로 적용
     _applyProductUpload(parsed)
+  } else if ((parsed.failed && parsed.failed.length > 0) || (parsed.skipped && parsed.skipped.length > 0)) {
+    // 적용할 변경은 없지만 실패/스킵 내역이 있으면 결과 모달만 표시
+    _showUploadResultFromParsed(parsed, 0, 0)
   } else {
     showToast('변경 사항이 없습니다.', 'info')
   }
+}
+
+// 결과 모달 빌드 + 표시 (parsed 와 실제 반영된 added/updated 카운트로 result 객체 조립)
+function _showUploadResultFromParsed(parsed, addedApplied, updatedApplied) {
+  if (typeof showUploadResult !== 'function') return
+  const failed = parsed.failed || []
+  const skipped = parsed.skipped || []
+  const result = {
+    total: (parsed.added || []).length + (parsed.updated || []).length + failed.length + skipped.length,
+    success: (parsed.added || []).map(item => ({
+      row: item.row,
+      productCode: item.code,
+      name: item.product.nameKr || ''
+    })),
+    updated: (parsed.updated || []).map(item => ({
+      row: item.row,
+      productCode: item.code,
+      name: item.product.nameKr || (item.existing && item.existing.nameKr) || '',
+      changes: (item.diffs || []).map(d => d.label).join(', ')
+    })),
+    failed,
+    skipped
+  }
+  showUploadResult(result)
 }
 
 function _parseProductUpload(raw) {
@@ -977,17 +1004,25 @@ function _parseProductUpload(raw) {
     return spec
   }
 
-  const dataRows = raw.slice(dataStart).filter(r => String(r[COL.code] || '').trim())
+  // 행번호 추적을 위해 filter 전에 인덱스 보존 (사용자 행번호 = dataStart + originalIdx + 1)
+  const allRows = raw.slice(dataStart).map((row, i) => ({ row, userRowNo: dataStart + i + 1 }))
+  const dataRows = allRows.filter(r => String(r.row[COL.code] || '').trim())
+  const skipped = []
+  // 빈 행은 스킵으로 카운트하지 않음 (의도적 공백) — 품번 누락은 별도 fail 처리
+
   if (!dataRows.length) { showToast('데이터가 없습니다.', 'error'); return null }
 
   // 업로드 파일에 실제 존재하는 필드 키 집합 (누락 컬럼은 기존값 보존용)
   // 신규양식: 헤더에서 발견된 키만 / 레거시: _LEGACY_COL의 모든 키 (전체 덮어쓰기 유지)
   const presentKeys = new Set(Object.keys(COL))
 
-  const added = [], updated = []
-  dataRows.forEach(row => {
+  const added = [], updated = [], failed = []
+  dataRows.forEach(({ row, userRowNo }) => {
     const code = String(row[COL.code]).trim()
-    if (!code) return
+    if (!code) {
+      failed.push({ row: userRowNo, productCode: '', name: '', reason: '품번이 비어있습니다' })
+      return
+    }
 
     const _s = (key) => COL[key] != null ? String(row[COL[key]] ?? '').trim() : ''
     const _n = (key) => COL[key] != null ? (Number(row[COL[key]]) || 0) : 0
@@ -1067,14 +1102,16 @@ function _parseProductUpload(raw) {
       const existing = State.allProducts[idx]
       const diffs = _diffProduct(existing, product, presentKeys)
       if (diffs.length > 0) {
-        updated.push({ code, idx, product, diffs, existing, presentKeys })
+        updated.push({ code, idx, product, diffs, existing, presentKeys, row: userRowNo })
+      } else {
+        skipped.push({ row: userRowNo, productCode: code, reason: '변경 사항 없음' })
       }
     } else {
-      added.push({ code, product })
+      added.push({ code, product, row: userRowNo })
     }
   })
 
-  return { added, updated }
+  return { added, updated, failed, skipped }
 }
 
 // 두 상품 객체 비교 → 변경된 필드 목록
@@ -1304,6 +1341,101 @@ function _applyProductUpload(parsed) {
   if (typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))
   if (typeof logActivity === 'function') logActivity('upload', '상품', '엑셀 업로드: 신규 ' + added + '건, 수정 ' + updated + '건')
   showToast('업로드 완료: 신규 ' + added + '건 / 수정 ' + updated + '건', 'success')
+  // 결과 모달 표시 (확정 적용 후 보고용)
+  _showUploadResultFromParsed(parsed, added, updated)
+}
+
+// 결과 모달 — window 노출
+window.showUploadResult = function(result) {
+  const modal = document.getElementById('uploadResultModal')
+  if (!modal) return
+
+  const total = result.total || 0
+  const success = result.success || []
+  const updated = result.updated || []
+  const failed = result.failed || []
+  const skipped = result.skipped || []
+
+  // 요약 카드
+  let html = '<div class="upload-result-cards">'
+  html += '<div class="upload-result-card upload-result-total"><div class="upload-result-card-value">' + total + '</div><div class="upload-result-card-label">전체</div></div>'
+  html += '<div class="upload-result-card upload-result-new"><div class="upload-result-card-value">' + success.length + '</div><div class="upload-result-card-label">신규등록</div></div>'
+  html += '<div class="upload-result-card upload-result-update"><div class="upload-result-card-value">' + updated.length + '</div><div class="upload-result-card-label">수정</div></div>'
+  html += '<div class="upload-result-card upload-result-fail"><div class="upload-result-card-value">' + failed.length + '</div><div class="upload-result-card-label">실패</div></div>'
+  html += '<div class="upload-result-card upload-result-skip"><div class="upload-result-card-value">' + skipped.length + '</div><div class="upload-result-card-label">스킵</div></div>'
+  html += '</div>'
+  document.getElementById('uploadResultSummary').innerHTML = html
+
+  // 상세 내역
+  let detail = ''
+
+  if (failed.length > 0) {
+    detail += '<div class="upload-result-section">'
+    detail += '<div class="upload-result-section-title upload-result-section-fail">실패 (' + failed.length + '건)</div>'
+    detail += '<table class="upload-result-table">'
+    detail += '<thead><tr><th>행</th><th>품번</th><th>상품명</th><th>실패 사유</th></tr></thead><tbody>'
+    failed.forEach(function(item) {
+      detail += '<tr class="upload-result-row-fail">'
+      detail += '<td>' + (item.row || '-') + '</td>'
+      detail += '<td>' + esc(item.productCode || '-') + '</td>'
+      detail += '<td>' + esc(item.name || '-') + '</td>'
+      detail += '<td class="upload-result-reason">' + esc(item.reason || '알 수 없는 오류') + '</td>'
+      detail += '</tr>'
+    })
+    detail += '</tbody></table></div>'
+  }
+
+  if (skipped.length > 0) {
+    detail += '<div class="upload-result-section">'
+    detail += '<div class="upload-result-section-title upload-result-section-skip">스킵 (' + skipped.length + '건)</div>'
+    detail += '<table class="upload-result-table">'
+    detail += '<thead><tr><th>행</th><th>품번</th><th>사유</th></tr></thead><tbody>'
+    skipped.forEach(function(item) {
+      detail += '<tr>'
+      detail += '<td>' + (item.row || '-') + '</td>'
+      detail += '<td>' + esc(item.productCode || '-') + '</td>'
+      detail += '<td>' + esc(item.reason || '') + '</td>'
+      detail += '</tr>'
+    })
+    detail += '</tbody></table></div>'
+  }
+
+  if (success.length > 0) {
+    detail += '<div class="upload-result-section">'
+    detail += '<div class="upload-result-section-title upload-result-section-new">신규등록 (' + success.length + '건)</div>'
+    detail += '<table class="upload-result-table">'
+    detail += '<thead><tr><th>행</th><th>품번</th><th>상품명</th></tr></thead><tbody>'
+    success.forEach(function(item) {
+      detail += '<tr>'
+      detail += '<td>' + (item.row || '-') + '</td>'
+      detail += '<td>' + esc(item.productCode || '-') + '</td>'
+      detail += '<td>' + esc(item.name || '-') + '</td>'
+      detail += '</tr>'
+    })
+    detail += '</tbody></table></div>'
+  }
+
+  if (updated.length > 0) {
+    detail += '<div class="upload-result-section">'
+    detail += '<div class="upload-result-section-title upload-result-section-update">수정 (' + updated.length + '건)</div>'
+    detail += '<table class="upload-result-table">'
+    detail += '<thead><tr><th>행</th><th>품번</th><th>상품명</th><th>변경 항목</th></tr></thead><tbody>'
+    updated.forEach(function(item) {
+      detail += '<tr>'
+      detail += '<td>' + (item.row || '-') + '</td>'
+      detail += '<td>' + esc(item.productCode || '-') + '</td>'
+      detail += '<td>' + esc(item.name || '-') + '</td>'
+      detail += '<td class="upload-result-changes">' + esc(item.changes || '') + '</td>'
+      detail += '</tr>'
+    })
+    detail += '</tbody></table></div>'
+  }
+
+  if (!detail) detail = '<div class="upload-result-empty">상세 내역이 없습니다</div>'
+  document.getElementById('uploadResultDetails').innerHTML = detail
+
+  if (typeof centerModal === 'function') centerModal(modal)
+  modal.showModal()
 }
 
 window.confirmBulkEdit = confirmBulkEdit

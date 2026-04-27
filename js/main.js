@@ -15,36 +15,8 @@ async function init() {
 }
 
 async function initApp() {
-  // ── 일회성 전체 데이터 초기화 (Firebase users 제외) ──
-  if (!localStorage.getItem('lemango_full_reset_v1')) {
-    // 1) localStorage 전체 초기화
-    const keysToRemove = [
-      'lemango_events_v1', 'lemango_work_items_v1',
-      'lemango_product_history_v1', 'lemango_notifications_v1',
-      'lemango_recent_activity_v1', 'lemango_watches_v1',
-      'lemango_edit_locks_v1', 'lemango_notif_settings_v1',
-      'lemango_cleanup_done'
-    ]
-    keysToRemove.forEach(k => localStorage.removeItem(k))
-    // 메모리 상태 초기화
-    _events.length = 0
-    _workItems.length = 0
-
-    // 2) Firestore 컬렉션 초기화 (users 제외)
-    const collectionsToClean = ['posts', 'comments', 'activityLogs', 'personalSchedules']
-    for (const col of collectionsToClean) {
-      try {
-        const snap = await db.collection(col).get()
-        const batch = db.batch()
-        snap.docs.forEach(doc => batch.delete(doc.ref))
-        if (snap.docs.length > 0) await batch.commit()
-        console.log(`[RESET] ${col}: ${snap.docs.length}건 삭제`)
-      } catch (e) { console.warn(`[RESET] ${col} 실패:`, e.message) }
-    }
-
-    localStorage.setItem('lemango_full_reset_v1', '1')
-    console.log('[RESET] 전체 초기화 완료')
-  }
+  // 2026-04-13 일회성 마이그레이션 코드 제거됨.
+  // (per-device localStorage 게이팅 → 신규 디바이스마다 Firestore posts/comments/activityLogs/personalSchedules 전체 삭제하는 데이터 파괴 버그)
 
   renderDate()
   bindTabs()
@@ -78,6 +50,7 @@ async function initApp() {
   makeDraggableResizable(document.getElementById('downloadFormatModal'), 400, 300)
   makeDraggableResizable(document.getElementById('downloadFormatEditorModal'), 600, 400)
   makeDraggableResizable(document.getElementById('bulkEditPreviewModal'), 600, 400)
+  makeDraggableResizable(document.getElementById('uploadResultModal'), 600, 400)
   makeDraggableResizable(document.getElementById('bulkScheduleModal'), 400, 300)
   makeDraggableResizable(document.getElementById('attendancePopup'), 300, 200)
   makeDraggableResizable(document.getElementById('leaveRequestModal'), 400, 300)
@@ -314,47 +287,8 @@ async function initApp() {
     if (typeof _fsLoadEditLocks === 'function') _fsLoadEditLocks()
   }, 30 * 1000)
 
-  // ===== 5분 자동 새로고침 (사용자 작업 방해 없이 백그라운드 갱신) =====
-  setInterval(async () => {
-    // 모달 열려있으면 skip (편집 중)
-    if (document.querySelector('dialog[open]')) return
-    // 입력 중이면 skip
-    const ae = document.activeElement
-    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return
-    // 탭 비활성(다른 창 보는 중)이면 skip
-    if (document.hidden) return
-
-    try {
-      // 회원/알림 관련은 항상 갱신 (헤더 벨/배지 반영)
-      if (typeof loadMembers === 'function') await loadMembers()
-      // 전체 승인 사용자 캐시 갱신 (연차 승인 대기 목록의 신청자 매칭용)
-      if (typeof loadAllUsers === 'function') await loadAllUsers(true)
-      // HR 데이터(출퇴근/연차) 재로딩 — 타 사용자가 제출한 사유/승인신청 건 반영
-      if (typeof loadHrData === 'function') await loadHrData()
-      // Firestore 알림 재동기화 (다기기/멘션 수신)
-      if (typeof _fsLoadNotifications === 'function') await _fsLoadNotifications()
-      // 편집 잠금 동기화
-      if (typeof _fsLoadEditLocks === 'function') await _fsLoadEditLocks()
-      // 팀 공유 설정 (events/workItems/planItems/settings/channels/depts/등) 재로드
-      if (typeof _fsReloadSharedSettings === 'function') await _fsReloadSharedSettings()
-      if (typeof checkMemberAlerts === 'function') checkMemberAlerts()
-      if (typeof checkEventAlerts === 'function') checkEventAlerts()
-      if (typeof checkPlanAlerts === 'function') checkPlanAlerts()
-      if (typeof checkWorkMentionAlerts === 'function') checkWorkMentionAlerts()
-      if (typeof checkPersonalScheduleAlerts === 'function') checkPersonalScheduleAlerts()
-      if (typeof checkHrPendingItems === 'function') checkHrPendingItems()
-      if (typeof renderNotifications === 'function') renderNotifications()
-
-      // 활성 탭별 데이터 갱신
-      const tab = State.activeTab
-      if (tab === 'dashboard' && typeof renderDashboard === 'function') renderDashboard()
-      if (tab === 'board' && typeof loadBoardPosts === 'function') await loadBoardPosts()
-      if (tab === 'members' && typeof renderMembersTable === 'function') renderMembersTable()
-      if (tab === 'work' && typeof loadPersonalSchedules === 'function') await loadPersonalSchedules()
-    } catch (e) {
-      console.warn('자동 새로고침 실패:', e.message)
-    }
-  }, 5 * 60 * 1000)
+  // 실시간 동기화 리스너 등록 (기존 5분 폴링 대체)
+  if (typeof setupRealtimeSync === 'function') setupRealtimeSync()
 }
 
 // =============================================

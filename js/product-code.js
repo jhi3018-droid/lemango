@@ -59,6 +59,8 @@ async function saveDesignCodes() {
   if (typeof _fsSync !== 'function') return
   try {
     await _fsSync('designCodes', _designCodes)
+    if (!window._lastSharedSaveTime) window._lastSharedSaveTime = {}
+    window._lastSharedSaveTime['designCodes'] = Date.now()
   } catch (e) {
     if (typeof _onSaveFailed === 'function') _onSaveFailed('saveDesignCodes', e)
     else console.error('saveDesignCodes failed:', e)

@@ -1480,6 +1480,18 @@
   <div class="srm-body" style="padding:18px 22px;overflow-y:auto;flex:1"></div>
 </dialog>
 
+<!-- 상품 업로드 결과 모달 (확정 적용 후 결과 보고) -->
+<dialog id="uploadResultModal" class="srm-modal upload-result-modal">
+  <div class="srm-modal-header srm-header upload-result-header">
+    <span class="upload-result-title">업로드 결과</span>
+    <button class="modal-close" onclick="document.getElementById('uploadResultModal').close()">×</button>
+  </div>
+  <div class="srm-modal-body upload-result-body">
+    <div id="uploadResultSummary"></div>
+    <div id="uploadResultDetails"></div>
+  </div>
+</dialog>
+
 <!-- 신규기획 상세 모달 -->
 <dialog id="planDetailModal" class="plan-detail-modal">
   <div class="dmodal-header">

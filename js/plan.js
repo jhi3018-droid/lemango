@@ -12,6 +12,8 @@ async function savePlanItems() {
   if (typeof _fsSync !== 'function') return
   try {
     await _fsSync('planItems', State.planItems)
+    if (!window._lastSharedSaveTime) window._lastSharedSaveTime = {}
+    window._lastSharedSaveTime['planItems'] = Date.now()
   } catch (e) {
     if (typeof _onSaveFailed === 'function') _onSaveFailed('savePlanItems', e)
     else console.error('savePlanItems failed:', e)

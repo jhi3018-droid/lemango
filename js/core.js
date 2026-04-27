@@ -100,6 +100,7 @@ async function saveProducts() {
     const metaRef = db.collection('sharedData').doc('products_meta')
     batch.set(metaRef, { chunks, total: all.length, updatedAt: new Date().toISOString() })
     await batch.commit()
+    window._lastProductSaveTime = Date.now()
   } catch (e) {
     _onSaveFailed('saveProducts', e)
   }
@@ -296,6 +297,314 @@ async function _fsReloadSharedSettings() {
 window._fsReloadSharedSettings = _fsReloadSharedSettings
 
 // =============================================
+// ===== 실시간 동기화 (onSnapshot) =====
+// =============================================
+let _snapshotUnsubscribes = []
+window._lastProductSaveTime = 0
+window._lastSharedSaveTime = {}  // { events: ts, workItems: ts, ... }
+
+// 디바운스 타이머들
+let _productReloadTimer = null
+let _sharedReloadTimer = null
+let _postsReloadTimer = null
+let _commentsReloadTimer = null
+let _attendReloadTimer = null
+let _leavesReloadTimer = null
+
+window.setupRealtimeSync = function() {
+  // 기존 리스너 해제 (중복 방지)
+  _snapshotUnsubscribes.forEach(u => { try { u() } catch(e) {} })
+  _snapshotUnsubscribes = []
+
+  if (!db) { console.warn('[RealtimeSync] db 없음 — 리스너 등록 스킵'); return }
+
+  // 1) sharedData (products_meta + products_* 청크 + 기타 공유 도큐먼트)
+  try {
+    const u1 = db.collection('sharedData').onSnapshot(snap => {
+      snap.docChanges().forEach(ch => {
+        if (ch.type !== 'modified' && ch.type !== 'added') return
+        const docId = ch.doc.id
+        const data = ch.doc.data()
+        if (docId === 'products_meta') { _onProductsChanged(data); return }
+        if (docId.startsWith('products_')) return  // 청크 변경은 meta로 트리거
+        _onSharedDataChanged(docId, data)
+      })
+    }, err => console.error('[RealtimeSync] sharedData listener error:', err))
+    _snapshotUnsubscribes.push(u1)
+  } catch (e) { console.error('[RealtimeSync] sharedData listener setup failed:', e) }
+
+  // 2) posts
+  try {
+    const u2 = db.collection('posts').onSnapshot(snap => {
+      if (snap.docChanges().length > 0) _onPostsChanged()
+    }, err => console.error('[RealtimeSync] posts listener error:', err))
+    _snapshotUnsubscribes.push(u2)
+  } catch (e) { console.error('[RealtimeSync] posts listener setup failed:', e) }
+
+  // 3) notifications (본인 것만)
+  try {
+    const uid = (firebase.auth && firebase.auth().currentUser) ? firebase.auth().currentUser.uid : null
+    if (uid) {
+      const u3 = db.collection('notifications').where('uid', '==', uid).onSnapshot(snap => {
+        snap.docChanges().forEach(ch => {
+          if (ch.type === 'added') _onNewNotification(ch.doc.data())
+        })
+      }, err => console.error('[RealtimeSync] notifications listener error:', err))
+      _snapshotUnsubscribes.push(u3)
+    }
+  } catch (e) { console.error('[RealtimeSync] notifications listener setup failed:', e) }
+
+  // 4) comments
+  try {
+    const u4 = db.collection('comments').onSnapshot(snap => {
+      if (snap.docChanges().length > 0) _onCommentsChanged()
+    }, err => console.error('[RealtimeSync] comments listener error:', err))
+    _snapshotUnsubscribes.push(u4)
+  } catch (e) { console.error('[RealtimeSync] comments listener setup failed:', e) }
+
+  // 5) attendance
+  try {
+    const u5 = db.collection('attendance').onSnapshot(snap => {
+      if (snap.docChanges().length > 0) _onAttendanceChanged()
+    }, err => console.error('[RealtimeSync] attendance listener error:', err))
+    _snapshotUnsubscribes.push(u5)
+  } catch (e) { console.error('[RealtimeSync] attendance listener setup failed:', e) }
+
+  // 6) leaves
+  try {
+    const u6 = db.collection('leaves').onSnapshot(snap => {
+      if (snap.docChanges().length > 0) _onLeavesChanged()
+    }, err => console.error('[RealtimeSync] leaves listener error:', err))
+    _snapshotUnsubscribes.push(u6)
+  } catch (e) { console.error('[RealtimeSync] leaves listener setup failed:', e) }
+
+  // 7) personalSchedules
+  try {
+    const u7 = db.collection('personalSchedules').onSnapshot(snap => {
+      if (snap.docChanges().length > 0) _onPersonalSchedulesChanged()
+    }, err => console.error('[RealtimeSync] personalSchedules listener error:', err))
+    _snapshotUnsubscribes.push(u7)
+  } catch (e) { console.error('[RealtimeSync] personalSchedules listener setup failed:', e) }
+
+  console.log('[RealtimeSync] ' + _snapshotUnsubscribes.length + '개 리스너 등록 완료')
+}
+
+window.teardownRealtimeSync = function() {
+  _snapshotUnsubscribes.forEach(u => { try { u() } catch(e) {} })
+  _snapshotUnsubscribes = []
+  // 디바운스 타이머도 정리
+  if (_productReloadTimer) { clearTimeout(_productReloadTimer); _productReloadTimer = null }
+  if (_sharedReloadTimer) { clearTimeout(_sharedReloadTimer); _sharedReloadTimer = null }
+  if (_postsReloadTimer) { clearTimeout(_postsReloadTimer); _postsReloadTimer = null }
+  if (_commentsReloadTimer) { clearTimeout(_commentsReloadTimer); _commentsReloadTimer = null }
+  if (_attendReloadTimer) { clearTimeout(_attendReloadTimer); _attendReloadTimer = null }
+  if (_leavesReloadTimer) { clearTimeout(_leavesReloadTimer); _leavesReloadTimer = null }
+  console.log('[RealtimeSync] 리스너 해제 완료')
+}
+
+// ── 활성 탭 헬퍼 ──
+window._getActiveTab = function() {
+  if (typeof State !== 'undefined' && State.activeTab) return State.activeTab
+  return (location.hash.replace('#', '').split(':')[0]) || 'dashboard'
+}
+
+// ── 상품 변경 ──
+window._onProductsChanged = function(meta) {
+  if (_productReloadTimer) clearTimeout(_productReloadTimer)
+  _productReloadTimer = setTimeout(async () => {
+    try {
+      // 본인 저장이면 스킵
+      const myLastSave = window._lastProductSaveTime || 0
+      const serverTime = meta && meta.updatedAt ? new Date(meta.updatedAt).getTime() : 0
+      if (serverTime && serverTime <= myLastSave + 500) return
+      console.log('[RealtimeSync] 상품 데이터 재로드')
+      const fresh = await _fsLoadProducts()
+      if (fresh && fresh.length) {
+        State.allProducts = fresh
+        State.product.filtered = [...State.allProducts]
+        State.stock.filtered = [...State.allProducts]
+        State.sales.filtered = [...State.allProducts]
+        const tab = _getActiveTab()
+        if (tab === 'product' && typeof renderProductTable === 'function') renderProductTable()
+        else if (tab === 'stock' && typeof renderStockTable === 'function') renderStockTable()
+        else if (tab === 'sales' && typeof renderSalesTable === 'function') renderSalesTable()
+        else if (tab === 'dashboard' && typeof renderDashboard === 'function') renderDashboard()
+      }
+    } catch(e) { console.error('[RealtimeSync] 상품 재로드 실패:', e) }
+  }, 1000)
+}
+
+// ── sharedData (events/workItems/planItems/settings/channels/etc.) ──
+window._onSharedDataChanged = function(docId, data) {
+  if (_sharedReloadTimer) clearTimeout(_sharedReloadTimer)
+  _sharedReloadTimer = setTimeout(() => {
+    try {
+      if (!data || !data.data) return
+      // 본인 저장이면 스킵
+      const myLastSave = (window._lastSharedSaveTime || {})[docId] || 0
+      const serverTime = data.updatedAt ? new Date(data.updatedAt).getTime() : 0
+      if (serverTime && serverTime <= myLastSave + 500) return
+
+      const parsed = JSON.parse(data.data)
+      const tab = _getActiveTab()
+
+      switch(docId) {
+        case 'events':
+          _events.length = 0
+          ;(parsed || []).forEach(e => _events.push(e))
+          localStorage.setItem('lemango_events_v1', JSON.stringify(_events))
+          if (tab === 'event' && typeof renderEventCalendar === 'function') renderEventCalendar()
+          else if (tab === 'dashboard' && typeof renderDashboard === 'function') renderDashboard()
+          console.log('[RealtimeSync] 행사일정 동기화')
+          break
+        case 'workItems':
+          _workItems.length = 0
+          ;(parsed || []).forEach(w => _workItems.push(w))
+          State.workItems = [..._workItems]
+          State.work.filtered = [...State.workItems]
+          localStorage.setItem('lemango_work_items_v1', JSON.stringify(_workItems))
+          if (tab === 'work' && typeof renderWorkCalendar === 'function') renderWorkCalendar()
+          else if (tab === 'dashboard' && typeof renderDashboard === 'function') renderDashboard()
+          console.log('[RealtimeSync] 업무일정 동기화')
+          break
+        case 'planItems':
+          State.planItems = parsed || []
+          State.plan.filtered = State.planItems.filter(p => !p.confirmed)
+          localStorage.setItem('lemango_plan_items_v1', JSON.stringify(State.planItems))
+          if (tab === 'plan' && typeof renderPlanTable === 'function') renderPlanTable()
+          else if (tab === 'dashboard' && typeof renderDashboard === 'function') renderDashboard()
+          console.log('[RealtimeSync] 기획 동기화')
+          break
+        case 'settings':
+          Object.keys(_settings).forEach(k => delete _settings[k])
+          Object.assign(_settings, parsed || {})
+          localStorage.setItem('lemango_settings_v1', JSON.stringify(_settings))
+          if (typeof populateAllSelects === 'function') populateAllSelects()
+          console.log('[RealtimeSync] 설정 동기화')
+          break
+        case 'channels':
+          _channels.length = 0
+          ;(parsed || []).forEach(c => _channels.push(c))
+          _platforms = _channels.filter(c => c.active).map(c => c.name)
+          localStorage.setItem('lemango_channels_v1', JSON.stringify(_channels))
+          localStorage.setItem('lemango_platforms_v1', JSON.stringify(_platforms))
+          if (typeof populateAllSelects === 'function') populateAllSelects()
+          console.log('[RealtimeSync] 채널 동기화')
+          break
+        case 'depts':
+          if (typeof _depts !== 'undefined') {
+            _depts.length = 0; (parsed || []).forEach(d => _depts.push(d))
+            localStorage.setItem('lemango_depts_v1', JSON.stringify(_depts))
+            if (typeof populateAllSelects === 'function') populateAllSelects()
+          }
+          console.log('[RealtimeSync] 부서 동기화')
+          break
+        case 'workCategories':
+          _workCategories.length = 0
+          ;(parsed || []).forEach(c => _workCategories.push(c))
+          localStorage.setItem('lemango_work_categories_v1', JSON.stringify(_workCategories))
+          console.log('[RealtimeSync] 업무 카테고리 동기화')
+          break
+        case 'designCodes':
+          if (typeof _designCodes !== 'undefined') {
+            _designCodes.length = 0; (parsed || []).forEach(c => _designCodes.push(c))
+            localStorage.setItem('lemango_design_codes_v1', JSON.stringify(_designCodes))
+          }
+          console.log('[RealtimeSync] 디자인코드 동기화')
+          break
+        case 'planPhases':
+          _planPhases = parsed || []
+          localStorage.setItem('lemango_plan_phases_v1', JSON.stringify(_planPhases))
+          console.log('[RealtimeSync] 기획 단계 동기화')
+          break
+        case 'allowedIps':
+          if (typeof _allowedIps !== 'undefined') {
+            _allowedIps.length = 0; (parsed || []).forEach(ip => _allowedIps.push(ip))
+            localStorage.setItem('lemango_allowed_ips_v1', JSON.stringify(_allowedIps))
+          }
+          break
+        case 'ipEnforceMode':
+          if (typeof parsed === 'string') {
+            _ipEnforceMode = parsed
+            localStorage.setItem('lemango_ip_enforce_v1', _ipEnforceMode)
+          }
+          break
+        case 'productHistory':
+          if (typeof _saveProductHistoryLocal === 'function') _saveProductHistoryLocal(parsed)
+          break
+        default:
+          console.log('[RealtimeSync] 기타 sharedData:', docId)
+      }
+    } catch(e) { console.error('[RealtimeSync] sharedData 처리 오류:', docId, e) }
+  }, 500)
+}
+
+window._onPostsChanged = function() {
+  if (_postsReloadTimer) clearTimeout(_postsReloadTimer)
+  _postsReloadTimer = setTimeout(() => {
+    const tab = _getActiveTab()
+    if (tab === 'board' && typeof loadBoardPosts === 'function') {
+      loadBoardPosts()
+      console.log('[RealtimeSync] 게시판 동기화')
+    } else if (tab === 'dashboard' && typeof renderDashNotice === 'function') {
+      try { renderDashNotice() } catch(e) {}
+    }
+  }, 1000)
+}
+
+window._onCommentsChanged = function() {
+  if (_commentsReloadTimer) clearTimeout(_commentsReloadTimer)
+  _commentsReloadTimer = setTimeout(() => {
+    // 열려있는 모달의 댓글 섹션을 다시 로드
+    const openDialogs = document.querySelectorAll('dialog[open]')
+    openDialogs.forEach(d => {
+      const sec = d.querySelector('.comment-section[data-modal-type][data-target-id]')
+      if (sec && typeof loadComments === 'function') {
+        try { loadComments(sec.dataset.modalType, sec.dataset.targetId) } catch(e) {}
+      }
+    })
+    console.log('[RealtimeSync] 댓글 동기화')
+  }, 1000)
+}
+
+window._onNewNotification = function() {
+  if (typeof _fsLoadNotifications === 'function') _fsLoadNotifications()
+  else if (typeof renderNotifications === 'function') renderNotifications()
+}
+
+window._onAttendanceChanged = function() {
+  if (_attendReloadTimer) clearTimeout(_attendReloadTimer)
+  _attendReloadTimer = setTimeout(() => {
+    if (typeof loadHrData === 'function') loadHrData().catch(()=>{})
+    if (_getActiveTab() === 'hradmin' && typeof renderHrAdminContent === 'function') {
+      try { renderHrAdminContent() } catch(e) {}
+    }
+    console.log('[RealtimeSync] 출퇴근 동기화')
+  }, 1000)
+}
+
+window._onLeavesChanged = function() {
+  if (_leavesReloadTimer) clearTimeout(_leavesReloadTimer)
+  _leavesReloadTimer = setTimeout(() => {
+    if (typeof loadHrData === 'function') loadHrData().catch(()=>{})
+    const tab = _getActiveTab()
+    if (tab === 'hradmin' && typeof renderHrAdminContent === 'function') {
+      try { renderHrAdminContent() } catch(e) {}
+    } else if (tab === 'mypage' && typeof renderMyPage === 'function') {
+      try { renderMyPage() } catch(e) {}
+    }
+    console.log('[RealtimeSync] 연차 동기화')
+  }, 1000)
+}
+
+window._onPersonalSchedulesChanged = function() {
+  if (_getActiveTab() === 'work' && typeof loadPersonalSchedules === 'function') {
+    loadPersonalSchedules()
+    console.log('[RealtimeSync] 개인일정 동기화')
+  }
+}
+
+// =============================================
 // ===== 공통 상수 =====
 // =============================================
 const PLACEHOLDER_IMG = 'assets/logo-placeholder.png'
@@ -423,6 +732,8 @@ async function savePlanPhases() {
   localStorage.setItem(PLAN_PHASES_KEY, JSON.stringify(_planPhases || []))
   try {
     await _fsSync('planPhases', _planPhases || [])
+    if (!window._lastSharedSaveTime) window._lastSharedSaveTime = {}
+    window._lastSharedSaveTime['planPhases'] = Date.now()
   } catch (e) {
     _onSaveFailed('savePlanPhases', e)
   }
@@ -535,6 +846,8 @@ async function saveChannels() {
   // Firestore 주 저장소
   try {
     await _fsSync('channels', _channels)
+    if (!window._lastSharedSaveTime) window._lastSharedSaveTime = {}
+    window._lastSharedSaveTime['channels'] = Date.now()
   } catch (e) {
     _onSaveFailed('saveChannels', e)
   }
@@ -601,6 +914,8 @@ async function saveSettings() {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(_settings))
   try {
     await _fsSync('settings', _settings)
+    if (!window._lastSharedSaveTime) window._lastSharedSaveTime = {}
+    window._lastSharedSaveTime['settings'] = Date.now()
   } catch (e) {
     _onSaveFailed('saveSettings', e)
   }
@@ -622,6 +937,8 @@ async function saveDepts() {
   localStorage.setItem('lemango_depts_v1', JSON.stringify(_depts))
   try {
     await _fsSync('depts', _depts)
+    if (!window._lastSharedSaveTime) window._lastSharedSaveTime = {}
+    window._lastSharedSaveTime['depts'] = Date.now()
   } catch (e) {
     _onSaveFailed('saveDepts', e)
   }
@@ -652,6 +969,8 @@ async function saveAllowedIps() {
   localStorage.setItem('lemango_allowed_ips_v1', JSON.stringify(_allowedIps))
   try {
     await _fsSync('allowedIps', _allowedIps)
+    if (!window._lastSharedSaveTime) window._lastSharedSaveTime = {}
+    window._lastSharedSaveTime['allowedIps'] = Date.now()
   } catch (e) {
     _onSaveFailed('saveAllowedIps', e)
   }
@@ -661,6 +980,8 @@ async function saveIpEnforceMode() {
   localStorage.setItem('lemango_ip_enforce_v1', _ipEnforceMode)
   try {
     await _fsSync('ipEnforceMode', _ipEnforceMode)
+    if (!window._lastSharedSaveTime) window._lastSharedSaveTime = {}
+    window._lastSharedSaveTime['ipEnforceMode'] = Date.now()
   } catch (e) {
     _onSaveFailed('saveIpEnforceMode', e)
   }
@@ -847,6 +1168,8 @@ async function saveEvents() {
   localStorage.setItem('lemango_events_v1', JSON.stringify(_events))
   try {
     await _fsSync('events', _events)
+    if (!window._lastSharedSaveTime) window._lastSharedSaveTime = {}
+    window._lastSharedSaveTime['events'] = Date.now()
   } catch (e) {
     _onSaveFailed('saveEvents', e)
   }
@@ -867,6 +1190,8 @@ async function saveWorkCategories() {
   localStorage.setItem('lemango_work_categories_v1', JSON.stringify(_workCategories))
   try {
     await _fsSync('workCategories', _workCategories)
+    if (!window._lastSharedSaveTime) window._lastSharedSaveTime = {}
+    window._lastSharedSaveTime['workCategories'] = Date.now()
   } catch (e) {
     _onSaveFailed('saveWorkCategories', e)
   }
@@ -880,6 +1205,8 @@ async function saveWorkItems() {
   localStorage.setItem('lemango_work_items_v1', JSON.stringify(_workItems))
   try {
     await _fsSync('workItems', _workItems)
+    if (!window._lastSharedSaveTime) window._lastSharedSaveTime = {}
+    window._lastSharedSaveTime['workItems'] = Date.now()
   } catch (e) {
     _onSaveFailed('saveWorkItems', e)
   }

@@ -175,6 +175,9 @@ function showApp(userData) {
   if (!_appInitialized && typeof initApp === 'function') {
     _appInitialized = true
     initApp()
+  } else if (typeof setupRealtimeSync === 'function') {
+    // 재로그인 시 (initApp이 다시 호출되지 않을 때) 리스너 재등록
+    setupRealtimeSync()
   }
   // URL 해시가 있으면 해당 탭 유지 (새로고침 시), 없으면 대시보드
   try {
@@ -222,7 +225,9 @@ window.handleLogout = function() {
     if (typeof resetTabs === 'function') resetTabs()
     else if (typeof openTab === 'function') openTab('dashboard')
   } catch(e){}
-  // 3) Firebase 로그아웃
+  // 3) 실시간 동기화 리스너 해제 (메모리 누수 + 타 사용자 데이터 수신 방지)
+  try { if (typeof teardownRealtimeSync === 'function') teardownRealtimeSync() } catch(e){}
+  // 4) Firebase 로그아웃
   try { auth.signOut() } catch(e){}
   // 4) 전역 캐시 초기화
   try {
