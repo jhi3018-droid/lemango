@@ -236,6 +236,8 @@ window.handleLogout = function() {
     _currentUserDept = ''
     _currentUserGrade = 1
     if (typeof _notifications !== 'undefined') { _notifications = []; if (typeof saveNotifications === 'function') saveNotifications() }
+    // 알림 자동팝업 1회 플래그 초기화 — 다음 로그인 시 다시 1회 표시 가능
+    try { sessionStorage.removeItem('_notifAutoPopupDone') } catch(e) {}
   } catch(e){}
   // 5) 로그인 화면 표시
   try { showLogin() } catch(e){}

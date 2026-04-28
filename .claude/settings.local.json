@@ -29,7 +29,15 @@
       "Bash(sort -u /tmp/defined2.txt -o /tmp/defined2.txt)",
       "Bash(sed -n '110,145p' js/activity-log.js)",
       "Bash(sed -n '290,325p' js/board.js)",
-      "Bash(sed -n '350,380p' js/board.js)"
+      "Bash(sed -n '350,380p' js/board.js)",
+      "Bash(python -m json.tool firebase.json)",
+      "Bash(python -m json.tool firestore.indexes.json)",
+      "Bash(sed -n '1158,1185p' js/core.js)",
+      "Bash(sed -n '170,190p' js/router.js)",
+      "Bash(sed -n '162,200p' js/auth.js)",
+      "Bash(sed -n '290,315p' js/main.js)",
+      "Bash(sed -n '680,690p' js/core.js)",
+      "Bash(sed -n '150,160p' js/router.js)"
     ]
   }
 }

@@ -250,22 +250,27 @@ async function initApp() {
   if (typeof checkWorkMentionAlerts === 'function') checkWorkMentionAlerts()
   if (typeof checkPersonalScheduleAlerts === 'function') checkPersonalScheduleAlerts()
   // 로그인 직후 미읽은 알림 있으면 드롭다운 자동 표시 (urgent: 1초/5초유지, normal: 2초/3초유지)
+  // 같은 로그인 세션 내 1회만 — 새로고침 반복 시 매번 뜨는 것 방지 (sessionStorage 는 logout 시 clear)
   // 알림 전체 OFF 시 자동 팝업 생략
   const _nsLogin = (typeof getNotifSettings === 'function') ? getNotifSettings() : null
   const _notifOff = _nsLogin && _nsLogin.globalEnabled === false
   const hasUrgent = !_notifOff && (_notifications || []).some(n => !n.dismissed && !n.read && n.priority === 'urgent')
-  setTimeout(() => {
-    if (_notifOff) return
-    const unread = (_notifications || []).filter(n => !n.dismissed && !n.read).length
-    if (unread > 0) {
-      const dd = document.getElementById('notifDropdown')
-      if (dd) {
-        renderNotifications()
-        dd.style.display = 'block'
-        setTimeout(() => { dd.style.display = 'none' }, hasUrgent ? 5000 : 3000)
+  let _autoPopupShown = false
+  try { _autoPopupShown = sessionStorage.getItem('_notifAutoPopupDone') === '1' } catch(e) {}
+  if (!_notifOff && !_autoPopupShown) {
+    setTimeout(() => {
+      try { sessionStorage.setItem('_notifAutoPopupDone', '1') } catch(e) {}
+      const unread = (_notifications || []).filter(n => !n.dismissed && !n.read).length
+      if (unread > 0) {
+        const dd = document.getElementById('notifDropdown')
+        if (dd) {
+          renderNotifications()
+          dd.style.display = 'block'
+          setTimeout(() => { dd.style.display = 'none' }, hasUrgent ? 5000 : 3000)
+        }
       }
-    }
-  }, hasUrgent ? 1000 : 2000)
+    }, hasUrgent ? 1000 : 2000)
+  }
   // 알림 드롭다운 외부 클릭 닫기
   document.addEventListener('click', e => {
     const wrap = document.getElementById('notifWrap')

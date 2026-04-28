@@ -680,7 +680,8 @@ let _currentUserName = ''
 const TAB_PERMISSIONS = {
   dashboard: 1, product: 1, stock: 1, sales: 1, plan: 1,
   event: 1, work: 1, board: 1, orgchart: 1, mypage: 1,
-  hradmin: 2, members: 3, settings: 4,
+  hradmin: 2, settings: 4,
+  // members: 제거됨 — hradmin 의 sub-panel(memberListPanel)로 통합. 진입은 hradmin 권한으로 충분
 }
 window.TAB_PERMISSIONS = TAB_PERMISSIONS
 
