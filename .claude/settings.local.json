@@ -26,7 +26,10 @@
       "Bash(node --check js/plan.js)",
       "Bash(node --check js/product-code.js)",
       "Bash(sort -u /tmp/called2.txt -o /tmp/called2.txt)",
-      "Bash(sort -u /tmp/defined2.txt -o /tmp/defined2.txt)"
+      "Bash(sort -u /tmp/defined2.txt -o /tmp/defined2.txt)",
+      "Bash(sed -n '110,145p' js/activity-log.js)",
+      "Bash(sed -n '290,325p' js/board.js)",
+      "Bash(sed -n '350,380p' js/board.js)"
     ]
   }
 }

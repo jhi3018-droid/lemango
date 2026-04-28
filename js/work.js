@@ -929,10 +929,12 @@ function editWorkFromDetail(no) {
   }
   const info = (typeof getEditLockInfo === 'function') ? getEditLockInfo('work', no) : null
   if (info) {
-    showToast(`${info.userName || '다른 사용자'}님이 편집 중입니다`, 'warn')
+    const who = (typeof formatUserName === 'function') ? formatUserName(info.name, info.position) : (info.name || '다른 사용자')
+    showToast(`${who}님이 편집 중입니다`, 'warn')
     return
   }
-  if (typeof acquireEditLock === 'function') acquireEditLock('work', no)
+  // 락 획득 실패 시 진입 차단 (TOCTOU 보호 — acquireEditLock 자체가 토스트 표시)
+  if (typeof acquireEditLock === 'function' && !acquireEditLock('work', no)) return
   closeWorkDetailModal()
   const modal = document.getElementById('workRegisterModal')
   if (!modal) return

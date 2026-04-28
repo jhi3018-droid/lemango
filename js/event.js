@@ -506,7 +506,10 @@ function _evSyncLockWarn() {
   const el = document.getElementById('evLockWarn')
   if (!el) return
   const info = (typeof getEditLockInfo === 'function') ? getEditLockInfo('event', _editingEventNo) : null
-  if (info) { el.textContent = `🔒 ${info.userName || '다른 사용자'} 편집중`; el.style.display = '' }
+  if (info) {
+    const _who = (typeof formatUserName === 'function') ? formatUserName(info.name, info.position) : (info.name || '다른 사용자')
+    el.textContent = `🔒 ${_who} 편집중`; el.style.display = ''
+  }
   else { el.textContent = ''; el.style.display = 'none' }
 }
 window._evSyncLockWarn = _evSyncLockWarn
@@ -529,11 +532,16 @@ function toggleEventEdit() {
     if (!ev) return
     const info = (typeof getEditLockInfo === 'function') ? getEditLockInfo('event', _editingEventNo) : null
     if (info) {
-      showToast(`${info.userName || '다른 사용자'}님이 편집 중입니다`, 'warn')
+      const who = (typeof formatUserName === 'function') ? formatUserName(info.name, info.position) : (info.name || '다른 사용자')
+      showToast(`${who}님이 편집 중입니다`, 'warn')
       _evSyncLockWarn()
       return
     }
-    if (typeof acquireEditLock === 'function') acquireEditLock('event', _editingEventNo)
+    // 락 획득 실패 시 진입 차단 (TOCTOU 보호 — acquireEditLock 자체가 토스트 표시)
+    if (typeof acquireEditLock === 'function' && !acquireEditLock('event', _editingEventNo)) {
+      _evSyncLockWarn()
+      return
+    }
     modal.classList.add('edit-mode')
     _evUpdateHeaderBtns('edit')
     _evSyncLockWarn()
