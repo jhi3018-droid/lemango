@@ -1015,6 +1015,11 @@ function _parseProductUpload(raw) {
   // 업로드 파일에 실제 존재하는 필드 키 집합 (누락 컬럼은 기존값 보존용)
   // 신규양식: 헤더에서 발견된 키만 / 레거시: _LEGACY_COL의 모든 키 (전체 덮어쓰기 유지)
   const presentKeys = new Set(Object.keys(COL))
+  // 사이즈 규격 컬럼이 헤더에 있으면 sizeSpec_<size>_<part> 로 등록 (diff 가 인식)
+  // 예: "XS 가슴" → sizeSpec_XS_bust, "F" → sizeSpec_F
+  Object.keys(sizeSpecColMap).forEach(k => presentKeys.add('sizeSpec_' + k))
+  // 쇼핑몰코드 컬럼이 헤더에 있으면 mallCode_<platform> 으로 등록 (헤더 없으면 diff 스킵)
+  Object.keys(mallColMap).forEach(k => presentKeys.add('mallCode_' + k))
 
   const added = [], updated = [], failed = []
   dataRows.forEach(({ row, userRowNo }) => {
@@ -1179,9 +1184,32 @@ function _diffProduct(existing, uploaded, presentKeys) {
       diffs.push({ key: 'images.' + sec, label: '이미지(' + sec + ')', oldVal: oldArr, newVal: newArr })
     }
   })
-  // mallCodes 비교
+  // sizeSpec 비교 — 헤더에 해당 컬럼이 있을 때만 (presentKeys 에 sizeSpec_<size>_<part> 마커가 있어야 함)
+  const _SIZE_SPEC_SIZES_DIFF = ['XS','S','M','L','XL','XXL']
+  const _SPEC_PART_LABEL = { bust: '가슴', waist: '허리', hip: '엉덩이' }
+  _SIZE_SPEC_SIZES_DIFF.forEach(sz => {
+    Object.keys(_SPEC_PART_LABEL).forEach(part => {
+      if (presentKeys && !presentKeys.has('sizeSpec_' + sz + '_' + part)) return
+      const oldV = String(existing.sizeSpec?.[sz]?.[part] ?? '')
+      const newV = String(uploaded.sizeSpec?.[sz]?.[part] ?? '')
+      if (oldV !== newV) {
+        diffs.push({ key: 'sizeSpec.' + sz + '.' + part, label: sz + ' ' + _SPEC_PART_LABEL[part], oldVal: oldV, newVal: newV })
+      }
+    })
+  })
+  // F 사이즈 (단일 컬럼)
+  if (!presentKeys || presentKeys.has('sizeSpec_F')) {
+    const _fStr = (v) => v == null ? '' : (typeof v === 'object' ? String(v.bust || v.waist || v.hip || '') : String(v))
+    const oldF = _fStr(existing.sizeSpec?.F)
+    const newF = _fStr(uploaded.sizeSpec?.F)
+    if (oldF !== newF) {
+      diffs.push({ key: 'sizeSpec.F', label: 'F', oldVal: oldF, newVal: newF })
+    }
+  }
+  // mallCodes 비교 — 헤더에 해당 쇼핑몰 컬럼이 있을 때만 (false positive 방지)
   const allMallKeys = new Set([...Object.keys(existing.mallCodes || {}), ...Object.keys(uploaded.mallCodes || {})])
   allMallKeys.forEach(k => {
+    if (presentKeys && !presentKeys.has('mallCode_' + k)) return
     const oldV = (existing.mallCodes?.[k] || '')
     const newV = (uploaded.mallCodes?.[k] || '')
     if (oldV !== newV) {
