@@ -446,17 +446,27 @@ function buildDetailContent(p) {
         </div>
       </div>`
 
-  const field = (label, key, val, type='text', opts='', spanClass='') =>
-    `<div class="dfield ${spanClass}">
+  const field = (label, key, val, type='text', opts='', spanClass='') => {
+    // type=number 일 때 입력값 정제: "55,000원" / "-" 같은 표시용 포맷이 들어와도
+    // <input type="number"> 가 거부하지 않도록 숫자/소수점/음수만 남기고 "-" 단독은 빈값으로
+    let inputVal
+    if (type === 'number') {
+      const stripped = String(val ?? '').replace(/[^\d.-]/g, '')
+      inputVal = (stripped === '-' || stripped === '') ? '' : stripped
+    } else {
+      inputVal = (val || '').toString().replace(/"/g, '&quot;')
+    }
+    return `<div class="dfield ${spanClass}">
       <span class="dfield-label">${label}</span>
       <span class="dfield-value${!val ? ' empty' : ''}${type==='textarea' ? ' long' : ''}">${val || '-'}</span>
       ${type==='select'
         ? `<select data-key="${key}">${opts}</select>`
         : type==='textarea'
           ? `<textarea data-key="${key}" rows="4">${val||''}</textarea>`
-          : `<input type="${type}" data-key="${key}" value="${(val||'').toString().replace(/"/g,'&quot;')}" />`
+          : `<input type="${type}" data-key="${key}" value="${inputVal}" />`
       }
     </div>`
+  }
 
   // URL 필드 (복사 버튼 포함) — textarea 타입은 URL별 개별 복사 버튼 표시
   const urlField = (label, key, val, type='text') => {
