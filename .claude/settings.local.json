@@ -24,7 +24,9 @@
       "Bash(node --check js/core.js)",
       "Bash(node --check js/auth.js)",
       "Bash(node --check js/plan.js)",
-      "Bash(node --check js/product-code.js)"
+      "Bash(node --check js/product-code.js)",
+      "Bash(sort -u /tmp/called2.txt -o /tmp/called2.txt)",
+      "Bash(sort -u /tmp/defined2.txt -o /tmp/defined2.txt)"
     ]
   }
 }

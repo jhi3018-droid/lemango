@@ -68,13 +68,8 @@ window.onNewHireInputChange = function(mode, isInit) {
 // ===== Load members from Firestore =====
 window.loadMembers = async function() {
   try {
-    // 캐시 우회 — 항상 서버 최신 데이터 (승인/수정 즉시 반영)
-    let snapshot
-    try {
-      snapshot = await db.collection('users').orderBy('createdAt', 'desc').get({ source: 'server' })
-    } catch (e) {
-      snapshot = await db.collection('users').orderBy('createdAt', 'desc').get()
-    }
+    // onSnapshot(users) 가 캐시를 항상 최신 상태로 유지 — 일반 .get() 으로 충분
+    const snapshot = await db.collection('users').orderBy('createdAt', 'desc').get()
     State.members = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
     renderMembersKPI()
     populateMemberDeptFilter()

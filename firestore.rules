@@ -96,5 +96,18 @@ service cloud.firestore {
       allow write: if isAuth() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.grade >= 4;
     }
+
+    // salaries — 급여 (민감 정보)
+    // read: 본인 doc 또는 관리자(grade>=3)
+    // write: 관리자(grade>=3)만
+    match /salaries/{doc} {
+      allow read: if isAuth() && (
+        resource.data.uid == request.auth.uid ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.grade >= 3);
+      allow create: if isAuth() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.grade >= 3;
+      allow update, delete: if isAuth() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.grade >= 3;
+    }
   }
 }

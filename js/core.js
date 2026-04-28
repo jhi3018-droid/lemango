@@ -315,6 +315,7 @@ let _postsReloadTimer = null
 let _commentsReloadTimer = null
 let _attendReloadTimer = null
 let _leavesReloadTimer = null
+let _usersReloadTimer = null
 
 window.setupRealtimeSync = function() {
   // 기존 리스너 해제 (중복 방지)
@@ -391,6 +392,14 @@ window.setupRealtimeSync = function() {
     _snapshotUnsubscribes.push(u7)
   } catch (e) { console.error('[RealtimeSync] personalSchedules listener setup failed:', e) }
 
+  // 8) users (회원가입/승인/수정/삭제)
+  try {
+    const u8 = db.collection('users').onSnapshot(snap => {
+      if (snap.docChanges().length > 0) _onUsersChanged()
+    }, err => console.error('[RealtimeSync] users listener error:', err))
+    _snapshotUnsubscribes.push(u8)
+  } catch (e) { console.error('[RealtimeSync] users listener setup failed:', e) }
+
   console.log('[RealtimeSync] ' + _snapshotUnsubscribes.length + '개 리스너 등록 완료')
 }
 
@@ -404,6 +413,7 @@ window.teardownRealtimeSync = function() {
   if (_commentsReloadTimer) { clearTimeout(_commentsReloadTimer); _commentsReloadTimer = null }
   if (_attendReloadTimer) { clearTimeout(_attendReloadTimer); _attendReloadTimer = null }
   if (_leavesReloadTimer) { clearTimeout(_leavesReloadTimer); _leavesReloadTimer = null }
+  if (_usersReloadTimer) { clearTimeout(_usersReloadTimer); _usersReloadTimer = null }
   console.log('[RealtimeSync] 리스너 해제 완료')
 }
 
@@ -615,6 +625,30 @@ window._onPersonalSchedulesChanged = function() {
     loadPersonalSchedules()
     console.log('[RealtimeSync] 개인일정 동기화')
   }
+}
+
+window._onUsersChanged = function() {
+  if (_usersReloadTimer) clearTimeout(_usersReloadTimer)
+  _usersReloadTimer = setTimeout(() => {
+    // _allUsers 캐시 강제 재로드 (멘션·담당자·조직도가 즉시 신규/변경 사용자 반영)
+    const refresh = (typeof loadAllUsers === 'function')
+      ? loadAllUsers(true).catch(err => console.warn('[RealtimeSync] loadAllUsers failed:', err))
+      : Promise.resolve()
+    refresh.then(() => {
+      const tab = _getActiveTab()
+      // 회원관리 패널이 표시 중일 때만 테이블 다시 로드 (hradmin 의 sub-panel)
+      const memberPanel = document.getElementById('memberListPanel')
+      const memberPanelVisible = memberPanel && memberPanel.style.display !== 'none'
+      if (tab === 'hradmin' && memberPanelVisible && typeof loadMembers === 'function') {
+        try { loadMembers() } catch (e) {}
+      }
+      // 조직도 탭: 즉시 재렌더 (_allUsers 기반)
+      if (tab === 'orgchart' && typeof renderOrgChart === 'function') {
+        try { renderOrgChart() } catch (e) {}
+      }
+      console.log('[RealtimeSync] 회원 동기화')
+    })
+  }, 1000)
 }
 
 // =============================================
