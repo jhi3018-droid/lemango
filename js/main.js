@@ -40,6 +40,7 @@ async function initApp() {
   makeDraggableResizable(document.getElementById('registerModal'))
   makeDraggableResizable(document.getElementById('planRegisterModal'))
   makeDraggableResizable(document.getElementById('planDetailModal'))
+  makeDraggableResizable(document.getElementById('planDeleteConfirmModal'), 480, 320)
   makeDraggableResizable(document.getElementById('stockRegisterModal'))
   makeDraggableResizable(document.getElementById('outgoingModal'))
   makeDraggableResizable(document.getElementById('weeklyReportModal'), 600, 400)

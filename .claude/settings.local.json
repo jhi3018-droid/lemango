@@ -39,7 +39,8 @@
       "Bash(sed -n '680,690p' js/core.js)",
       "Bash(sed -n '150,160p' js/router.js)",
       "Bash(sed -n '560,585p' js/modals.js)",
-      "Bash(sed -n '1125,1145p' js/modals.js)"
+      "Bash(sed -n '1125,1145p' js/modals.js)",
+      "Bash(node *)"
     ]
   }
 }

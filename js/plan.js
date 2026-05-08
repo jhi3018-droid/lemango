@@ -725,6 +725,12 @@ const PLAN_REGULAR_COLS = [
     td: p=>`<td data-editable="type">${typeBadge(p.type)}</td>` },
   { key:'salePrice',  label:'판매가', fixed:false, thAttr:'data-key="salePrice" style="text-align:right"',
     td: p=>`<td data-editable="salePrice" style="text-align:right"><span class="price">${fmtPrice(p.salePrice)}</span></td>` },
+  { key:'lastModifiedByName', label:'최종 수정자', fixed:false, thAttr:'data-key="lastModifiedByName" style="width:130px"',
+    td: p=>{
+      const n = p.lastModifiedByName || ''
+      const at = p.lastModifiedAt ? String(p.lastModifiedAt).slice(0,10) : ''
+      return `<td style="font-size:11px;color:#666">${n ? `<div>${n}</div>` : ''}${at ? `<div style="font-size:10px;color:#999">${at}</div>` : (n ? '' : '-')}</td>`
+    } },
 ]
 function _getPlanScheduleCols() {
   return getPlanPhases().map(s => ({
@@ -824,9 +830,10 @@ function renderPlanTable() {
   renderPagination('npPagination', 'plan', 'renderPlanTable')
   // Feature 5: row drag sort
   initPlanDragSort()
-  // Feature 6: inline edit
-  initInlineEdit('planTable', 'plan')
-  // Feature 12: row double-click → detail
+  // Feature 6: inline edit DISABLED — all edits go through detail modal
+  // (preserves edit lock, activity log, watch notifications, permission checks)
+  // initInlineEdit('planTable', 'plan') — intentionally not wired
+  // Feature 12: row double-click → detail (now also covers cells previously inline-editable)
   initRowDblClick('planTable', (tr) => {
     const no = Number(tr.getAttribute('data-no'))
     if (!Number.isNaN(no)) openPlanDetailModal(no)
@@ -1115,7 +1122,150 @@ function _pdUpdateHeaderBtns(mode) {
     const cb = document.getElementById('pdConfirmBtn')
     if (cb) cb.style.display = 'none'
   }
+  // Delete button — only when in edit mode AND user has permission
+  const delBtn = document.getElementById('pdDeleteBtn')
+  if (delBtn) {
+    const canDel = item ? canDeletePlanItem(item) : false
+    delBtn.style.display = (mode === 'edit' && canDel) ? 'inline-block' : 'none'
+  }
 }
+
+// Plan delete permission — author OR admin (grade >= 3)
+function canDeletePlanItem(item) {
+  if (!item) return false
+  const user = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth().currentUser : null
+  const uid = user?.uid || ''
+  const grade = (typeof _currentUserGrade !== 'undefined') ? (_currentUserGrade || 1) : 1
+  if (grade >= 3) return true
+  return !!uid && item.createdBy === uid
+}
+window.canDeletePlanItem = canDeletePlanItem
+
+// Open delete confirmation modal — type-to-confirm pattern
+function requestPlanDelete() {
+  const item = State.planItems.find(p => p.no === _editingPlanNo)
+  if (!item) return
+  if (!canDeletePlanItem(item)) {
+    showToast('삭제 권한이 없습니다 (작성자 또는 관리자만 가능).', 'warning')
+    return
+  }
+  const expected = (item.productCode && item.productCode.trim()) || (item.sampleNo && item.sampleNo.trim()) || ''
+  if (!expected) {
+    showToast('삭제 식별자(품번 또는 샘플번호)를 찾을 수 없습니다.', 'error')
+    return
+  }
+  const modal = document.getElementById('planDeleteConfirmModal')
+  if (!modal) return
+  document.getElementById('pdcTargetCode').textContent = expected
+  const meta = []
+  if (item.productCode && item.productCode.trim() && item.sampleNo) meta.push('샘플번호: ' + item.sampleNo)
+  if (item.nameKr) meta.push(item.nameKr)
+  if (item.brand) meta.push(item.brand)
+  document.getElementById('pdcTargetMeta').textContent = meta.join(' · ')
+  document.getElementById('pdcInputLabel').textContent = `위 식별자(${expected})를 정확히 입력해주세요`
+  const input = document.getElementById('pdcConfirmInput')
+  input.value = ''
+  input.classList.remove('pdc-input-match')
+  input.placeholder = expected
+  document.getElementById('pdcConfirmBtn').disabled = true
+  modal._pdcExpected = expected
+  modal._pdcTargetNo = item.no
+  if (typeof centerModal === 'function') centerModal(modal)
+  modal.showModal()
+  setTimeout(() => input.focus(), 80)
+}
+window.requestPlanDelete = requestPlanDelete
+
+// Input handler — exact-match enables confirm button
+function _pdcOnInput() {
+  const input = document.getElementById('pdcConfirmInput')
+  const modal = document.getElementById('planDeleteConfirmModal')
+  if (!input || !modal) return
+  const expected = modal._pdcExpected || ''
+  const match = input.value === expected
+  document.getElementById('pdcConfirmBtn').disabled = !match
+  input.classList.toggle('pdc-input-match', match)
+}
+window._pdcOnInput = _pdcOnInput
+
+function closePlanDeleteConfirm() {
+  const modal = document.getElementById('planDeleteConfirmModal')
+  if (modal && modal.open) modal.close()
+}
+window.closePlanDeleteConfirm = closePlanDeleteConfirm
+
+// Execute delete — splice + persist + cleanup + close
+async function confirmPlanDelete() {
+  const modal = document.getElementById('planDeleteConfirmModal')
+  if (!modal) return
+  const targetNo = modal._pdcTargetNo
+  const idx = State.planItems.findIndex(p => p.no === targetNo)
+  if (idx < 0) {
+    showToast('삭제 대상을 찾을 수 없습니다 (이미 삭제됨).', 'warning')
+    closePlanDeleteConfirm()
+    return
+  }
+  const item = State.planItems[idx]
+  // Permission re-check — defense against UI bypass
+  if (!canDeletePlanItem(item)) {
+    showToast('삭제 권한이 없습니다.', 'warning')
+    closePlanDeleteConfirm()
+    return
+  }
+  // Input match re-check
+  const input = document.getElementById('pdcConfirmInput')
+  const expected = modal._pdcExpected || ''
+  if (!input || input.value !== expected) {
+    showToast('식별자가 일치하지 않습니다.', 'warning')
+    return
+  }
+
+  const btn = document.getElementById('pdcConfirmBtn')
+  const originalText = btn.textContent
+  btn.disabled = true
+  btn.textContent = '삭제 중...'
+
+  // Best-effort Storage cleanup — orphan prevention for tempImages uploads
+  if (Array.isArray(item.tempImages) && item.tempImages.length && typeof storage !== 'undefined') {
+    const paths = item.tempImages.map(t => t && t.path).filter(Boolean)
+    for (const p of paths) {
+      try { await storage.ref().child(p).delete() } catch (e) { console.warn('storage cleanup failed:', p, e) }
+    }
+  }
+
+  // Splice + persist
+  State.planItems.splice(idx, 1)
+  State.plan.filtered = State.planItems.filter(p => !p.confirmed)
+  try {
+    await savePlanItems()
+  } catch (e) {
+    showToast('삭제 저장 실패: ' + (e.message || e), 'error')
+    btn.disabled = false
+    btn.textContent = originalText
+    return
+  }
+
+  // Release any held edit lock
+  try {
+    if (typeof releaseEditLock === 'function') releaseEditLock('plan', targetNo)
+  } catch (e) {}
+
+  // Activity log
+  if (typeof logActivity === 'function') {
+    logActivity('delete', '신규기획', `기획삭제: ${expected}${item.nameKr ? ' (' + item.nameKr + ')' : ''}`)
+  }
+
+  // Close both modals + refresh
+  closePlanDeleteConfirm()
+  if (typeof closePlanDetailModal === 'function') closePlanDetailModal(true)
+  if (typeof renderPlanTable === 'function') renderPlanTable()
+  if (typeof renderDashboard === 'function') renderDashboard()
+  showToast('삭제됐습니다.', 'success')
+
+  btn.disabled = false
+  btn.textContent = originalText
+}
+window.confirmPlanDelete = confirmPlanDelete
 
 function _pdSyncWatchBtn() {
   const btn = document.getElementById('pdWatchBtn')

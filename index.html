@@ -505,6 +505,9 @@
         <button class="btn btn-new" onclick="openPlanRegisterModal()">＋ 신규기획 등록</button>
         <div class="action-btns">
           <button class="btn btn-accent" onclick="downloadExcel('plan')">⬇ 다운로드</button>
+          <label class="btn btn-outline" for="planUploadFile">⬆ 업로드</label>
+          <input type="file" id="planUploadFile" accept=".xlsx,.xls" style="display:none" onchange="handleUpload(this,'plan')" />
+          <button class="btn btn-ghost" onclick="downloadSample('plan')">샘플</button>
         </div>
       </div>
     </div>
@@ -1506,12 +1509,39 @@
       <span class="edit-lock-warn" id="pdLockWarn" style="display:none"></span>
       <button class="btn btn-sm btn-outline" id="pdCloneBtn" onclick="clonePlanItem(_editingPlanNo)">복제</button>
       <button class="btn btn-sm btn-primary pd-view-btn" id="pdEditBtn" onclick="togglePlanDetailEdit()">수정</button>
+      <button class="btn btn-sm btn-outline btn-danger-sm pd-edit-btn" id="pdDeleteBtn" onclick="requestPlanDelete()" style="display:none">삭제</button>
       <button class="btn btn-sm btn-primary pd-edit-btn" id="pdSaveBtn" onclick="savePlanDetailEdit()" style="display:none">저장</button>
       <button class="btn btn-sm btn-outline pd-edit-btn" id="pdCancelBtn" onclick="togglePlanDetailEdit()" style="display:none">취소</button>
       <button class="modal-close" onclick="closePlanDetailModal()">✕</button>
     </div>
   </div>
   <div class="pd-body" id="pdContent"></div>
+</dialog>
+
+<!-- 신규기획 삭제 확인 모달 -->
+<dialog id="planDeleteConfirmModal" class="srm-modal" style="width:780px;max-width:95vw;max-height:85vh;padding:0;overflow:hidden;border-radius:10px">
+  <div class="srm-header modal-header" style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:14px;cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff;flex:1;min-width:0">⚠ 신규기획 항목 삭제</span>
+    <button class="modal-close" style="margin:0" onclick="closePlanDeleteConfirm()">✕</button>
+  </div>
+  <div class="srm-body" style="padding:22px 26px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:16px">
+    <div class="pdc-warning">
+      이 작업은 <strong>되돌릴 수 없습니다</strong>. 삭제하려면 아래에 표시된 식별자를 정확히 입력하세요.
+    </div>
+    <div class="pdc-target">
+      <div class="pdc-label">삭제 대상</div>
+      <div class="pdc-target-code" id="pdcTargetCode">—</div>
+      <div class="pdc-meta" id="pdcTargetMeta"></div>
+    </div>
+    <div class="pdc-input-row">
+      <label class="pdc-input-label" for="pdcConfirmInput" id="pdcInputLabel">위 식별자를 정확히 입력</label>
+      <input type="text" id="pdcConfirmInput" autocomplete="off" oninput="_pdcOnInput()" />
+    </div>
+    <div class="pdc-actions">
+      <button class="btn btn-outline" onclick="closePlanDeleteConfirm()">취소</button>
+      <button class="btn btn-danger" id="pdcConfirmBtn" onclick="confirmPlanDelete()" disabled>삭제</button>
+    </div>
+  </div>
 </dialog>
 
 <!-- 신규기획 등록 모달 -->

@@ -2573,6 +2573,121 @@ Established the reference style that every dashboard-opened srm-modal should fol
 
 ---
 
+### 2026-05-08
+
+#### 신규기획 엑셀 업로드/다운로드 양식 라운드트립 (S-05)
+
+**다운로드 양식 14컬럼 → ~70컬럼 확장** (`js/excel.js`)
+- `downloadExcel('plan')` 분기 → `_downloadPlanFull(data)` 신규 함수로 분리. 기존 14컬럼은 사이즈규격/이미지/일정/메모 누락 → 라운드트립 불가였음
+- `_planFullColumns()` — 컬럼 정의 함수. 상품 공통 47컬럼 + 기획전용 4(연도/시즌/성별/메모) + schedule 동적(기본 5단계 × 시작/종료 = 10셀) + 등록일 = 약 68~70컬럼
+- `_getPlanValue(p, key, idx)` — `_getProductValue` 패턴 차용. `schedule.{phase}.{type}` / `year/season/gender/memo` / `createdAt` 키 처리
+- 사이즈규격은 `sizeSpec_<size>_<part>` 키 (size-first 객체 분해, F는 별도)
+
+**샘플 양식 신규** — `_downloadPlanSample()` (`js/excel.js`)
+- `downloadSample('plan')` 분기 추가
+- Sheet1 "신규기획" + Sheet2 "입력 가이드" 구조 (상품 샘플 패턴 동일)
+- 샘플 행: M 사이즈 48/38/52, 첫 단계(디자인) 일정 2026-05-01~05-15, 핵심 필드만 채움
+- 헤더 스타일: 네이비(#1A1A2E) + 샘플번호만 골드(#C9A96E, 필수 강조)
+- 입력 가이드: 시즌(SS=1/FW=2), 성별(W/M/U), 사이즈규격 19셀 압축 안내
+- 파일명: `르망고_신규기획_샘플양식.xlsx`
+
+**업로드 UI 추가** (`index.html:507-509`)
+- 다운로드 버튼 옆에 `<label for="planUploadFile">⬆ 업로드</label>` + 숨김 input + `<button onclick="downloadSample('plan')">샘플</button>` 3개 추가
+- onchange="handleUpload(this,'plan')" — 상품 패턴 그대로 차용
+- 권한: Grade 1+ (plan 탭 접근 권한과 동일, 추가 게이트 없음)
+
+**업로드 파이프라인** (`js/excel.js`)
+- `handleUpload(input, type)` — type==='plan' 분기 → `uploadPlans(raw)` 호출
+- `uploadPlans(raw)` 진입점 — 상품 패턴(updated 있으면 미리보기, 없고 added만 있으면 즉시 적용, 둘 다 없고 failed/skipped만 있으면 결과 모달)
+- `_parsePlanUpload(raw)` 핵심 파서:
+  - `PLAN_HEADER_TO_KEY` = `HEADER_TO_KEY` + 기획 전용 4개 (연도/시즌/성별/메모)
+  - `sizeSpecColMap` 19셀 동적 매핑 (상품 양식과 동일 규칙)
+  - `scheduleColMap` 동적 — `getPlanPhases()` 결과 기반으로 `{phase.label} 시작/종료` 헤더 매칭 → `{phase.key}_start`/`_end` 키 저장
+  - 매칭 우선순위: **품번 → 샘플번호** (품번 빈값 허용 → 샘플번호로 fallback)
+  - **`confirmed:true` 항목 자동 거부** (failed로 분류, "이미 상품으로 이전된 항목입니다")
+  - 샘플번호 필수 검증 (현재 등록과 일치)
+  - presentKeys 기반 selective merge — 헤더에 없는 컬럼은 기존값 보존
+- `_diffPlan(existing, uploaded, presentKeys)` — `_diffProduct` 패턴, 기획 전용 필드(year/season/gender/memo) + schedule 동적 phase 비교 추가. images.design/shoot은 단일 문자열로 비교
+- `_PLAN_DIFF_FIELDS` — 30개 스칼라 필드 정의 (productCode는 hdrKey='code'로 매핑)
+- `_showPlanBulkPreview(parsed)` — `bulkEditPreviewModal` 재사용 (상품 패턴). 확정/취소 버튼만 plan용으로 분기 (`confirmPlanBulkUpload` / `cancelPlanBulkUpload`)
+- `_applyPlanUpload(parsed)`:
+  - **`no` 부여**: `Math.max(...existing) + i + 1` (배치 충돌 방지)
+  - 신규: `confirmed:false` 강제, `_reservedCodes.delete(productCode)`, `stampCreated`
+  - 기존 업데이트: presentKeys 기반 SCALAR_MAP/IMG_MAP 머지, schedule은 phase별 spread 머지, sizeSpec은 null이면 기존값 보존
+  - **보존 필드**: `no`, `tempImages`, `confirmed`, `confirmedAt`
+  - 저장: `savePlanItems()` (localStorage + Firestore 이중)
+  - `logActivity('upload', '신규기획', '엑셀 업로드: 신규 N건, 수정 N건')`
+  - **300건 초과 시 경고 토스트** (Firestore `sharedData/planItems` 단일 문서 1MB 제한)
+- `_showUploadResultFromPlanParsed(parsed, ...)` — 결과 모달 (`uploadResultModal` 재사용)
+
+**결정사항 적용**
+| 항목 | 결정 |
+|------|------|
+| 동일 품번/샘플번호 처리 | 사용자 선택 (미리보기 모달 → 확정/취소) |
+| 업로드 권한 | Grade 1+ (plan 탭과 동일) |
+| 필수 필드 | 샘플번호만 (현재 등록과 일치) |
+| 검증 실패 | 행 단위 스킵 + 결과 모달 (`uploadResultModal` 재사용) |
+| `no` 부여 | `Math.max(...existing) + i + 1` |
+| 이미지 처리 | URL 텍스트 컬럼만 받기. tempImages는 양식 제외 (등록 모달에서 별도 추가) |
+| schedule 단계 | `getPlanPhases()` 동적 — 사용자 추가 단계도 양식에 자동 반영 |
+| confirmed:true 보호 | 무조건 거부 (failed로 분류) |
+| 다운로드 양식 | 업로드와 동일 컬럼으로 확장 (라운드트립 보장) |
+
+**구조적 발견 사항 (CLAUDE.md 정정)**
+- 신규기획 데이터 저장: 기존 표기 "localStorage 단독" → **localStorage + Firestore 이중** (Firestore가 주 저장소, `sharedData/planItems` 단일 문서. localStorage는 캐시)
+- 평균 항목 3~5KB × 200~300건 부근에서 Firestore 1MB 한계 도달 가능 → 향후 청크 분할 또는 컬렉션 전환 고려
+- 사용자가 본 62컬럼 파일(`르망고_상품조회_*.xlsx`)은 상품조회 결과였음 — 이번 작업으로 신규기획 다운로드도 비슷한 컬럼 폭 확보
+
+#### 신규기획 항목 삭제 기능 (S-06)
+
+**권한 정책**
+- 작성자 본인(`item.createdBy === uid`) OR 관리자(`grade >= 3`)만 삭제 가능
+- 다른 모듈 삭제 권한 패턴과 일치 (`canEditWork` in work.js, `canDeleteEvent` in event.js)
+- 상품조회(`State.allProducts`)에는 삭제 기능 없음 — 기획은 판매 데이터 비연결, 상품은 매출 이력 보존 필요
+
+**UI 흐름**
+1. 신규기획 상세 모달 → 수정 버튼 → 편집 모드 진입
+2. 편집 모드 헤더에 빨간 **삭제** 버튼 노출 (`pdDeleteBtn`, `btn-danger-sm pd-edit-btn`)
+3. 권한 없으면 버튼 자체 숨김 (`_pdUpdateHeaderBtns` 내부에서 `canDeletePlanItem` 체크)
+4. 클릭 → `requestPlanDelete()` → 확인 모달 오픈 (`planDeleteConfirmModal`)
+5. 모달 내 식별자(품번 또는 샘플번호) 정확히 입력 → 삭제 버튼 활성화
+6. 삭제 실행 → Storage 정리 → State 제거 → savePlanItems() → 두 모달 닫기 → 테이블 새로고침
+
+**확인 모달** (`planDeleteConfirmModal`)
+- 780px srm-modal (dashInfoModal 패턴 준수, `.srm-header` 드래그 가능)
+- 삭제 대상 식별자 표시: `item.productCode` 우선, 없으면 `item.sampleNo`
+- Type-to-confirm: 입력값이 식별자와 정확히 일치(case-sensitive)할 때만 삭제 버튼 활성화
+- 일치 시 input 테두리 초록(`pdc-input-match` 클래스)
+- 인라인 `display:none` 사용 안 함 — `<dialog>`의 `showModal()`/`close()` 네이티브 사용
+
+**삭제 로직** (`confirmPlanDelete`)
+1. 권한 재검증 (UI 우회 방어)
+2. 식별자 입력 재검증
+3. **Storage 고아 파일 정리** (best-effort): `item.tempImages[].path` 순회하여 `storage.ref(path).delete()`. 실패해도 진행
+4. `State.planItems.splice(idx, 1)` + `State.plan.filtered` 재계산
+5. `await savePlanItems()` (localStorage + Firestore 이중 저장)
+6. 실패 시 토스트 + 버튼 복구
+7. 편집 락 해제 (`releaseEditLock('plan', no)`)
+8. 활동로그: `logActivity('delete', '신규기획', '기획삭제: <식별자> (<상품명>)')`
+9. `closePlanDeleteConfirm()` + `closePlanDetailModal(true)` (force=true로 더티 프롬프트 우회)
+10. `renderPlanTable()` + `renderDashboard()`
+
+**Firestore/Storage 권한 한계**
+- 현재 `sharedData/{docId}` 규칙: `allow read, write: if isAuth()` — 모든 인증 사용자에게 R/W 허용
+- `planItems`는 단일 문서 내 배열 필드(`data: JSON.stringify(...)`)이므로 **per-row 권한 검증을 Firestore Rules 레벨에서 강제 불가**
+- 향후 보안 강화하려면: planItems를 `planItems/{planNo}` 컬렉션으로 마이그레이션 → per-document 규칙 적용 (createdBy 기반 delete 차단)
+- 현재 `storage.rules`의 `plan/{planNo}/{fileName}`는 `allow delete: if request.auth != null` — 인증된 사용자 누구나 삭제 가능. 동일하게 per-file ownership 검증 불가
+- 클라이언트 권한 체크(`canDeletePlanItem`)에 의존 — 정직한 사용자에게는 충분, 악의적 사용자 차단은 아키텍처 변경 필요
+
+**파일 변경**
+- `index.html:1511-1514` — 삭제 버튼 추가 + 신규 `planDeleteConfirmModal` 다이얼로그 (1520줄 근처)
+- `js/plan.js:1118-1135` — `_pdUpdateHeaderBtns`에 삭제 버튼 권한 토글 추가
+- `js/plan.js` 신규 함수 5개: `canDeletePlanItem`, `requestPlanDelete`, `_pdcOnInput`, `closePlanDeleteConfirm`, `confirmPlanDelete`
+- `js/main.js:43` — `planDeleteConfirmModal` 드래그 등록 (480x320)
+- `style.css` 말미 — `.pdc-warning`, `.pdc-target`, `.pdc-target-code`, `.pdc-meta`, `.pdc-input-row`, `.pdc-input-label`, `#pdcConfirmInput`, `.pdc-actions` 스타일 9개 신규
+
+---
+
 ## 다음 작업 후보 (미구현)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 인쇄/PDF 출력

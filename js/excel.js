@@ -498,16 +498,9 @@ function downloadExcel(type) {
   let rows, headers, sheetName
 
   if (type === 'plan') {
-    headers = [
-      'No.','브랜드','품번','샘플번호','상품명(한글)','상품명(영문)','색상(한글)','색상(영문)',
-      '판매가','원가','타입','백스타일','레그컷','등록일'
-    ]
-    rows = data.map(p => [
-      p.no, p.brand, p.productCode, p.sampleNo||'',
-      p.nameKr||'', p.nameEn||'', p.colorKr||'', p.colorEn||'',
-      p.salePrice||0, p.costPrice||0, p.type||'', p.backStyle||'', p.legCut||'', p.registDate||''
-    ])
-    sheetName = '신규기획'
+    // 기획 전용 다운로드 — 라운드트립용 ~70컬럼 (사이즈규격 19 + 이미지 6+1+1 + schedule 동적)
+    _downloadPlanFull(data)
+    return
   } else if (type === 'stock') {
     headers = ['품번','상품명','브랜드','판매가',...SIZES,'합계']
     rows = data.map(p => [
@@ -661,6 +654,17 @@ const HEADER_TO_KEY = {
   '영상URL': 'videoUrl'
 }
 
+// Explicit field deletion token — cell value === '[삭제]' clears the field on apply
+// Empty cells preserve existing (current policy unchanged); [삭제] explicitly clears
+const DELETE_TOKEN = '[삭제]'
+
+// Numeric scalar fields — explicit delete sets to 0 (vs '' for strings)
+const NUMERIC_FIELDS = new Set(['salePrice', 'costPrice', 'bust', 'waist', 'hip'])
+
+// Max rows per upload (W5: hard block instead of warn)
+// Reason: Firestore sharedData/{planItems|allProducts} stored as single doc with 1MB limit
+const MAX_UPLOAD_ROWS = 300
+
 // 헤더 행에서 라벨을 찾아 { key: colIdx } 맵 생성
 function _buildColMapFromHeader(hdr) {
   const COL = {}
@@ -688,6 +692,10 @@ function downloadSample(type) {
 
   if (type === 'product') {
     _downloadProductSample()
+    return
+  }
+  if (type === 'plan') {
+    _downloadPlanSample()
     return
   }
 
@@ -883,6 +891,251 @@ function _downloadProductSample() {
   showToast('샘플 양식 다운로드 완료', 'success')
 }
 
+// ===== 신규기획 다운로드/샘플 =====
+// 라운드트립용 컬럼 정의 — 사이즈규격 19 + 이미지 6+1+1 + 기획전용(year/season/gender/memo) + schedule 동적
+function _planFullColumns() {
+  const phases = (typeof getPlanPhases === 'function') ? getPlanPhases() : []
+  const cols = [
+    { key:'no', label:'NO' },
+    { key:'brand', label:'브랜드' },
+    { key:'productCode', label:'품번' },
+    { key:'sampleNo', label:'샘플번호' },
+    { key:'nameKr', label:'상품명(한글)' },
+    { key:'nameEn', label:'상품명(영문)' },
+    { key:'colorKr', label:'색상(한글)' },
+    { key:'colorEn', label:'색상(영문)' },
+    { key:'salePrice', label:'판매가' },
+    { key:'costPrice', label:'원가' },
+    { key:'type', label:'타입' },
+    { key:'year', label:'연도' },
+    { key:'season', label:'시즌' },
+    { key:'gender', label:'성별' },
+    { key:'backStyle', label:'백스타일' },
+    { key:'legCut', label:'레그컷' },
+    { key:'guide', label:'가이드' },
+    { key:'fabricType', label:'원단타입' },
+    { key:'chestLine', label:'가슴선' },
+    { key:'transparency', label:'비침' },
+    { key:'lining', label:'안감' },
+    { key:'capRing', label:'캡고리' },
+    { key:'material', label:'소재' },
+    { key:'comment', label:'디자이너코멘트' },
+    { key:'washMethod', label:'세탁방법' },
+    { key:'sizeSpec_XS_bust',  label:'XS 가슴' },
+    { key:'sizeSpec_XS_waist', label:'XS 허리' },
+    { key:'sizeSpec_XS_hip',   label:'XS 엉덩이' },
+    { key:'sizeSpec_S_bust',   label:'S 가슴' },
+    { key:'sizeSpec_S_waist',  label:'S 허리' },
+    { key:'sizeSpec_S_hip',    label:'S 엉덩이' },
+    { key:'sizeSpec_M_bust',   label:'M 가슴' },
+    { key:'sizeSpec_M_waist',  label:'M 허리' },
+    { key:'sizeSpec_M_hip',    label:'M 엉덩이' },
+    { key:'sizeSpec_L_bust',   label:'L 가슴' },
+    { key:'sizeSpec_L_waist',  label:'L 허리' },
+    { key:'sizeSpec_L_hip',    label:'L 엉덩이' },
+    { key:'sizeSpec_XL_bust',  label:'XL 가슴' },
+    { key:'sizeSpec_XL_waist', label:'XL 허리' },
+    { key:'sizeSpec_XL_hip',   label:'XL 엉덩이' },
+    { key:'sizeSpec_XXL_bust', label:'XXL 가슴' },
+    { key:'sizeSpec_XXL_waist',label:'XXL 허리' },
+    { key:'sizeSpec_XXL_hip',  label:'XXL 엉덩이' },
+    { key:'sizeSpec_F',        label:'F' },
+    { key:'modelSize', label:'모델착용사이즈' },
+    { key:'madeMonth', label:'제조년월' },
+    { key:'madeBy', label:'제조사' },
+    { key:'madeIn', label:'제조국' },
+    { key:'memo', label:'메모' },
+    { key:'mainImage', label:'대표이미지URL' },
+    { key:'images.sum', label:'이미지URL(합본)' },
+    { key:'images.lemango', label:'이미지URL(자사몰)' },
+    { key:'images.noir', label:'이미지URL(느와)' },
+    { key:'images.external', label:'이미지URL(외부몰)' },
+    { key:'images.design', label:'이미지URL(디자인)' },
+    { key:'images.shoot', label:'이미지URL(촬영)' },
+    { key:'videoUrl', label:'영상URL' }
+  ]
+  phases.forEach(ph => {
+    cols.push({ key: 'schedule.' + ph.key + '.start', label: ph.label + ' 시작' })
+    cols.push({ key: 'schedule.' + ph.key + '.end',   label: ph.label + ' 종료' })
+  })
+  cols.push({ key:'createdAt', label:'등록일' })
+  return cols
+}
+
+// 기획 아이템에서 키 기반 값 추출
+function _getPlanValue(p, key, idx) {
+  if (key === 'no') return p.no || (idx + 1)
+  if (key === 'memo') return p.memo || ''
+  if (key === 'year') return p.year || ''
+  if (key === 'season') return p.season || ''
+  if (key === 'gender') return p.gender || ''
+  if (key === 'createdAt') return (p.createdAt || '').slice(0, 10)
+  if (key.startsWith('schedule.')) {
+    const parts = key.split('.')
+    return p.schedule?.[parts[1]]?.[parts[2]] || ''
+  }
+  // 그 외 — 사이즈규격 / 이미지 등은 _getProductValue 패턴 재사용
+  if (key.startsWith('sizeSpec_')) {
+    const spec = (p.sizeSpec && typeof p.sizeSpec === 'object' && !Array.isArray(p.sizeSpec)) ? p.sizeSpec : {}
+    if (key === 'sizeSpec_F') {
+      const f = spec['F']
+      if (f == null) return ''
+      if (typeof f === 'object') return f.bust || f.waist || f.hip || ''
+      return f
+    }
+    const rest = key.slice('sizeSpec_'.length)
+    const usIdx = rest.lastIndexOf('_')
+    if (usIdx < 0) return ''
+    const size = rest.slice(0, usIdx)
+    const part = rest.slice(usIdx + 1)
+    const sizeData = spec[size]
+    if (!sizeData || typeof sizeData !== 'object') return ''
+    return sizeData[part] || ''
+  }
+  if (key.startsWith('images.')) {
+    const sec = key.split('.')[1]
+    const arr = p.images ? (p.images[sec] || []) : []
+    return Array.isArray(arr) ? arr.join('\n') : String(arr || '')
+  }
+  return p[key] !== undefined && p[key] !== null ? p[key] : ''
+}
+
+function _downloadPlanFull(data) {
+  if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
+  const cols = _planFullColumns()
+  const headers = cols.map(c => c.label)
+  const rows = data.map((p, i) => cols.map(c => _getPlanValue(p, c.key, i)))
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows])
+  ws['!cols'] = headers.map(h => ({ wch: h.length > 14 ? 18 : 12 }))
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '신규기획')
+  const today = new Date().toISOString().slice(0,10).replace(/-/g,'')
+  XLSX.writeFile(wb, `르망고_신규기획_${today}.xlsx`)
+  showToast('신규기획 다운로드 완료', 'success')
+}
+
+function _downloadPlanSample() {
+  if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
+  const cols = _planFullColumns()
+  const HEADER = cols.map(c => c.label)
+  const phases = (typeof getPlanPhases === 'function') ? getPlanPhases() : []
+
+  // 샘플 행 — 핵심 값만 채우고 나머지는 빈값 (자동생성 가능 영역)
+  const sampleMap = {
+    no: 1, brand: '르망고', productCode: '', sampleNo: 'S-001',
+    nameKr: '코트다쥐르 쉘', nameEn: "Cote d'Azur Shell",
+    colorKr: '블랙', colorEn: 'Black',
+    salePrice: 330000, costPrice: 120000,
+    type: 'onepiece', year: '2026', season: '1', gender: 'W',
+    backStyle: '크로스백', legCut: 'Normal Cut', guide: '없음',
+    fabricType: '포일', chestLine: '보통', transparency: '없음', lining: '있음', capRing: '없음',
+    material: 'Shell: P80% SP20%', comment: '플라워 모티프 디테일', washMethod: '손세탁',
+    sizeSpec_M_bust: '48', sizeSpec_M_waist: '38', sizeSpec_M_hip: '52',
+    modelSize: 'S', madeMonth: '2025년 12월', madeBy: '주식회사 르망고', madeIn: '대한민국',
+    memo: '봄/여름 시즌 신상',
+    mainImage: 'https://example.com/main-thumb.jpg',
+    'images.sum': 'https://example.com/sum1.jpg\nhttps://example.com/sum2.jpg',
+    'images.lemango': 'https://example.com/lemango1.jpg',
+    'images.external': 'https://example.com/ext1.jpg',
+    videoUrl: 'https://youtube.com/shorts/example',
+    createdAt: '2026-05-01'
+  }
+  // 첫 단계만 일정 샘플
+  if (phases[0]) {
+    sampleMap['schedule.' + phases[0].key + '.start'] = '2026-05-01'
+    sampleMap['schedule.' + phases[0].key + '.end']   = '2026-05-15'
+  }
+  const SAMPLE_ROW = cols.map(c => sampleMap[c.key] !== undefined ? sampleMap[c.key] : '')
+
+  const ws = XLSX.utils.aoa_to_sheet([HEADER, SAMPLE_ROW])
+  ws['!cols'] = HEADER.map(h => ({ wch: h.length > 14 ? 18 : 12 }))
+
+  // 헤더 스타일 (네이비, 샘플번호만 골드)
+  const navyFill = { fgColor: { rgb: '1A1A2E' } }
+  const goldFill = { fgColor: { rgb: 'C9A96E' } }
+  const whiteFont = { color: { rgb: 'FFFFFF' }, bold: true, sz: 11 }
+  const headerBorder = {
+    top: { style: 'thin', color: { rgb: '444444' } },
+    bottom: { style: 'thin', color: { rgb: '444444' } },
+    left: { style: 'thin', color: { rgb: '444444' } },
+    right: { style: 'thin', color: { rgb: '444444' } }
+  }
+  const REQUIRED_LABELS = ['샘플번호']
+  HEADER.forEach((h, c) => {
+    const addr = XLSX.utils.encode_cell({ r: 0, c })
+    if (!ws[addr]) return
+    const isReq = REQUIRED_LABELS.includes(h)
+    ws[addr].s = {
+      fill: isReq ? goldFill : navyFill,
+      font: whiteFont,
+      alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+      border: headerBorder
+    }
+  })
+
+  // 입력 가이드 시트
+  const guideData = [
+    ['컬럼명', '설명', '필수', '입력 예시'],
+    ['NO', '자동 부여 (입력 불필요)', '', '1'],
+    ['브랜드', '르망고 / 르망고 느와', '', '르망고'],
+    ['품번', '13자리 (빈값 허용, 자동생성 가능)', '', 'LSWON16266707'],
+    ['샘플번호', '샘플 관리 번호', '★필수', 'S-001'],
+    ['상품명(한글)', '한글 상품명', '', '코트다쥐르 쉘'],
+    ['상품명(영문)', '영문 상품명', '', "Cote d'Azur Shell"],
+    ['색상(한글)', '한글 색상명', '', '블랙'],
+    ['색상(영문)', '영문 색상명', '', 'Black'],
+    ['판매가', '소비자 판매가격', '', '330000'],
+    ['원가', '상품 원가', '', '120000'],
+    ['타입', 'onepiece / bikini / two piece 등', '', 'onepiece'],
+    ['연도', '기획 연도 (YYYY)', '', '2026'],
+    ['시즌', 'SS=1, FW=2', '', '1'],
+    ['성별', 'W=여성, M=남성, U=공용', '', 'W'],
+    ['백스타일', '등 디자인 스타일', '', '크로스백'],
+    ['레그컷', 'Low/Normal/Middle/High Cut', '', 'Normal Cut'],
+    ['가이드', '가이드 유무', '', '없음'],
+    ['원단타입', '원단 종류', '', '포일'],
+    ['가슴선', '낮음 / 보통 / 높음', '', '보통'],
+    ['비침', '없음 / 약간있음', '', '없음'],
+    ['안감', '없음 / 있음', '', '있음'],
+    ['캡고리', '없음 / 있음', '', '없음'],
+    ['소재', '소재 구성', '', 'Shell: P80% SP20%'],
+    ['디자이너코멘트', '디자이너 메모', '', '플라워 모티프 디테일'],
+    ['세탁방법', '세탁 안내', '', '손세탁'],
+    ['XS~XXL × 가슴/허리/엉덩이 (18셀)', '사이즈별 규격 (cm, 숫자만)', '', '48'],
+    ['F', '프리사이즈 단일값 (cm, 숫자만)', '', ''],
+    ['모델착용사이즈', '모델 착용 사이즈', '', 'S'],
+    ['제조년월', '제조 년월', '', '2025년 12월'],
+    ['제조사', '제조사명', '', '주식회사 르망고'],
+    ['제조국', '제조국가', '', '대한민국'],
+    ['메모', '내부 메모', '', '봄/여름 시즌 신상'],
+    ['대표이미지URL', '대표 썸네일 URL', '', 'https://...jpg'],
+    ['이미지URL(합본/자사몰/느와/외부몰/디자인/촬영)', '줄바꿈 구분 다중 URL', '', 'https://...jpg'],
+    ['영상URL', '영상 링크', '', 'https://youtube.com/shorts/example'],
+    ...phases.flatMap(ph => [
+      [ph.label + ' 시작', ph.label + ' 단계 시작일 (YYYY-MM-DD)', '', '2026-05-01'],
+      [ph.label + ' 종료', ph.label + ' 단계 종료일 (YYYY-MM-DD)', '', '2026-05-15']
+    ]),
+    ['등록일', '기획 등록일 (자동, 입력 불필요)', '', '2026-05-01']
+  ]
+  const wsGuide = XLSX.utils.aoa_to_sheet(guideData)
+  wsGuide['!cols'] = [{wch:30},{wch:45},{wch:6},{wch:30}]
+  for (let c = 0; c < 4; c++) {
+    const addr = XLSX.utils.encode_cell({ r: 0, c })
+    if (!wsGuide[addr]) continue
+    wsGuide[addr].s = {
+      fill: navyFill, font: whiteFont,
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border: headerBorder
+    }
+  }
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '신규기획')
+  XLSX.utils.book_append_sheet(wb, wsGuide, '입력 가이드')
+  XLSX.writeFile(wb, '르망고_신규기획_샘플양식.xlsx', { bookSST: false, cellStyles: true })
+  showToast('샘플 양식 다운로드 완료', 'success')
+}
+
 // ===== 업로드 처리 =====
 function handleUpload(input, type) {
   const file = input.files?.[0]
@@ -898,6 +1151,8 @@ function handleUpload(input, type) {
 
       if (type === 'product') {
         uploadProducts(raw)
+      } else if (type === 'plan') {
+        uploadPlans(raw)
       } else if (type === 'stock') {
         uploadStock(raw)
       } else {
@@ -1012,6 +1267,12 @@ function _parseProductUpload(raw) {
 
   if (!dataRows.length) { showToast('데이터가 없습니다.', 'error'); return null }
 
+  // W5: hard block on >300 rows (Firestore sharedData/allProducts single-doc 1MB limit)
+  if (dataRows.length > MAX_UPLOAD_ROWS) {
+    showToast(`한 번에 업로드 가능한 최대 행 수는 ${MAX_UPLOAD_ROWS}개입니다. 현재: ${dataRows.length}개. 파일을 분할해 주세요.`, 'error')
+    return null
+  }
+
   // 업로드 파일에 실제 존재하는 필드 키 집합 (누락 컬럼은 기존값 보존용)
   // 신규양식: 헤더에서 발견된 키만 / 레거시: _LEGACY_COL의 모든 키 (전체 덮어쓰기 유지)
   const presentKeys = new Set(Object.keys(COL))
@@ -1022,6 +1283,13 @@ function _parseProductUpload(raw) {
   Object.keys(mallColMap).forEach(k => presentKeys.add('mallCode_' + k))
 
   const added = [], updated = [], failed = []
+  // C1 fix: detect intra-file duplicate productCodes (matching key for products)
+  // Two rows with same code would silently collide in _applyProductUpload (last-write-wins)
+  // Note: sampleNo dup not checked here — products match purely by productCode, not sampleNo
+  const seenCodes = new Map()  // productCode → first row number
+  const duplicates = []        // { type, identifier, firstRow, secondRow }
+  const codeDeleteAttempts = [] // row numbers where user tried [삭제] in 품번 cell (rejected)
+
   dataRows.forEach(({ row, userRowNo }) => {
     const code = String(row[COL.code]).trim()
     if (!code) {
@@ -1029,9 +1297,59 @@ function _parseProductUpload(raw) {
       return
     }
 
-    const _s = (key) => COL[key] != null ? String(row[COL[key]] ?? '').trim() : ''
-    const _n = (key) => COL[key] != null ? (Number(row[COL[key]]) || 0) : 0
+    // C1 fix: intra-file duplicate detection
+    if (seenCodes.has(code)) {
+      duplicates.push({ type: '품번', identifier: code, firstRow: seenCodes.get(code), secondRow: userRowNo })
+      return
+    }
+    seenCodes.set(code, userRowNo)
 
+    // [삭제] keyword + valueKeys tracking
+    // - valueKeys: cells with real non-empty value (overwrite existing on apply)
+    // - deleteKeys: cells with literal '[삭제]' token (clear existing on apply)
+    // - empty cells: in neither set (preserve existing)
+    const valueKeys = new Set()
+    const deleteKeys = new Set()
+    Object.keys(COL).forEach(hdrKey => {
+      const raw = row[COL[hdrKey]]
+      const s = (raw == null) ? '' : String(raw).trim()
+      if (s === DELETE_TOKEN) {
+        if (hdrKey === 'code') {
+          // Matching key — silently ignored (warning toast surfaced after loop)
+          codeDeleteAttempts.push(userRowNo)
+          return
+        }
+        deleteKeys.add(hdrKey)
+      } else if (s !== '') {
+        valueKeys.add(hdrKey)
+      }
+    })
+    // Detect [삭제] in mall code columns and sizeSpec columns (built dynamically — not in COL)
+    Object.entries(mallColMap).forEach(([pl, ci]) => {
+      const s = String(row[ci] ?? '').trim()
+      if (s === DELETE_TOKEN) deleteKeys.add('mallCode_' + pl)
+    })
+    Object.entries(sizeSpecColMap).forEach(([sk, ci]) => {
+      const s = String(row[ci] ?? '').trim()
+      if (s === DELETE_TOKEN) deleteKeys.add('sizeSpec_' + sk)
+    })
+
+    // _s/_n treat [삭제] as empty — token does not propagate into product object
+    const _s = (key) => {
+      if (COL[key] == null) return ''
+      const raw = row[COL[key]]
+      const s = (raw == null) ? '' : String(raw).trim()
+      return s === DELETE_TOKEN ? '' : s
+    }
+    const _n = (key) => {
+      if (COL[key] == null) return 0
+      const raw = row[COL[key]]
+      const s = (raw == null) ? '' : String(raw).trim()
+      if (s === DELETE_TOKEN || s === '') return 0
+      return Number(raw) || 0
+    }
+
+    // parseSumUrls returns [] for non-http content (including '[삭제]') — no extra guard needed
     const sumUrls    = parseSumUrls(row[COL.urlSum])
     const lemUrls    = parseSumUrls(row[COL.urlLemango])
     const noirUrls   = COL.urlNoir != null ? parseSumUrls(row[COL.urlNoir]) : []
@@ -1039,11 +1357,11 @@ function _parseProductUpload(raw) {
     const designUrls = COL.urlDesign != null ? parseSumUrls(row[COL.urlDesign]) : []
     const shootUrls  = COL.urlShoot != null ? parseSumUrls(row[COL.urlShoot]) : []
 
-    // mallCodes 파싱
+    // mallCodes 파싱 — skip [삭제] cells (handled via deleteKeys at apply time)
     const mallCodes = {}
     Object.entries(mallColMap).forEach(([pl, ci]) => {
       const v = String(row[ci] || '').trim()
-      if (v) mallCodes[pl] = v
+      if (v && v !== DELETE_TOKEN) mallCodes[pl] = v
     })
 
     const product = {
@@ -1105,16 +1423,33 @@ function _parseProductUpload(raw) {
     if (idx >= 0) {
       // 기존 품번 — 변경분 수집 (업로드에 없는 컬럼은 비교 제외)
       const existing = State.allProducts[idx]
-      const diffs = _diffProduct(existing, product, presentKeys)
+      const diffs = _diffProduct(existing, product, presentKeys, deleteKeys)
       if (diffs.length > 0) {
-        updated.push({ code, idx, product, diffs, existing, presentKeys, row: userRowNo })
+        updated.push({ code, idx, product, diffs, existing, presentKeys, valueKeys, deleteKeys, row: userRowNo })
       } else {
         skipped.push({ row: userRowNo, productCode: code, reason: '변경 사항 없음' })
       }
     } else {
-      added.push({ code, product, row: userRowNo })
+      added.push({ code, product, valueKeys, deleteKeys, row: userRowNo })
     }
   })
+
+  // [삭제] 키워드를 품번 셀에 사용하려 한 행 — 경고 토스트 (반영은 안 됨, 다른 변경분은 정상 처리)
+  if (codeDeleteAttempts.length > 0) {
+    const rows = codeDeleteAttempts.slice(0, 5).join(', ')
+    const more = codeDeleteAttempts.length > 5 ? ` 외 ${codeDeleteAttempts.length - 5}건` : ''
+    showToast(`품번은 [삭제] 키워드로 제거할 수 없습니다 (행 ${rows}${more}). UI에서 직접 수정하세요.`, 'warning')
+  }
+
+  // C1 fix: if any intra-file duplicates found, reject entire upload (matches plan upload pattern)
+  if (duplicates.length > 0) {
+    const list = duplicates.slice(0, 5)
+      .map(d => `${d.type} "${d.identifier}" (행 ${d.firstRow}, ${d.secondRow})`)
+      .join('\n')
+    const more = duplicates.length > 5 ? `\n... 외 ${duplicates.length - 5}건` : ''
+    showToast(`엑셀 파일에 중복 식별자가 있습니다:\n${list}${more}\n파일을 확인 후 다시 업로드하세요.`, 'error')
+    return null
+  }
 
   return { added, updated, failed, skipped }
 }
@@ -1160,7 +1495,8 @@ const _DIFF_PRESENT_KEY = { productCode: 'code' }
 // images.* 섹션 → 업로드 헤더 url* key 매핑
 const _IMG_PRESENT_KEY = { sum: 'urlSum', lemango: 'urlLemango', noir: 'urlNoir', external: 'urlExternal', design: 'urlDesign', shoot: 'urlShoot' }
 
-function _diffProduct(existing, uploaded, presentKeys) {
+function _diffProduct(existing, uploaded, presentKeys, deleteKeys) {
+  deleteKeys = deleteKeys || new Set()
   const diffs = []
   _DIFF_FIELDS.forEach(f => {
     // presentKeys 있고 해당 필드의 헤더 키가 없으면 비교 스킵 (업로드 파일에 컬럼 없음)
@@ -1171,7 +1507,10 @@ function _diffProduct(existing, uploaded, presentKeys) {
     const oldVal = String(existing[f.key] ?? '')
     const newVal = String(uploaded[f.key] ?? '')
     if (oldVal !== newVal) {
-      diffs.push({ key: f.key, label: f.label, oldVal, newVal })
+      const headerKey = _DIFF_PRESENT_KEY[f.key] || f.key
+      const entry = { key: f.key, label: f.label, oldVal, newVal }
+      if (deleteKeys.has(headerKey)) entry.isDelete = true
+      diffs.push(entry)
     }
   })
   // 이미지 배열 비교
@@ -1181,7 +1520,9 @@ function _diffProduct(existing, uploaded, presentKeys) {
     const oldArr = (existing.images?.[sec] || []).join('\n')
     const newArr = (uploaded.images?.[sec] || []).join('\n')
     if (oldArr !== newArr) {
-      diffs.push({ key: 'images.' + sec, label: '이미지(' + sec + ')', oldVal: oldArr, newVal: newArr })
+      const entry = { key: 'images.' + sec, label: '이미지(' + sec + ')', oldVal: oldArr, newVal: newArr }
+      if (deleteKeys.has(_IMG_PRESENT_KEY[sec])) entry.isDelete = true
+      diffs.push(entry)
     }
   })
   // sizeSpec 비교 — 헤더에 해당 컬럼이 있을 때만 (presentKeys 에 sizeSpec_<size>_<part> 마커가 있어야 함)
@@ -1193,7 +1534,9 @@ function _diffProduct(existing, uploaded, presentKeys) {
       const oldV = String(existing.sizeSpec?.[sz]?.[part] ?? '')
       const newV = String(uploaded.sizeSpec?.[sz]?.[part] ?? '')
       if (oldV !== newV) {
-        diffs.push({ key: 'sizeSpec.' + sz + '.' + part, label: sz + ' ' + _SPEC_PART_LABEL[part], oldVal: oldV, newVal: newV })
+        const entry = { key: 'sizeSpec.' + sz + '.' + part, label: sz + ' ' + _SPEC_PART_LABEL[part], oldVal: oldV, newVal: newV }
+        if (deleteKeys.has('sizeSpec_' + sz + '_' + part)) entry.isDelete = true
+        diffs.push(entry)
       }
     })
   })
@@ -1203,7 +1546,9 @@ function _diffProduct(existing, uploaded, presentKeys) {
     const oldF = _fStr(existing.sizeSpec?.F)
     const newF = _fStr(uploaded.sizeSpec?.F)
     if (oldF !== newF) {
-      diffs.push({ key: 'sizeSpec.F', label: 'F', oldVal: oldF, newVal: newF })
+      const entry = { key: 'sizeSpec.F', label: 'F', oldVal: oldF, newVal: newF }
+      if (deleteKeys.has('sizeSpec_F')) entry.isDelete = true
+      diffs.push(entry)
     }
   }
   // mallCodes 비교 — 헤더에 해당 쇼핑몰 컬럼이 있을 때만 (false positive 방지)
@@ -1213,7 +1558,9 @@ function _diffProduct(existing, uploaded, presentKeys) {
     const oldV = (existing.mallCodes?.[k] || '')
     const newV = (uploaded.mallCodes?.[k] || '')
     if (oldV !== newV) {
-      diffs.push({ key: 'mallCodes.' + k, label: k + ' 쇼핑몰코드', oldVal: oldV, newVal: newV })
+      const entry = { key: 'mallCodes.' + k, label: k + ' 쇼핑몰코드', oldVal: oldV, newVal: newV }
+      if (deleteKeys.has('mallCode_' + k)) entry.isDelete = true
+      diffs.push(entry)
     }
   })
   return diffs
@@ -1222,9 +1569,18 @@ function _diffProduct(existing, uploaded, presentKeys) {
 // 일괄 수정 미리보기 모달
 function _showBulkEditPreview(parsed) {
   const modal = document.getElementById('bulkEditPreviewModal')
-  if (!modal) return _applyProductUpload(parsed) // 모달 없으면 바로 적용
+  // W4: do NOT silently apply when modal is missing — surface error and abort
+  if (!modal) {
+    showToast('미리보기 모달을 찾을 수 없습니다. 페이지를 새로고침해 주세요.', 'error')
+    _bulkEditPending = null
+    return
+  }
   const body = modal.querySelector('.srm-body')
-  if (!body) return
+  if (!body) {
+    showToast('미리보기 모달 본문을 찾을 수 없습니다. 페이지를 새로고침해 주세요.', 'error')
+    _bulkEditPending = null
+    return
+  }
 
   let html = '<div class="be-summary">'
   if (parsed.updated.length) html += '<span class="be-badge be-badge-update">수정 ' + parsed.updated.length + '건</span>'
@@ -1248,9 +1604,12 @@ function _showBulkEditPreview(parsed) {
       item.diffs.forEach(d => {
         const oldDisp = d.oldVal.length > 60 ? d.oldVal.slice(0,60) + '...' : d.oldVal
         const newDisp = d.newVal.length > 60 ? d.newVal.slice(0,60) + '...' : d.newVal
-        html += '<tr><td class="be-field">' + esc(d.label) + '</td>'
+        const rowCls = d.isDelete ? ' class="be-row-delete"' : ''
+        const newCls = d.isDelete ? 'be-new be-new-delete' : 'be-new'
+        const newText = d.isDelete ? '[삭제]' : (newDisp || '(없음)')
+        html += '<tr' + rowCls + '><td class="be-field">' + esc(d.label) + '</td>'
         html += '<td class="be-old">' + esc(oldDisp || '(없음)') + '</td>'
-        html += '<td class="be-new">' + esc(newDisp || '(없음)') + '</td></tr>'
+        html += '<td class="' + newCls + '">' + esc(newText) + '</td></tr>'
       })
       html += '</tbody></table></div></div>'
     })
@@ -1304,12 +1663,46 @@ function _applyProductUpload(parsed) {
   parsed.updated.forEach(item => {
     const existing = State.allProducts[item.idx]
     if (!existing) return
-    // sizeSpec: 업로드 파일에 컬럼 없으면(null) 기존 보존, 컬럼 있으면 덮어쓰기
-    const mergedSizeSpec = item.product.sizeSpec == null ? existing.sizeSpec : item.product.sizeSpec
 
-    // 업로드 파일에 실제 존재한 컬럼만 적용 (누락 컬럼은 기존값 보존)
-    // presentKeys 없으면 (레거시) 전체 덮어쓰기 — 기존 동작 유지
     const presentKeys = item.presentKeys
+    const valueKeys = item.valueKeys instanceof Set ? item.valueKeys : presentKeys
+    const deleteKeys = item.deleteKeys instanceof Set ? item.deleteKeys : new Set()
+
+    // sizeSpec: per-part merge — empty cells preserve existing parts; [삭제] sets to ''
+    // (handles W6: empty M_waist no longer wipes existing M.waist when M_bust is filled)
+    const _SIZES_FOR_MERGE = ['XS','S','M','L','XL','XXL']
+    const _PARTS = ['bust','waist','hip']
+    const mergedSizeSpec = (() => {
+      // If no sizeSpec columns at all in the upload, preserve existing entirely
+      if (item.product.sizeSpec == null) return existing.sizeSpec || {}
+      const out = JSON.parse(JSON.stringify(existing.sizeSpec || {}))
+      _SIZES_FOR_MERGE.forEach(sz => {
+        _PARTS.forEach(part => {
+          const headerKey = 'sizeSpec_' + sz + '_' + part
+          if (deleteKeys.has(headerKey)) {
+            if (!out[sz]) out[sz] = { bust:'', waist:'', hip:'' }
+            out[sz][part] = ''
+          } else if (presentKeys && presentKeys.has(headerKey)) {
+            const v = item.product.sizeSpec?.[sz]?.[part]
+            if (v != null && String(v).trim() !== '') {
+              if (!out[sz]) out[sz] = { bust:'', waist:'', hip:'' }
+              out[sz][part] = v
+            }
+            // empty value → preserve existing part (no override)
+          }
+        })
+      })
+      // F single-cell handling
+      if (deleteKeys.has('sizeSpec_F')) {
+        if (out.F && typeof out.F === 'object') out.F.bust = '' ; else out.F = { bust:'', waist:'', hip:'' }
+      } else if (presentKeys && presentKeys.has('sizeSpec_F')) {
+        const f = item.product.sizeSpec?.F
+        if (f && (f.bust || f.waist || f.hip)) out.F = f
+        // else preserve existing
+      }
+      return out
+    })()
+
     let merged
     if (presentKeys) {
       merged = { ...existing }
@@ -1327,17 +1720,31 @@ function _applyProductUpload(parsed) {
         mainImage:'mainImage', videoUrl:'videoUrl'
       }
       Object.entries(SCALAR_MAP).forEach(([hdrKey, prodKey]) => {
-        if (presentKeys.has(hdrKey)) merged[prodKey] = item.product[prodKey]
+        if (deleteKeys.has(hdrKey)) {
+          // [삭제] keyword: numeric → 0, otherwise empty string
+          merged[prodKey] = NUMERIC_FIELDS.has(prodKey) ? 0 : ''
+        } else if (presentKeys.has(hdrKey) && valueKeys.has(hdrKey)) {
+          merged[prodKey] = item.product[prodKey]
+        }
+        // else: preserve existing
       })
-      // 이미지 섹션: 헤더 키 있을 때만 덮어쓰기
+      // 이미지 섹션: header present + value (or [삭제]) gates override
       const IMG_MAP = { urlSum:'sum', urlLemango:'lemango', urlNoir:'noir', urlExternal:'external', urlDesign:'design', urlShoot:'shoot' }
       const mergedImages = { ...(existing.images || {}) }
       Object.entries(IMG_MAP).forEach(([hdrKey, secKey]) => {
-        if (presentKeys.has(hdrKey)) mergedImages[secKey] = item.product.images?.[secKey] || []
+        if (deleteKeys.has(hdrKey)) {
+          mergedImages[secKey] = []
+        } else if (presentKeys.has(hdrKey) && valueKeys.has(hdrKey)) {
+          mergedImages[secKey] = item.product.images?.[secKey] || []
+        }
       })
       merged.images = mergedImages
-      // mallCodes: 업로드된 키만 갱신 (헤더에 없는 채널은 기존값 유지)
-      merged.mallCodes = { ...(existing.mallCodes || {}), ...(item.product.mallCodes || {}) }
+      // mallCodes: spread merge + [삭제] removes channel from object
+      const mergedMall = { ...(existing.mallCodes || {}), ...(item.product.mallCodes || {}) }
+      Array.from(deleteKeys).forEach(dk => {
+        if (dk.startsWith('mallCode_')) delete mergedMall[dk.slice('mallCode_'.length)]
+      })
+      merged.mallCodes = mergedMall
     } else {
       // 레거시 양식 — 기존 전체 덮어쓰기 동작
       merged = { ...existing, ...item.product }
@@ -1371,6 +1778,678 @@ function _applyProductUpload(parsed) {
   showToast('업로드 완료: 신규 ' + added + '건 / 수정 ' + updated + '건', 'success')
   // 결과 모달 표시 (확정 적용 후 보고용)
   _showUploadResultFromParsed(parsed, added, updated)
+}
+
+// =============================================
+// ===== 신규기획 업로드 =====
+// =============================================
+let _planBulkPending = null
+
+function uploadPlans(raw) {
+  const parsed = _parsePlanUpload(raw)
+  if (!parsed) return
+  if (parsed.updated.length > 0) {
+    _planBulkPending = parsed
+    _showPlanBulkPreview(parsed)
+  } else if (parsed.added.length > 0) {
+    _applyPlanUpload(parsed)
+  } else if ((parsed.failed && parsed.failed.length > 0) || (parsed.skipped && parsed.skipped.length > 0)) {
+    _showUploadResultFromPlanParsed(parsed, 0, 0)
+  } else {
+    showToast('변경 사항이 없습니다.', 'info')
+  }
+}
+
+// plan 헤더 라벨 → 키 매핑 (상품 매핑 + 기획 전용 추가)
+const PLAN_HEADER_TO_KEY = Object.assign({}, HEADER_TO_KEY, {
+  '연도': 'year',
+  '시즌': 'season',
+  '성별': 'gender',
+  '메모': 'memo'
+  // schedule 헤더('디자인 시작' 등)는 phase가 동적이라 _parsePlanUpload 내부에서 처리
+})
+
+function _parsePlanUpload(raw) {
+  const hdr0 = raw[0] || []
+  if (!hdr0.length) { showToast('헤더가 비어있습니다.', 'error'); return null }
+
+  // 컬럼 매핑
+  const COL = {}
+  hdr0.forEach((h, i) => {
+    const s = String(h ?? '').trim()
+    const k = PLAN_HEADER_TO_KEY[s]
+    if (k && COL[k] == null) COL[k] = i
+  })
+  if (COL.sampleNo == null) {
+    showToast('샘플번호 컬럼을 찾을 수 없습니다. 신규기획 양식인지 확인하세요.', 'error')
+    return null
+  }
+
+  // sizeSpec + schedule 동적 매핑
+  const SIZE_SPEC_SIZES_UP = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
+  const SIZE_SPEC_PART_LABEL = { bust: '가슴', waist: '허리', hip: '엉덩이' }
+  const sizeSpecColMap = {}
+  const phases = (typeof getPlanPhases === 'function') ? getPlanPhases() : []
+  const scheduleColMap = {}
+
+  hdr0.forEach((h, i) => {
+    const s = String(h ?? '').trim()
+    if (s === 'F') { sizeSpecColMap['F'] = i; return }
+    SIZE_SPEC_SIZES_UP.forEach(sz => {
+      Object.entries(SIZE_SPEC_PART_LABEL).forEach(([partKey, partLabel]) => {
+        if (s === sz + ' ' + partLabel) sizeSpecColMap[sz + '_' + partKey] = i
+      })
+    })
+    phases.forEach(ph => {
+      if (s === ph.label + ' 시작') scheduleColMap[ph.key + '_start'] = i
+      if (s === ph.label + ' 종료') scheduleColMap[ph.key + '_end']   = i
+    })
+  })
+
+  // Per-row sizeSpec readers — builds object only from non-DELETE non-empty cells
+  // (W6: per-part merge happens at apply time. Here we just record values that were uploaded.)
+  function _readSizeSpec(row) {
+    const spec = {}
+    SIZE_SPEC_SIZES_UP.forEach(sz => {
+      const _cell = (part) => {
+        if (sizeSpecColMap[sz + '_' + part] == null) return ''
+        const raw = String(row[sizeSpecColMap[sz + '_' + part]] ?? '').trim()
+        if (raw === DELETE_TOKEN) return ''
+        return raw.replace(/[^\d.]/g, '')
+      }
+      const b = _cell('bust'), w = _cell('waist'), h = _cell('hip')
+      if (b || w || h) spec[sz] = { bust: b, waist: w, hip: h }
+    })
+    if (sizeSpecColMap['F'] != null) {
+      const raw = String(row[sizeSpecColMap['F']] ?? '').trim()
+      const fv = raw === DELETE_TOKEN ? '' : raw.replace(/[^\d.]/g, '')
+      if (fv) spec['F'] = { bust: fv, waist: '', hip: '' }
+    }
+    return spec
+  }
+
+  // Schedule reader — [삭제] in start/end clears that part of the phase (W1)
+  // Empty cells preserve. Phase only included if any value or any explicit delete present.
+  function _readSchedule(row, deleteKeysAdd) {
+    const sch = {}
+    phases.forEach(ph => {
+      const sIdx = scheduleColMap[ph.key + '_start']
+      const eIdx = scheduleColMap[ph.key + '_end']
+      const rawS = sIdx != null ? String(row[sIdx] ?? '').trim() : ''
+      const rawE = eIdx != null ? String(row[eIdx] ?? '').trim() : ''
+      if (rawS === DELETE_TOKEN) deleteKeysAdd('schedule_' + ph.key + '_start')
+      if (rawE === DELETE_TOKEN) deleteKeysAdd('schedule_' + ph.key + '_end')
+      const startV = rawS === DELETE_TOKEN ? '' : rawS
+      const endV   = rawE === DELETE_TOKEN ? '' : rawE
+      if (startV || endV || rawS === DELETE_TOKEN || rawE === DELETE_TOKEN) {
+        sch[ph.key] = { start: startV, end: endV }
+      }
+    })
+    return sch
+  }
+
+  const dataRows = raw.slice(1)
+    .map((row, i) => ({ row, userRowNo: i + 2 }))
+    .filter(r => String(r.row[COL.sampleNo] || '').trim() || (COL.code != null && String(r.row[COL.code] || '').trim()))
+
+  if (!dataRows.length) { showToast('데이터가 없습니다.', 'error'); return null }
+
+  // W5: hard block on >300 rows (Firestore sharedData/planItems single-doc 1MB limit)
+  if (dataRows.length > MAX_UPLOAD_ROWS) {
+    showToast(`한 번에 업로드 가능한 최대 행 수는 ${MAX_UPLOAD_ROWS}개입니다. 현재: ${dataRows.length}개. 파일을 분할해 주세요.`, 'error')
+    return null
+  }
+
+  const presentKeys = new Set(Object.keys(COL))
+  Object.keys(sizeSpecColMap).forEach(k => presentKeys.add('sizeSpec_' + k))
+  Object.keys(scheduleColMap).forEach(k => presentKeys.add('schedule_' + k))
+
+  const added = [], updated = [], skipped = [], failed = []
+  // C1 fix: detect intra-file duplicates BEFORE building diffs; reject whole upload if any found
+  const seenCodes = new Map()    // productCode → first row number
+  const seenSamples = new Map()  // sampleNo → first row number
+  const duplicates = []          // { type, identifier, firstRow, secondRow }
+  const sampleDeleteAttempts = [] // [삭제] in 샘플번호 cell — silently rejected with toast
+
+  dataRows.forEach(({ row, userRowNo }) => {
+    const sampleNoRaw = String(row[COL.sampleNo] || '').trim()
+    // [삭제] in sampleNo cell — matching key, cannot be removed via upload
+    if (sampleNoRaw === DELETE_TOKEN) {
+      sampleDeleteAttempts.push(userRowNo)
+      failed.push({ row: userRowNo, productCode: '', name: '', reason: '샘플번호는 [삭제] 키워드로 제거할 수 없습니다' })
+      return
+    }
+    const sampleNo = sampleNoRaw
+    if (!sampleNo) {
+      failed.push({ row: userRowNo, productCode: '', name: '', reason: '샘플번호가 비어있습니다 (필수)' })
+      return
+    }
+    // W3: numeric 0 sampleNo edge case — reject as invalid
+    if (sampleNo === '0' || sampleNo === '0.0') {
+      failed.push({ row: userRowNo, productCode: '', name: '', reason: '샘플번호 "0"은 유효하지 않습니다' })
+      return
+    }
+
+    // [삭제]-aware extractors (return '' / 0 for [삭제], empty, or NaN)
+    const _s = (key) => {
+      if (COL[key] == null) return ''
+      const raw = row[COL[key]]
+      const s = (raw == null) ? '' : String(raw).trim()
+      return s === DELETE_TOKEN ? '' : s
+    }
+    const _n = (key) => {
+      if (COL[key] == null) return 0
+      const raw = row[COL[key]]
+      const s = (raw == null) ? '' : String(raw).trim()
+      if (s === DELETE_TOKEN || s === '') return 0
+      return Number(raw) || 0
+    }
+    const code = _s('code')
+
+    // C1 fix: intra-file duplicate detection (sampleNo always checked, productCode if present)
+    if (seenSamples.has(sampleNo)) {
+      duplicates.push({ type: '샘플번호', identifier: sampleNo, firstRow: seenSamples.get(sampleNo), secondRow: userRowNo })
+      return
+    }
+    if (code && seenCodes.has(code)) {
+      duplicates.push({ type: '품번', identifier: code, firstRow: seenCodes.get(code), secondRow: userRowNo })
+      return
+    }
+    seenSamples.set(sampleNo, userRowNo)
+    if (code) seenCodes.set(code, userRowNo)
+
+    // confirmed:true 항목 차단 (이미 상품으로 이전됨)
+    const blockedExisting = code
+      ? State.planItems.find(p => p.productCode === code && p.confirmed)
+      : null
+    if (blockedExisting) {
+      failed.push({ row: userRowNo, productCode: code, name: blockedExisting.nameKr || '', reason: '이미 상품으로 이전된 항목입니다 (수정 불가)' })
+      return
+    }
+
+    // [삭제] keyword + valueKeys tracking (per-row)
+    const valueKeys = new Set()
+    const deleteKeys = new Set()
+    Object.keys(COL).forEach(hdrKey => {
+      const raw = row[COL[hdrKey]]
+      const s = (raw == null) ? '' : String(raw).trim()
+      if (s === DELETE_TOKEN) {
+        // sampleNo already handled above (return)
+        if (hdrKey === 'sampleNo') return
+        deleteKeys.add(hdrKey)
+      } else if (s !== '') {
+        valueKeys.add(hdrKey)
+      }
+    })
+    Object.entries(sizeSpecColMap).forEach(([sk, ci]) => {
+      const s = String(row[ci] ?? '').trim()
+      if (s === DELETE_TOKEN) deleteKeys.add('sizeSpec_' + sk)
+    })
+
+    const sumUrls    = COL.urlSum != null      ? parseSumUrls(row[COL.urlSum])      : []
+    const lemUrls    = COL.urlLemango != null  ? parseSumUrls(row[COL.urlLemango])  : []
+    const noirUrls   = COL.urlNoir != null     ? parseSumUrls(row[COL.urlNoir])     : []
+    const extUrls    = COL.urlExternal != null ? parseSumUrls(row[COL.urlExternal]) : []
+    const designArr  = COL.urlDesign != null   ? parseSumUrls(row[COL.urlDesign])   : []
+    const shootArr   = COL.urlShoot != null    ? parseSumUrls(row[COL.urlShoot])    : []
+
+    const planItem = {
+      sampleNo,
+      productCode:  code,
+      brand:        _s('brand') || '르망고',
+      nameKr:       _s('nameKr'),
+      nameEn:       _s('nameEn'),
+      colorKr:      _s('colorKr'),
+      colorEn:      _s('colorEn'),
+      salePrice:    _n('salePrice'),
+      costPrice:    _n('costPrice'),
+      type:         _s('type'),
+      year:         _s('year'),
+      season:       _s('season'),
+      gender:       _s('gender'),
+      backStyle:    _s('backStyle'),
+      legCut:       _s('legCut'),
+      guide:        _s('guide'),
+      fabricType:   _s('fabricType'),
+      chestLine:    _s('chestLine'),
+      transparency: _s('transparency'),
+      lining:       _s('lining'),
+      capRing:      _s('capRing'),
+      material:     _s('material'),
+      comment:      _s('comment'),
+      washMethod:   _s('washMethod'),
+      sizeSpec:     Object.keys(sizeSpecColMap).length ? _readSizeSpec(row) : null,
+      modelSize:    _s('modelSize'),
+      madeMonth:    _s('madeMonth'),
+      madeBy:       _s('madeBy'),
+      madeIn:       _s('madeIn'),
+      memo:         _s('memo'),
+      mainImage:    _s('mainImage'),
+      videoUrl:     _s('videoUrl'),
+      // W2: design/shoot stored as ARRAYS (consistent with sum/lemango/noir/external)
+      // _diffPlan and apply normalize legacy string-typed existing data on read
+      images: {
+        sum:      sumUrls,
+        lemango:  lemUrls,
+        noir:     noirUrls,
+        external: extUrls,
+        design:   designArr,
+        shoot:    shootArr
+      },
+      schedule:    Object.keys(scheduleColMap).length ? _readSchedule(row, k => deleteKeys.add(k)) : null,
+      tempImages:  []
+    }
+
+    // 매칭 우선순위: 품번 → 샘플번호 (confirmed 제외)
+    let idx = -1
+    if (code) idx = State.planItems.findIndex(p => p.productCode === code && !p.confirmed)
+    if (idx < 0) idx = State.planItems.findIndex(p => p.sampleNo === sampleNo && !p.confirmed)
+
+    if (idx >= 0) {
+      const existing = State.planItems[idx]
+      const diffs = _diffPlan(existing, planItem, presentKeys, deleteKeys)
+      if (diffs.length > 0) {
+        updated.push({ code, sampleNo, idx, planItem, diffs, existing, presentKeys, valueKeys, deleteKeys, row: userRowNo })
+      } else {
+        skipped.push({ row: userRowNo, productCode: code || sampleNo, reason: '변경 사항 없음' })
+      }
+    } else {
+      added.push({ code, sampleNo, planItem, valueKeys, deleteKeys, row: userRowNo })
+    }
+  })
+
+  // [삭제] 키워드를 샘플번호 셀에 사용한 행 — 경고 토스트
+  if (sampleDeleteAttempts.length > 0) {
+    const rows = sampleDeleteAttempts.slice(0, 5).join(', ')
+    const more = sampleDeleteAttempts.length > 5 ? ` 외 ${sampleDeleteAttempts.length - 5}건` : ''
+    showToast(`샘플번호는 [삭제] 키워드로 제거할 수 없습니다 (행 ${rows}${more}). UI에서 직접 수정하세요.`, 'warning')
+  }
+
+  // C1 fix: if any intra-file duplicates found, reject entire upload (Option A — safest)
+  if (duplicates.length > 0) {
+    const list = duplicates.slice(0, 5)
+      .map(d => `${d.type} "${d.identifier}" (행 ${d.firstRow}, ${d.secondRow})`)
+      .join('\n')
+    const more = duplicates.length > 5 ? `\n... 외 ${duplicates.length - 5}건` : ''
+    showToast(`엑셀 파일에 중복 식별자가 있습니다:\n${list}${more}\n파일을 확인 후 다시 업로드하세요.`, 'error')
+    return null
+  }
+
+  return { added, updated, failed, skipped }
+}
+
+// 기획 전용 비교 필드
+const _PLAN_DIFF_FIELDS = [
+  { key:'brand', label:'브랜드' },
+  { key:'productCode', label:'품번', hdrKey:'code' },
+  { key:'nameKr', label:'상품명(한글)' },
+  { key:'nameEn', label:'상품명(영문)' },
+  { key:'colorKr', label:'색상(한글)' },
+  { key:'colorEn', label:'색상(영문)' },
+  { key:'salePrice', label:'판매가' },
+  { key:'costPrice', label:'원가' },
+  { key:'type', label:'타입' },
+  { key:'year', label:'연도' },
+  { key:'season', label:'시즌' },
+  { key:'gender', label:'성별' },
+  { key:'backStyle', label:'백스타일' },
+  { key:'legCut', label:'레그컷' },
+  { key:'guide', label:'가이드' },
+  { key:'fabricType', label:'원단타입' },
+  { key:'chestLine', label:'가슴선' },
+  { key:'transparency', label:'비침' },
+  { key:'lining', label:'안감' },
+  { key:'capRing', label:'캡고리' },
+  { key:'material', label:'소재' },
+  { key:'comment', label:'코멘트' },
+  { key:'washMethod', label:'세탁방법' },
+  { key:'modelSize', label:'모델사이즈' },
+  { key:'madeMonth', label:'제조년월' },
+  { key:'madeBy', label:'제조사' },
+  { key:'madeIn', label:'제조국' },
+  { key:'memo', label:'메모' },
+  { key:'mainImage', label:'대표이미지' },
+  { key:'videoUrl', label:'영상URL' }
+]
+
+// W2: image normalization — arrays, strings, null all coerce to '\n'-joined string
+const _normImgVal = v => Array.isArray(v) ? v.join('\n') : String(v ?? '')
+
+function _diffPlan(existing, uploaded, presentKeys, deleteKeys) {
+  deleteKeys = deleteKeys || new Set()
+  const diffs = []
+  _PLAN_DIFF_FIELDS.forEach(f => {
+    if (presentKeys) {
+      const hdrKey = f.hdrKey || f.key
+      if (!presentKeys.has(hdrKey)) return
+    }
+    const oldVal = String(existing[f.key] ?? '')
+    const newVal = String(uploaded[f.key] ?? '')
+    if (oldVal !== newVal) {
+      const headerKey = f.hdrKey || f.key
+      const entry = { key: f.key, label: f.label, oldVal, newVal }
+      if (deleteKeys.has(headerKey)) entry.isDelete = true
+      diffs.push(entry)
+    }
+  })
+  // W2: all 6 image sections treated uniformly (legacy strings + new arrays both normalized)
+  const imgAllSec = ['sum','lemango','noir','external','design','shoot']
+  imgAllSec.forEach(sec => {
+    const hdrKey = _IMG_PRESENT_KEY[sec]
+    if (presentKeys && !presentKeys.has(hdrKey)) return
+    const oldV = _normImgVal(existing.images?.[sec])
+    const newV = _normImgVal(uploaded.images?.[sec])
+    if (oldV !== newV) {
+      const entry = { key: 'images.' + sec, label: '이미지(' + sec + ')', oldVal: oldV, newVal: newV }
+      if (deleteKeys.has(hdrKey)) entry.isDelete = true
+      diffs.push(entry)
+    }
+  })
+  // sizeSpec
+  const _SIZE_SPEC_SIZES_DIFF = ['XS','S','M','L','XL','XXL']
+  const _SPEC_PART_LABEL = { bust: '가슴', waist: '허리', hip: '엉덩이' }
+  _SIZE_SPEC_SIZES_DIFF.forEach(sz => {
+    Object.keys(_SPEC_PART_LABEL).forEach(part => {
+      if (presentKeys && !presentKeys.has('sizeSpec_' + sz + '_' + part)) return
+      const oldV = String(existing.sizeSpec?.[sz]?.[part] ?? '')
+      const newV = String(uploaded.sizeSpec?.[sz]?.[part] ?? '')
+      if (oldV !== newV) {
+        const entry = { key: 'sizeSpec.' + sz + '.' + part, label: sz + ' ' + _SPEC_PART_LABEL[part], oldVal: oldV, newVal: newV }
+        if (deleteKeys.has('sizeSpec_' + sz + '_' + part)) entry.isDelete = true
+        diffs.push(entry)
+      }
+    })
+  })
+  if (!presentKeys || presentKeys.has('sizeSpec_F')) {
+    const _fStr = (v) => v == null ? '' : (typeof v === 'object' ? String(v.bust || v.waist || v.hip || '') : String(v))
+    const oldF = _fStr(existing.sizeSpec?.F)
+    const newF = _fStr(uploaded.sizeSpec?.F)
+    if (oldF !== newF) {
+      const entry = { key: 'sizeSpec.F', label: 'F', oldVal: oldF, newVal: newF }
+      if (deleteKeys.has('sizeSpec_F')) entry.isDelete = true
+      diffs.push(entry)
+    }
+  }
+  // schedule (동적 phases)
+  const phases = (typeof getPlanPhases === 'function') ? getPlanPhases() : []
+  phases.forEach(ph => {
+    ;['start','end'].forEach(t => {
+      if (presentKeys && !presentKeys.has('schedule_' + ph.key + '_' + t)) return
+      const oldV = String(existing.schedule?.[ph.key]?.[t] ?? '')
+      const newV = String(uploaded.schedule?.[ph.key]?.[t] ?? '')
+      if (oldV !== newV) {
+        const entry = {
+          key: 'schedule.' + ph.key + '.' + t,
+          label: ph.label + ' ' + (t === 'start' ? '시작' : '종료'),
+          oldVal: oldV, newVal: newV
+        }
+        if (deleteKeys.has('schedule_' + ph.key + '_' + t)) entry.isDelete = true
+        diffs.push(entry)
+      }
+    })
+  })
+  return diffs
+}
+
+// 미리보기 모달 (상품 패턴 재사용 — bulkEditPreviewModal)
+function _showPlanBulkPreview(parsed) {
+  const modal = document.getElementById('bulkEditPreviewModal')
+  // W4: do NOT silently apply when modal is missing — surface error and abort
+  if (!modal) {
+    showToast('미리보기 모달을 찾을 수 없습니다. 페이지를 새로고침해 주세요.', 'error')
+    _planBulkPending = null
+    return
+  }
+  const body = modal.querySelector('.srm-body')
+  if (!body) {
+    showToast('미리보기 모달 본문을 찾을 수 없습니다. 페이지를 새로고침해 주세요.', 'error')
+    _planBulkPending = null
+    return
+  }
+
+  let html = '<div class="be-summary">'
+  if (parsed.updated.length) html += '<span class="be-badge be-badge-update">수정 ' + parsed.updated.length + '건</span>'
+  if (parsed.added.length) html += '<span class="be-badge be-badge-add">신규 ' + parsed.added.length + '건</span>'
+  if (parsed.failed && parsed.failed.length) html += '<span class="be-badge be-badge-fail">실패 ' + parsed.failed.length + '건</span>'
+  if (parsed.skipped && parsed.skipped.length) html += '<span class="be-badge be-badge-skip">스킵 ' + parsed.skipped.length + '건</span>'
+  html += '</div>'
+
+  if (parsed.updated.length) {
+    html += '<div class="be-section-title">변경 사항 (수정)</div>'
+    parsed.updated.forEach(item => {
+      const label = item.code || item.sampleNo
+      const nameKr = item.existing.nameKr || ''
+      html += '<div class="be-product">'
+      html += '<div class="be-product-header" onclick="this.nextElementSibling.classList.toggle(\'be-hidden\')">'
+      html += '<span class="be-code">' + esc(label) + '</span>'
+      html += '<span class="be-name">' + esc(nameKr) + '</span>'
+      html += '<span class="be-diff-count">' + item.diffs.length + '개 필드 변경</span>'
+      html += '<span class="be-toggle">▾</span>'
+      html += '</div>'
+      html += '<div class="be-diff-table">'
+      html += '<table><thead><tr><th>필드</th><th>기존값</th><th>새값</th></tr></thead><tbody>'
+      item.diffs.forEach(d => {
+        const oldDisp = d.oldVal.length > 60 ? d.oldVal.slice(0,60) + '...' : d.oldVal
+        const newDisp = d.newVal.length > 60 ? d.newVal.slice(0,60) + '...' : d.newVal
+        const rowCls = d.isDelete ? ' class="be-row-delete"' : ''
+        const newCls = d.isDelete ? 'be-new be-new-delete' : 'be-new'
+        const newText = d.isDelete ? '[삭제]' : (newDisp || '(없음)')
+        html += '<tr' + rowCls + '><td class="be-field">' + esc(d.label) + '</td>'
+        html += '<td class="be-old">' + esc(oldDisp || '(없음)') + '</td>'
+        html += '<td class="' + newCls + '">' + esc(newText) + '</td></tr>'
+      })
+      html += '</tbody></table></div></div>'
+    })
+  }
+
+  if (parsed.added.length) {
+    html += '<div class="be-section-title">신규 등록</div>'
+    parsed.added.forEach(item => {
+      const label = item.code || item.sampleNo
+      html += '<div class="be-add-row"><span class="be-code">' + esc(label) + '</span>'
+      html += '<span class="be-name">' + esc(item.planItem.nameKr || '') + '</span>'
+      html += '<span class="be-add-label">신규</span></div>'
+    })
+  }
+
+  html += '<div class="be-actions">'
+  html += '<button class="btn btn-primary" onclick="confirmPlanBulkUpload()">확정 적용</button>'
+  html += '<button class="btn" onclick="cancelPlanBulkUpload()">취소</button>'
+  html += '</div>'
+
+  body.innerHTML = html
+  centerModal(modal)
+  modal.showModal()
+}
+
+function confirmPlanBulkUpload() {
+  if (!_planBulkPending) return
+  _applyPlanUpload(_planBulkPending)
+  _planBulkPending = null
+  document.getElementById('bulkEditPreviewModal')?.close()
+}
+
+function cancelPlanBulkUpload() {
+  _planBulkPending = null
+  document.getElementById('bulkEditPreviewModal')?.close()
+  showToast('업로드가 취소되었습니다.', 'info')
+}
+
+async function _applyPlanUpload(parsed) {
+  let added = 0, updated = 0
+  const baseNo = State.planItems.length
+    ? Math.max(...State.planItems.map(p => Number(p.no) || 0))
+    : 0
+
+  parsed.added.forEach((item, i) => {
+    const planItem = item.planItem
+    if (planItem.sizeSpec == null) planItem.sizeSpec = {}
+    if (planItem.schedule == null) planItem.schedule = {}
+    planItem.no = baseNo + i + 1
+    planItem.confirmed = false
+    if (planItem.productCode) _reservedCodes.delete(planItem.productCode)
+    stampCreated(planItem)
+    State.planItems.push(planItem)
+    added++
+  })
+
+  parsed.updated.forEach(item => {
+    const existing = State.planItems[item.idx]
+    if (!existing) return
+    const presentKeys = item.presentKeys
+    const valueKeys = item.valueKeys instanceof Set ? item.valueKeys : presentKeys
+    const deleteKeys = item.deleteKeys instanceof Set ? item.deleteKeys : new Set()
+    const uploaded = item.planItem
+
+    // W6: per-part sizeSpec merge (empty cells preserve existing parts; [삭제] sets to '')
+    const _SIZES_FOR_MERGE = ['XS','S','M','L','XL','XXL']
+    const _PARTS = ['bust','waist','hip']
+    const mergedSizeSpec = (() => {
+      if (uploaded.sizeSpec == null) return existing.sizeSpec || {}
+      const out = JSON.parse(JSON.stringify(existing.sizeSpec || {}))
+      _SIZES_FOR_MERGE.forEach(sz => {
+        _PARTS.forEach(part => {
+          const headerKey = 'sizeSpec_' + sz + '_' + part
+          if (deleteKeys.has(headerKey)) {
+            if (!out[sz]) out[sz] = { bust:'', waist:'', hip:'' }
+            out[sz][part] = ''
+          } else if (presentKeys && presentKeys.has(headerKey)) {
+            const v = uploaded.sizeSpec?.[sz]?.[part]
+            if (v != null && String(v).trim() !== '') {
+              if (!out[sz]) out[sz] = { bust:'', waist:'', hip:'' }
+              out[sz][part] = v
+            }
+          }
+        })
+      })
+      if (deleteKeys.has('sizeSpec_F')) {
+        if (out.F && typeof out.F === 'object') out.F.bust = '' ; else out.F = { bust:'', waist:'', hip:'' }
+      } else if (presentKeys && presentKeys.has('sizeSpec_F')) {
+        const f = uploaded.sizeSpec?.F
+        if (f && (f.bust || f.waist || f.hip)) out.F = f
+      }
+      return out
+    })()
+
+    // W1: schedule merge — supports per-key [삭제] (e.g., 'schedule_design_start') to clear
+    const mergedSchedule = (() => {
+      if (uploaded.schedule == null) return existing.schedule || {}
+      const out = JSON.parse(JSON.stringify(existing.schedule || {}))
+      const phasesNow = (typeof getPlanPhases === 'function') ? getPlanPhases() : []
+      phasesNow.forEach(ph => {
+        ;['start','end'].forEach(t => {
+          const dk = 'schedule_' + ph.key + '_' + t
+          if (deleteKeys.has(dk)) {
+            if (!out[ph.key]) out[ph.key] = { start:'', end:'' }
+            out[ph.key][t] = ''
+          } else {
+            const v = uploaded.schedule?.[ph.key]?.[t]
+            if (v != null && String(v).trim() !== '') {
+              if (!out[ph.key]) out[ph.key] = { start:'', end:'' }
+              out[ph.key][t] = v
+            }
+          }
+        })
+      })
+      return out
+    })()
+
+    let merged
+    if (presentKeys) {
+      merged = { ...existing }
+      const SCALAR_MAP = {
+        brand:'brand',
+        nameKr:'nameKr', nameEn:'nameEn', colorKr:'colorKr', colorEn:'colorEn',
+        salePrice:'salePrice', costPrice:'costPrice',
+        type:'type', year:'year', season:'season', gender:'gender',
+        backStyle:'backStyle', legCut:'legCut', guide:'guide',
+        fabricType:'fabricType', chestLine:'chestLine', transparency:'transparency',
+        lining:'lining', capRing:'capRing', material:'material', comment:'comment',
+        washMethod:'washMethod', modelSize:'modelSize',
+        madeMonth:'madeMonth', madeBy:'madeBy', madeIn:'madeIn',
+        memo:'memo', mainImage:'mainImage', videoUrl:'videoUrl'
+      }
+      Object.entries(SCALAR_MAP).forEach(([hdrKey, prodKey]) => {
+        if (deleteKeys.has(hdrKey)) {
+          merged[prodKey] = NUMERIC_FIELDS.has(prodKey) ? 0 : ''
+        } else if (presentKeys.has(hdrKey) && valueKeys.has(hdrKey)) {
+          merged[prodKey] = uploaded[prodKey]
+        }
+      })
+      // productCode: assign only when existing is empty (never overwrite). [삭제] disallowed by parse.
+      if (presentKeys.has('code') && valueKeys.has('code') && !existing.productCode && uploaded.productCode) {
+        merged.productCode = uploaded.productCode
+      }
+      // W2: all 6 image sections stored as arrays — design/shoot unified
+      const IMG_MAP = { urlSum:'sum', urlLemango:'lemango', urlNoir:'noir', urlExternal:'external', urlDesign:'design', urlShoot:'shoot' }
+      const mergedImages = { ...(existing.images || {}) }
+      Object.entries(IMG_MAP).forEach(([hdrKey, secKey]) => {
+        if (deleteKeys.has(hdrKey)) {
+          mergedImages[secKey] = []
+        } else if (presentKeys.has(hdrKey) && valueKeys.has(hdrKey)) {
+          mergedImages[secKey] = Array.isArray(uploaded.images?.[secKey]) ? uploaded.images[secKey] : []
+        }
+      })
+      merged.images = mergedImages
+    } else {
+      merged = { ...existing, ...uploaded }
+    }
+
+    // 보존 필드
+    merged.no = existing.no
+    merged.tempImages = existing.tempImages || []
+    merged.confirmed = existing.confirmed || false
+    merged.confirmedAt = existing.confirmedAt
+    merged.sizeSpec = mergedSizeSpec || {}
+    merged.schedule = mergedSchedule
+
+    State.planItems[item.idx] = merged
+    stampModified(State.planItems[item.idx])
+    updated++
+  })
+
+  State.plan.filtered = State.planItems.filter(p => !p.confirmed)
+  if (typeof renderPlanTable === 'function') renderPlanTable()
+  if (typeof renderDashboard === 'function') renderDashboard()
+
+  if (typeof savePlanItems === 'function') {
+    try { await savePlanItems() } catch (e) { console.error(e) }
+  }
+
+  if (typeof logActivity === 'function') {
+    logActivity('upload', '신규기획', '엑셀 업로드: 신규 ' + added + '건, 수정 ' + updated + '건')
+  }
+  showToast('업로드 완료: 신규 ' + added + '건 / 수정 ' + updated + '건', 'success')
+
+  // Firestore 1MB 한계 경고 (sharedData/planItems 단일 문서)
+  if (State.planItems.length > 300) {
+    showToast('기획 항목 ' + State.planItems.length + '건 — Firestore 1MB 한계에 근접합니다', 'warning')
+  }
+
+  _showUploadResultFromPlanParsed(parsed, added, updated)
+}
+
+function _showUploadResultFromPlanParsed(parsed, addedApplied, updatedApplied) {
+  if (typeof showUploadResult !== 'function') return
+  const failed = parsed.failed || []
+  const skipped = parsed.skipped || []
+  const result = {
+    total: (parsed.added || []).length + (parsed.updated || []).length + failed.length + skipped.length,
+    success: (parsed.added || []).map(item => ({
+      row: item.row,
+      productCode: item.code || item.sampleNo,
+      name: item.planItem.nameKr || ''
+    })),
+    updated: (parsed.updated || []).map(item => ({
+      row: item.row,
+      productCode: item.code || item.sampleNo,
+      name: item.planItem.nameKr || (item.existing && item.existing.nameKr) || '',
+      changes: (item.diffs || []).map(d => d.label).join(', ')
+    })),
+    failed,
+    skipped
+  }
+  showUploadResult(result)
 }
 
 // 결과 모달 — window 노출

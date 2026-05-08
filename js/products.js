@@ -149,6 +149,11 @@ const PRODUCT_COLUMNS = [
   { key:'totalStock', label:'입고수량',  fixed:false, thAttr:'data-key="totalStock" style="text-align:right"', td:p=>`<td style="text-align:right;font-family:Inter">${fmtNum(getTotalStock(p))}</td>`, tfoot:true },
   { key:'totalSales', label:'판매수량',  fixed:false, thAttr:'data-key="totalSales" style="text-align:right"', td:p=>`<td style="text-align:right;font-family:Inter">${fmtNum(getTotalSales(p))}</td>`, tfoot:true },
   { key:'exhaustion', label:'소진율',    fixed:false, thAttr:'data-key="exhaustion" style="width:120px"', td:p=>`<td>${progressBar(getExhaustion(p))}</td>` },
+  { key:'lastModifiedByName', label:'최종 수정자', fixed:false, thAttr:'data-key="lastModifiedByName" style="width:130px"', td:p=>{
+    const n = p.lastModifiedByName || ''
+    const at = p.lastModifiedAt ? String(p.lastModifiedAt).slice(0,10) : ''
+    return `<td style="font-size:11px;color:#666">${n ? `<div>${n}</div>` : ''}${at ? `<div style="font-size:10px;color:#999">${at}</div>` : (n ? '' : '-')}</td>`
+  } },
 ]
 const PRODUCT_FIXED_KEYS = PRODUCT_COLUMNS.filter(c=>c.fixed).map(c=>c.key)
 
@@ -225,9 +230,10 @@ function renderProductTable() {
   bindColumnDragDrop('productTable', 'product', PRODUCT_FIXED_KEYS, 'renderProductTable')
   applyColWidthsToHeader('productTable', 'product')
   renderPagination('pPagination', 'product', 'renderProductTable')
-  // Feature 6: inline edit
-  initInlineEdit('productTable', 'product')
-  // Feature 12: row double-click → detail
+  // Feature 6: inline edit DISABLED — all edits go through detail modal
+  // (preserves edit lock, activity log, watch notifications, permission checks)
+  // initInlineEdit('productTable', 'product') — intentionally not wired
+  // Feature 12: row double-click → detail (now also covers cells previously inline-editable)
   initRowDblClick('productTable', (tr) => {
     const code = tr.getAttribute('data-code')
     if (code) openDetailModal(code)

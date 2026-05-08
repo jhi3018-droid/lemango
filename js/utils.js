@@ -1696,7 +1696,8 @@ function initRowDblClick(tableId, callback) {
   table.addEventListener('dblclick', (e) => {
     const tag = (e.target.tagName || '').toLowerCase()
     if (['input','select','textarea','button','label'].includes(tag)) return
-    if (e.target.closest('td[data-editable]')) return
+    // Note: td[data-editable] cells are no longer excluded — inline edit is disabled,
+    // and dblclick on those cells now opens the detail modal too (Task 3 unification)
     if (e.target.closest('.code-link')) return
     const tr = e.target.closest('tbody tr')
     if (!tr) return
