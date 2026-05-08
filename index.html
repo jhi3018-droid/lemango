@@ -116,6 +116,7 @@
       <button class="tab-btn" data-tab="board">게시판</button>
       <button class="tab-btn" data-tab="orgchart">조직도</button>
       <button class="tab-btn hradmin-nav-hidden" data-tab="hradmin" id="tabBtnHrAdmin">인사관리</button>
+      <button class="tab-btn trash-nav-hidden" data-tab="trash" id="tabBtnTrash">🗑️ 휴지통</button>
       <button class="tab-btn" data-tab="settings">⚙ 설정</button>
     </nav>
     <div class="header-right">
@@ -683,6 +684,11 @@
   <!-- ===== 설정 탭 ===== -->
   <section class="tab-content" id="tab-settings">
     <div class="settings-page" id="settingsPage"></div>
+  </section>
+
+  <!-- ===== 휴지통 탭 (Grade 3+ only) ===== -->
+  <section class="tab-content" id="tab-trash">
+    <div class="trash-page" id="trashPage"></div>
   </section>
 
   <!-- ===== 조직도 탭 ===== -->
@@ -1392,7 +1398,10 @@
       <button class="btn btn-sm btn-primary d-edit-btn" id="dSaveBtn" onclick="saveDetailEdit()" style="display:none">저장</button>
       <button class="btn btn-sm btn-outline d-edit-btn" id="dCancelBtn" onclick="toggleDetailEdit()" style="display:none">취소</button>
       <button class="btn btn-sm btn-outline" id="dLockCodeBtn" onclick="lockProductCode()" style="color:var(--primary);border-color:var(--primary)">🔒 품번 확정</button>
-      <button class="btn btn-sm btn-outline d-view-btn" id="dDeleteBtn" onclick="deleteProduct()" style="display:none;color:var(--danger);border-color:var(--danger)">삭제</button>
+      <button class="btn btn-sm btn-outline btn-danger-sm d-edit-btn" id="dDeleteBtn" onclick="requestProductDelete()" style="display:none">삭제</button>
+      <span id="dTrashIndicator" class="dmodal-trash-pill" style="display:none" title=""></span>
+      <button class="btn btn-sm btn-outline d-trash-btn" id="dRestoreBtn" onclick="dRestoreFromDetail()">🔄 복원</button>
+      <button class="btn btn-sm btn-outline btn-danger-sm d-trash-btn" id="dPermDeleteBtn" onclick="dPermDeleteFromDetail()">🗑️ 영구삭제</button>
       <button class="modal-close" onclick="closeDetailModal()">✕</button>
     </div>
   </div>
@@ -1537,6 +1546,32 @@
     <div class="pdc-actions">
       <button class="btn btn-outline" onclick="closePlanDeleteConfirm()">취소</button>
       <button class="btn btn-danger" id="pdcConfirmBtn" onclick="confirmPlanDelete()" disabled>삭제</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- 상품조회 삭제 확인 모달 (소프트 삭제 — 휴지통으로 이동) -->
+<dialog id="productDeleteConfirmModal" class="srm-modal" style="width:780px;max-width:95vw;max-height:85vh;padding:0;overflow:hidden;border-radius:10px">
+  <div class="srm-header modal-header" style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:14px;cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff;flex:1;min-width:0" id="prodDelTitle">⚠ 상품 삭제 (휴지통 이동)</span>
+    <button class="modal-close" style="margin:0" onclick="closeProductDeleteConfirm()">✕</button>
+  </div>
+  <div class="srm-body" style="padding:22px 26px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:16px">
+    <div class="pdc-warning" id="prodDelWarning">
+      삭제 시 <strong>휴지통으로 이동</strong>됩니다. 매출/재고 이력은 보존됩니다. 삭제하려면 아래 품번을 정확히 입력하세요.
+    </div>
+    <div class="pdc-target">
+      <div class="pdc-label">삭제 대상</div>
+      <div class="pdc-target-code" id="prodDelTargetCode">—</div>
+      <div class="pdc-meta" id="prodDelTargetMeta"></div>
+    </div>
+    <div class="pdc-input-row">
+      <label class="pdc-input-label" for="prodDelInput" id="prodDelInputLabel">위 품번을 정확히 입력해주세요</label>
+      <input type="text" id="prodDelInput" autocomplete="off" oninput="_pcdOnInput()" />
+    </div>
+    <div class="pdc-actions">
+      <button class="btn btn-outline" onclick="closeProductDeleteConfirm()">취소</button>
+      <button class="btn btn-danger" id="prodDelConfirmBtn" onclick="confirmProductDelete()" disabled>삭제</button>
     </div>
   </div>
 </dialog>
@@ -2497,6 +2532,7 @@
 <script src="js/orgchart.js"></script>
 <script src="js/hr.js"></script>
 <script src="js/backup.js"></script>
+<script src="js/trash.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

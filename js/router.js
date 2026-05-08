@@ -182,6 +182,7 @@ function triggerTabRender(tab) {
     case 'orgchart':  if (typeof renderOrgChart === 'function') renderOrgChart(); break
     case 'mypage':    if (typeof renderHrTab === 'function') renderHrTab(); break
     case 'hradmin':   if (typeof renderHrAdminTab === 'function') renderHrAdminTab(); break
+    case 'trash':     if (typeof renderTrashTab === 'function') renderTrashTab(); break
   }
 }
 

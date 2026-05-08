@@ -4812,6 +4812,53 @@ td[data-editable]:hover { background: #FAEEDA; }
 
 /* ===== 인사관리 탭 (Grade 2+) ===== */
 .hradmin-nav-hidden { display:none !important; }
+.trash-nav-hidden { display:none !important; }
+
+/* ===== 휴지통 (Trash) page ===== */
+.trash-page { padding: 16px 20px; }
+.trash-header { margin-bottom: 16px; }
+.trash-title { margin: 0 0 4px 0; font-size: 18px; font-weight: 700; color: var(--primary); }
+.trash-desc { margin: 0; font-size: 12px; color: #888; }
+.trash-filters {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 12px; padding: 10px 12px;
+  background: #faf9f5; border: 1px solid var(--border); border-radius: 6px;
+}
+.trash-search {
+  padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px;
+  font-size: 13px; min-width: 220px; outline: none;
+}
+.trash-search:focus { border-color: var(--accent); }
+.trash-date { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; }
+.trash-deleter { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; min-width: 140px; }
+.trash-count { font-size: 12px; color: #888; }
+.trash-table-wrap {
+  border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: #fff;
+}
+.trash-table { width: 100%; border-collapse: collapse; }
+.trash-table th { background: var(--primary); color: #fff; font-weight: 600; font-size: 12px; padding: 10px; text-align: left; }
+.trash-table td { padding: 10px; border-bottom: 1px solid var(--border-light); font-size: 13px; vertical-align: middle; }
+.trash-table tbody tr:hover { background: #faf9f5; }
+
+/* Trash read-only header pill — compact replacement for the old body-width banner.
+   Sits inline in the detail modal header next to the product code. */
+.dmodal-trash-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  background: #FFE5E5;
+  color: #C53030;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid #F4B5B5;
+  border-radius: 12px;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  cursor: help;
+}
+/* Trash action buttons in detail header — only visible when readonly */
+.d-trash-btn { display: none; }
+#dRestoreBtn { color: var(--success); border-color: var(--success); }
+#dRestoreBtn:hover { background: var(--success); color: #fff; }
 .hradmin-inner-tabs { display:flex; gap:0; margin-bottom:14px; border-bottom:2px solid #f0efe9; }
 .hradmin-tab-btn { padding:7px 14px; font-size:12px; color:#888; cursor:pointer; border:none; background:none; border-bottom:2px solid transparent; margin-bottom:-2px; }
 .hradmin-tab-btn.hradmin-tab-active { color:#1a1a2e; font-weight:500; border-bottom-color:#c9a96e; }

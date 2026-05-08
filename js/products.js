@@ -39,6 +39,8 @@ function searchProduct() {
   const legCut   = document.getElementById('pLegCut').value
 
   let result = State.allProducts.filter(p => {
+    // Soft-deleted products are hidden from main 상품조회 (휴지통에서만 노출)
+    if (p.deleted === true) return false
     if (keywords.length) {
       const getTargets = () => {
         if (field === 'nameKr')      return [p.nameKr, p.nameEn]
@@ -179,7 +181,8 @@ function renderProductTable() {
   State.product.inactiveColumns = State.product.inactiveColumns.filter(k => allKeys.includes(k))
   renderColInactiveArea('pInactiveArea','pInactiveTags','product',PRODUCT_COLUMNS,PRODUCT_FIXED_KEYS,'renderProductTable')
 
-  const data = applyColFilters(State.product.filtered, State.product.columnFilters)
+  // Soft-deleted always excluded at render — defense in depth (search also filters)
+  const data = applyColFilters(State.product.filtered.filter(p => !p.deleted), State.product.columnFilters)
   const page = State.product.page || 1
   const ps = getPageSize('product')
   const pageData = ps === 0 ? data : data.slice((page - 1) * ps, page * ps)

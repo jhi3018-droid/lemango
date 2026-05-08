@@ -206,7 +206,8 @@ function renderSalesTable() {
   applyTableCustom('sales')
   renderInactiveArea()
 
-  const data = applyColFilters(State.sales.filtered, State.sales.columnFilters)
+  // Soft-deleted excluded from 매출현황 list view (per policy — past revenue still counts in dashboard totals)
+  const data = applyColFilters(State.sales.filtered.filter(p => !p.deleted), State.sales.columnFilters)
   const page = State.sales.page || 1
   const ps   = getPageSize('sales')
   const pageData = ps > 0 ? data.slice((page - 1) * ps, page * ps) : data

@@ -170,7 +170,9 @@ function copySingleUrlFromBtn(btn) {
 let _detailCode = null        // 현재 열린 상품 코드
 let _detailPendingCode = null  // 상세 모달 품번 생성 패널에서 임시 예약한 코드
 
-async function openDetailModal(productCode) {
+async function openDetailModal(productCode, opts) {
+  opts = opts || {}
+  const readOnly = !!opts.readOnly
   const p = State.allProducts.find(x => x.productCode === productCode)
   if (!p) return
   _detailCode = productCode
@@ -182,12 +184,21 @@ async function openDetailModal(productCode) {
 
   const modal = document.getElementById('detailModal')
   modal.classList.remove('edit-mode')
+  // Read-only flag (used by _dUpdateHeaderBtns + toggleDetailEdit guards)
+  if (readOnly) modal.dataset.readonly = '1'
+  else delete modal.dataset.readonly
+  // Inject/remove read-only banner
+  _renderDetailReadOnlyBanner(p, readOnly)
   _dUpdateHeaderBtns('view')
-  // 품번확정 버튼 상태
+  // 품번확정 버튼 상태 — 읽기전용(휴지통)에서는 항상 숨김 (이전 false-PASS 수정)
   const lockBtn = document.getElementById('dLockCodeBtn')
   if (lockBtn) {
-    lockBtn.style.display = p.productCodeLocked ? 'none' : 'inline-block'
-    lockBtn.textContent = '🔒 품번 확정'
+    if (readOnly) {
+      lockBtn.style.display = 'none'
+    } else {
+      lockBtn.style.display = p.productCodeLocked ? 'none' : 'inline-block'
+      lockBtn.textContent = '🔒 품번 확정'
+    }
   }
   // 삭제 버튼 (작성자 OR grade>=3)
   const deleteBtn = document.getElementById('dDeleteBtn')
@@ -911,69 +922,262 @@ function closeDetailModal(force) {
   safeCloseModal(modal, () => modal.classList.contains('edit-mode'), doClose)
 }
 
-// ===== 상품 삭제 =====
-async function deleteProduct() {
+// ===== 상품 삭제 (소프트 삭제 → 휴지통) =====
+// Permission helper — author OR admin (grade >= 3)
+function canDeleteProduct(p) {
+  if (!p) return false
+  const user = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth().currentUser : null
+  const uid = user?.uid || ''
+  const grade = (typeof _currentUserGrade !== 'undefined' ? _currentUserGrade : (State.currentUser?.grade || 1)) || 1
+  if (grade >= 3) return true
+  return !!uid && p.createdBy === uid
+}
+window.canDeleteProduct = canDeleteProduct
+
+// Open type-to-confirm modal — mirrors plan's requestPlanDelete pattern
+function requestProductDelete() {
   const p = State.allProducts.find(x => x.productCode === _detailCode)
   if (!p) return
-
-  const uid = typeof firebase !== 'undefined' ? firebase.auth().currentUser?.uid : null
-  const grade = State.currentUser?.grade || 0
-  const canDel = (grade >= 3) || (p.createdBy && p.createdBy === uid)
-  if (!canDel) { showToast('삭제 권한이 없습니다. (작성자 또는 관리자 이상)', 'warning'); return }
-
-  // 매출 기록 경고
+  if (!canDeleteProduct(p)) {
+    showToast('삭제 권한이 없습니다 (작성자 또는 관리자 이상).', 'warning')
+    return
+  }
+  const expected = (p.productCode || '').trim()
+  if (!expected) { showToast('품번이 없어 삭제할 수 없습니다.', 'error'); return }
+  const modal = document.getElementById('productDeleteConfirmModal')
+  if (!modal) return
+  // Reset modal state to soft-delete defaults (in case trash menu set permanent copy earlier)
+  modal._prodDelMode = undefined
+  document.getElementById('prodDelTitle').textContent = '⚠ 상품 삭제 (휴지통 이동)'
+  document.getElementById('prodDelWarning').innerHTML =
+    '삭제 시 <strong>휴지통으로 이동</strong>됩니다. 매출/재고 이력은 보존됩니다. 삭제하려면 아래 품번을 정확히 입력하세요.'
+  document.getElementById('prodDelTargetCode').textContent = expected
+  const meta = []
+  if (p.nameKr) meta.push(p.nameKr)
+  if (p.brand) meta.push(p.brand)
   const revCount = (p.revenueLog || []).length
-  let msg = '상품을 삭제하시겠습니까?\n관련 매출/재고 데이터도 함께 삭제됩니다.\n삭제 후 복구할 수 없습니다.'
-  if (revCount > 0) {
-    msg = `이 상품에 매출 기록 ${revCount}건이 있습니다.\n정말 삭제하시겠습니까?\n\n관련 매출/재고 데이터도 함께 삭제됩니다.\n삭제 후 복구할 수 없습니다.`
+  if (revCount > 0) meta.push(`매출 기록 ${revCount}건 (보존됨)`)
+  document.getElementById('prodDelTargetMeta').textContent = meta.join(' · ')
+  document.getElementById('prodDelInputLabel').textContent = `위 품번(${expected})을 정확히 입력해주세요`
+  const input = document.getElementById('prodDelInput')
+  input.value = ''
+  input.classList.remove('pdc-input-match')
+  input.placeholder = expected
+  document.getElementById('prodDelConfirmBtn').disabled = true
+  modal._prodDelExpected = expected
+  modal._prodDelCode = expected
+  if (typeof centerModal === 'function') centerModal(modal)
+  modal.showModal()
+  setTimeout(() => input.focus(), 80)
+}
+window.requestProductDelete = requestProductDelete
+
+// Input handler — exact-match enables confirm button (case-sensitive)
+function _pcdOnInput() {
+  const input = document.getElementById('prodDelInput')
+  const modal = document.getElementById('productDeleteConfirmModal')
+  if (!input || !modal) return
+  const expected = modal._prodDelExpected || ''
+  const match = input.value === expected
+  document.getElementById('prodDelConfirmBtn').disabled = !match
+  input.classList.toggle('pdc-input-match', match)
+}
+window._pcdOnInput = _pcdOnInput
+
+function closeProductDeleteConfirm() {
+  const modal = document.getElementById('productDeleteConfirmModal')
+  if (modal && modal.open) modal.close()
+}
+window.closeProductDeleteConfirm = closeProductDeleteConfirm
+
+// Confirm product delete — branches on modal._prodDelMode:
+// - 'permanent' (set by trash menu's requestPermanentDelete): hard delete via _trashPermanentDeleteExec
+// - default/undefined (from detail modal's requestProductDelete): soft delete (deleted:true)
+async function confirmProductDelete() {
+  const modal = document.getElementById('productDeleteConfirmModal')
+  if (!modal) return
+  const code = modal._prodDelCode
+  const isPermanent = modal._prodDelMode === 'permanent'
+  const p = State.allProducts.find(x => x.productCode === code)
+  if (!p) {
+    showToast('삭제 대상을 찾을 수 없습니다.', 'warning')
+    closeProductDeleteConfirm()
+    return
+  }
+  // Permission re-check (defense)
+  if (isPermanent) {
+    const grade = (typeof _currentUserGrade !== 'undefined' && _currentUserGrade) ? _currentUserGrade : 1
+    if (grade < 3) { showToast('영구삭제 권한이 없습니다 (Grade 3+).', 'warning'); closeProductDeleteConfirm(); return }
+  } else {
+    if (!canDeleteProduct(p)) {
+      showToast('삭제 권한이 없습니다.', 'warning')
+      closeProductDeleteConfirm()
+      return
+    }
+  }
+  // Input match re-check
+  const input = document.getElementById('prodDelInput')
+  const expected = modal._prodDelExpected || ''
+  if (!input || input.value !== expected) {
+    showToast('품번이 일치하지 않습니다.', 'warning')
+    return
   }
 
-  const ok = await korConfirm(msg)
-  if (!ok) return
+  const btn = document.getElementById('prodDelConfirmBtn')
+  const originalText = btn.textContent
+  btn.disabled = true
+  btn.textContent = '삭제 중...'
 
-  const code = p.productCode
-  const name = p.nameKr || ''
-
-  // State.allProducts에서 제거
-  const idx = State.allProducts.indexOf(p)
-  if (idx >= 0) State.allProducts.splice(idx, 1)
-
-  // Firestore comments 삭제 (product 타입)
-  if (db) {
-    try {
-      const snap = await db.collection('comments')
-        .where('modalType', '==', 'product')
-        .where('targetId', '==', code)
-        .get()
-      if (snap.docs.length) {
-        const batch = db.batch()
-        snap.docs.forEach(doc => batch.delete(doc.ref))
-        await batch.commit()
-      }
-    } catch (e) { console.warn('상품 댓글 삭제 실패:', e) }
+  if (isPermanent) {
+    // Hard delete via trash module — splices State + deletes Firestore comments + saves
+    let ok = false
+    try { ok = await _trashPermanentDeleteExec(code) } catch (e) { console.error(e) }
+    closeProductDeleteConfirm()
+    if (ok) {
+      // Auto-close detail modal if it's open (e.g., user clicked 영구삭제 from detail header)
+      const dm = document.getElementById('detailModal')
+      if (dm && dm.open) closeDetailModal(true)
+      showToast('영구 삭제되었습니다.', 'success')
+    }
+    btn.disabled = false; btn.textContent = originalText
+    // Reset modal state for future soft-delete reuse
+    modal._prodDelMode = undefined
+    return
   }
 
-  // 모달 닫기 + 테이블 갱신
+  // === Soft delete path (from detail modal) ===
+  const user = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth().currentUser : null
+  const uid = user?.uid || ''
+  const userName = (typeof formatUserName === 'function')
+    ? formatUserName(_currentUserName, _currentUserPosition)
+    : (typeof _currentUserName !== 'undefined' ? _currentUserName : '')
+  p.deleted = true
+  p.deletedAt = new Date().toISOString()
+  p.deletedBy = uid
+  p.deletedByName = userName
+
+  try { if (typeof releaseEditLock === 'function') releaseEditLock('product', code) } catch (e) {}
+
+  try {
+    if (typeof saveProducts === 'function') await saveProducts()
+  } catch (e) {
+    showToast('삭제 저장 실패: ' + (e.message || e), 'error')
+    delete p.deleted; delete p.deletedAt; delete p.deletedBy; delete p.deletedByName
+    btn.disabled = false; btn.textContent = originalText
+    return
+  }
+
+  if (typeof logActivity === 'function') {
+    logActivity('delete', '상품조회', `상품삭제(휴지통): ${code}${p.nameKr ? ' (' + p.nameKr + ')' : ''}`)
+  }
+  try { if (typeof notifyWatchers === 'function') notifyWatchers('product', code, '삭제(휴지통 이동)') } catch (e) {}
+
+  closeProductDeleteConfirm()
   closeDetailModal(true)
   if (typeof renderProductTable === 'function') renderProductTable()
   if (typeof renderStockTable === 'function') renderStockTable()
   if (typeof renderSalesTable === 'function') renderSalesTable()
   if (typeof renderDashboard === 'function') renderDashboard()
+  showToast('휴지통으로 이동되었습니다.', 'success')
 
-  logActivity('delete', '상품조회', `상품 삭제 — ${code} ${name}`)
-  if (typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))
-  showToast('상품이 삭제되었습니다.', 'success')
+  btn.disabled = false; btn.textContent = originalText
 }
+window.confirmProductDelete = confirmProductDelete
+
+// Legacy alias retained for any stragglers (no longer wired in HTML).
+// Routes to the new type-to-confirm flow rather than executing directly.
+async function deleteProduct() { return requestProductDelete() }
+window.deleteProduct = deleteProduct
+
+// ===== Trash detail-header actions (visible only in read-only mode) =====
+async function dRestoreFromDetail() {
+  const code = _detailCode
+  if (!code) return
+  // Permission re-check via trash module
+  if (typeof _trashCanAccess === 'function' && !_trashCanAccess()) {
+    showToast('권한이 없습니다.', 'warning'); return
+  }
+  // restoreProduct internally calls korConfirm + saveProducts + refreshes views
+  if (typeof restoreProduct === 'function') {
+    await restoreProduct(code)
+    // After successful restore, auto-close the detail modal (product no longer in trash)
+    const dm = document.getElementById('detailModal')
+    if (dm && dm.open) closeDetailModal(true)
+  }
+}
+window.dRestoreFromDetail = dRestoreFromDetail
+
+function dPermDeleteFromDetail() {
+  const code = _detailCode
+  if (!code) return
+  if (typeof _trashCanAccess === 'function' && !_trashCanAccess()) {
+    showToast('권한이 없습니다.', 'warning'); return
+  }
+  // Opens productDeleteConfirmModal in 'permanent' mode.
+  // confirmProductDelete (permanent branch) auto-closes detailModal after success.
+  if (typeof requestPermanentDelete === 'function') {
+    requestPermanentDelete(code)
+  }
+}
+window.dPermDeleteFromDetail = dPermDeleteFromDetail
 
 function _dUpdateHeaderBtns(mode) {
   // mode: 'view' | 'edit'
+  const modal = document.getElementById('detailModal')
+  const readOnly = modal && modal.dataset.readonly === '1'
   document.querySelectorAll('#detailModal .d-view-btn').forEach(b => {
-    if (b.id === 'dDeleteBtn' && b.dataset.hidden === '1') { b.style.display = 'none'; return }
+    if (readOnly) { b.style.display = 'none'; return }
     b.style.display = mode === 'view' ? 'inline-block' : 'none'
   })
   document.querySelectorAll('#detailModal .d-edit-btn').forEach(b => {
+    if (readOnly) { b.style.display = 'none'; return }
+    if (b.id === 'dDeleteBtn' && b.dataset.hidden === '1') { b.style.display = 'none'; return }
     b.style.display = mode === 'edit' ? 'inline-block' : 'none'
   })
+  // d-trash-btn group: visible ONLY in read-only (휴지통 조회) mode
+  document.querySelectorAll('#detailModal .d-trash-btn').forEach(b => {
+    b.style.display = readOnly ? 'inline-block' : 'none'
+  })
+  // Other write-action buttons (not in d-view/d-edit/d-trash groups)
+  if (readOnly) {
+    const watchBtn = document.getElementById('dWatchBtn')
+    const favBtn = document.getElementById('dFavBtn')
+    if (watchBtn) watchBtn.style.display = 'none'
+    if (favBtn) favBtn.style.display = 'none'
+    // dLockCodeBtn hide is enforced by openDetailModal (canonical place — see prior false-PASS fix)
+  } else {
+    const watchBtn = document.getElementById('dWatchBtn')
+    const favBtn = document.getElementById('dFavBtn')
+    if (watchBtn) watchBtn.style.display = ''
+    if (favBtn) favBtn.style.display = ''
+  }
+}
+
+// Read-only header indicator: shows compact pill in modal header when product is in trash.
+// (Previously this was a large body-width banner; redesigned to be header-inline per UX feedback.)
+function _renderDetailReadOnlyBanner(p, readOnly) {
+  const modal = document.getElementById('detailModal')
+  if (!modal) return
+  // Clean up legacy body banner from any prior version (defensive)
+  const legacy = modal.querySelector('.dmodal-readonly-banner')
+  if (legacy) legacy.remove()
+  // Compact header pill
+  const indicator = document.getElementById('dTrashIndicator')
+  if (!indicator) return
+  if (!readOnly) {
+    indicator.style.display = 'none'
+    indicator.title = ''
+    return
+  }
+  const fmt = (iso) => iso ? (String(iso).slice(0, 10) + ' ' + String(iso).slice(11, 16)) : ''
+  const at = fmt(p.deletedAt)
+  const by = (p.deletedByName || '').toString()
+  let tipParts = []
+  if (at) tipParts.push('삭제일: ' + at)
+  if (by) tipParts.push('삭제자: ' + by)
+  indicator.textContent = '🗑️ 휴지통 — 조회전용'
+  indicator.title = tipParts.join(' / ')
+  indicator.style.display = ''
 }
 
 function _dSyncWatchBtn() {
@@ -1002,6 +1206,11 @@ window._dSyncLockWarn = _dSyncLockWarn
 
 function toggleDetailEdit() {
   const modal = document.getElementById('detailModal')
+  // Read-only guard (휴지통 조회 모드) — block any attempt to enter edit mode
+  if (modal && modal.dataset.readonly === '1') {
+    showToast('읽기 전용 모드입니다 (휴지통 조회).', 'info')
+    return
+  }
   const willEdit = !modal.classList.contains('edit-mode')
   if (willEdit) {
     const info = (typeof getEditLockInfo === 'function') ? getEditLockInfo('product', _detailCode) : null

@@ -523,7 +523,8 @@ function renderStockTable() {
   State.stock.inactiveColumns = State.stock.inactiveColumns.filter(k => allKeys.includes(k))
   renderColInactiveArea('sInactiveArea','sInactiveTags','stock',STOCK_COLUMNS,STOCK_FIXED_KEYS,'renderStockTable')
 
-  const data = applyColFilters(State.stock.filtered, State.stock.columnFilters)
+  // Soft-deleted always excluded at render
+  const data = applyColFilters(State.stock.filtered.filter(p => !p.deleted), State.stock.columnFilters)
   const page = State.stock.page || 1
   const ps = getPageSize('stock')
   const pageData = ps === 0 ? data : data.slice((page - 1) * ps, page * ps)

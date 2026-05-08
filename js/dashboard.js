@@ -20,6 +20,7 @@ function renderDashboard() {
 function checkLowStockAlerts() {
   const LOW_THRESHOLD = 3
   State.allProducts.forEach(p => {
+    if (p.deleted) return
     if (!p.stock || p.saleStatus === '종료' || p.productionStatus === '생산중단') return
     const totalStock = SIZES.reduce((s, sz) => s + (p.stock[sz] || 0), 0)
     const totalSales = _platforms.reduce((s, pl) => s + (p.sales?.[pl] || 0), 0)
@@ -679,7 +680,8 @@ function renderBestList() {
     `<button class="best-period-btn${_bestPeriod === k ? ' active' : ''}" onclick="changeBestPeriod('${k}')">${periodLabels[k]}</button>`
   ).join('')
 
-  const top10 = [...State.allProducts]
+  // BEST TOP10: exclude soft-deleted (current best-sellers, not historical)
+  const top10 = State.allProducts.filter(p => !p.deleted)
     .map(p => ({ ...p, _periodSales: _getSalesInPeriod(p, _bestPeriod) }))
     .sort((a, b) => b._periodSales - a._periodSales)
     .slice(0, 10)

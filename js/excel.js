@@ -296,7 +296,8 @@ function downloadWithSelectedFormat() {
 function _downloadExcelByColumns(columns, sortKey, sortOrder) {
   if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
 
-  let data = applyColFilters(State.product.filtered, State.product.columnFilters)
+  // Excel download excludes soft-deleted products (휴지통 항목은 매출분석에 포함 안 됨)
+  let data = applyColFilters(State.product.filtered.filter(p => !p.deleted), State.product.columnFilters)
   if (sortKey) {
     data = [...data].sort((a, b) => {
       const va = _getProductValue(a, sortKey, 0)
