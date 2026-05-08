@@ -2686,6 +2686,165 @@ Established the reference style that every dashboard-opened srm-modal should fol
 - `js/main.js:43` — `planDeleteConfirmModal` 드래그 등록 (480x320)
 - `style.css` 말미 — `.pdc-warning`, `.pdc-target`, `.pdc-target-code`, `.pdc-meta`, `.pdc-input-row`, `.pdc-input-label`, `#pdcConfirmInput`, `.pdc-actions` 스타일 9개 신규
 
+#### 색상 마스터 시스템 (S-07) — 신규 `js/color-master.js`
+
+**개요**: 자유 입력 방식의 색상 필드(`colorKr`/`colorEn`)를 표준 마스터 기반 검색 드롭다운으로 교체. 111개 색상을 10개 카테고리로 정리.
+
+**저장 구조**
+- localStorage: `lemango_color_masters_v1` + Firestore: `sharedData/colorMasters` (이중 저장, `_designCodes`/`_classCodes` 패턴 동일)
+- 각 색상: `{id, nameKr, nameEn, code, hex, category, isPattern, sortOrder, active}`
+- `id === code` (대문자, 유니크). Pattern 항목은 `hex: ''`, `isPattern: true`
+
+**카테고리** (10개, sortOrder 범위 1~999)
+- 무채색(8) / 베이지·브라운(17) / 레드(9) / 오렌지·옐로우(9) / 그린(13) / 블루(15) / 퍼플·핑크(10) / 네온·형광(1) / 메탈릭·특수(8) / 패턴·믹스(21) = **111개**
+- 코드 충돌 해결: 라이트그린=`LM` (LG=라이트그레이와 충돌), 도트=`DT2` (DT=더스티핑크와 충돌)
+
+**드롭다운 컴포넌트** (`buildColorPickerHtml(anchorId, initialValue, opts)`)
+- 검색: 한글/영문/코드 동시 검색 (대소문자 무관)
+- 카테고리별 sticky 헤더 그룹핑
+- 색상 미리보기 원 (HEX 배경) + 패턴은 🎨
+- 자유 입력 fallback: 마스터 미등록 색상 표시(주황 테두리 + ? 마크)
+- 옵션: `krId`/`enId`/`codeId` (ID 오버라이드), `dataPkey`/`dataKey` (모달 저장 루프 호환)
+
+**4개 모달 통합**
+- 신규등록 모달(상품): `rColorPickerSlot` 슬롯 + `openRegisterModal()`에서 빌드
+- 신규기획 등록: `plColorPickerSlot` + `openPlanRegisterModal(item)`
+- 상품 상세모달 수정: `dColorPicker` + `data-key` 속성 (modals.js의 `[data-key]` 저장 루프)
+- 기획 상세모달 수정: `pdColorPicker` + `data-pkey` 속성 (plan.js의 `[data-pkey]` 저장 루프)
+
+**설정 탭 색상 관리 카드** (`renderColorMasterCard()`)
+- 디자인 관련 아코디언에 추가 (디자인번호 카드 옆)
+- 검색 + 카테고리 필터 + 활성 토글 (Soft delete via `active: false`)
+- 추가/수정 (prompt 시리즈) — Grade 3+ 전용
+- 코드 유니크 검증 + 한글명 유니크 검증
+- 마이그레이션 헬퍼 (`runColorMigration`) — 기존 자유 입력 colorKr → 마스터 자동 매칭 (사용자 확인 후 일괄 적용)
+
+**Excel 통합**
+- 신규 컬럼 `색상코드` 추가 (between 색상(영문) and 판매가)
+- `ALL_DOWNLOAD_COLUMNS`/`_planFullColumns`/`_DIFF_FIELDS`/`_PLAN_DIFF_FIELDS` 4곳
+- `HEADER_TO_KEY['색상코드'] = 'colorCode'`
+- 업로드 자동 해석: 색상코드 셀 값으로 마스터 조회 → colorKr/colorEn 자동 채움. 색상코드 없으면 한글명으로 fallback 매칭
+- SCALAR_MAP 양쪽(상품/기획)에 `colorCode: 'colorCode'` 추가
+
+#### 색상 피커 UX 개선 5종
+
+1. **드롭다운 클리핑 해결** — `position: absolute` → `position: fixed` + `getBoundingClientRect()` 기반 동적 좌표 계산. `z-index: 9999` (모달 위), `max-height: 480px`. 스크롤/리사이즈 시 자동 닫힘
+2. **검색창 자동 포커스** — 드롭다운 오픈 시 `setTimeout(focus, 50)` (이미 있던 코드 검증)
+3. **ESC + Tab 키 처리** — `_cpKeyNav`에 ESC(close + preventDefault), Tab(close + 기본 동작 유지) 추가
+4. **스마트 포지셔닝** — `spaceBelow < 480 && spaceAbove > spaceBelow`이면 위로 펼침. 가로 클램프 (8px 거터)
+5. **신규 색상 추가 버튼** — 검색 결과 0건 + Grade 3+ 시 `➕ "{검색어}"를 새 색상으로 추가` 버튼. 클릭 → 한글명/영문명/코드/카테고리/HEX prompt 시리즈 → 저장 → 피커 재오픈 + 새 색상 자동 선택
+
+#### 색상코드 컬럼 다운로드 누락 수정 (False PASS #1 시정)
+
+**문제**: 이전 보고서가 "색상코드 컬럼 다운로드 양식에 추가 — PASS"라고 주장했으나 사용자 테스트 결과 실제 다운로드 엑셀에 컬럼 없음.
+
+**근본 원인**:
+- `ALL_DOWNLOAD_COLUMNS`(line 17)에 `colorCode` 추가됨 (참)
+- 하지만 `downloadExcel('product')` → `openDownloadFormatModal()` → 사용자 양식 선택 → `_downloadExcelByColumns(format.columns)` 흐름
+- 실제 export는 `DEFAULT_FORMATS[*].columns` 배열이 결정 — 두 list가 별개 (master dictionary vs export selector)
+- `default-edit`/`default-basic`의 `columns` 배열에 `'colorCode'` 누락 → 사용자 다운로드 시 헤더 없음
+- 신규기획 다운로드는 `_planFullColumns()` 직접 사용이라 정상 동작했음 (혼동 원인)
+
+**수정**: `DEFAULT_FORMATS` 2곳 추가 (`default-basic` columns에 `'colorCode'` 1개, `default-edit` columns에 `'colorCode'` 1개)
+
+**교훈**: master dictionary와 active export list가 분리된 경우, 두 list 모두 검증해야 함. 다운로드 함수의 실제 entrypoint 추적 필요.
+
+#### 상품조회 Soft Delete + 휴지통 메뉴 (S-08) — 신규 `js/trash.js`
+
+**기존 hard delete → soft delete 전환**
+- `modals.js:914-966`의 기존 `deleteProduct()` 완전 재작성: `splice` + Firestore comments batch delete → `deleted:true` 플래그 + 메타데이터
+- 추가 필드: `deleted`, `deletedAt`(ISO), `deletedBy`(uid), `deletedByName`(formatUserName)
+- 매출/재고 데이터 보존 (정책: "Sales history remains in revenue calculations")
+- 활동로그: `'상품삭제(휴지통): <code>'`
+- Watch 알림: `notifyWatchers('product', code, '삭제(휴지통 이동)')`
+
+**삭제 버튼 위치 변경 (버그 수정)**
+- 이전: `class="d-view-btn"` (보기 모드에서 항상 표시) — 사양 위반
+- 이후: `class="d-edit-btn btn-danger-sm"` (수정 모드에서만 표시 + 권한 있을 때만)
+- 권한: 작성자 OR Grade 3+ (`canDeleteProduct(p)`)
+- Type-to-confirm 모달 (`productDeleteConfirmModal`, planDeleteConfirmModal 패턴 미러링)
+
+**필터 적용 (메인 뷰에서 deleted 제외)**
+- 검색 레이어: `searchProduct()`에서 `if (p.deleted === true) return false`
+- 렌더 레이어 (defense in depth): `renderProductTable`/`renderStockTable`/`renderSalesTable` 모두 `.filter(p => !p.deleted)` 적용
+- Excel 다운로드: `_downloadExcelByColumns`에서 동일 필터
+- 대시보드: `checkLowStockAlerts` + BEST TOP10 deleted 제외. 매출 합계는 deleted 포함 (정책)
+
+**휴지통 탭** (`tab-trash`, Grade 3+ 전용)
+- `TAB_PERMISSIONS.trash = 3` + `TAB_LABELS.trash = '🗑️ 휴지통'` (`js/core.js`)
+- 네비게이션 버튼 `tabBtnTrash` (`trash-nav-hidden` CSS class) — `updateTabVisibility()`에서 grade 기반 toggle
+- 라우터: `case 'trash': renderTrashTab(); break`
+- 테이블 컬럼: 품번/브랜드/상품명/색상/삭제일/삭제자/액션
+- 검색 + 삭제일 범위 + 삭제자 필터
+- 정렬: deletedAt desc 기본
+- 액션: 🔍 조회, 🔄 복원, 🗑️ 영구삭제
+
+**복원** (`restoreProduct(code)`)
+- korConfirm 후 `deleted`/`deletedAt`/`deletedBy`/`deletedByName` 필드 제거
+- saveProducts (실패 시 deleted=true 롤백)
+- 활동로그: `'상품복원: <code>'`
+- 4개 테이블 + 대시보드 + 휴지통 새로고침
+
+**영구 삭제** (`requestPermanentDelete` → `_trashPermanentDeleteExec`)
+- `productDeleteConfirmModal` 재사용 + `_prodDelMode = 'permanent'` 마커
+- 빨간 경고 ("⚠️ 영구 삭제는 되돌릴 수 없습니다")
+- Type-to-confirm 후 splice + Firestore comments batch delete + saveProducts (실패 시 in-memory 복원)
+- 활동로그: `'상품영구삭제: <code>'`
+- 자동 정리 없음 (수동 영구 삭제만)
+
+#### 휴지통 조회 모드 (S-09) + 헤더 재설계
+
+**openDetailModal에 readOnly 파라미터 추가**
+- `openDetailModal(productCode, opts)` — `opts.readOnly === true`이면 읽기 전용 모드
+- `modal.dataset.readonly = '1'` (DOM-based state — helper 함수들이 독립적으로 체크)
+- `_dUpdateHeaderBtns`에서 readonly 체크 → 모든 액션 버튼 숨김 (`.d-view-btn`/`.d-edit-btn` 그룹 모두)
+- `toggleDetailEdit` 진입 차단 (수정 진입 시 토스트 + return)
+- 트리거: 휴지통 → `🔍 조회` 버튼 → `viewTrashedProduct(code)` → `openDetailModal(code, {readOnly:true})`
+
+**헤더 재설계 (사용자 피드백 반영)**
+- 이전: 본문 상단 가로 띠 배너 (좌측 패널 공간 낭비)
+- 이후: 헤더 인라인 빨간 pill (`#dTrashIndicator`, `.dmodal-trash-pill`) — 컴팩트 + 툴팁에 삭제일/삭제자 표시
+- 헤더 액션 버튼 `.d-trash-btn` 그룹 신규: `dRestoreBtn`(🔄 복원, 초록 outline) + `dPermDeleteBtn`(🗑️ 영구삭제, 빨강 outline)
+- `_dUpdateHeaderBtns`에서 `.d-trash-btn`은 readonly에서만 `display: 'inline-block'`
+- 액션 핸들러: `dRestoreFromDetail()` + `dPermDeleteFromDetail()` — 성공 시 상세 모달 자동 닫힘 (`closeDetailModal(true)`)
+- `confirmProductDelete` permanent 분기에 자동 닫힘 체인 추가
+
+**dLockCodeBtn 가시성 버그 수정 (False PASS #2 시정)**
+- 문제: 이전 보고서가 readonly에서 `dLockCodeBtn` 숨김 PASS 주장했으나 실제 화면에 표시됨
+- 근본 원인: `openDetailModal`에서 `_dUpdateHeaderBtns('view')` 호출(line 192, dLockCodeBtn 숨김) **2줄 뒤** 코드(line 196)가 `lockBtn.style.display = p.productCodeLocked ? 'none' : 'inline-block'` 무조건 덮어쓰기 — 헬퍼의 숨김이 즉시 무효화됨
+- 다른 버튼들(dDeleteBtn/dWatchBtn/dFavBtn)은 헬퍼 호출 후 `style.display` 재설정 없어 영향 없었음 (이 패턴 유일)
+- 수정: `openDetailModal` line 194-202에 `if (readOnly) lockBtn.style.display = 'none'; else { 기존 로직 }` 분기 추가 (canonical override site에서 처리)
+
+**교훈 — Two False-PASS 패턴 분석**
+1. **DEFAULT_FORMATS vs ALL_DOWNLOAD_COLUMNS** (색상코드 누락): helper/dictionary 업데이트 후 downstream consumer가 별도 list 사용
+2. **dLockCodeBtn override**: helper 호출 직후 같은 함수 내에서 `style.display` 재설정으로 helper 작업 무효화
+3. **공통 패턴**: fix가 helper에 살 때 caller 함수의 helper 호출 *이후* 모든 코드를 추적해야 함
+4. **앞으로**: 실제 코드 라인 인용 + grep `.style.display` + readOnly=true 조건에서 실행 경로 추적. symbolic-only 검증 금지
+
+#### 파일 변경 (오늘 누적)
+| 파일 | 변경 |
+|------|------|
+| `js/color-master.js` | **신규** ~700줄 — 111색 마스터 + 드롭다운 + 설정 카드 + 마이그레이션 |
+| `js/trash.js` | **신규** ~250줄 — 휴지통 렌더 + 복원/영구삭제 + 조회 |
+| `js/excel.js` | 색상코드 컬럼 통합 + DEFAULT_FORMATS 수정 + 색상 자동 해석 |
+| `js/modals.js` | readOnly 모드 + 헤더 재설계 + dLockCodeBtn 버그 수정 + 휴지통 액션 핸들러 |
+| `js/products.js` / `stock.js` / `sales.js` / `dashboard.js` | deleted 필터 적용 |
+| `js/core.js` | TAB_PERMISSIONS.trash, TAB_LABELS.trash, colorMasters Firestore 동기화 |
+| `js/main.js` | updateTabVisibility (trash 토글), productDeleteConfirmModal/colorMasters 등록 |
+| `js/router.js` | trash 라우트 |
+| `js/plan.js` / `register.js` | 색상 피커 통합 |
+| `js/settings.js` | 색상 관리 카드 1줄 추가 |
+| `index.html` | 휴지통 탭 + productDeleteConfirmModal + dTrashIndicator + dRestoreBtn + dPermDeleteBtn + 색상 피커 슬롯 |
+| `style.css` | 색상 피커 + .pdc-* + .dmodal-trash-pill + .d-trash-btn + 휴지통 페이지 스타일 |
+
+#### 알려진 한계 / 향후 작업
+- 엑셀 업로드에서 휴지통 품번과 동일한 행: 현재는 휴지통 항목이 무성하게 업데이트됨. 향후 거부 + 경고 추가 검토
+- Grade 1-2 사용자에게 휴지통 메뉴: DOM에 존재하나 CSS 숨김. 향후 strict isolation 필요 시 DOM에서 제거
+- 복원 시 워치 알림 미발송 (요청 시 추가)
+- 휴지통 일괄 작업 미구현 (단일 행만)
+- 사용자 커스텀 엑셀 양식: `색상코드` 컬럼 자동 추가 안 됨 (사용자가 양식 편집 시 수동 추가 필요)
+- W6 (sizeSpec 부분 wipe): 부분 사이즈 케이스 일부 미해결
+
 ---
 
 ## 다음 작업 후보 (미구현)
