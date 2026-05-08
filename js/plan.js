@@ -71,6 +71,15 @@ function openPlanRegisterModal(item) {
     specWrap.innerHTML = buildSizeSpecEdit(existingSpec)
   }
 
+  // 색상 피커 (마스터 기반 검색 드롭다운)
+  const colorSlot = document.getElementById('plColorPickerSlot')
+  if (colorSlot && typeof buildColorPickerHtml === 'function') {
+    const initial = item ? { code: item.colorCode, nameKr: item.colorKr, nameEn: item.colorEn } : {}
+    colorSlot.innerHTML = buildColorPickerHtml('plColorPicker', initial, {
+      krId: 'plColorKr', enId: 'plColorEn', codeId: 'plColorCode'
+    })
+  }
+
   // Init image sections
   _planTempImages = (item && Array.isArray(item.tempImages))
     ? item.tempImages.map(x => ({ ...x }))
@@ -360,6 +369,7 @@ async function submitPlanRegister(e) {
     nameEn:      val('plNameEn'),
     colorKr:     val('plColorKr'),
     colorEn:     val('plColorEn'),
+    colorCode:   val('plColorCode'),
     salePrice:   Number(document.getElementById('plSalePrice').value) || 0,
     costPrice:   Number(document.getElementById('plCostPrice').value) || 0,
     type:        document.getElementById('plType').value,
@@ -1677,8 +1687,30 @@ function buildPlanDetailContent(item) {
         ${pf('브랜드',        'brand',      item.brand,   'select', brandOpts, '', item.brand)}
         ${pf('상품명 (한글)', 'nameKr',     item.nameKr,  'text',   '', 'dfield-span2')}
         ${pf('상품명 (영문)', 'nameEn',     item.nameEn,  'text',   '', 'dfield-span2')}
-        ${pf('색상 (한글)',   'colorKr',    item.colorKr)}
-        ${pf('색상 (영문)',   'colorEn',    item.colorEn)}
+        ${(() => {
+          const m = (typeof resolveColorMaster === 'function')
+            ? resolveColorMaster({ code: item.colorCode, nameKr: item.colorKr, nameEn: item.colorEn })
+            : null
+          const swatchHtml = m
+            ? (m.isPattern
+                ? '<span class="cp-swatch cp-swatch-pattern">🎨</span>'
+                : `<span class="cp-swatch" style="background:${m.hex || '#ccc'}"></span>`)
+            : ''
+          const viewText = m
+            ? `${m.nameKr} - ${m.nameEn} (${m.code})`
+            : (item.colorKr ? item.colorKr + (item.colorEn ? ' - ' + item.colorEn : '') : '-')
+          const pickerHtml = (typeof buildColorPickerHtml === 'function')
+            ? buildColorPickerHtml('pdColorPicker', { code: item.colorCode, nameKr: item.colorKr, nameEn: item.colorEn }, {
+                krId: 'pdColorKr', enId: 'pdColorEn', codeId: 'pdColorCode',
+                dataPkey: { kr: 'colorKr', en: 'colorEn', code: 'colorCode' }
+              })
+            : ''
+          return `<div class="dfield dfield-color dfield-span2">
+            <span class="dfield-label">색상</span>
+            <span class="dfield-value${!viewText || viewText === '-' ? ' empty' : ''}">${swatchHtml}${viewText}</span>
+            ${pickerHtml}
+          </div>`
+        })()}
         ${plAssigneeField}
       </div>
     </div>

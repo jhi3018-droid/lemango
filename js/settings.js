@@ -510,6 +510,7 @@ function renderSettings() {
           ${designCards}
           ${ccCard}
           ${dcCard}
+          ${typeof renderColorMasterCard === 'function' ? renderColorMasterCard() : ''}
         </div>
       </div>
     </div>

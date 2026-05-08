@@ -6,6 +6,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light" />
   <title>르망고 상품 관리 시스템</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -1185,13 +1186,9 @@
           <label>상품명 (영문)</label>
           <input type="text" id="rNameEn" placeholder="예: Côte d'Azur Shell" />
         </div>
-        <div class="rform-field">
-          <label>색상 (한글)</label>
-          <input type="text" id="rColorKr" placeholder="예: 네이비" />
-        </div>
-        <div class="rform-field">
-          <label>색상 (영문)</label>
-          <input type="text" id="rColorEn" placeholder="예: Navy" />
+        <div class="rform-field" style="grid-column:span 2">
+          <label>색상</label>
+          <div id="rColorPickerSlot"></div>
         </div>
         <div class="rform-field">
           <label>성별</label>
@@ -1674,13 +1671,9 @@
           <label>상품명 (영문)</label>
           <input type="text" id="plNameEn" placeholder="예: Côte d'Azur Shell" />
         </div>
-        <div class="rform-field">
-          <label>색상 (한글)</label>
-          <input type="text" id="plColorKr" placeholder="예: 네이비" />
-        </div>
-        <div class="rform-field">
-          <label>색상 (영문)</label>
-          <input type="text" id="plColorEn" placeholder="예: Navy" />
+        <div class="rform-field" style="grid-column:span 2">
+          <label>색상</label>
+          <div id="plColorPickerSlot"></div>
         </div>
       </div>
     </div>
@@ -2493,6 +2486,7 @@
 <script src="js/dashboard.js"></script>
 <script src="js/register.js"></script>
 <script src="js/product-code.js"></script>
+<script src="js/color-master.js"></script>
 <script src="js/excel.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/comments.js"></script>

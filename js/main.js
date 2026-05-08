@@ -144,6 +144,10 @@ async function initApp() {
       _classCodes.length = 0; fsData.classCodes.forEach(c => _classCodes.push(c))
       localStorage.setItem('lemango_class_codes_v1', JSON.stringify(_classCodes))
     }
+    if (Array.isArray(fsData.colorMasters) && fsData.colorMasters.length && typeof _colorMasters !== 'undefined') {
+      _colorMasters.length = 0; fsData.colorMasters.forEach(c => _colorMasters.push(c))
+      localStorage.setItem('lemango_color_masters_v1', JSON.stringify(_colorMasters))
+    }
     if (Array.isArray(fsData.allowedIps)) {
       _allowedIps.length = 0; fsData.allowedIps.forEach(ip => _allowedIps.push(ip))
       localStorage.setItem('lemango_allowed_ips_v1', JSON.stringify(_allowedIps))
@@ -207,6 +211,7 @@ async function initApp() {
         if (_planPhases) _fsSync('planPhases', _planPhases)
         if (typeof _designCodes !== 'undefined' && _designCodes.length) _fsSync('designCodes', _designCodes)
         if (typeof _classCodes !== 'undefined' && _classCodes.length) _fsSync('classCodes', _classCodes)
+        if (typeof _colorMasters !== 'undefined' && _colorMasters.length) _fsSync('colorMasters', _colorMasters)
         if (typeof _allowedIps !== 'undefined') _fsSync('allowedIps', _allowedIps)
         if (typeof _ipEnforceMode !== 'undefined') _fsSync('ipEnforceMode', _ipEnforceMode)
       } catch (e) { console.warn('초기 마이그레이션 실패:', e.message) }

@@ -180,6 +180,7 @@ window.forceUploadAll = async function() {
     planPhases: typeof _planPhases !== 'undefined' ? _planPhases : null,
     designCodes: typeof _designCodes !== 'undefined' ? _designCodes : [],
     classCodes: typeof _classCodes !== 'undefined' ? _classCodes : [],
+    colorMasters: typeof _colorMasters !== 'undefined' ? _colorMasters : [],
     allowedIps: typeof _allowedIps !== 'undefined' ? _allowedIps : [],
     ipEnforceMode: typeof _ipEnforceMode !== 'undefined' ? _ipEnforceMode : 'warn'
   }
@@ -263,6 +264,10 @@ async function _fsReloadSharedSettings() {
     if (Array.isArray(fsData.workCategories)) {
       _workCategories.length = 0; fsData.workCategories.forEach(c => _workCategories.push(c))
       localStorage.setItem('lemango_work_categories_v1', JSON.stringify(_workCategories))
+    }
+    if (Array.isArray(fsData.colorMasters) && typeof _colorMasters !== 'undefined') {
+      _colorMasters.length = 0; fsData.colorMasters.forEach(c => _colorMasters.push(c))
+      localStorage.setItem('lemango_color_masters_v1', JSON.stringify(_colorMasters))
     }
     if (Array.isArray(fsData.designCodes) && typeof _designCodes !== 'undefined') {
       _designCodes.length = 0; fsData.designCodes.forEach(c => _designCodes.push(c))

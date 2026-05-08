@@ -24,6 +24,14 @@ function openRegisterModal() {
     ).join('')
   }
 
+  // 색상 피커 (마스터 기반 검색 드롭다운)
+  const colorSlot = document.getElementById('rColorPickerSlot')
+  if (colorSlot && typeof buildColorPickerHtml === 'function') {
+    colorSlot.innerHTML = buildColorPickerHtml('rColorPicker', {}, {
+      krId: 'rColorKr', enId: 'rColorEn', codeId: 'rColorCode'
+    })
+  }
+
   const modal = document.getElementById('registerModal')
   modal.showModal()
   centerModal(modal)
@@ -60,6 +68,7 @@ function submitRegister(e) {
   const nameEn      = document.getElementById('rNameEn').value.trim()
   const colorKr     = document.getElementById('rColorKr').value.trim()
   const colorEn     = document.getElementById('rColorEn').value.trim()
+  const colorCode   = document.getElementById('rColorCode')?.value.trim() || ''
   const salePrice   = parseInt(document.getElementById('rSalePrice').value) || 0
   const costPrice   = parseInt(document.getElementById('rCostPrice').value) || 0
   const type        = document.getElementById('rType').value
@@ -125,6 +134,7 @@ function submitRegister(e) {
     nameEn,
     colorKr,
     colorEn,
+    colorCode,
     salePrice,
     costPrice,
     type,

@@ -546,8 +546,31 @@ function buildDetailContent(p) {
         ${field('샘플번호',  'sampleNo',    p.sampleNo)}
         ${field('상품명(한글)', 'nameKr',   p.nameKr)}
         ${field('상품명(영문)', 'nameEn',   p.nameEn)}
-        ${field('색상(한글)', 'colorKr',   p.colorKr)}
-        ${field('색상(영문)', 'colorEn',   p.colorEn)}
+        ${(() => {
+          // 색상 — 마스터 기반 피커 (보기/수정 통합)
+          const m = (typeof resolveColorMaster === 'function')
+            ? resolveColorMaster({ code: p.colorCode, nameKr: p.colorKr, nameEn: p.colorEn })
+            : null
+          const swatchHtml = m
+            ? (m.isPattern
+                ? '<span class="cp-swatch cp-swatch-pattern" style="margin-right:6px">🎨</span>'
+                : `<span class="cp-swatch" style="background:${m.hex || '#ccc'};margin-right:6px"></span>`)
+            : ''
+          const viewText = m
+            ? `${m.nameKr} - ${m.nameEn} (${m.code})`
+            : (p.colorKr ? p.colorKr + (p.colorEn ? ' - ' + p.colorEn : '') : '-')
+          const pickerHtml = (typeof buildColorPickerHtml === 'function')
+            ? buildColorPickerHtml('dColorPicker', { code: p.colorCode, nameKr: p.colorKr, nameEn: p.colorEn }, {
+                krId: 'dColorKr', enId: 'dColorEn', codeId: 'dColorCode',
+                dataKey: { kr: 'colorKr', en: 'colorEn', code: 'colorCode' }
+              })
+            : ''
+          return `<div class="dfield dfield-color" style="grid-column:span 2">
+            <span class="dfield-label">색상</span>
+            <span class="dfield-value${!viewText ? ' empty' : ''}">${swatchHtml}${viewText}</span>
+            ${pickerHtml}
+          </div>`
+        })()}
         ${field('성별', 'gender', GENDER_MAP[p.gender] || p.gender || '', 'select',
           `<option value=""${!p.gender?' selected':''}>-</option>` +
           Object.entries(GENDER_MAP).map(([v,l]) => `<option value="${v}"${p.gender===v?' selected':''}>${l}</option>`).join('')

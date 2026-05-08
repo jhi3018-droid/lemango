@@ -14,6 +14,7 @@ const ALL_DOWNLOAD_COLUMNS = [
   { key:'nameEn', label:'상품명(영문)' },
   { key:'colorKr', label:'색상(한글)' },
   { key:'colorEn', label:'색상(영문)' },
+  { key:'colorCode', label:'색상코드' },
   { key:'salePrice', label:'판매가' },
   { key:'costPrice', label:'원가' },
   { key:'type', label:'타입' },
@@ -100,13 +101,13 @@ function getAllDownloadColumns() {
 const DEFAULT_FORMATS = [
   {
     id: 'default-basic', name: '기본양식', type: 'default',
-    columns: ['no','brand','productCode','nameKr','colorKr','salePrice','type','totalStock','totalSales','exhaustion']
+    columns: ['no','brand','productCode','nameKr','colorKr','colorCode','salePrice','type','totalStock','totalSales','exhaustion']
   },
   {
     id: 'default-edit', name: '수정양식', type: 'default',
     columns: [
       'no','brand','productCode','sampleNo',
-      'nameKr','nameEn','colorKr','colorEn','salePrice','costPrice',
+      'nameKr','nameEn','colorKr','colorEn','colorCode','salePrice','costPrice',
       'type','backStyle','legCut','guide','fabricType','chestLine','transparency','lining','capRing',
       'material','comment','washMethod',
       'sizeSpec_XS_bust','sizeSpec_XS_waist','sizeSpec_XS_hip',
@@ -621,6 +622,7 @@ const HEADER_TO_KEY = {
   '상품명(영문)': 'nameEn',
   '색상(한글)': 'colorKr',
   '색상(영문)': 'colorEn',
+  '색상코드': 'colorCode',
   '판매가': 'salePrice',
   '원가': 'costPrice',
   '타입': 'type',
@@ -753,7 +755,7 @@ function _downloadProductSample() {
 
   const HEADER = [
     'NO','브랜드','품번','샘플번호','카페24코드','바코드',
-    '상품명(한글)','상품명(영문)','색상(한글)','색상(영문)','판매가','원가',
+    '상품명(한글)','상품명(영문)','색상(한글)','색상(영문)','색상코드','판매가','원가',
     '타입','백스타일','레그컷','가이드','원단타입','가슴선','비침','안감','캡고리',
     '소재','디자이너코멘트','세탁방법',
     '가슴(cm)','허리(cm)','엉덩이(cm)','모델착용사이즈',
@@ -768,7 +770,7 @@ function _downloadProductSample() {
 
   const SAMPLE_ROW = [
     1,'르망고','LSWON16266707','S-001','LC-001','',
-    '코트다쥐르 쉘','Cote d\'Azur Shell','블랙','Black',330000,120000,
+    '코트다쥐르 쉘','Cote d\'Azur Shell','블랙','Black','BK',330000,120000,
     'onepiece','크로스백','Normal Cut','없음','포일','보통','없음','있음','없음',
     'Shell: P80% SP20%','플라워 모티프 디테일','손세탁',
     '30.5','27.5','33','S',
@@ -834,6 +836,7 @@ function _downloadProductSample() {
     ['상품명(영문)', '영문 상품명', '', 'Cote d\'Azur Shell'],
     ['색상(한글)', '한글 색상명', '', '블랙'],
     ['색상(영문)', '영문 색상명', '', 'Black'],
+    ['색상코드', '색상 마스터 약어 (예: BK=블랙, NA=네이비). 입력 시 한글/영문 자동 매칭.', '', 'BK'],
     ['판매가', '소비자 판매가격', '', '330000'],
     ['원가', '상품 원가', '', '120000'],
     ['타입', 'onepiece / bikini / two piece', '', 'onepiece'],
@@ -904,6 +907,7 @@ function _planFullColumns() {
     { key:'nameEn', label:'상품명(영문)' },
     { key:'colorKr', label:'색상(한글)' },
     { key:'colorEn', label:'색상(영문)' },
+    { key:'colorCode', label:'색상코드' },
     { key:'salePrice', label:'판매가' },
     { key:'costPrice', label:'원가' },
     { key:'type', label:'타입' },
@@ -1024,7 +1028,7 @@ function _downloadPlanSample() {
   const sampleMap = {
     no: 1, brand: '르망고', productCode: '', sampleNo: 'S-001',
     nameKr: '코트다쥐르 쉘', nameEn: "Cote d'Azur Shell",
-    colorKr: '블랙', colorEn: 'Black',
+    colorKr: '블랙', colorEn: 'Black', colorCode: 'BK',
     salePrice: 330000, costPrice: 120000,
     type: 'onepiece', year: '2026', season: '1', gender: 'W',
     backStyle: '크로스백', legCut: 'Normal Cut', guide: '없음',
@@ -1084,6 +1088,7 @@ function _downloadPlanSample() {
     ['상품명(영문)', '영문 상품명', '', "Cote d'Azur Shell"],
     ['색상(한글)', '한글 색상명', '', '블랙'],
     ['색상(영문)', '영문 색상명', '', 'Black'],
+    ['색상코드', '색상 마스터 약어 (예: BK=블랙, NA=네이비). 입력 시 한글/영문 자동 매칭.', '', 'BK'],
     ['판매가', '소비자 판매가격', '', '330000'],
     ['원가', '상품 원가', '', '120000'],
     ['타입', 'onepiece / bikini / two piece 등', '', 'onepiece'],
@@ -1373,8 +1378,18 @@ function _parseProductUpload(raw) {
       barcode:       _s('barcode'),
       nameKr:        _s('nameKr'),
       nameEn:        _s('nameEn'),
-      colorKr:       _s('colorKr'),
-      colorEn:       _s('colorEn'),
+      ...(() => {
+        // Color resolution: prefer 색상코드 → master, fallback to 색상(한글) → master
+        const codeRaw = _s('colorCode')
+        const krRaw = _s('colorKr')
+        const enRaw = _s('colorEn')
+        let m = null
+        if (codeRaw && typeof getColorByCode === 'function') m = getColorByCode(codeRaw)
+        if (!m && krRaw && typeof getColorByNameKr === 'function') m = getColorByNameKr(krRaw)
+        return m
+          ? { colorKr: m.nameKr, colorEn: m.nameEn, colorCode: m.code }
+          : { colorKr: krRaw, colorEn: enRaw, colorCode: codeRaw }
+      })(),
       salePrice:     _n('salePrice'),
       costPrice:     _n('costPrice'),
       type:          _s('type'),
@@ -1464,6 +1479,7 @@ const _DIFF_FIELDS = [
   { key:'nameEn', label:'상품명(영문)' },
   { key:'colorKr', label:'색상(한글)' },
   { key:'colorEn', label:'색상(영문)' },
+  { key:'colorCode', label:'색상코드' },
   { key:'salePrice', label:'판매가' },
   { key:'costPrice', label:'원가' },
   { key:'type', label:'타입' },
@@ -1709,7 +1725,7 @@ function _applyProductUpload(parsed) {
       // 스칼라 필드 매핑 (헤더 키 → product 필드 키)
       const SCALAR_MAP = {
         brand:'brand', sampleNo:'sampleNo', cafe24Code:'cafe24Code', barcode:'barcode',
-        nameKr:'nameKr', nameEn:'nameEn', colorKr:'colorKr', colorEn:'colorEn',
+        nameKr:'nameKr', nameEn:'nameEn', colorKr:'colorKr', colorEn:'colorEn', colorCode:'colorCode',
         salePrice:'salePrice', costPrice:'costPrice',
         type:'type', backStyle:'backStyle', legCut:'legCut', guide:'guide',
         fabricType:'fabricType', chestLine:'chestLine', transparency:'transparency',
@@ -1999,8 +2015,18 @@ function _parsePlanUpload(raw) {
       brand:        _s('brand') || '르망고',
       nameKr:       _s('nameKr'),
       nameEn:       _s('nameEn'),
-      colorKr:      _s('colorKr'),
-      colorEn:      _s('colorEn'),
+      ...(() => {
+        // Color resolution: prefer 색상코드 → master, fallback to 색상(한글) → master
+        const codeRaw = _s('colorCode')
+        const krRaw = _s('colorKr')
+        const enRaw = _s('colorEn')
+        let m = null
+        if (codeRaw && typeof getColorByCode === 'function') m = getColorByCode(codeRaw)
+        if (!m && krRaw && typeof getColorByNameKr === 'function') m = getColorByNameKr(krRaw)
+        return m
+          ? { colorKr: m.nameKr, colorEn: m.nameEn, colorCode: m.code }
+          : { colorKr: krRaw, colorEn: enRaw, colorCode: codeRaw }
+      })(),
       salePrice:    _n('salePrice'),
       costPrice:    _n('costPrice'),
       type:         _s('type'),
@@ -2086,6 +2112,7 @@ const _PLAN_DIFF_FIELDS = [
   { key:'nameEn', label:'상품명(영문)' },
   { key:'colorKr', label:'색상(한글)' },
   { key:'colorEn', label:'색상(영문)' },
+  { key:'colorCode', label:'색상코드' },
   { key:'salePrice', label:'판매가' },
   { key:'costPrice', label:'원가' },
   { key:'type', label:'타입' },
@@ -2359,7 +2386,7 @@ async function _applyPlanUpload(parsed) {
       merged = { ...existing }
       const SCALAR_MAP = {
         brand:'brand',
-        nameKr:'nameKr', nameEn:'nameEn', colorKr:'colorKr', colorEn:'colorEn',
+        nameKr:'nameKr', nameEn:'nameEn', colorKr:'colorKr', colorEn:'colorEn', colorCode:'colorCode',
         salePrice:'salePrice', costPrice:'costPrice',
         type:'type', year:'year', season:'season', gender:'gender',
         backStyle:'backStyle', legCut:'legCut', guide:'guide',
