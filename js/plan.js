@@ -554,13 +554,17 @@ function updatePlProductCode() {
   if (!cls || !des) return
 
   const prefix = cls + gen + typ + des + year + seasonNum
+  // 길이 인식 매칭 — prefix는 11자, 전체 품번은 13자(prefix + 2자 일련번호)
+  // (이전 c.slice(0,12) === prefix 비교는 11자/12자 불일치로 항상 false → ...00 무한 루프 버그)
   const usedNums = new Set(
     [...State.allProducts, ...State.planItems]
       .map(p => p.productCode)
-      .filter(c => c && c.slice(0, 12) === prefix)
-      .map(c => c.slice(12))
+      .filter(c => c && c.length === prefix.length + 2 && c.startsWith(prefix))
+      .map(c => c.slice(-2))
   )
-  _reservedCodes.forEach(c => { if (c.slice(0,12) === prefix) usedNums.add(c.slice(12)) })
+  _reservedCodes.forEach(c => {
+    if (c.length === prefix.length + 2 && c.startsWith(prefix)) usedNums.add(c.slice(-2))
+  })
 
   let nextNum = null
   for (let i = 0; i <= 99; i++) {
@@ -1059,14 +1063,16 @@ function updatePdProductCode() {
   // 현재 편집 중인 아이템의 기존 품번은 제외 (재생성 허용)
   const currentItem = State.planItems.find(p => p.no === _editingPlanNo)
   const currentOwnCode = currentItem?.productCode || ''
+  // 길이 인식 매칭 — prefix는 11자, 전체 품번은 13자
+  // (이전 c.slice(0,12) === prefix 비교는 11자/12자 불일치로 항상 false → ...00 무한 루프 버그)
   const usedNums = new Set(
     [...State.allProducts, ...State.planItems]
       .map(p => p.productCode)
-      .filter(c => c && c !== currentOwnCode && c.slice(0, 12) === prefix)
-      .map(c => c.slice(12))
+      .filter(c => c && c !== currentOwnCode && c.length === prefix.length + 2 && c.startsWith(prefix))
+      .map(c => c.slice(-2))
   )
   _reservedCodes.forEach(c => {
-    if (c !== currentOwnCode && c.slice(0, 12) === prefix) usedNums.add(c.slice(12))
+    if (c !== currentOwnCode && c.length === prefix.length + 2 && c.startsWith(prefix)) usedNums.add(c.slice(-2))
   })
 
   let nextNum = null
@@ -1336,15 +1342,8 @@ async function savePlanDetailEdit() {
   if (!item) return
   const modal = document.getElementById('planDetailModal')
 
-  // 품번 빈 값 체크 → 생성 패널 열기
-  const pcInput = document.getElementById('pdProductCodeInput')
-  if (pcInput && !pcInput.value.trim()) {
-    showToast('품번이 비어있습니다. 품번을 입력하거나 생성해주세요.', 'warning')
-    const panel = document.getElementById('pdCodeGenPanel')
-    if (panel && panel.style.display === 'none') togglePdCodeGenPanel()
-    pcInput.focus()
-    return
-  }
+  // 정책: 신규기획은 샘플번호만 필수, 품번은 선택 입력.
+  //       품번 강제 검증은 plan→product 이전 시점(confirmPlanToProduct)에서 수행.
 
   // 대기 중 파일 Storage 업로드
   const pendingCount = _planTempImages.filter(i => i._pending && i._file).length

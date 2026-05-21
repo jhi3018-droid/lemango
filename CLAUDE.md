@@ -2867,6 +2867,23 @@ Established the reference style that every dashboard-opened srm-modal should fol
   - U3: 코드 정독 기반 검증이므로 배포 후 5종 시나리오 직접 테스트 권장(보고서 하단 명시)
 - **배포 전 미실행**: `firebase deploy --only firestore:rules,hosting` 은 소유주가 수동 실행 예정
 
+#### 신규기획 품번 생성 + 품번 필수 버그 수정 (PASS)
+- 조사 보고서: `docs/code-gen-and-plan-required-investigation.md` / 수정 보고서: `docs/plan-code-fix-report.md`
+- **변경 파일 1개**: `js/plan.js` (+14/-15)
+- **Part 1 — 시리얼 슬라이스 버그 (4 효과 라인)**:
+  - 원인: prefix는 11자 (분류2+성별1+타입2+디자인4+연도1+시즌1)인데 Plan 측은 `c.slice(0,12) === prefix` 비교 (12자 vs 11자) → 항상 false → `usedNums` 항상 빈 Set → 다음 시리얼 항상 `...00` → apply 시 정상 중복 체크가 잡아냄 → 무한 ...00 루프
+  - 수정: `updatePlProductCode()` (register, line 557-567) + `updatePdProductCode()` (edit, line 1062-1076) 양쪽을 canonical pattern (`c.length === prefix.length + 2 && c.startsWith(prefix)` + `c.slice(-2)`)으로 통일 → `js/product-code.js:269`, `js/modals.js:1537`과 의미적으로 동일
+  - 편집 측의 `currentOwnCode` 자기 코드 제외 로직 보존 (재생성 시 시리얼 안 밀림)
+  - 결과: 4 사이트(상품조회 등록/수정 + 신규기획 등록/수정) 시리얼 일관성 확보
+- **Part 2 — 신규기획 수정 시 품번 필수 차단 제거 (9줄 블록)**:
+  - 원인: `savePlanDetailEdit()` (구 1339-1347)에서 `pdProductCodeInput` 비어있으면 토스트+return → 정책 위반 (Plan은 sampleNo만 필수, productCode 선택)
+  - 수정: 9줄 블록 삭제, 정책 주석 2줄로 교체
+  - **보존**: `confirmPlanToProduct()` (1437-1440)의 품번 필수 검증 — plan→product 이전 시점에서는 품번 필수 (매칭 키), 정책 맞음
+  - 다른 plan 저장 경로 영향 없음: `submitPlanRegister()` (326-327), Excel 업로드 (`js/excel.js:1940`) 모두 sampleNo만 필수, 변경 없음
+- **회귀 없음**: 매출 공식(gonghom/sabangnet), Excel 업로드 검증, `_reservedCodes` 시맨틱, 다른 파일 모두 unchanged
+- **잔여**: cross-tab race condition (`_reservedCodes`가 탭별 메모리라 두 탭 동시 생성 시 동일 코드 예약 가능) — 별건 향후 검토
+- **배포**: JS 단일 파일 변경 — `firebase deploy --only hosting` (규칙 변경 없음)
+
 #### 백업 Storage 403 핫픽스 — Storage 규칙 단순화
 - 직전 배포 후 모든 백업 작업이 `storage/unauthorized` 403 반환 → 백업 여전히 실패. 보고서: `docs/backup-403-fix-report.md`
 - **근본 원인**: Storage 규칙에서 `firestore.get(/databases/(default)/documents/users/$(uid)).data.grade >= 3` cross-service 읽기는 **Cloud Storage 서비스 계정에 "Firebase Rules Firestore Service Agent" IAM 권한이 추가로 필요**. `firebase deploy`로 자동 부여되지 않음. 미설정 시 `firestore.get()` 호출이 silent fail → 규칙 deny → 403
