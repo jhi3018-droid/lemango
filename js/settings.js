@@ -572,7 +572,75 @@ function renderSettings() {
           ${renderNotifSettingsCard()}
         </div>
       </div>
+    </div>
+
+    ${_renderBackupSettingsSection()}`
+
+  // 백업 상태 카드 비동기 갱신 (Settings 탭 렌더 직후)
+  if (typeof renderBackupStatusCard === 'function') {
+    setTimeout(renderBackupStatusCard, 50)
+  }
+}
+
+// 백업 시스템 섹션 — grade>=3 (관리자 이상)만 표시
+function _renderBackupSettingsSection() {
+  const grade = (State.currentUser && State.currentUser.grade) || 0
+  if (grade < 3) return ''
+  return `
+    <div class="set-section">
+      <button class="set-section-btn" onclick="toggleSetSection(this)">
+        <span>🗂️ 백업 시스템</span><span class="set-section-arrow">▼</span>
+      </button>
+      <div class="set-section-body">
+        <div class="set-grid">
+          <div class="set-card set-card-wide" id="setBackupCard">
+            <div class="set-card-header">
+              <span class="set-card-title">백업 상태</span>
+              <span style="flex:1"></span>
+              <button class="btn btn-primary set-backup-btn" onclick="manualBackup()">지금 백업 실행</button>
+            </div>
+            <div id="setBackupStatusBody" class="set-backup-body">
+              <div style="padding:8px 0;color:#888">백업 상태 확인 중...</div>
+            </div>
+            <div class="set-backup-hint">
+              · 매일 23:59 자동 백업 / 일요일 주간 / 매월 1일 월간<br>
+              · 수동 실행 시 일간 + 주간 + 월간 3개 동시 저장 (3 tier seed)<br>
+              · 백업은 Firebase Storage에 저장됩니다 (관리자만 접근 가능)
+            </div>
+          </div>
+        </div>
+      </div>
     </div>`
+}
+
+// Settings 탭 백업 상태 카드 비동기 렌더
+window.renderBackupStatusCard = async function() {
+  const body = document.getElementById('setBackupStatusBody')
+  if (!body) return
+  if (typeof getBackupStatus !== 'function') {
+    body.innerHTML = '<div style="color:#888">백업 시스템 초기화 대기 중...</div>'
+    return
+  }
+  try {
+    const status = await getBackupStatus()
+    if (!status.hasBackup) {
+      body.innerHTML = `<div class="set-backup-status set-backup-status-warning">
+        <strong>⚠️ 백업 데이터 없음</strong>
+        <div style="margin-top:4px;font-size:12px;color:#a32d2d">"지금 백업 실행" 버튼을 눌러 즉시 백업해주세요.</div>
+      </div>`
+      return
+    }
+    const isStale = status.isStale
+    body.innerHTML = `<div class="set-backup-status ${isStale ? 'set-backup-status-warning' : ''}">
+      <strong>마지막 백업:</strong> ${status.latest}
+      <span style="margin-left:8px;color:${isStale ? '#a32d2d' : '#666'};font-size:12px">
+        (${status.daysAgo === 0 ? '오늘' : status.daysAgo + '일 전'})
+      </span>
+      ${isStale ? '<div style="margin-top:4px;font-size:12px;color:#a32d2d">⚠️ 1일 이상 경과 — 다시 백업을 권장합니다.</div>' : ''}
+    </div>`
+  } catch (e) {
+    body.innerHTML = `<div style="color:#a32d2d;font-size:12px">상태 확인 실패: ${e.message}</div>`
+  }
 }
 
 const NOTIF_TYPE_LABELS = {

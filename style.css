@@ -4953,6 +4953,26 @@ td[data-editable]:hover { background: #FAEEDA; }
 .bkp-restore-btn { font-size:11px; padding:4px 12px; color:var(--danger); border-color:var(--danger); }
 .bkp-restore-btn:hover { background:var(--danger); color:#fff; }
 
+/* ===== 백업 상태 + 레거시 마킹 (Storage 전환 후 신설) ===== */
+.bkp-status { padding:12px 16px; margin-bottom:16px; background:#f1faf3; border:1px solid #c6e8d0; border-radius:8px; font-size:13px; color:#1b5e20; }
+.bkp-status-warning { background:#fff5f5; border-color:#f4cccc; color:#a32d2d; }
+.bkp-status strong { font-weight:700; }
+.bkp-days-ago { margin-left:6px; font-size:12px; opacity:0.8; }
+.bkp-status-badge { display:inline-block; margin-left:10px; padding:2px 8px; font-size:11px; font-weight:600; background:#a32d2d; color:#fff; border-radius:10px; }
+.bkp-status:not(.bkp-status-warning) .bkp-status-badge { background:#2e7d32; }
+.bkp-source-badge { display:inline-block; padding:2px 8px; font-size:11px; background:#e3f2fd; color:#0d47a1; border-radius:10px; font-weight:600; }
+.bkp-legacy-badge { display:inline-block; padding:2px 8px; font-size:11px; background:#fff3e0; color:#a32d2d; border:1px solid #f4cccc; border-radius:10px; font-weight:600; }
+.bkp-row-legacy td { background:#fffbf5; }
+.bkp-row-legacy td strong { color:#888; }
+
+/* Settings 탭 백업 카드 (관리자 전용) */
+.set-backup-body { padding:8px 0; }
+.set-backup-status { padding:10px 14px; background:#f1faf3; border:1px solid #c6e8d0; border-radius:6px; font-size:13px; color:#1b5e20; }
+.set-backup-status-warning { background:#fff5f5; border-color:#f4cccc; color:#a32d2d; }
+.set-backup-status strong { font-weight:700; }
+.set-backup-hint { margin-top:10px; padding:10px 12px; font-size:11px; color:#777; background:#fafafa; border-radius:6px; line-height:1.6; }
+.set-backup-btn { font-size:12px; padding:6px 14px; }
+
 /* ===== 담당자 검색형 콤보박스 (assignee combobox) ===== */
 .assignee-combo { position: relative; display: none; width: 100%; }
 .detail-modal.edit-mode .dfield .assignee-combo,

@@ -1375,7 +1375,8 @@ function openPersonalDetailModal(id) {
   _editingPsId = ps.id
   const modal = document.getElementById('personalScheduleModal')
   const uid = firebase.auth().currentUser?.uid
-  const canEdit = !!State.currentUser
+  // 개인일정은 작성자 본인만 수정/삭제 가능 (관리자도 불가)
+  const isAuthor = !!uid && ps.createdBy === uid
 
   document.getElementById('psModalHeader').querySelector('span').textContent = formatUserName(ps.createdByName, ps.createdByPosition) + '의 일정'
   document.getElementById('psModalBody').innerHTML = buildPsView(ps)
@@ -1383,8 +1384,8 @@ function openPersonalDetailModal(id) {
 
   const btns = document.getElementById('psHeaderBtns')
   let btnHtml = ''
-  if (canEdit) btnHtml += '<button class="btn btn-outline btn-sm" onclick="togglePsEdit()">수정</button>'
-  if (canDeletePs(ps)) btnHtml += '<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="deletePersonalSchedule(\'' + ps.id + '\')">삭제</button>'
+  if (isAuthor) btnHtml += '<button class="btn btn-outline btn-sm" onclick="togglePsEdit()">수정</button>'
+  if (isAuthor) btnHtml += '<button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="deletePersonalSchedule(\'' + ps.id + '\')">삭제</button>'
   btnHtml += '<button class="modal-close" onclick="closePersonalScheduleModal()">✕</button>'
   btns.innerHTML = btnHtml
 
@@ -1401,17 +1402,24 @@ function closePersonalScheduleModal(force) {
 }
 
 function canDeletePs(ps) {
+  // 개인일정은 작성자 본인만 삭제 가능 (관리자도 불가)
   const uid = firebase.auth().currentUser?.uid
-  if (!uid) return false
-  if ((State.currentUser?.grade || 0) >= 3) return true
-  if (ps.createdBy === uid) return true
-  return false
+  if (!uid || !ps) return false
+  return ps.createdBy === uid
+}
+
+function canEditPs(ps) {
+  // 개인일정은 작성자 본인만 수정 가능 (관리자도 불가)
+  const uid = firebase.auth().currentUser?.uid
+  if (!uid || !ps) return false
+  return ps.createdBy === uid
 }
 
 function togglePsEdit() {
   const modal = document.getElementById('personalScheduleModal')
   const ps = _personalSchedules.find(p => p.id === _editingPsId)
   if (!ps) return
+  if (!canEditPs(ps)) { showToast('작성자 본인만 수정할 수 있습니다.', 'warning'); return }
 
   if (modal.classList.contains('edit-mode')) {
     modal.classList.remove('edit-mode')
@@ -1665,6 +1673,10 @@ async function savePersonalSchedule() {
 
   try {
     if (_editingPsId) {
+      // 작성자 본인만 수정 가능 (defense-in-depth)
+      const existing = _personalSchedules.find(p => p.id === _editingPsId)
+      if (!existing) { showToast('일정을 찾을 수 없습니다.', 'error'); return }
+      if (!canEditPs(existing)) { showToast('작성자 본인만 수정할 수 있습니다.', 'warning'); return }
       stampModified(data)
       await firebase.firestore().collection('personalSchedules').doc(_editingPsId).update(data)
       showToast('일정이 수정되었습니다.', 'success')
@@ -1698,6 +1710,10 @@ async function savePersonalSchedule() {
 }
 
 async function deletePersonalSchedule(id) {
+  // 작성자 본인만 삭제 가능 (defense-in-depth: UI 버튼 외 직접 호출 차단)
+  const ps = _personalSchedules.find(p => p.id === id)
+  if (!ps) { showToast('일정을 찾을 수 없습니다.', 'error'); return }
+  if (!canDeletePs(ps)) { showToast('작성자 본인만 삭제할 수 있습니다.', 'warning'); return }
   if (!await korConfirm('이 일정을 삭제하시겠습니까?')) return
   try {
     await firebase.firestore().collection('personalSchedules').doc(id).delete()

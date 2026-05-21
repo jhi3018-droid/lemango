@@ -2847,6 +2847,111 @@ Established the reference style that every dashboard-opened srm-modal should fol
 
 ---
 
+### 2026-05-21
+
+#### Phase A 보안 수정 적용 (코드 변경)
+- 활성화 전 보안 진단(`pre-activation-audit.md`)과 권한 모델 분석(`permission-model.md`)에서 도출된 🔴 항목 중 4건을 수정. **firebase deploy는 소유주가 수동 진행 예정** (Claude는 배포 안 함)
+- 검증 보고서: `docs/phase-a-report.md`
+- **Fix 1 (firestore.rules)** 🟢: 회원 self-update 시 `grade`/`status` 불변(invariance) 검증 추가. 본인은 자기 등급을 4로 올릴 수 없음, 관리자(`isAdmin`)는 모든 필드 변경 가능. `isAuth()` 단순 유지 + `isApproved()`/`isAdmin()` 헬퍼 신설
+- **Fix 2 (firestore.rules)** 🟡: 삭제 규칙 3건을 클라이언트 정책에 맞춰 동기화
+  - `comments` 삭제: 작성자(`uid`) OR `isAdmin()`
+  - `leaves` 삭제: 본인(`uid`) OR `isAdmin()`
+  - `users` 삭제: `isAdmin()` (이전 `if false` → 회원 삭제 자체가 항상 실패하던 버그 해결)
+- **Fix 3 (firestore.rules + js/work.js)** 🟢: 개인일정 작성자 전용 (관리자 override 없음)
+  - 서버: `personalSchedules` update/delete 모두 `resource.data.createdBy == request.auth.uid` 강제
+  - 클라이언트: `canDeletePs`에서 `grade>=3` bypass 제거, 신규 `canEditPs` 추가, `openPersonalDetailModal`의 수정 버튼 가시성 변경(`isAuthor` 기준), `togglePsEdit`/`deletePersonalSchedule`/`savePersonalSchedule(_editingPsId 분기)` 모두 진입 가드 추가
+- **Fix 4 (firestore.rules)** 🟢: `isApproved()` 게이트 신설. 모든 컬렉션(`users` 본인 self-read 제외)이 `status == 'approved'`인 사용자만 통과. pending/rejected/suspended는 데이터 접근 차단. `users/{uid}` self-read는 미승인 상태에서도 허용 — `checkApproval()`이 본인 doc를 읽어 승인 여부를 확인할 수 있어야 함
+- **소유주 확인 필요 (UNSURE)**:
+  - ~~U1: `users/{uid}` create 규칙이 필드값 미검증~~ → **Phase A-2에서 해결 (아래 참조)**
+  - U2: `users` delete가 관리자 전용 → 셀프 탈퇴 UI가 향후 필요한지 확인 필요
+  - U3: 코드 정독 기반 검증이므로 배포 후 5종 시나리오 직접 테스트 권장(보고서 하단 명시)
+- **배포 전 미실행**: `firebase deploy --only firestore:rules,hosting` 은 소유주가 수동 실행 예정
+
+#### 두 가지 버그 수정 (구현 완료, 배포 대기)
+- 보고서: `docs/two-bugs-fix-report.md` (영문, 343줄). **firebase deploy는 소유주가 수동 진행 예정** (`firebase deploy --only firestore:rules,storage,hosting`)
+- **Part 1 — 품번 generator 분류 dropdown 수정 (2 sites)**:
+  - `js/plan.js:1594-1596` — `CLS_OPT` 하드코딩 → `_classCodes` 라이브 읽기 + literal fallback
+  - `js/modals.js:405-407` — `DCG_CLS_OPT` 동일 패턴
+- **Part 2 — Backup Firestore → Firebase Storage 이전 (Option C 채택)**:
+  - 신규 경로: `backups/{type}/{dateStr}.json` (Storage 객체)
+  - 레거시 경로 `backups/{type}/items/{dateStr}` (Firestore) 보존 — 복원만 가능, 신규 작성 안 함 (마이그레이션 안전 정책)
+  - `js/backup.js` 전면 재작성:
+    - `_saveBackup()` Storage `put(blob)`, `_collectBackupData()`에 activityLogs 포함 유지, 압축 미적용 (Storage 50MB 한도 + 가독성)
+    - `restoreBackup(type, dateStr, source)` Storage 우선, `source='firestore'` 레거시 fallback
+    - `_cleanOldBackups()` Storage만 정리 (daily 7d, weekly/monthly 90d), 레거시 Firestore 백업 보존
+    - `_loadBackupList()` Storage + Firestore merge, dateStr dedup
+    - `renderBackupPanel()` 상태 배지 (마지막 백업 + 경과일), 레거시 행 `bkp-row-legacy` + `bkp-legacy-badge` ("⚠️ 오래됨 (구버전)")
+    - `manualBackup()` 일간 + 주간 + 월간 3 tier 동시 시드
+    - `runAutoBackup()`/`scheduleBackupTimer()` 진입 시 grade≥3 자체 게이트 → main.js의 무조건 호출이 비관리자에게 no-op
+    - 실패 토스트 `_backupAdminToast()` — grade≥3만 표시 (일반 사용자 silent)
+    - 신규 `getBackupStatus()` Settings 카드용
+  - `storage.rules` — `/backups/{type}/{fileName}` 추가, grade≥3 R/W/D, 50MB 한도
+  - `js/settings.js` — 🗂️ 백업 시스템 섹션 추가 (grade≥3 visible), `_renderBackupSettingsSection()` + `renderBackupStatusCard()` async
+  - `style.css` — 백업 상태/레거시 마킹 클래스 11종 추가, inline `display:none` 미사용
+- **결정 사항 (보고서 명시)**: ① 압축 NO (Storage 충분, 라이브러리 의존성 회피, 가독성) ② 토스트 admin-only (grade≥3) ③ 수동 버튼 Settings + hradmin 양쪽 (Q3) ④ 레거시 Firestore 정리 수동 (마이그레이션 안전)
+- **회귀 없음**: 매출 공식(gonghom/sabangnet/sales) 미변경, board/plan Storage 규칙 미변경, work.js 변경 없음 (Phase A의 personalSchedules 작업이 git diff에 보이지만 본 작업 외)
+- **🚨 배포 후 즉시 조치**: 관리자가 Settings 또는 hradmin에서 **"지금 백업 실행" 1회 수동 클릭 필수** — daily 보관 7일이 매일 잠식 중. 미수행 시 약 1주 내 복원 가능 백업 0건
+- **잔여 권고**: activityLogs 무제한 증가 — 별도 retention 작업 (예: 90일) 추후 검토
+
+#### 두 가지 버그 조사 (진단 전용)
+- 사용자 보고 2건 조사 — 진단만, 코드 수정 없음. 보고서: `docs/two-bugs-investigation.md`
+- **#1 품번 생성 분류 dropdown — edit mode에서 누락 (구현 준비 완료)**
+  - 사용자 보고: 신규기획 수정 모달에서 Settings에 추가한 분류가 안 보임
+  - 원인: edit 모달이 HTML 문자열 빌더 안에서 분류 select를 **하드코딩된 6-entry literal** 로 만들어 `_classCodes` 라이브 값을 안 읽음
+  - 영향 위치 2곳: `js/plan.js:1594` (`CLS_OPT`), `js/modals.js:405` (`DCG_CLS_OPT`) — 두 번째는 사용자가 보고 안 한 동일 패턴 sibling 버그 (상품 상세 모달)
+  - 그 외 dropdown 13종 전수조사 완료 — 모두 라이브 읽기 정상 (color master, _settings.*, _channels, _workCategories, _depts, POSITIONS, getPlanPhases 등)
+  - 제안 수정: 두 site 각각 one-liner 교체 (`_classCodes.map(...)` 우선, 기존 literal은 fallback로 유지)
+- **#2 백업 1MB 한도 초과 — 매일 백업 silently 실패 중 (소유주 결정 필요)**
+  - 콘솔 에러: 2026-05-21 daily backup이 1,123,317 bytes로 Firestore doc 한도 1,048,576 초과
+  - 원인: `_collectBackupData()` (`js/backup.js:20-48`)가 전체 데이터를 1개 문서에 평탄화. `State.allProducts` 단독으로 **976,432 bytes (1MiB의 93%)** — 2026-04-13 CSV import로 798 products 됨
+  - **weekly/monthly 동일 코드 경로** — 세 tier 모두 silently 실패. `_saveBackup()` 은 console.error만, UI 알림 없음
+  - **위험**: 라이브 데이터는 안전. 그러나 `_cleanOldBackups()` 가 매일 7일 초과 daily 백업 삭제 → **약 7일 내 daily 복원 가능한 백업 0건 됨**
+  - **5개 옵션 비교 + 추천**:
+    - 추천 1순위: **Option C (Firebase Storage)** — `backups/{type}/{date}.json[.gz]` 로 이전. Storage 이미 사용 중(board/plan), 1MB 한도 없음, 향후 무한 확장
+    - 추천 2순위: **Option B (LZ-string 압축)** — minimal change, runtime dep 14KB, 1MB 한도 여전히 존재하나 ~5x 여유
+    - 거부: A (sibling docs) — 일시방편(~5-10% 여유), D (selective) — 데이터 보호 목적 무력화
+  - 소유주 결정 필요 5건: (1) B vs C 아키텍처 선택 (2) 실패 가시화(toast/알림) 추가 (3) 수정 후 즉시 manual 백업 + weekly/monthly seed (4) pre-failure backups를 restore UI에서 outdated 표시 (5) activityLogs 보관 기간 정책(현재 무제한)
+
+#### Phase A-2 U1 후속 조치 — 회원가입 권한 상승 차단 🟢
+- Phase A의 UNSURE 항목 U1 해결. **firebase deploy는 소유주가 수동 진행 예정**
+- 보고서: `docs/phase-a-report.md` 말미 "Phase A-2" 섹션 (기존 내용 전부 보존)
+- **변경**: `firestore.rules` `users/{uid}` CREATE 규칙에 안전 기본값 강제
+  - 수정 전: `allow create: if isAuth() && request.auth.uid == uid;`
+  - 수정 후: `request.resource.data.grade == 1 && request.resource.data.status == 'pending'` 추가 강제
+- **기본값 근거**: `js/auth.js:38-44` GRADE_DEFS에서 grade 1 = 담당자(최저), `js/auth.js:312-323` 정상 가입 흐름이 `grade:1, status:'pending'` 작성 → 영향 없음
+- **의도된 부작용**: `js/auth.js:119-131` 첫 사용자 자동 셋업(`grade:4/approved`)은 새 규칙으로 차단. 프로덕션은 이미 사용자 존재로 dead code. 향후 완전 새 환경 부트스트랩 시 Firebase 콘솔에서 첫 관리자 doc 수동 시드 필요
+- **배포 후 권장 테스트**: ① 새 계정 정상 가입 통과 ② 콘솔에서 `grade:4` 직접 생성 시도 거부 ③ 기존 관리자가 신규 가입자 승격 통과 (Phase A Fix 1 update 경로)
+
+#### 권한 모델 추출 (진단 전용)
+- 보안 규칙 강화 전 단계로 현재 코드의 **실제** 권한 모델 추출. **코드 수정 없음**, 보고서만 생성
+- 보고서 위치: `docs/permission-model.md`
+- 등급 체계 모호: `js/auth.js:38-44` GRADE_DEFS는 5단계(대표이사 추가), CLAUDE.md/권한 분기 코드는 4단계만 다룸. grade 5는 회원관리 KPI 외 사용처 없음 — 소유주 확인 필요
+- **🔴 CRITICAL**: `firestore.rules:31` 본인 doc update 허용에 필드 검증 없음 → 인증된 누구나 콘솔에서 자기 `grade=4` 설정해 시스템 관리자 탈취 가능
+- **🔴 클라이언트-규칙 불일치** (관리자 기능이 항상 실패):
+  - `comments` 삭제: 클라 작성자+grade≥3 (`js/comments.js:315`) vs 규칙 작성자만 (`firestore.rules:82`)
+  - `leaves` 삭제: 클라 grade≥3 호출 (`js/hr.js:607,982`) vs 규칙 `if false` (`firestore.rules:41`)
+  - `users` 삭제: 클라 grade≥3 호출 (`js/members.js:269`) vs 규칙 `if false` (`firestore.rules:33`)
+- **🔴 소유주 정책 위배**: `personalSchedules` update/delete가 "인증된 모든 사용자" 허용 (`firestore.rules:89-90`, `js/work.js:1411`) → 누구나 남의 일정 수정 가능 (정책상 본인만 가능해야 함)
+- **🟡 구조적 한계**: 상품/기획/행사/업무/설정 모두 `sharedData/{key}` 단일 문서에 JSON 직렬화 (`js/core.js:7-17`) → Firestore 규칙으로 per-row 권한 강제 불가능, 클라이언트 검증(`canDeleteProduct`/`canDeletePlanItem`/`canDeleteEvent`/`canDeleteWork`)만 존재
+- Storage(`board/`, `plan/`): 인증만으로 read/write/delete 허용, 업로더 검증 없음
+
+#### 활성화 전 보안·동시성 점검 (진단 전용)
+- 활성화(~20명 동시 사용) 직전 상태에서 code-reviewer 에이전트로 4개 영역 진단 수행. **코드 수정 없음**, 보고서만 생성
+- 보고서 위치: `docs/pre-activation-audit.md`
+- 4개 영역 등급: Area 1 Firestore 규칙 🔴 / Area 2 인증 🟡 / Area 3 동시성 🔴 / Area 4 데이터 예외 🟢
+- **출시 전 필수 수정(🔴) 핵심**:
+  - `firestore.rules`의 `sharedData/*` 가 `isAuth()` 만 체크 → 담당자(grade 1)도 콘솔로 핵심 데이터 전체 삭제 가능
+  - `notifications` / `editLocks` / `leaves` / `attendance` / `personalSchedules` 본인 확인 규칙 없음
+  - `comments` 삭제 규칙(작성자만)이 클라이언트 코드(작성자 OR grade≥3)와 불일치
+  - Storage(`board/`, `plan/`)도 본인 확인 없이 누구나 삭제 가능
+  - `saveProducts`/`savePlanItems`/`saveEvents`/`saveWorkItems` 전부 단일 배열 통째 덮어쓰기 패턴 → 동시 편집 시 한쪽 손실
+  - 재고/매출 누적 `+=` read-modify-write 패턴 → 동시 입력 시 결과 불일치
+- **인증(🟡) 주요**: `isAuth()`가 `status == 'approved'` 미확인 → pending 사용자가 콘솔에서 직접 접근 가능. `js/auth.js:366` 초기 관리자 비번 평문 하드코딩
+- **데이터 예외(🟢)**: `js/dashboard.js:722` 매출 "전월" 값이 `Math.random()` 가짜 데이터 (활성화 전 실데이터 결선 필요)
+- **권고**: 보안 규칙 강화 + 동시성 패턴(transaction/FieldValue.increment) 보강 전 활성화 비권장
+
+---
+
 ## 다음 작업 후보 (미구현)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 인쇄/PDF 출력

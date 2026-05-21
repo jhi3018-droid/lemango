@@ -402,7 +402,9 @@ function buildDetailContent(p) {
   const platforms = _platforms
 
   // 품번 생성 패널 상수
-  const DCG_CLS_OPT  = [['LS','르망고 수영복'],['LW','르망고 의류'],['LG','르망고 굿즈'],['NS','느와 수영복'],['NW','느와 의류'],['NG','느와 굿즈']]
+  const DCG_CLS_OPT  = (typeof _classCodes !== 'undefined' && Array.isArray(_classCodes) && _classCodes.length)
+    ? _classCodes.map(([c, n]) => [c, n])
+    : [['LS','르망고 수영복'],['LW','르망고 의류'],['LG','르망고 굿즈'],['NS','느와 수영복'],['NW','느와 의류'],['NG','느와 굿즈']]
   const DCG_TYP_OPT  = [['ON','원피스'],['MO','모노키니'],['BK','비키니'],['BR','브리프'],['JM','재머'],['RG','래시가드'],['AL','애슬레저'],['GM','의류'],['SC','수영모'],['BG','가방'],['ET','기타']]
   const DCG_GEN_OPT  = [['W','여성'],['M','남성'],['G','걸즈'],['B','보이즈'],['N','공용'],['K','키즈']]
   const DCG_YEAR_OPT = ['1','2','3','4','5','6','7','8','9','0']

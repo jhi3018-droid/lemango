@@ -2,112 +2,156 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // 인증 여부만 확인 (users/{uid} self-read에 한정)
     function isAuth() { return request.auth != null; }
+
+    // 본인 사용자 문서 조회 헬퍼
+    function userDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+
+    // 승인된 사용자만 통과 (대부분의 컬렉션 기본 게이트)
+    function isApproved() {
+      return isAuth()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && userDoc(request.auth.uid).status == 'approved';
+    }
+
+    // 관리자(grade 3 이상): 관리자/시스템관리자/대표이사 모두 포함
+    function isAdmin() {
+      return isApproved() && userDoc(request.auth.uid).grade >= 3;
+    }
 
     // sharedData — 상품/행사/업무/설정 등 핵심 데이터
     match /sharedData/{docId} {
-      allow read, write: if isAuth();
+      allow read, write: if isApproved();
     }
 
     // notifications
     match /notifications/{docId} {
-      allow read, write: if isAuth();
+      allow read, write: if isApproved();
     }
 
     // editLocks
     match /editLocks/{docId} {
-      allow read, write: if isAuth();
+      allow read, write: if isApproved();
     }
 
     // watches
     match /watches/{docId} {
-      allow read, write: if isAuth();
+      allow read, write: if isApproved();
     }
 
     // users
     match /users/{uid} {
-      allow read: if isAuth();
-      allow create: if isAuth();
-      allow update: if isAuth() && (request.auth.uid == uid ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.grade >= 3);
-      allow delete: if false;
+      // 본인 문서는 미승인(pending) 상태에서도 읽을 수 있어야 함 (승인 대기 화면)
+      // 다른 사람 문서는 승인된 사용자만 조회 가능
+      allow read: if isAuth() && (request.auth.uid == uid || isApproved());
+
+      // 회원가입 시 본인 doc 최초 생성 — 안전한 기본값 강제
+      //  - grade는 반드시 1 (담당자, 최저 등급) — 자기 자신을 관리자로 만들 수 없음
+      //  - status는 반드시 'pending' — 자기 자신을 승인 처리할 수 없음
+      //  ※ 첫 사용자 자동 셋업(auth.js의 grade=4/approved)은 이 규칙에 의해 차단됩니다.
+      //    프로덕션에서는 이미 첫 사용자가 존재하므로 영향 없음.
+      //    초기 부트스트랩이 필요한 경우 Firebase 콘솔에서 수동으로 첫 관리자 doc 시드 필요.
+      allow create: if isAuth()
+        && request.auth.uid == uid
+        && request.resource.data.grade == 1
+        && request.resource.data.status == 'pending';
+
+      // 업데이트:
+      //  - 본인이 본인 doc를 수정할 때는 grade/status 변경 금지 (권한 상승 차단)
+      //  - 관리자(grade>=3)는 모든 필드 변경 가능 (등급/상태 변경 포함)
+      allow update: if isAuth() && (
+        (request.auth.uid == uid
+          && request.resource.data.grade == resource.data.grade
+          && request.resource.data.status == resource.data.status)
+        || isAdmin()
+      );
+
+      // 회원 삭제: 관리자만
+      allow delete: if isAdmin();
     }
 
-    // leaves
+    // leaves — 연차 신청/내역
     match /leaves/{doc} {
-      allow read: if isAuth();
-      allow create: if isAuth();
-      allow update: if isAuth();
-      allow delete: if false;
+      allow read: if isApproved();
+      allow create: if isApproved();
+      allow update: if isApproved();
+      // 본인(uid 필드 일치) 또는 관리자만 삭제
+      allow delete: if isApproved() && (
+        resource.data.uid == request.auth.uid || isAdmin()
+      );
     }
 
-    // leaveQuotas
+    // leaveQuotas — 연차 한도
     match /leaveQuotas/{uid} {
-      allow read: if isAuth();
-      allow write: if isAuth() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.grade >= 3;
+      allow read: if isApproved();
+      allow write: if isAdmin();
     }
 
-    // attendance
+    // attendance — 출퇴근
     match /attendance/{doc} {
-      allow read: if isAuth();
-      allow create: if isAuth();
-      allow update: if isAuth();
+      allow read: if isApproved();
+      allow create: if isApproved();
+      allow update: if isApproved();
       allow delete: if false;
     }
 
-    // activityLogs
+    // activityLogs — 활동 로그 (감사 추적, 읽기만 허용)
     match /activityLogs/{doc} {
-      allow read: if isAuth();
-      allow create: if isAuth();
+      allow read: if isApproved();
+      allow create: if isApproved();
       allow update, delete: if false;
     }
 
-    // posts
+    // posts — 게시판
     match /posts/{doc} {
-      allow read: if isAuth();
-      allow create: if isAuth();
-      allow update: if isAuth();
-      allow delete: if isAuth() && (
+      allow read: if isApproved();
+      allow create: if isApproved();
+      allow update: if isApproved();
+      allow delete: if isApproved() && (
         resource.data.createdBy == request.auth.uid ||
         resource.data.authorUid == request.auth.uid ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.grade >= 3);
+        isAdmin()
+      );
     }
 
-    // comments
+    // comments — 모달 댓글
     match /comments/{doc} {
-      allow read: if isAuth();
-      allow create: if isAuth();
-      allow update: if isAuth();
-      allow delete: if isAuth() && resource.data.uid == request.auth.uid;
+      allow read: if isApproved();
+      allow create: if isApproved();
+      allow update: if isApproved();
+      // 작성자(uid 필드) 또는 관리자(grade>=3)만 삭제 — 클라이언트 정책과 일치
+      allow delete: if isApproved() && (
+        resource.data.uid == request.auth.uid || isAdmin()
+      );
     }
 
-    // personalSchedules
+    // personalSchedules — 개인일정 (작성자 전용 데이터)
     match /personalSchedules/{doc} {
-      allow read: if isAuth();
-      allow create: if isAuth();
-      allow update: if isAuth();
-      allow delete: if isAuth();
+      allow read: if isApproved();
+      allow create: if isApproved();
+      // 작성자 본인만 수정/삭제 (관리자도 불가)
+      allow update: if isApproved() && resource.data.createdBy == request.auth.uid;
+      allow delete: if isApproved() && resource.data.createdBy == request.auth.uid;
     }
 
-    // backups
+    // backups — 백업 데이터 (시스템 관리자 이상)
     match /backups/{type}/items/{itemId} {
-      allow read: if isAuth();
-      allow write: if isAuth() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.grade >= 4;
+      allow read: if isApproved();
+      allow write: if isApproved() && userDoc(request.auth.uid).grade >= 4;
     }
 
     // salaries — 급여 (민감 정보)
     // read: 본인 doc 또는 관리자(grade>=3)
     // write: 관리자(grade>=3)만
     match /salaries/{doc} {
-      allow read: if isAuth() && (
-        resource.data.uid == request.auth.uid ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.grade >= 3);
-      allow create: if isAuth() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.grade >= 3;
-      allow update, delete: if isAuth() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.grade >= 3;
+      allow read: if isApproved() && (
+        resource.data.uid == request.auth.uid || isAdmin()
+      );
+      allow create: if isAdmin();
+      allow update, delete: if isAdmin();
     }
   }
 }
