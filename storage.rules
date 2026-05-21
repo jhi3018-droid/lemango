@@ -15,15 +15,15 @@ service firebase.storage {
       allow write: if request.auth != null
         && request.resource.size < 10 * 1024 * 1024;
     }
-    // 백업 데이터 — 관리자(grade >= 3) 전용 (전체 데이터 스냅샷 — 민감)
+    // 백업 데이터 — 인증된 사용자만 (관리자 게이트는 JS 레이어 _backupHasPermission()에서 처리)
+    //   참고: Storage 규칙에서 firestore.get()으로 grade 체크는 Cloud Storage 서비스 계정의
+    //         IAM 권한(Firebase Rules Firestore Service Agent)을 추가로 요구함 → 미설정 시 403
+    //         board/plan과 동일하게 isAuth()만 사용하고, 클라이언트(backup.js)에서 grade>=3 강제
     match /backups/{type}/{fileName} {
-      allow read: if request.auth != null
-        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.grade >= 3;
+      allow read: if request.auth != null;
+      allow delete: if request.auth != null;
       allow write: if request.auth != null
-        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.grade >= 3
         && request.resource.size < 50 * 1024 * 1024;
-      allow delete: if request.auth != null
-        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.grade >= 3;
     }
   }
 }

@@ -2867,6 +2867,15 @@ Established the reference style that every dashboard-opened srm-modal should fol
   - U3: 코드 정독 기반 검증이므로 배포 후 5종 시나리오 직접 테스트 권장(보고서 하단 명시)
 - **배포 전 미실행**: `firebase deploy --only firestore:rules,hosting` 은 소유주가 수동 실행 예정
 
+#### 백업 Storage 403 핫픽스 — Storage 규칙 단순화
+- 직전 배포 후 모든 백업 작업이 `storage/unauthorized` 403 반환 → 백업 여전히 실패. 보고서: `docs/backup-403-fix-report.md`
+- **근본 원인**: Storage 규칙에서 `firestore.get(/databases/(default)/documents/users/$(uid)).data.grade >= 3` cross-service 읽기는 **Cloud Storage 서비스 계정에 "Firebase Rules Firestore Service Agent" IAM 권한이 추가로 필요**. `firebase deploy`로 자동 부여되지 않음. 미설정 시 `firestore.get()` 호출이 silent fail → 규칙 deny → 403
+- **이전 "storage.rules ✅ released" 보고는 deploy 서버 수준 사실은 맞지만 실제 운영 동작은 깨져 있었음** — Firebase 특성 (배포 성공 ≠ 규칙 동작 성공). 솔직하게 보고서에 명시
+- **수정 (`storage.rules:18-27`)**: cross-service grade 체크 제거 → board/plan과 동일한 `request.auth != null` 패턴. JS 레이어(`_backupHasPermission()` in `js/backup.js:24-26`)가 모든 진입점에서 grade≥3 강제하므로 admin 게이트 유지. 50MB 크기 제한 보존
+- **트레이드오프 (인지)**: 인증된 사용자 누구나 콘솔에서 `backups/...` 직접 접근 가능. 실제로는 (1) UI가 grade<3에게 백업 기능 노출 안 함 (2) `_backupHasPermission()` 가 모든 백업 함수 진입을 차단 (3) board/plan과 동일 보안 수준. 서버 강제 admin 격리 필요 시 Cloud Functions 별도 엔드포인트가 정공법
+- **배포 명령**: `firebase deploy --only storage` (다른 rule/hosting 미변경)
+- **배포 후 검증**: 관리자 로그인 → 설정 → 🗂️ 백업 시스템 → "지금 백업 실행" → 성공 토스트 → Firebase 콘솔 Storage에서 `backups/daily/{date}.json` 존재 확인
+
 #### 두 가지 버그 수정 (구현 완료, 배포 대기)
 - 보고서: `docs/two-bugs-fix-report.md` (영문, 343줄). **firebase deploy는 소유주가 수동 진행 예정** (`firebase deploy --only firestore:rules,storage,hosting`)
 - **Part 1 — 품번 generator 분류 dropdown 수정 (2 sites)**:
