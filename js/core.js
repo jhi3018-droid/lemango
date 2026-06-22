@@ -695,6 +695,13 @@ function emptySizeSpecParts() {
   return Object.fromEntries(SIZE_SPEC_PARTS.map(p => [p.key, '']))
 }
 
+// 값이 1개 이상 존재하는 측정부위만 반환 (Phase C: 보기/HTML 빈항목 제외 — item-level)
+// activeSizes 범위 내에서만 판정 → 제외된 사이즈에만 값이 있는 부위는 되살아나지 않음
+function getActiveParts(sizeSpec, activeSizes) {
+  return SIZE_SPEC_PARTS.filter(pt =>
+    (activeSizes || []).some(sz => sizeSpec && sizeSpec[sz] && String(sizeSpec[sz][pt.key] ?? '').trim() !== ''))
+}
+
 // 샘플 엑셀 예시 셀 값 (part key 기준, 미정의 부위는 '')
 const SIZE_SPEC_SAMPLE = { bust: '48', waist: '38', hip: '52', length: '68', shoulder: '37', sleeve: '58', hem: '45' }
 
@@ -704,6 +711,7 @@ window.SIZE_SPEC_PARTS = SIZE_SPEC_PARTS
 window.buildSizeSpecColumns = buildSizeSpecColumns
 window.SIZE_SPEC_PART_LABEL = SIZE_SPEC_PART_LABEL
 window.emptySizeSpecParts = emptySizeSpecParts
+window.getActiveParts = getActiveParts
 window.SIZE_SPEC_SAMPLE = SIZE_SPEC_SAMPLE
 
 // 컬럼 수 드리프트 감지 (사이즈×부위 + F)

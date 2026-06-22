@@ -3027,7 +3027,23 @@ Established the reference style that every dashboard-opened srm-modal should fol
 - **부수 문서 정정 (`js/excel.js`, cosmetic only — 기능 무관)**: stale 안내문/주석 4건을 동적 또는 일반 표현으로 교체 (플랜 샘플 가이드행 `SIZE_SPEC_PARTS.map` 동적화, "19컬럼"/"18셀"/"사이즈규격 19" → 동적 표기). 파싱/생성 로직 미변경
 - **F 단일값·매출 공식(Cafe24/사방넷) 미변경**, 마이그레이션 불필요 (가산적, 레거시 3종 데이터는 신규 4종 빈값 표시)
 - **Phase C 대기**: 빈 부위 항목 제외 (view 테이블 + 사이즈 HTML 복사) — 현재 Phase B 는 7종 전부 표시
+- **배포**: `firebase deploy --only hosting` (소유주 수동, 커밋 `d602aa8` 배포 완료)
+
+#### 사이즈 규격 확장 Phase C — 빈 측정항목 제외 (보기/HTML, 🟢) — 3단계 완료
+- 3-phase 마지막. **읽기 전용 렌더러에서만** 값 없는 측정부위(열)를 item-level 로 숨김. 수정모드는 7종 전부, 엑셀은 43컬럼 전부 유지. code-reviewer 🟢.
+- **변경 파일 2개**: `js/core.js`(+8, getActiveParts), `js/utils.js`(±30, view + HTML)
+- **공유 헬퍼** `getActiveParts(sizeSpec, activeSizes)` (`js/core.js`, window 노출): `activeSizes` 범위 내에서 1개 이상 값 있는 `SIZE_SPEC_PARTS`만 반환. trim 적용 (공백전용=빈값). **보기 테이블·HTML 복사 둘 다 동일 헬퍼 사용 → 동일 항목 숨김 보장**
+- **item-level 규칙**: 어떤 부위가 활성 사이즈 중 하나라도 값 있으면 열 유지, 전부 비면 열 숨김. 비활성/제외 사이즈에만 값 있는 부위는 부활 안 함 (activeSizes 스코핑)
+- **`buildSizeSpecView`** (`js/utils.js`): `activeSizes` → `activeParts` 계산 후 헤더/셀 모두 activeParts 로만 렌더. 행은 activeSizes 만 순회. `!activeParts.length` 가드 → "미등록"
+- **`copySizeGuideHtml`** (`js/utils.js`): activeSizes 필터(Phase A 일반화 완료) + `activeParts` 추가. PC 테이블 헤더/행 + 모바일 카드 패널 모두 activeParts loop (하드코딩 가슴/허리/엉덩이 제거). 가드 `activeSizes===0 || activeParts===0` → toast + return
+- **`buildSizeSpecEdit` 미변경** — 수정모드는 항상 7종 입력 표시 (입력 숨김 금지)
+- **엑셀 미변경** — `buildSizeSpecColumns()` 43컬럼 전부 유지 (Phase C는 excel.js 미변경, 제외 없음)
+- **degenerate(공백전용 데이터) 안전**: activeSizes 필터는 truthy, getActiveParts는 trim → 불일치 시 activeParts=[] → 추가 가드가 빈컬럼 테이블/깨진 HTML 차단. 실제 저장 경로(collectSizeSpec/엑셀 파서)는 모두 trim 하므로 정상 데이터엔 발생 불가
+- **시뮬레이션 검증**: 3종입력→3열, 가슴+총장→2열, 7종→7열, 부분(활성사이즈에 총장)→유지, 공백전용→미등록, 빈객체→미등록
+- **매출 공식·F 단일값 미변경**. 마이그레이션 불필요
 - **배포**: `firebase deploy --only hosting` (소유주 수동)
+
+**3단계 종합 결과**: 사이즈 규격 시스템 = 단일 소스(`SIZE_SPEC_PARTS`) · 7개 측정항목(가슴/허리/엉덩이/총장/어깨/소매/밑단) · 엑셀 43컬럼 풀 라운드트립 · 보기/HTML 빈항목 제외(filled-only). 신규 측정항목 추가는 `SIZE_SPEC_PARTS` 한 줄 append 로 화면·엑셀·HTML 전체 자동 반영.
 
 ---
 

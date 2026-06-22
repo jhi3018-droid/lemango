@@ -15,18 +15,21 @@ window.buildSizeSpecView = function(sizeSpec) {
     return '<div style="color:#b4b2a9;font-size:12px">사이즈 규격 미등록</div>'
   }
   const sizes = SIZE_SPEC_SIZES
-  const hasData = sizes.some(sz => sizeSpec[sz] && SIZE_SPEC_PARTS.some(pt => sizeSpec[sz][pt.key]))
-  if (!hasData) return '<div style="color:#b4b2a9;font-size:12px">사이즈 규격 미등록</div>'
+  // 값이 있는 사이즈(행)
+  const activeSizes = sizes.filter(sz => sizeSpec[sz] && SIZE_SPEC_PARTS.some(pt => sizeSpec[sz][pt.key]))
+  if (!activeSizes.length) return '<div style="color:#b4b2a9;font-size:12px">사이즈 규격 미등록</div>'
+  // 값이 있는 측정부위(열)만 표시 — Phase C item-level 제외 (보기 전용)
+  const activeParts = getActiveParts(sizeSpec, activeSizes)
+  if (!activeParts.length) return '<div style="color:#b4b2a9;font-size:12px">사이즈 규격 미등록</div>'
 
   let html = '<table class="size-spec-table">'
-  html += '<thead><tr><th>사이즈</th>' + SIZE_SPEC_PARTS.map(pt => '<th>' + pt.label + '(cm)</th>').join('') + '</tr></thead>'
+  html += '<thead><tr><th>사이즈</th>' + activeParts.map(pt => '<th>' + pt.label + '(cm)</th>').join('') + '</tr></thead>'
   html += '<tbody>'
-  sizes.forEach(sz => {
+  activeSizes.forEach(sz => {
     const spec = sizeSpec[sz] || {}
-    if (!SIZE_SPEC_PARTS.some(pt => spec[pt.key])) return
     html += '<tr>'
     html += '<td class="size-spec-label">' + sz + '</td>'
-    html += SIZE_SPEC_PARTS.map(pt => '<td>' + (esc(spec[pt.key]) || '-') + '</td>').join('')
+    html += activeParts.map(pt => '<td>' + (esc(spec[pt.key]) || '-') + '</td>').join('')
     html += '</tr>'
   })
   html += '</tbody></table>'
@@ -1382,7 +1385,10 @@ window.copySizeGuideHtml = function() {
     return s && SIZE_SPEC_PARTS.some(function(pt) { return s[pt.key] })
   })
 
-  if (activeSizes.length === 0) {
+  // 값이 있는 측정부위만 — 보기 테이블과 동일 기준 (getActiveParts, item-level)
+  const activeParts = getActiveParts(sizeSpec, activeSizes)
+
+  if (activeSizes.length === 0 || activeParts.length === 0) {
     showToast('사이즈 규격이 입력되지 않았습니다.', 'warning')
     return
   }
@@ -1468,14 +1474,12 @@ window.copySizeGuideHtml = function() {
 
   // PC 테이블
   body += '\t\t<table class="sg5-size-table" id="sg5_sizeTable">\n\t\t\t<tbody>\n'
-  body += '\t\t\t\t<tr>\n\t\t\t\t\t<td class="sg5-head">사이즈</td>\n\t\t\t\t\t<td class="sg5-head">가슴</td>\n\t\t\t\t\t<td class="sg5-head">허리</td>\n\t\t\t\t\t<td class="sg5-head">엉덩이</td>\n\t\t\t\t</tr>\n'
+  body += '\t\t\t\t<tr>\n\t\t\t\t\t<td class="sg5-head">사이즈</td>\n' + activeParts.map(function(pt) { return '\t\t\t\t\t<td class="sg5-head">' + pt.label + '</td>\n' }).join('') + '\t\t\t\t</tr>\n'
   activeSizes.forEach(function(sz) {
     const spec = sizeSpec[sz]
     body += '\t\t\t\t<tr>\n'
     body += '\t\t\t\t\t<td class="sg5-bg">' + (sizeLabels[sz] || sz) + '</td>\n'
-    body += '\t\t\t\t\t<td>' + (spec.bust || '-') + '</td>\n'
-    body += '\t\t\t\t\t<td>' + (spec.waist || '-') + '</td>\n'
-    body += '\t\t\t\t\t<td>' + (spec.hip || '-') + '</td>\n'
+    body += activeParts.map(function(pt) { return '\t\t\t\t\t<td>' + (spec[pt.key] || '-') + '</td>\n' }).join('')
     body += '\t\t\t\t</tr>\n'
   })
   body += '\t\t\t</tbody>\n\t\t</table>\n'
@@ -1497,9 +1501,7 @@ window.copySizeGuideHtml = function() {
     const spec = sizeSpec[sz]
     body += '\t\t\t\t<div class="sg5-size-content" id="sg5_panel_' + id + '">\n'
     body += '\t\t\t\t\t<div class="sg5-size-row"><span class="sg5-row-label">사이즈</span><span class="sg5-row-val">' + (sizeLabels[sz] || sz) + '</span></div>\n'
-    body += '\t\t\t\t\t<div class="sg5-size-row"><span class="sg5-row-label">가슴</span><span class="sg5-row-val">' + (spec.bust || '-') + 'cm</span></div>\n'
-    body += '\t\t\t\t\t<div class="sg5-size-row"><span class="sg5-row-label">허리</span><span class="sg5-row-val">' + (spec.waist || '-') + 'cm</span></div>\n'
-    body += '\t\t\t\t\t<div class="sg5-size-row"><span class="sg5-row-label">엉덩이</span><span class="sg5-row-val">' + (spec.hip || '-') + 'cm</span></div>\n'
+    body += activeParts.map(function(pt) { return '\t\t\t\t\t<div class="sg5-size-row"><span class="sg5-row-label">' + pt.label + '</span><span class="sg5-row-val">' + (spec[pt.key] || '-') + 'cm</span></div>\n' }).join('')
     body += '\t\t\t\t</div>\n'
   })
   body += '\t\t\t</div>\n\t\t</div>\n'
