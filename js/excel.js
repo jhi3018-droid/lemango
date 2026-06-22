@@ -479,7 +479,7 @@ function downloadExcel(type) {
   let rows, headers, sheetName
 
   if (type === 'plan') {
-    // 기획 전용 다운로드 — 라운드트립용 ~70컬럼 (사이즈규격 19 + 이미지 6+1+1 + schedule 동적)
+    // 기획 전용 다운로드 — 라운드트립용 (사이즈규격 동적[SIZE_SPEC_PARTS×사이즈+F] + 이미지 6+1+1 + schedule 동적)
     _downloadPlanFull(data)
     return
   } else if (type === 'stock') {
@@ -867,7 +867,7 @@ function _downloadProductSample() {
 }
 
 // ===== 신규기획 다운로드/샘플 =====
-// 라운드트립용 컬럼 정의 — 사이즈규격 19 + 이미지 6+1+1 + 기획전용(year/season/gender/memo) + schedule 동적
+// 라운드트립용 컬럼 정의 — 사이즈규격 동적[SIZE_SPEC_PARTS×사이즈+F] + 이미지 6+1+1 + 기획전용(year/season/gender/memo) + schedule 동적
 function _planFullColumns() {
   const phases = (typeof getPlanPhases === 'function') ? getPlanPhases() : []
   const cols = [
@@ -1060,7 +1060,7 @@ function _downloadPlanSample() {
     ['소재', '소재 구성', '', 'Shell: P80% SP20%'],
     ['디자이너코멘트', '디자이너 메모', '', '플라워 모티프 디테일'],
     ['세탁방법', '세탁 안내', '', '손세탁'],
-    ['XS~XXL × 가슴/허리/엉덩이 (18셀)', '사이즈별 규격 (cm, 숫자만)', '', '48'],
+    ['XS~XXL × ' + SIZE_SPEC_PARTS.map(p => p.excel).join('/') + ' (' + (SIZE_SPEC_SIZES.length * SIZE_SPEC_PARTS.length) + '셀)', '사이즈별 규격 (cm, 숫자만)', '', '48'],
     ['F', '프리사이즈 단일값 (cm, 숫자만)', '', ''],
     ['모델착용사이즈', '모델 착용 사이즈', '', 'S'],
     ['제조년월', '제조 년월', '', '2025년 12월'],
@@ -1180,7 +1180,7 @@ function _parseProductUpload(raw) {
   const dataStart = isNew ? 1 : 2
   if (COL.code == null) { showToast('품번 컬럼을 찾을 수 없습니다.', 'error'); return null }
 
-  // 신규양식: 헤더에서 쇼핑몰코드/등록일/최종입고일 + 사이즈 규격 19컬럼 동적 인덱스 탐색
+  // 신규양식: 헤더에서 쇼핑몰코드/등록일/최종입고일 + 사이즈 규격 컬럼(SIZE_SPEC_PARTS×사이즈 + F) 동적 인덱스 탐색
   let mallColMap = {}, registDateCol = null, lastInDateCol = null
   let sizeSpecColMap = {} // { 'XS_bust': idx, ..., 'F': idx } — 부위 단일 소스: SIZE_SPEC_PARTS (core.js)
   if (isNew) {

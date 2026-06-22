@@ -3015,7 +3015,19 @@ Established the reference style that every dashboard-opened srm-modal should fol
 - `node -c` 3파일 통과, orphan(`SIZE_SPEC_SIZES_UP`/`_SPEC_PART_LABEL`/`_SIZES_FOR_MERGE`/`_SIZE_SPEC_SIZES_DIFF`) 0건
 
 **마이그레이션 불필요** (순수 가산적, 레거시 데이터 안전). 레거시 dead code `SPEC_ROWS`/`ensureSizeSpec`(core.js)는 호출부 0 — 범위 밖, 미변경
-**배포**: JS 단일 파일 변경 (규칙 변경 없음) → `firebase deploy --only hosting` (소유주 수동)
+**배포**: JS 단일 파일 변경 (규칙 변경 없음) → `firebase deploy --only hosting` (소유주 수동, 커밋 `fc04ef1` 배포 완료)
+
+#### 사이즈 규격 확장 Phase B — 측정부위 4종 추가 (🟢)
+- Phase A 단일 소스의 성과 검증: **부위 추가 = `SIZE_SPEC_PARTS` 에 4줄 append 만으로 화면·엑셀 전체 자동 반영.** code-reviewer 🟢.
+- **추가 부위**: 총장(length) / 어깨(shoulder) / 소매(sleeve) / 밑단(hem) — 기존 가슴/허리/엉덩이 뒤. `SIZE_SPEC_PARTS` 3 → 7
+- **라벨 스타일**: `excel`/`label` 모두 plain (`(cm)` 없음 — 기존 3종과 동일, UI 테이블이 `pt.label + '(cm)'` 로 자체 부착)
+- **컬럼 수**: `buildSizeSpecColumns()` 19 → **43** (6 사이즈 × 7 부위 + F). console.assert 자동 검증 통과
+- **기능 변경 파일 = `js/core.js` 단 1개** (Phase A 페이오프 확인): `SIZE_SPEC_PARTS` 4줄 + `SIZE_SPEC_SAMPLE` 4키(68/37/58/45) 추가
+- **자동 반영 확인**: ALL_DOWNLOAD/default-basic/default-edit/_planFullColumns/상품샘플 (buildSizeSpecColumns 생성), 상품·기획 _readSizeSpec/diff/merge (SIZE_SPEC_PARTS 루프), _getProductValue/_getPlanValue (lastIndexOf 분해, part 무관) — **수동 편집 0건**
+- **부수 문서 정정 (`js/excel.js`, cosmetic only — 기능 무관)**: stale 안내문/주석 4건을 동적 또는 일반 표현으로 교체 (플랜 샘플 가이드행 `SIZE_SPEC_PARTS.map` 동적화, "19컬럼"/"18셀"/"사이즈규격 19" → 동적 표기). 파싱/생성 로직 미변경
+- **F 단일값·매출 공식(Cafe24/사방넷) 미변경**, 마이그레이션 불필요 (가산적, 레거시 3종 데이터는 신규 4종 빈값 표시)
+- **Phase C 대기**: 빈 부위 항목 제외 (view 테이블 + 사이즈 HTML 복사) — 현재 Phase B 는 7종 전부 표시
+- **배포**: `firebase deploy --only hosting` (소유주 수동)
 
 ---
 

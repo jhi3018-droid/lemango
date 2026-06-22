@@ -668,9 +668,13 @@ const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', 'F']
 // 측정 부위(parts)를 추가/변경하려면 SIZE_SPEC_PARTS 한 곳만 수정하면 화면/엑셀이 자동 반영된다.
 const SIZE_SPEC_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL']   // utils.js 에서 이관
 const SIZE_SPEC_PARTS = [
-  { key: 'bust',  label: '가슴',   excel: '가슴' },
-  { key: 'waist', label: '허리',   excel: '허리' },
-  { key: 'hip',   label: '엉덩이', excel: '엉덩이' },
+  { key: 'bust',     label: '가슴',   excel: '가슴' },
+  { key: 'waist',    label: '허리',   excel: '허리' },
+  { key: 'hip',      label: '엉덩이', excel: '엉덩이' },
+  { key: 'length',   label: '총장',   excel: '총장' },   // Phase B 추가
+  { key: 'shoulder', label: '어깨',   excel: '어깨' },   // Phase B 추가
+  { key: 'sleeve',   label: '소매',   excel: '소매' },   // Phase B 추가
+  { key: 'hem',      label: '밑단',   excel: '밑단' },   // Phase B 추가
 ]
 
 // 엑셀 사이즈규격 컬럼 생성기 — 사이즈규격 컬럼은 반드시 이 함수로만 생성한다 (triple-list desync 방지)
@@ -692,7 +696,7 @@ function emptySizeSpecParts() {
 }
 
 // 샘플 엑셀 예시 셀 값 (part key 기준, 미정의 부위는 '')
-const SIZE_SPEC_SAMPLE = { bust: '48', waist: '38', hip: '52' }
+const SIZE_SPEC_SAMPLE = { bust: '48', waist: '38', hip: '52', length: '68', shoulder: '37', sleeve: '58', hem: '45' }
 
 // 방어적 window 미러
 window.SIZE_SPEC_SIZES = SIZE_SPEC_SIZES
