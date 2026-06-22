@@ -662,6 +662,52 @@ window._onUsersChanged = function() {
 const PLACEHOLDER_IMG = 'assets/logo-placeholder.png'
 window.PLACEHOLDER_IMG = PLACEHOLDER_IMG
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', 'F']
+
+// === 사이즈 규격 — 단일 소스 (앱 전역) ===
+// 데이터 구조: { XS:{bust,waist,hip}, S:{...}, ..., XXL:{...}, F:{bust} }
+// 측정 부위(parts)를 추가/변경하려면 SIZE_SPEC_PARTS 한 곳만 수정하면 화면/엑셀이 자동 반영된다.
+const SIZE_SPEC_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL']   // utils.js 에서 이관
+const SIZE_SPEC_PARTS = [
+  { key: 'bust',  label: '가슴',   excel: '가슴' },
+  { key: 'waist', label: '허리',   excel: '허리' },
+  { key: 'hip',   label: '엉덩이', excel: '엉덩이' },
+]
+
+// 엑셀 사이즈규격 컬럼 생성기 — 사이즈규격 컬럼은 반드시 이 함수로만 생성한다 (triple-list desync 방지)
+function buildSizeSpecColumns() {
+  const cols = []
+  SIZE_SPEC_SIZES.forEach(sz =>
+    SIZE_SPEC_PARTS.forEach(pt =>
+      cols.push({ key: `sizeSpec_${sz}_${pt.key}`, label: `${sz} ${pt.excel}` })))
+  cols.push({ key: 'sizeSpec_F', label: 'F' })   // F 는 단일값 유지 (decision)
+  return cols
+}
+
+// 업로드 헤더 → part key 매칭용 라벨맵 (SIZE_SPEC_PARTS 에서 파생)
+const SIZE_SPEC_PART_LABEL = Object.fromEntries(SIZE_SPEC_PARTS.map(p => [p.key, p.excel]))
+
+// 빈 part 객체 생성 ({bust:'',waist:'',hip:''} 와 동등, 부위 추가 시 자동 확장)
+function emptySizeSpecParts() {
+  return Object.fromEntries(SIZE_SPEC_PARTS.map(p => [p.key, '']))
+}
+
+// 샘플 엑셀 예시 셀 값 (part key 기준, 미정의 부위는 '')
+const SIZE_SPEC_SAMPLE = { bust: '48', waist: '38', hip: '52' }
+
+// 방어적 window 미러
+window.SIZE_SPEC_SIZES = SIZE_SPEC_SIZES
+window.SIZE_SPEC_PARTS = SIZE_SPEC_PARTS
+window.buildSizeSpecColumns = buildSizeSpecColumns
+window.SIZE_SPEC_PART_LABEL = SIZE_SPEC_PART_LABEL
+window.emptySizeSpecParts = emptySizeSpecParts
+window.SIZE_SPEC_SAMPLE = SIZE_SPEC_SAMPLE
+
+// 컬럼 수 드리프트 감지 (사이즈×부위 + F)
+console.assert(
+  buildSizeSpecColumns().length === SIZE_SPEC_SIZES.length * SIZE_SPEC_PARTS.length + 1,
+  'size-spec column count drift'
+)
+
 const SPEC_ROWS = [
   { key: 'bust', label: '가슴' },
   { key: 'waist', label: '허리' },

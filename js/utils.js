@@ -5,9 +5,9 @@
 /* HTML 이스케이프 (전역 단일 소스) */
 function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;') }
 
-// ===== 사이즈 규격 헬퍼 (XS~XXL × 가슴/허리/엉덩이) =====
-// 데이터 구조: { XS:{bust,waist,hip}, S:{...}, M:{...}, L:{...}, XL:{...}, XXL:{...} }
-const SIZE_SPEC_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
+// ===== 사이즈 규격 헬퍼 (XS~XXL × SIZE_SPEC_PARTS) =====
+// 데이터 구조: { XS:{<part>:value}, ..., XXL:{...} }
+// 사이즈/부위 단일 소스는 core.js 의 SIZE_SPEC_SIZES / SIZE_SPEC_PARTS
 
 // 보기모드 — 값이 있는 사이즈만 표시. 데이터 없으면 안내 문구.
 window.buildSizeSpecView = function(sizeSpec) {
@@ -15,20 +15,18 @@ window.buildSizeSpecView = function(sizeSpec) {
     return '<div style="color:#b4b2a9;font-size:12px">사이즈 규격 미등록</div>'
   }
   const sizes = SIZE_SPEC_SIZES
-  const hasData = sizes.some(sz => sizeSpec[sz] && (sizeSpec[sz].bust || sizeSpec[sz].waist || sizeSpec[sz].hip))
+  const hasData = sizes.some(sz => sizeSpec[sz] && SIZE_SPEC_PARTS.some(pt => sizeSpec[sz][pt.key]))
   if (!hasData) return '<div style="color:#b4b2a9;font-size:12px">사이즈 규격 미등록</div>'
 
   let html = '<table class="size-spec-table">'
-  html += '<thead><tr><th>사이즈</th><th>가슴(cm)</th><th>허리(cm)</th><th>엉덩이(cm)</th></tr></thead>'
+  html += '<thead><tr><th>사이즈</th>' + SIZE_SPEC_PARTS.map(pt => '<th>' + pt.label + '(cm)</th>').join('') + '</tr></thead>'
   html += '<tbody>'
   sizes.forEach(sz => {
     const spec = sizeSpec[sz] || {}
-    if (!spec.bust && !spec.waist && !spec.hip) return
+    if (!SIZE_SPEC_PARTS.some(pt => spec[pt.key])) return
     html += '<tr>'
     html += '<td class="size-spec-label">' + sz + '</td>'
-    html += '<td>' + (esc(spec.bust) || '-') + '</td>'
-    html += '<td>' + (esc(spec.waist) || '-') + '</td>'
-    html += '<td>' + (esc(spec.hip) || '-') + '</td>'
+    html += SIZE_SPEC_PARTS.map(pt => '<td>' + (esc(spec[pt.key]) || '-') + '</td>').join('')
     html += '</tr>'
   })
   html += '</tbody></table>'
@@ -40,15 +38,15 @@ window.buildSizeSpecEdit = function(sizeSpec) {
   const safe = (sizeSpec && typeof sizeSpec === 'object' && !Array.isArray(sizeSpec)) ? sizeSpec : {}
   const sizes = SIZE_SPEC_SIZES
   let html = '<table class="size-spec-table size-spec-edit">'
-  html += '<thead><tr><th>사이즈</th><th>가슴(cm)</th><th>허리(cm)</th><th>엉덩이(cm)</th></tr></thead>'
+  html += '<thead><tr><th>사이즈</th>' + SIZE_SPEC_PARTS.map(pt => '<th>' + pt.label + '(cm)</th>').join('') + '</tr></thead>'
   html += '<tbody>'
   sizes.forEach(sz => {
     const spec = safe[sz] || {}
     html += '<tr>'
     html += '<td class="size-spec-label">' + sz + '</td>'
-    html += '<td><input type="number" data-size="' + sz + '" data-part="bust" value="' + esc(spec.bust || '') + '" placeholder="-" class="size-spec-input"></td>'
-    html += '<td><input type="number" data-size="' + sz + '" data-part="waist" value="' + esc(spec.waist || '') + '" placeholder="-" class="size-spec-input"></td>'
-    html += '<td><input type="number" data-size="' + sz + '" data-part="hip" value="' + esc(spec.hip || '') + '" placeholder="-" class="size-spec-input"></td>'
+    html += SIZE_SPEC_PARTS.map(pt =>
+      '<td><input type="number" data-size="' + sz + '" data-part="' + pt.key + '" value="' + esc(spec[pt.key] || '') + '" placeholder="-" class="size-spec-input"></td>'
+    ).join('')
     html += '</tr>'
   })
   html += '</tbody></table>'
@@ -62,13 +60,15 @@ window.collectSizeSpec = function(root) {
   const sizes = SIZE_SPEC_SIZES
   const spec = {}
   sizes.forEach(sz => {
-    const bust  = scope.querySelector('[data-size="' + sz + '"][data-part="bust"]')
-    const waist = scope.querySelector('[data-size="' + sz + '"][data-part="waist"]')
-    const hip   = scope.querySelector('[data-size="' + sz + '"][data-part="hip"]')
-    const b = bust  ? String(bust.value  || '').trim() : ''
-    const w = waist ? String(waist.value || '').trim() : ''
-    const h = hip   ? String(hip.value   || '').trim() : ''
-    if (b || w || h) spec[sz] = { bust: b, waist: w, hip: h }
+    const vals = {}
+    let hasAny = false
+    SIZE_SPEC_PARTS.forEach(pt => {
+      const el = scope.querySelector('[data-size="' + sz + '"][data-part="' + pt.key + '"]')
+      const v = el ? String(el.value || '').trim() : ''
+      vals[pt.key] = v
+      if (v) hasAny = true
+    })
+    if (hasAny) spec[sz] = vals
   })
   return spec
 }
@@ -1379,7 +1379,7 @@ window.copySizeGuideHtml = function() {
   const sizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
   const activeSizes = sizes.filter(function(sz) {
     const s = sizeSpec[sz]
-    return s && (s.bust || s.waist || s.hip)
+    return s && SIZE_SPEC_PARTS.some(function(pt) { return s[pt.key] })
   })
 
   if (activeSizes.length === 0) {

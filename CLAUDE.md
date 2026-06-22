@@ -2978,6 +2978,47 @@ Established the reference style that every dashboard-opened srm-modal should fol
 
 ---
 
+### 2026-06-22
+
+#### 사이즈 규격 확장 Phase A — 측정부위 단일 소스 리팩터 (동작 동일, 🟢)
+- 3-phase 계획(A: 리팩터 → B: 부위 추가 → C: 빈항목 제외)의 1단계. **측정 부위(가슴/허리/엉덩이) 추가 없음 — 순수 리팩터, 동작 동일.** code-reviewer 🟢 통과.
+- **배경**: 측정 부위가 ~13곳에 하드코딩, 단일 소스 없음 → 부위 추가 시 triple-list desync 위험 (2026-05-08 false-PASS 교훈)
+- **변경 파일 3개**: `js/core.js`(+46), `js/utils.js`(±42), `js/excel.js`(+132/-129 순감)
+
+**Step 1 — 단일 소스 (`js/core.js`, `const SIZES` 직후)**
+- `SIZE_SPEC_SIZES = ['XS','S','M','L','XL','XXL']` (utils.js 에서 이관 — 중복 `const` 방지 위해 utils.js 로컬 제거 필수)
+- `SIZE_SPEC_PARTS = [{key:'bust',label:'가슴',excel:'가슴'},{waist},{hip}]` — **부위 추가는 여기 한 줄만**
+- `buildSizeSpecColumns()` → `[{key:'sizeSpec_<size>_<part>',label:'<size> <부위>'},...,{key:'sizeSpec_F',label:'F'}]` (6×3+F=19). 엑셀 사이즈규격 컬럼은 **반드시 이 함수로만 생성** (desync 구조적 차단)
+- `SIZE_SPEC_PART_LABEL = Object.fromEntries(...)` 파생 (업로드 헤더→key 매칭)
+- `emptySizeSpecParts()` → `{bust:'',waist:'',hip:''}` 동등 (병합 초기화용, 부위 추가 시 자동 확장)
+- `SIZE_SPEC_SAMPLE = {bust:'48',waist:'38',hip:'52'}` (샘플 엑셀 예시값)
+- window 미러 + `console.assert(buildSizeSpecColumns().length === sizes×parts + 1)` 드리프트 감지
+
+**Step 2 — `js/utils.js` 소비자**
+- `buildSizeSpecView` / `buildSizeSpecEdit` / `collectSizeSpec` 3개 모두 `SIZE_SPEC_PARTS` 루프로 전환 (3파트 출력·객체형태 동일)
+- 로컬 `SIZE_SPEC_SIZES` 삭제 → core.js 글로벌 사용
+- `copySizeGuideHtml` activeSizes 필터만 `s.bust||s.waist||s.hip` → `SIZE_SPEC_PARTS.some(pt=>s[pt.key])` 전환. **HTML body 행(PC표/모바일카드)은 미변경 — Phase C 영역**
+
+**Step 3 — `js/excel.js` 소비자**
+- 사이즈 컬럼 리스트 5곳 전부 `buildSizeSpecColumns()` 생성으로 전환 (하드코딩 금지):
+  `ALL_DOWNLOAD_COLUMNS`, `DEFAULT_FORMATS` default-basic/default-edit, `_planFullColumns()`, 상품 샘플 헤더/샘플
+- 로컬 `SIZE_SPEC_SIZES_UP`(×2) + 로컬 `SIZE_SPEC_PART_LABEL` 리터럴(×2) 삭제 → 글로벌 참조
+- `_readSizeSpec` **2벌 분리 유지(결정)** — 상품판(DELETE_TOKEN 미적용) / 기획판(DELETE_TOKEN 적용) 각각 독립적으로 `SIZE_SPEC_PARTS` 루프화. 병합 안 함 (상품 업로드 매출 중요 경로 보호)
+- `_diffProduct`/기획 diff sizeSpec 루프, 상품/기획 apply-merge 루프 모두 `SIZE_SPEC_SIZES`/`SIZE_SPEC_PARTS`/`emptySizeSpecParts()` 전환
+- **F 단일값 특수처리 전부 유지** — 루프 제외, 명시적 리터럴(`{bust:fv,waist:'',hip:''}`), `f.bust||f.waist||f.hip` fallback
+
+**의도적 비동일 동작 1건 (결정)**: `default-basic` 기본양식 다운로드에 사이즈규격 19컬럼 추가됨 — 사용자 결정. 이 한 포맷만 기존 대비 컬럼 폭 증가 (나머지 default-edit/ALL_DOWNLOAD/plan 은 byte-identical)
+
+**Anti-false-PASS 검증**:
+- grep gate (`'bust'|"waist"|'hip'`) 잔여 매치 = **레거시 top-level 스칼라 필드만** (`가슴(cm)/허리(cm)/엉덩이(cm)` 컬럼 → `bust/waist/hip` 단일 필드, sizeSpec 그리드와 별개. ALL_DOWNLOAD/HEADER_TO_KEY/NUMERIC_FIELDS/_s()/SCALAR_MAP/_DIFF_FIELDS). utils.js 0건. sizeSpec 그리드 부위 리터럴 0건
+- 컬럼 수: buildSizeSpecColumns()=19, 4개 포맷 모두 동일 생성기 → desync 불가
+- `node -c` 3파일 통과, orphan(`SIZE_SPEC_SIZES_UP`/`_SPEC_PART_LABEL`/`_SIZES_FOR_MERGE`/`_SIZE_SPEC_SIZES_DIFF`) 0건
+
+**마이그레이션 불필요** (순수 가산적, 레거시 데이터 안전). 레거시 dead code `SPEC_ROWS`/`ensureSizeSpec`(core.js)는 호출부 0 — 범위 밖, 미변경
+**배포**: JS 단일 파일 변경 (규칙 변경 없음) → `firebase deploy --only hosting` (소유주 수동)
+
+---
+
 ## 다음 작업 후보 (미구현)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 인쇄/PDF 출력
