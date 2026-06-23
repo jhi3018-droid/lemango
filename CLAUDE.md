@@ -3145,6 +3145,29 @@ Established the reference style that every dashboard-opened srm-modal should fol
    - cross-tab 품번 race(메모리 Set 비공유) — 보류
    - 버그시절 중복 ...00 기획 품번 — 데이터 정리 가능성
 
+#### 기본 정렬(최신 등록순) + 재고/매출 브랜드 필터 (🟢)
+
+**PART 1 — 기본 정렬을 등록일(registDate) 최신순으로 통일**
+- 증상: 상품조회는 (우연히) 최신순처럼 보였으나 재고관리(`no` asc)·매출현황(`totalSales` desc)은 신규 상품이 하단으로 가라앉음. 상품조회도 배열 순서 의존이라 모달 등록 상품(.push로 맨 끝)은 하단행
+- `registDate`는 633개 전부 보유, `createdAt`은 CSV 상품에 없음(0/633) → 정렬 기준은 **registDate desc**
+- **변경**:
+  - `js/core.js` State 기본 sort: product/stock/sales 모두 `{key:'registDate', dir:'desc'}`
+  - **렌더 시 정렬 적용** (핵심): `renderProductTable/StockTable/SalesTable`에서 `applyColFilters` 직전 `const _sorted = State.X.sort.key ? sortData(State.X.filtered, ...) : State.X.filtered`. → `State.X.sort`가 순서의 단일 권위. 첫 렌더부터 기본정렬 보장 + `refreshAllProductViews`/실시간 동기화가 `.filtered`를 재구축해도 정렬 유지(편집 후에도 안 풀림) + 정렬 아이콘과 데이터 일치
+  - `js/utils.js` `applyTableCustom`: **sort localStorage 복원 제거** — 구버전 저장된 정렬(no/totalSales)이 새 기본정렬을 덮어쓰지 않도록. 컬럼 너비/필터/페이지크기는 계속 복원. (정렬은 세션 내 컬럼 클릭으로만 유지, cross-reload 영속화는 의도적 제거)
+  - `resetProduct/resetStock/resetSales`: 초기화 시 sort를 registDate desc로 복원
+- 누락 registDate는 `sortData`의 `null/undefined → return 1`로 항상 맨 뒤(asc/desc 공통). `0`/빈값 numeric 정렬 보호 위해 null 체크는 그대로 유지
+- 부수효과(무해): plan 탭도 applyTableCustom 공유 → cross-reload 정렬 영속화만 상실(renderPlanTable은 `.filtered` 직접 사용, 세션 내 정렬 정상). 정렬 "해제"(3번째 클릭) 상태는 마지막 순서 유지(기존 토글 동작)
+
+**PART 2 — 재고관리·매출현황 브랜드 필터 추가 (상품조회 pBrand 미러)**
+- `index.html`: 재고 검색바에 `sBrand`, 매출 검색바에 `slBrand` `<select>` 추가
+- `js/core.js` `populateAllSelects`: `sBrand`/`slBrand`를 `s.brands`로 채움
+- `js/stock.js` `searchStock` / `js/sales.js` `searchSales`: `if (brand!=='all' && p.brand!==brand) return false` (products.js:58과 동일). reset + saveFilterDefault에 브랜드 포함(탭 재진입 시 유지)
+- 브랜드 필터가 `.filtered` 좁힘 → 렌더가 정렬 → 컬럼필터 적용 (정렬·컬럼필터와 자동 통합)
+
+- **NO. 컬럼 미변경**(이미 표시순번으로 정상), 매출 공식 미변경, code-reviewer 🟢, 6개 파일 `node -c` 통과
+- **참고**: 조사에서 나온 "정렬 시 필터 풀림(Issue 3)"은 실제 버그 아님 — 정렬은 `.filtered` in-place + 컬럼필터 렌더 재적용으로 유지됨. 검색바 필터가 `.filtered`에만 존재해 `refreshAllProductViews`/동기화로 `.filtered` 재구축 시 사라지는 것이 진짜 원인 → RC2 Step 2b와 함께 별도 처리 예정
+- **배포**: `firebase deploy --only hosting` (소유주 수동, 규칙 변경 없음)
+
 ---
 
 ## 다음 작업 후보 (미구현)

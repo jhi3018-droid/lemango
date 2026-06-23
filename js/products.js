@@ -110,6 +110,7 @@ function resetProduct() {
   State.product.columnFilters = {}
   State.product.activeColumns = null
   State.product.inactiveColumns = []
+  State.product.sort = { key: 'registDate', dir: 'desc' }
   State.product.filtered = [...State.allProducts]
   renderProductTable()
 }
@@ -182,7 +183,12 @@ function renderProductTable() {
   renderColInactiveArea('pInactiveArea','pInactiveTags','product',PRODUCT_COLUMNS,PRODUCT_FIXED_KEYS,'renderProductTable')
 
   // Soft-deleted always excluded at render — defense in depth (search also filters)
-  const data = applyColFilters(State.product.filtered.filter(p => !p.deleted), State.product.columnFilters)
+  // 정렬은 항상 State.product.sort 기준으로 렌더 시 재적용 → 기본정렬(등록일 desc)이 첫 렌더부터 보장되고
+  // refreshAllProductViews/실시간 동기화로 .filtered 재구축돼도 정렬 유지
+  const _sorted = State.product.sort.key
+    ? sortData(State.product.filtered, State.product.sort.key, State.product.sort.dir)
+    : State.product.filtered
+  const data = applyColFilters(_sorted.filter(p => !p.deleted), State.product.columnFilters)
   const page = State.product.page || 1
   const ps = getPageSize('product')
   const pageData = ps === 0 ? data : data.slice((page - 1) * ps, page * ps)

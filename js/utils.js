@@ -145,7 +145,8 @@ function applyTableCustom(tabKey) {
   if (data.colWidths && typeof data.colWidths === 'object') s.colWidths = { ...data.colWidths }
   else if (!s.colWidths) s.colWidths = {}
   if (typeof data.pageSize !== 'undefined' && data.pageSize !== null) s.pageSize = data.pageSize
-  if (data.sort && data.sort.key != null) s.sort = { key: data.sort.key, dir: data.sort.dir || 'asc' }
+  // 정렬은 localStorage 복원하지 않음 — 기본정렬(등록일 desc)이 항상 권위. 구버전 저장된 정렬(no/totalSales)이
+  // 새 기본정렬을 덮어쓰지 않도록. 세션 내 컬럼 클릭 정렬은 State.X.sort 로 유지(렌더가 그 기준으로 정렬).
   if (data.columnFilters) s.columnFilters = _deserializeColFilters(data.columnFilters)
   if (tabKey === 'sales') {
     if (Array.isArray(data.activePlatforms)) s.activePlatforms = data.activePlatforms.slice()

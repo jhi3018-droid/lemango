@@ -83,6 +83,7 @@ function searchSales() {
   const dateFrom = document.getElementById('slDateFrom').value
   const dateTo   = document.getElementById('slDateTo').value
   const platform = document.getElementById('slPlatform').value
+  const brand    = document.getElementById('slBrand').value
 
   let result = State.allProducts.filter(p => {
     if (keywords.length) {
@@ -92,6 +93,7 @@ function searchSales() {
     if (dateFrom || dateTo) {
       if (!isInRange(p.registDate, dateFrom, dateTo)) return false
     }
+    if (brand !== 'all' && p.brand !== brand) return false
     if (platform !== 'all' && !(p.sales?.[platform] > 0)) return false
     return true
   })
@@ -99,7 +101,7 @@ function searchSales() {
   State.sales.filtered = sortData(result, State.sales.sort.key, State.sales.sort.dir)
   saveFilterDefault('sales', {
     slKeyword: document.getElementById('slKeyword').value,
-    slDateFrom: dateFrom, slDateTo: dateTo, slPlatform: platform
+    slDateFrom: dateFrom, slDateTo: dateTo, slPlatform: platform, slBrand: brand
   })
   renderSalesTable()
 }
@@ -107,6 +109,7 @@ function searchSales() {
 function resetSales() {
   ;['slKeyword','slDateFrom','slDateTo'].forEach(id => document.getElementById(id).value = '')
   document.getElementById('slPlatform').value = 'all'
+  document.getElementById('slBrand').value = 'all'
   document.getElementById('slPageSize').value = '10'
   State.sales.page = 1
   State.sales.pageSize = 10
@@ -114,7 +117,7 @@ function resetSales() {
   State.sales.inactivePlatforms = []
   State.sales.columnFilters = {}
   State.sales.filtered = [...State.allProducts]
-  State.sales.sort = { key: 'totalSales', dir: 'desc' }
+  State.sales.sort = { key: 'registDate', dir: 'desc' }
   renderSalesTable()
 }
 
@@ -207,7 +210,11 @@ function renderSalesTable() {
   renderInactiveArea()
 
   // Soft-deleted excluded from 매출현황 list view (per policy — past revenue still counts in dashboard totals)
-  const data = applyColFilters(State.sales.filtered.filter(p => !p.deleted), State.sales.columnFilters)
+  // 정렬은 렌더 시 State.sales.sort 기준 재적용 → 기본정렬(등록일 desc) 첫 렌더 보장 + .filtered 재구축에도 유지
+  const _sorted = State.sales.sort.key
+    ? sortData(State.sales.filtered, State.sales.sort.key, State.sales.sort.dir)
+    : State.sales.filtered
+  const data = applyColFilters(_sorted.filter(p => !p.deleted), State.sales.columnFilters)
   const page = State.sales.page || 1
   const ps   = getPageSize('sales')
   const pageData = ps > 0 ? data.slice((page - 1) * ps, page * ps) : data

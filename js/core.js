@@ -1154,6 +1154,8 @@ function populateAllSelects() {
   const s = _settings
   // 상품조회 검색
   populateSelect('pBrand',       s.brands,         true)
+  populateSelect('sBrand',       s.brands,         true)  // 재고관리 브랜드 필터
+  populateSelect('slBrand',      s.brands,         true)  // 매출현황 브랜드 필터
   // pType은 품번 코드 체계(ON/BK/MO...) 기반 — pcType과 동일 소스로 동적 채움
   const _pTypeItems = [['ON','원피스'],['MO','모노키니'],['BK','비키니'],['BR','브리프'],['JM','재머'],['RG','래시가드'],['AL','애슬레저'],['GM','의류'],['SC','수영모'],['BG','가방'],['ET','기타']]
   populateSelect('pType',        _pTypeItems,       true)
@@ -1210,9 +1212,9 @@ function populateAllSelects() {
 const State = {
   allProducts: [],
   planItems:   [],
-  product: { filtered: [], sort: { key: null, dir: null }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {} },
-  stock:   { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {} },
-  sales:   { filtered: [], sort: { key: 'totalSales', dir: 'desc' }, page: 1, pageSize: 10, activePlatforms: [], inactivePlatforms: [], columnFilters: {}, colWidths: {} },
+  product: { filtered: [], sort: { key: 'registDate', dir: 'desc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {} },
+  stock:   { filtered: [], sort: { key: 'registDate', dir: 'desc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {} },
+  sales:   { filtered: [], sort: { key: 'registDate', dir: 'desc' }, page: 1, pageSize: 10, activePlatforms: [], inactivePlatforms: [], columnFilters: {}, colWidths: {} },
   plan:    { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {} },
   event:   { filtered: [], sort: { key: 'startDate', dir: 'asc' }, page: 1 },
   work:    { filtered: [], sort: { key: 'startDate', dir: 'desc' }, page: 1 },

@@ -6,6 +6,7 @@ function searchStock() {
   const dateFrom = document.getElementById('sDateFrom').value
   const dateTo   = document.getElementById('sDateTo').value
   const status   = document.getElementById('sStockStatus').value
+  const brand    = document.getElementById('sBrand').value
 
   let result = State.allProducts.filter(p => {
     if (keywords.length) {
@@ -15,6 +16,7 @@ function searchStock() {
     if (dateFrom || dateTo) {
       if (!isInRange(p.registDate, dateFrom, dateTo)) return false
     }
+    if (brand !== 'all' && p.brand !== brand) return false
     if (status === 'instock' && getTotalStock(p) === 0) return false
     if (status === 'soldout' && getTotalStock(p)  >  0) return false
     return true
@@ -23,7 +25,7 @@ function searchStock() {
   State.stock.filtered = sortData(result, State.stock.sort.key, State.stock.sort.dir)
   saveFilterDefault('stock', {
     sKeyword: document.getElementById('sKeyword').value,
-    sDateFrom: dateFrom, sDateTo: dateTo, sStockStatus: status
+    sDateFrom: dateFrom, sDateTo: dateTo, sStockStatus: status, sBrand: brand
   })
   renderStockTable()
 }
@@ -485,12 +487,14 @@ function changeStockPageSize(val) {
 function resetStock() {
   ['sKeyword','sDateFrom','sDateTo'].forEach(id => document.getElementById(id).value = '')
   document.getElementById('sStockStatus').value = 'all'
+  document.getElementById('sBrand').value = 'all'
   document.getElementById('sPageSize').value = '10'
   State.stock.pageSize = 10
   State.stock.page = 1
   State.stock.columnFilters = {}
   State.stock.activeColumns = null
   State.stock.inactiveColumns = []
+  State.stock.sort = { key: 'registDate', dir: 'desc' }
   State.stock.filtered = [...State.allProducts]
   renderStockTable()
 }
@@ -524,7 +528,11 @@ function renderStockTable() {
   renderColInactiveArea('sInactiveArea','sInactiveTags','stock',STOCK_COLUMNS,STOCK_FIXED_KEYS,'renderStockTable')
 
   // Soft-deleted always excluded at render
-  const data = applyColFilters(State.stock.filtered.filter(p => !p.deleted), State.stock.columnFilters)
+  // 정렬은 렌더 시 State.stock.sort 기준 재적용 → 기본정렬(등록일 desc) 첫 렌더 보장 + .filtered 재구축에도 유지
+  const _sorted = State.stock.sort.key
+    ? sortData(State.stock.filtered, State.stock.sort.key, State.stock.sort.dir)
+    : State.stock.filtered
+  const data = applyColFilters(_sorted.filter(p => !p.deleted), State.stock.columnFilters)
   const page = State.stock.page || 1
   const ps = getPageSize('stock')
   const pageData = ps === 0 ? data : data.slice((page - 1) * ps, page * ps)
