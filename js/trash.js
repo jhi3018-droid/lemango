@@ -172,10 +172,8 @@ async function restoreProduct(code) {
   if (typeof logActivity === 'function') {
     logActivity('update', '상품조회', `상품복원: ${code}${p.nameKr ? ' (' + p.nameKr + ')' : ''}`)
   }
-  if (typeof renderProductTable === 'function') renderProductTable()
-  if (typeof renderStockTable === 'function') renderStockTable()
-  if (typeof renderSalesTable === 'function') renderSalesTable()
-  if (typeof renderDashboard === 'function') renderDashboard()
+  // 3개 뷰 filtered 재구축 + 렌더 (복원 상품이 상품조회/재고관리/매출현황에 즉시 반영)
+  if (typeof refreshAllProductViews === 'function') refreshAllProductViews()
   renderTrashTab()
   showToast(`"${code}" 복원되었습니다.`, 'success')
 }
@@ -253,10 +251,8 @@ async function _trashPermanentDeleteExec(code) {
   if (typeof logActivity === 'function') {
     logActivity('delete', '상품조회', `상품영구삭제: ${code}${name ? ' (' + name + ')' : ''}`)
   }
-  if (typeof renderProductTable === 'function') renderProductTable()
-  if (typeof renderStockTable === 'function') renderStockTable()
-  if (typeof renderSalesTable === 'function') renderSalesTable()
-  if (typeof renderDashboard === 'function') renderDashboard()
+  // 3개 뷰 filtered 재구축 + 렌더 (영구삭제 상품이 stale로 남지 않도록)
+  if (typeof refreshAllProductViews === 'function') refreshAllProductViews()
   renderTrashTab()
   return true
 }

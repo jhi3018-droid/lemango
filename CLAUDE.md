@@ -3092,6 +3092,20 @@ Established the reference style that every dashboard-opened srm-modal should fol
 **⚠️ RC2 (별도 다음 작업, 본 작업서 미수정)**: 실시간 동기화(`_onProductsChanged`, core.js:459-462)가 **활성 탭만 재렌더** + `triggerTabRender`의 `_renderedTabs` 가드(router.js:155)로 인해, 타 세션/타 탭에서 생성된 상품이 이미 열린 재고관리/매출현황 탭에 stale DOM으로 남음(수동 검색 전까지). 또 `js/trash.js` 복원/영구삭제는 `.filtered` 재구축 없이 렌더만 호출 — 관련 latent 이슈. 둘 다 RC2 범위, STEP 2에서 처리
 - **배포**: `firebase deploy --only hosting` (소유주 수동, 규칙 변경 없음)
 
+#### RC2 STEP 2a: 휴지통 복원/영구삭제 stale 수정 (🟢)
+- **증상 (RC2c)**: 휴지통에서 상품 복원/영구삭제 시 `.filtered` 배열을 재구축하지 않아 — 복원 상품이 상품조회/재고/매출에 즉시 안 보이고, 영구삭제 상품이 테이블에 stale로 남음 (수동 검색 전까지)
+- **근본 원인**: `restoreProduct`(trash.js)와 `_trashPermanentDeleteExec`(trash.js)가 4개 개별 렌더(product/stock/sales/dashboard)만 호출하고 `State.X.filtered = [...allProducts]` 재구축 누락. 영구삭제는 `splice`로 allProducts에서 빠져도 filtered 옛 참조에 남아 `!p.deleted` 필터를 통과해 계속 표시됨
+
+**수정** — `js/trash.js` 단일 파일 (+4/−8)
+- 두 함수 모두 4개 개별 렌더 호출 → `refreshAllProductViews()` (RC1 헬퍼, core.js, window 노출)로 교체 → 3개 filtered 재구축 + 렌더 + 대시보드
+- `renderTrashTab()`는 양쪽 모두 **유지** (헬퍼는 휴지통 탭을 렌더 안 함 — 복원/영구삭제 항목이 휴지통 목록에서 빠지려면 필수)
+- 주변 로직 전부 보존: 복원(플래그 제거/saveProducts 롤백/logActivity/toast), 영구삭제(splice/Firestore 댓글 정리/saveProducts 롤백/logActivity/return)
+- `node -c` 통과, code-reviewer 🟢. 매출 공식·core.js sync·router.js 미변경
+- 참고(회귀 아님): 헬퍼가 `.filtered`를 전체 목록으로 덮어쓰므로 복원/삭제 시점의 활성 검색 결과는 리셋됨 — RC1 헬퍼의 의도된 동작이며 휴지통은 별 탭이라 영향 미미
+
+**⚠️ RC2 STEP 2b (다음 작업, 미착수)**: 실시간 동기화(`_onProductsChanged`, core.js)가 활성 탭만 재렌더 → 타 세션/타 탭에서 변경된 상품이 이미 열린 재고/매출 탭에 stale로 남는 문제. dirty-flag 방식(sync가 비활성 product/stock/sales 탭을 dirty 표시 → `applyTabState`에서 전환 시 재렌더+플래그 해제) 권장. `_renderedTabs` 가드/own-save skip 미변경. **POS(다중 매장 동시 사용) 도입 시 `_fsLoadProducts` 전체 재로드 granularity가 진짜 병목 — 별도 아키텍처 검토 필요**
+- **배포**: `firebase deploy --only hosting` (소유주 수동, 규칙 변경 없음)
+
 ---
 
 ## 다음 작업 후보 (미구현)
