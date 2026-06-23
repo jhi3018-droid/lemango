@@ -3077,6 +3077,21 @@ Established the reference style that every dashboard-opened srm-modal should fol
 
 **⚠️ Option E (배포 + 백업 후 별도 1회 실행 권장)**: 본 수정은 거짓 diff/덮어쓰기만 차단 — DB의 비정규 색상 데이터(colorEn=코드, colorCode 빈값) 자체는 그대로. **백업 확인 후** 설정 → 🎨 색상 관리 → 🔍 마스터 매칭 (`runColorMigration()`, color-master.js:700-745)을 1회 실행하면 798개 상품의 colorEn/colorCode가 canonical로 일괄 정규화됨. 600+행 대량 변경이므로 자동 실행 금지, 백업 검증 후 수동 실행
 
+#### 매출현황 상품 누락 수정 — STEP 1: 공용 갱신 헬퍼 (RC1 / Option B, 🟢)
+- **증상**: 특정 경로로 생성된 상품이 상품조회·재고관리에는 보이나 **매출현황(매출현황)에 안 보임**
+- **근본 원인 (RC1)**: 여러 상품 생성/수정 경로가 `product.filtered` + `stock.filtered`만 재구축하고 **`sales.filtered`를 누락**한 채 `renderSalesTable()`를 호출 → 매출현황이 오래된 배열을 렌더. 데이터는 안전(뷰 projection 갱신 누락일 뿐)
+- **조사 결과**: 4개 broken 사이트 — `plan.js`(confirmPlanToProduct, 2026-03-18부터), `gonghom.js`(cafe24 업로드 자동생성, 2026-04-17부터), `sabangnet.js`(사방넷 자동생성), `modals.js`(saveDetailEdit). 색상/사이즈 작업과 무관한 기존 버그
+
+**수정 (Option B — 공용 헬퍼)** — 8개 파일
+- `refreshAllProductViews()` 신설 (`js/core.js`, saveProducts 근처, window 노출): 3개 filtered 전체 리셋(`[...State.allProducts]`) + 4개 렌더(product/stock/sales/dashboard), 전부 `typeof` 가드. register.js의 canonical full-reset 시맨틱과 동일 (활성 검색/컬럼필터는 초기화 — 기존 신규등록/엑셀 동작과 일치)
+- **broken 4곳 교체** → 헬퍼 호출 (sales.filtered 재구축 추가가 실제 fix). plan.js는 헬퍼 직후 `renderPlanTable()` 유지
+- **correct 3곳 DRY 통합** (재발 방지): `register.js`×2(submitRegister + 업로드확정), `excel.js`(_applyProductUpload). 부수 호출(closeRegisterModal/saveProducts/logActivity/toast/모달닫기)은 전부 보존
+- **검증**: 7개 호출 사이트, partial 패턴(product+stock without sales) 0건, `node -c` 전부 통과, code-reviewer 🟢. 매출 공식(Cafe24/사방넷) 미변경
+- **로드 순서 안전**: 헬퍼는 core.js 정의, 렌더 함수는 후속 파일 — 런타임(사용자 액션)에만 호출 + typeof 가드
+
+**⚠️ RC2 (별도 다음 작업, 본 작업서 미수정)**: 실시간 동기화(`_onProductsChanged`, core.js:459-462)가 **활성 탭만 재렌더** + `triggerTabRender`의 `_renderedTabs` 가드(router.js:155)로 인해, 타 세션/타 탭에서 생성된 상품이 이미 열린 재고관리/매출현황 탭에 stale DOM으로 남음(수동 검색 전까지). 또 `js/trash.js` 복원/영구삭제는 `.filtered` 재구축 없이 렌더만 호출 — 관련 latent 이슈. 둘 다 RC2 범위, STEP 2에서 처리
+- **배포**: `firebase deploy --only hosting` (소유주 수동, 규칙 변경 없음)
+
 ---
 
 ## 다음 작업 후보 (미구현)

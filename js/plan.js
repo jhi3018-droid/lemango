@@ -1497,13 +1497,8 @@ async function confirmPlanToProduct() {
   stampModified(item)
   savePlanItems().catch(e => console.error(e))
 
-  // 상품조회 필터 갱신
-  State.product.filtered = [...State.allProducts]
-  State.stock.filtered   = [...State.allProducts]
-  renderProductTable()
-  renderStockTable()
-  if (typeof renderSalesTable === 'function') renderSalesTable()
-  renderDashboard()
+  // 상품조회/재고관리/매출현황/대시보드 일괄 갱신 (sales.filtered 누락 버그 수정)
+  refreshAllProductViews()
   renderPlanTable()
 
   closePlanDetailModal(true)

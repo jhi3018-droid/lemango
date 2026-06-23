@@ -549,13 +549,8 @@ function confirmSabangnetUpload() {
   document.getElementById('sabangnetPreviewModal').close()
   _sbRows = []
   _sbColFilters = {}
-  // 자동 생성된 상품 포함 전체 탭 갱신
-  State.product.filtered = [...State.allProducts]
-  State.stock.filtered   = [...State.allProducts]
-  renderProductTable()
-  renderStockTable()
-  renderSalesTable()
-  renderDashboard()
+  // 자동 생성된 상품 포함 전체 탭 갱신 (sales.filtered 누락 버그 수정)
+  refreshAllProductViews()
 
   // Toast
   const parts = [`${saleCnt}건 반영`]

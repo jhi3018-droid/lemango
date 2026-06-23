@@ -1415,12 +1415,8 @@ function saveDetailEdit() {
 
   stampModified(p)
 
-  // 테이블 갱신
-  State.product.filtered = [...State.allProducts]
-  State.stock.filtered   = [...State.allProducts]
-  renderProductTable()
-  renderStockTable()
-  renderDashboard()
+  // 테이블 갱신 (product/stock/sales/dashboard 일괄 — sales.filtered 누락 버그 수정)
+  refreshAllProductViews()
 
   // 임시 예약 코드 확정 처리
   _detailPendingCode = null

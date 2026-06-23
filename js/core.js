@@ -107,6 +107,21 @@ async function saveProducts() {
 }
 window.saveProducts = saveProducts
 
+// Rebuilds all 3 product view-projection arrays and re-renders all product-derived tables.
+// Use after ANY product create/edit/delete so 상품조회/재고관리/매출현황/dashboard stay consistent.
+// Matches the established register.js semantics: full reset to [...State.allProducts]
+// (active 검색/컬럼 필터는 초기화됨 — 기존 신규등록/엑셀 업로드와 동일 동작).
+function refreshAllProductViews() {
+  State.product.filtered = [...State.allProducts]
+  State.stock.filtered   = [...State.allProducts]
+  State.sales.filtered   = [...State.allProducts]
+  if (typeof renderProductTable === 'function') renderProductTable()
+  if (typeof renderStockTable === 'function')   renderStockTable()
+  if (typeof renderSalesTable === 'function')   renderSalesTable()
+  if (typeof renderDashboard === 'function')    renderDashboard()
+}
+window.refreshAllProductViews = refreshAllProductViews
+
 async function _forceUploadProducts() {
   if (!db || !State.allProducts || !State.allProducts.length) return
   const all = State.allProducts

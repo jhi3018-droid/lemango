@@ -183,15 +183,9 @@ function submitRegister(e) {
   // 전체 데이터에 추가 (예약 해제 후 정식 등록)
   _reservedCodes.delete(newProduct.productCode)
   State.allProducts.push(newProduct)
-  State.product.filtered = [...State.allProducts]
-  State.stock.filtered   = [...State.allProducts]
-  State.sales.filtered   = [...State.allProducts]
 
-  // 화면 갱신
-  renderProductTable()
-  renderStockTable()
-  renderSalesTable()
-  renderDashboard()
+  // 화면 갱신 (product/stock/sales/dashboard 일괄)
+  refreshAllProductViews()
 
   closeRegisterModal(true)
   showToast(`"${nameKr}" 상품이 등록되었습니다.`, 'success')
@@ -382,13 +376,7 @@ function confirmRegisterUpload() {
     }
   })
 
-  State.product.filtered = [...State.allProducts]
-  State.stock.filtered   = [...State.allProducts]
-  State.sales.filtered   = [...State.allProducts]
-  renderProductTable()
-  renderStockTable()
-  renderSalesTable()
-  renderDashboard()
+  refreshAllProductViews()
 
   document.getElementById('uploadPreviewModal').close()
   _uploadPreviewData = null

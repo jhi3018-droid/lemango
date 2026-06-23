@@ -1768,13 +1768,7 @@ function _applyProductUpload(parsed) {
     updated++
   })
 
-  State.product.filtered = [...State.allProducts]
-  State.stock.filtered   = [...State.allProducts]
-  State.sales.filtered   = [...State.allProducts]
-  renderProductTable()
-  renderStockTable()
-  renderSalesTable()
-  renderDashboard()
+  refreshAllProductViews()
   if (typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))
   if (typeof logActivity === 'function') logActivity('upload', '상품', '엑셀 업로드: 신규 ' + added + '건, 수정 ' + updated + '건')
   showToast('업로드 완료: 신규 ' + added + '건 / 수정 ' + updated + '건', 'success')

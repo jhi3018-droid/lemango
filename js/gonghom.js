@@ -636,13 +636,8 @@ function confirmGonghomUpload() {
   _cafe24Rows = []
   _cafe24Orders = {}
   _cafe24ColFilters = {}
-  // 자동 생성된 상품 포함 전체 탭 갱신
-  State.product.filtered = [...State.allProducts]
-  State.stock.filtered   = [...State.allProducts]
-  renderProductTable()
-  renderStockTable()
-  renderSalesTable()
-  renderDashboard()
+  // 자동 생성된 상품 포함 전체 탭 갱신 (sales.filtered 누락 버그 수정)
+  refreshAllProductViews()
 
   const parts = []
   if (saleCnt > 0) parts.push(`정상 ${saleCnt}건`)
