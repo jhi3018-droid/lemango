@@ -3106,6 +3106,45 @@ Established the reference style that every dashboard-opened srm-modal should fol
 **⚠️ RC2 STEP 2b (다음 작업, 미착수)**: 실시간 동기화(`_onProductsChanged`, core.js)가 활성 탭만 재렌더 → 타 세션/타 탭에서 변경된 상품이 이미 열린 재고/매출 탭에 stale로 남는 문제. dirty-flag 방식(sync가 비활성 product/stock/sales 탭을 dirty 표시 → `applyTabState`에서 전환 시 재렌더+플래그 해제) 권장. `_renderedTabs` 가드/own-save skip 미변경. **POS(다중 매장 동시 사용) 도입 시 `_fsLoadProducts` 전체 재로드 granularity가 진짜 병목 — 별도 아키텍처 검토 필요**
 - **배포**: `firebase deploy --only hosting` (소유주 수동, 규칙 변경 없음)
 
+#### 📋 세션 종료 요약 (2026-06-23)
+
+**오늘 완료 (전부 배포됨)**
+1. **색상 라운드트립 버그 수정 (Option B — 마스터 인식 diff)** — `8e66142`
+   - `js/excel.js`에 `resolveColorIdentity()` + `_sameColorIdentity()` 추가, 상품/기획 diff·apply 양쪽 적용
+   - 무수정 엑셀 재업로드 시 거짓 색상 diff 억제 + harmful colorEn 덮어쓰기 제거, 레거시 colorEn-as-code 처리
+2. **재고/매출현황 상품 누락 — RC1 (공용 갱신 헬퍼)** — `f6d6cf6`
+   - `js/core.js`에 `refreshAllProductViews()` 신설 (3개 filtered 재구축 + 3개 테이블 + 대시보드 렌더)
+   - sales.filtered 누락 4개 경로 수정(plan/gonghom/sabangnet/modals) + correct 3경로(register×2/excel) DRY 통합
+3. **휴지통 복원/영구삭제 stale — RC2 Step 2a** — `e166bab`
+   - `restoreProduct` + `_trashPermanentDeleteExec`를 `refreshAllProductViews()`로 라우팅 (js/trash.js만)
+   - 복원 상품 3개 뷰 즉시 재등장, 영구삭제 상품 stale 잔존 해결
+
+**🔴 다음 세션 대기 작업 (중요 — 여기서 재개)**
+
+1. **RC2 Step 2b — 타 세션/타 탭 stale (미완)**
+   - 문제: 실시간 동기화 `_onProductsChanged`(core.js:462-466)가 **활성 탭만 재렌더** → 타 세션에서 변경된 상품이 이미 열린 재고/매출 탭에 stale로 남음(수동 검색 전까지). router.js:155 `_renderedTabs` 가드가 전환 시 재렌더 차단
+   - 권장: **Option C (dirty flag)** — sync가 비활성 product/stock/sales 탭을 dirty 표시 → `applyTabState`(router.js, settings/event 재렌더 선례 위치)에서 전환 시 dirty 탭만 재렌더 + 플래그 해제
+   - dirty-flag 선택 이유: 숨김(display:none) 테이블 렌더 시 sticky 헤더/컬럼 너비 측정(getBoundingClientRect=0) 깨짐 — 본 프로젝트 반복 버그. "전부 렌더" 방식 회피
+   - core.js + router.js 동시 수정(민감) → 조사→구현 신중히. `_renderedTabs` 가드/own-save skip 미변경
+
+2. **Option E — 색상 데이터 정규화 (1회, 수동)**
+   - 색상 수정 배포 완료 + **검증된 백업** 후, 사용자가 `runColorMigration()` 1회 실행 (설정 → 🎨 색상 관리 → 🔍 마스터 매칭)
+   - ~798개 상품 colorCode 백필 + colorEn canonical화 (600+행 대량 변경). ⚠️ 백업 필수, 자동 실행 금지(사용자 트리거). 긴급 아님 — 배포된 Option B가 이미 라운드트립 보호
+
+3. **POS / 다중 매장 기능 (계획, 대형)**
+   - 매장 POS: 바코드 스캔 → 수량/금액 → 매출 기록 → 실시간 재고 차감 (결제/영수증 없음)
+   - 2개 매장, 각 **독립 재고**(현재 매장별 재고 개념 없음). 추가: 입고 스캔 화면(스캔으로 초기재고), 보충대상조회, 매장별 재고현황, 로케이션
+   - 매출: 당분간 기존과 통합, 매장 구분 필드는 "나중에". 사용자가 **POS 화면 목업 이미지** 제공 예정
+   - ⚠️ 아키텍처 우려(RC2 조사 발견): 현재 `_fsLoadProducts()`가 원격 변경 시마다 **전체 ~798개 재로드** → POS 빈도(2매장 동시 판매)에선 판매마다 전체 카탈로그 재다운로드 = 병목. POS는 **별도 granular 채널** 필요: 전용 stock/transactions 컬렉션 + per-document 업데이트 + `FieldValue.increment`(동시 재고 차감 안전). 빌드 전 설계 필요
+   - 접근: 목업 수령 → 현 바코드/재고/매출 구조 조사 → 큰 그림 설계 → phase 분할 → 단계별 빌드
+
+4. **기타 보류**
+   - activityLogs 무제한 증가 → retention(예: 90일) 정책 검토
+   - 레거시 Firestore 백업 수동 정리 (Storage 안정화 후)
+   - 엑셀 업로드 엣지: 소프트삭제 품번과 동일 품번 업로드 시 삭제 항목이 조용히 업데이트됨 → 향후 거부+경고
+   - cross-tab 품번 race(메모리 Set 비공유) — 보류
+   - 버그시절 중복 ...00 기획 품번 — 데이터 정리 가능성
+
 ---
 
 ## 다음 작업 후보 (미구현)
