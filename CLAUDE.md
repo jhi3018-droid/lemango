@@ -3168,6 +3168,38 @@ Established the reference style that every dashboard-opened srm-modal should fol
 - **참고**: 조사에서 나온 "정렬 시 필터 풀림(Issue 3)"은 실제 버그 아님 — 정렬은 `.filtered` in-place + 컬럼필터 렌더 재적용으로 유지됨. 검색바 필터가 `.filtered`에만 존재해 `refreshAllProductViews`/동기화로 `.filtered` 재구축 시 사라지는 것이 진짜 원인 → RC2 Step 2b와 함께 별도 처리 예정
 - **배포**: `firebase deploy --only hosting` (소유주 수동, 규칙 변경 없음)
 
+#### 🌙 세션 마감 정리 (2026-06-23)
+
+**오늘 완료 + 배포 (커밋 체인)**
+1. `8e66142` 색상 라운드트립 버그 수정 (Option B) — 마스터 인식 diff로 무수정 엑셀 재업로드 시 거짓 색상 diff + colorEn 덮어쓰기 제거
+2. `f6d6cf6` 재고/매출 상품 누락 RC1 — 공용 `refreshAllProductViews()` 헬퍼, sales.filtered 누락 4경로 수정
+3. `e166bab` 휴지통 복원/영구삭제 RC2 Step 2a — 두 함수를 헬퍼로 라우팅(stale 해결)
+4. `1198c8c` 기본 정렬 최신등록순(registDate desc) 3개 뷰 + 재고/매출 브랜드 필터 — 렌더 시 정렬(첫 렌더 보장, .filtered 재구축에도 유지), applyTableCustom 정렬 복원 제거
+
+**🔴 다음 세션 대기 작업 (재개 지점)**
+
+1. **RC2 Step 2b — 타 세션/탭 stale (재고/매출 버그 마지막 조각)**
+   - 실시간 동기화 `_onProductsChanged`(core.js)가 **활성 탭만 재렌더** → 타 세션 변경분이 이미 열린 재고/매출 탭에 stale(수동 검색 전까지). router.js:155 `_renderedTabs` 가드가 전환 시 재렌더 차단
+   - 권장: **Option C (dirty flag)** — sync가 비활성 product/stock/sales 탭 dirty 표시 → `applyTabState`(router.js)에서 전환 시 dirty 탭만 재렌더 + 플래그 해제
+   - "전부 렌더" 금지: 숨김(display:none) 테이블 렌더 시 sticky 헤더/컬럼 너비 측정(getBoundingClientRect=0) 깨짐(반복 버그). `_renderedTabs` 가드/own-save skip 미변경
+   - **연계**: 정렬 조사의 Issue 3(검색바 필터가 상품 편집/동기화로 사라짐)도 동일 뿌리 — 검색조건이 `.filtered`에만 존재해 refreshAllProductViews/sync로 `.filtered` 재구축 시 소실. 같이 처리 권장: 검색조건을 State에 저장 → `.filtered` 재구축 후 재적용
+
+2. **Option E — 색상 데이터 정규화 (1회, 수동, 지금 가능)**
+   - Option B 배포됨 → DB 정규화 가능. 설정 → 🎨 색상 관리 → 🔍 마스터 매칭(`runColorMigration()`)
+   - ~798개 colorCode 백필 + colorEn canonical화(600+행). ⚠️ **백업 검증 후** 사용자 수동 실행. 긴급 아님
+
+3. **POS / 다중 매장 (계획, 대형)**
+   - 바코드 스캔 → 수량/금액 → 매출 기록 → 실시간 재고 차감 (결제/영수증 없음). 2매장 **독립 재고**(현재 매장별 재고 없음)
+   - 추가: 입고 스캔(초기재고), 보충대상조회, 매장별 재고현황, 로케이션. 매출은 당분간 통합, 매장 필드는 나중. **목업 이미지 제공 예정**
+   - ⚠️ 아키텍처: `_fsLoadProducts()`가 원격 변경마다 전체 ~798개 재로드 → POS 빈도(2매장 동시)에선 판매마다 전체 카탈로그 재다운로드 = 병목. **별도 granular 채널 필요**(전용 stock/transactions 컬렉션 + per-doc 업데이트 + `FieldValue.increment` 동시 차감 안전). 빌드 전 설계
+   - 접근: 목업 → 현 바코드/재고/매출 구조 조사 → 큰그림 설계 → phase 분할 → 단계별 빌드
+
+4. **기타 보류**
+   - activityLogs 무제한 증가 → retention(90일) 검토 / 레거시 Firestore 백업 수동 정리(Storage 안정화 후)
+   - 엑셀 업로드: 소프트삭제 품번과 동일 품번 업로드 시 삭제 항목 조용히 업데이트 → 거부+경고 추가
+   - cross-tab 품번 race(메모리 Set 비공유)
+   - 정렬 cross-reload 영속화 상실(오늘 작업의 의도된 동작 — registDate desc 기본). 사용자가 영속화 원하면 재검토
+
 ---
 
 ## 다음 작업 후보 (미구현)
