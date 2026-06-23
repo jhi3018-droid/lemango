@@ -26,65 +26,69 @@ const _TYPE_FALLBACK = {
   JM: ['two piece'], RG: ['two piece'], AL: ['two piece'],
 }
 
-function searchProduct() {
-  const raw      = document.getElementById('pKeyword').value
-  const keywords = parseKeywords(raw)
-  const field    = document.getElementById('pSearchField').value
-  const dateType = document.getElementById('pDateType').value
-  const dateFrom = document.getElementById('pDateFrom').value
-  const dateTo   = document.getElementById('pDateTo').value
-  const brand    = document.getElementById('pBrand').value
-  const gender   = document.getElementById('pGender').value
-  const type     = document.getElementById('pType').value
-  const legCut   = document.getElementById('pLegCut').value
-
-  let result = State.allProducts.filter(p => {
+// 검색 조건(c)으로 상품 좁히기 — 순수 함수(렌더/DOM 없음).
+// searchProduct + refreshAllProductViews/실시간 동기화 재적용 공용 → 검색이 데이터 갱신에도 유지됨
+function _narrowProduct(c) {
+  return State.allProducts.filter(p => {
     // Soft-deleted products are hidden from main 상품조회 (휴지통에서만 노출)
     if (p.deleted === true) return false
-    if (keywords.length) {
+    if (c.keywords.length) {
       const getTargets = () => {
-        if (field === 'nameKr')      return [p.nameKr, p.nameEn]
-        if (field === 'productCode') return [p.productCode, p.sampleNo]
-        if (field === 'backStyle')   return [p.backStyle]
-        if (field === 'barcode')     return [p.barcode]
+        if (c.field === 'nameKr')      return [p.nameKr, p.nameEn]
+        if (c.field === 'productCode') return [p.productCode, p.sampleNo]
+        if (c.field === 'backStyle')   return [p.backStyle]
+        if (c.field === 'barcode')     return [p.barcode]
         return [p.nameKr, p.nameEn, p.productCode, p.sampleNo, p.colorKr, p.backStyle, p.barcode]
       }
-      const targets = getTargets()
-      if (!keywords.some(kw => matchAnyTarget(targets, kw))) return false
+      if (!c.keywords.some(kw => matchAnyTarget(getTargets(), kw))) return false
     }
-    if (dateFrom || dateTo) {
-      if (!isInRange(p[dateType], dateFrom, dateTo)) return false
+    if (c.dateFrom || c.dateTo) {
+      if (!isInRange(p[c.dateType], c.dateFrom, c.dateTo)) return false
     }
-    if (brand !== 'all' && p.brand !== brand) return false
+    if (c.brand !== 'all' && p.brand !== c.brand) return false
 
     // 성별 필터 — 품번 3번째 자리에서 추출
-    if (gender !== 'all') {
+    if (c.gender !== 'all') {
       const g = _codeGender(p.productCode)
-      if (!g || g !== gender) return false
+      if (!g || g !== c.gender) return false
     }
 
     // 타입 필터 — 품번 4-5번째 자리 우선, p.type fallback
-    if (type !== 'all') {
+    if (c.type !== 'all') {
       const t = _codeType(p.productCode)
       if (t) {
-        if (t !== type) return false
+        if (t !== c.type) return false
       } else {
-        // 품번이 없거나 형식 미일치 → p.type으로 fallback
-        const fallbackTypes = _TYPE_FALLBACK[type] || []
+        const fallbackTypes = _TYPE_FALLBACK[c.type] || []
         if (!fallbackTypes.includes((p.type||'').toLowerCase())) return false
       }
     }
 
-    if (legCut !== 'all' && (p.legCut || '') !== legCut) return false
-
-    const saleStatus = document.getElementById('pSaleStatus').value
-    if (saleStatus !== 'all' && (p.saleStatus || '판매중') !== saleStatus) return false
+    if (c.legCut !== 'all' && (p.legCut || '') !== c.legCut) return false
+    if (c.saleStatus !== 'all' && (p.saleStatus || '판매중') !== c.saleStatus) return false
 
     return true
   })
+}
+window._narrowProduct = _narrowProduct
+
+function searchProduct() {
+  const c = {
+    keywords: parseKeywords(document.getElementById('pKeyword').value),
+    field:    document.getElementById('pSearchField').value,
+    dateType: document.getElementById('pDateType').value,
+    dateFrom: document.getElementById('pDateFrom').value,
+    dateTo:   document.getElementById('pDateTo').value,
+    brand:    document.getElementById('pBrand').value,
+    gender:   document.getElementById('pGender').value,
+    type:     document.getElementById('pType').value,
+    legCut:   document.getElementById('pLegCut').value,
+    saleStatus: document.getElementById('pSaleStatus').value
+  }
+  State.product.searchCriteria = c   // 커밋된 검색조건 저장 → 데이터 갱신 시 재적용
   State.product.page = 1
-  State.product.filtered = sortData(result, State.product.sort.key, State.product.sort.dir)
-  // 검색 필터는 영속화하지 않음 — 새로고침 시 항상 빈 상태로 시작
+  State.product.filtered = _narrowProduct(c)   // 정렬은 렌더에서 적용(render-sort)
+  // 검색 필터는 localStorage 영속화하지 않음 — 새로고침 시 빈 상태로 시작
   renderProductTable()
 }
 
@@ -111,6 +115,7 @@ function resetProduct() {
   State.product.activeColumns = null
   State.product.inactiveColumns = []
   State.product.sort = { key: 'registDate', dir: 'desc' }
+  State.product.searchCriteria = null
   State.product.filtered = [...State.allProducts]
   renderProductTable()
 }

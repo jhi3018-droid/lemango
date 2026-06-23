@@ -1,31 +1,38 @@
 // =============================================
 // ===== 재고조회 =====
 // =============================================
-function searchStock() {
-  const keywords = parseKeywords(document.getElementById('sKeyword').value)
-  const dateFrom = document.getElementById('sDateFrom').value
-  const dateTo   = document.getElementById('sDateTo').value
-  const status   = document.getElementById('sStockStatus').value
-  const brand    = document.getElementById('sBrand').value
-
-  let result = State.allProducts.filter(p => {
-    if (keywords.length) {
+// 검색 조건(c)으로 재고 좁히기 — 순수 함수(렌더/DOM 없음). 데이터 갱신 시 재적용 공용
+function _narrowStock(c) {
+  return State.allProducts.filter(p => {
+    if (c.keywords.length) {
       const targets = [p.productCode, p.nameKr]
-      if (!keywords.some(kw => matchAnyTarget(targets, kw))) return false
+      if (!c.keywords.some(kw => matchAnyTarget(targets, kw))) return false
     }
-    if (dateFrom || dateTo) {
-      if (!isInRange(p.registDate, dateFrom, dateTo)) return false
+    if (c.dateFrom || c.dateTo) {
+      if (!isInRange(p.registDate, c.dateFrom, c.dateTo)) return false
     }
-    if (brand !== 'all' && p.brand !== brand) return false
-    if (status === 'instock' && getTotalStock(p) === 0) return false
-    if (status === 'soldout' && getTotalStock(p)  >  0) return false
+    if (c.brand !== 'all' && p.brand !== c.brand) return false
+    if (c.status === 'instock' && getTotalStock(p) === 0) return false
+    if (c.status === 'soldout' && getTotalStock(p)  >  0) return false
     return true
   })
+}
+window._narrowStock = _narrowStock
+
+function searchStock() {
+  const c = {
+    keywords: parseKeywords(document.getElementById('sKeyword').value),
+    dateFrom: document.getElementById('sDateFrom').value,
+    dateTo:   document.getElementById('sDateTo').value,
+    status:   document.getElementById('sStockStatus').value,
+    brand:    document.getElementById('sBrand').value
+  }
+  State.stock.searchCriteria = c
   State.stock.page = 1
-  State.stock.filtered = sortData(result, State.stock.sort.key, State.stock.sort.dir)
+  State.stock.filtered = _narrowStock(c)   // 정렬은 렌더에서 적용
   saveFilterDefault('stock', {
     sKeyword: document.getElementById('sKeyword').value,
-    sDateFrom: dateFrom, sDateTo: dateTo, sStockStatus: status, sBrand: brand
+    sDateFrom: c.dateFrom, sDateTo: c.dateTo, sStockStatus: c.status, sBrand: c.brand
   })
   renderStockTable()
 }
@@ -495,6 +502,7 @@ function resetStock() {
   State.stock.activeColumns = null
   State.stock.inactiveColumns = []
   State.stock.sort = { key: 'registDate', dir: 'desc' }
+  State.stock.searchCriteria = null
   State.stock.filtered = [...State.allProducts]
   renderStockTable()
 }

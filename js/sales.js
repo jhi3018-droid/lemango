@@ -78,30 +78,37 @@ function initSalesPlatforms() {
 }
 
 // ===== 검색 =====
-function searchSales() {
-  const keywords = parseKeywords(document.getElementById('slKeyword').value)
-  const dateFrom = document.getElementById('slDateFrom').value
-  const dateTo   = document.getElementById('slDateTo').value
-  const platform = document.getElementById('slPlatform').value
-  const brand    = document.getElementById('slBrand').value
-
-  let result = State.allProducts.filter(p => {
-    if (keywords.length) {
+// 검색 조건(c)으로 매출 좁히기 — 순수 함수(렌더/DOM 없음). 데이터 갱신 시 재적용 공용
+function _narrowSales(c) {
+  return State.allProducts.filter(p => {
+    if (c.keywords.length) {
       const targets = [p.productCode, p.nameKr]
-      if (!keywords.some(kw => matchAnyTarget(targets, kw))) return false
+      if (!c.keywords.some(kw => matchAnyTarget(targets, kw))) return false
     }
-    if (dateFrom || dateTo) {
-      if (!isInRange(p.registDate, dateFrom, dateTo)) return false
+    if (c.dateFrom || c.dateTo) {
+      if (!isInRange(p.registDate, c.dateFrom, c.dateTo)) return false
     }
-    if (brand !== 'all' && p.brand !== brand) return false
-    if (platform !== 'all' && !(p.sales?.[platform] > 0)) return false
+    if (c.brand !== 'all' && p.brand !== c.brand) return false
+    if (c.platform !== 'all' && !(p.sales?.[c.platform] > 0)) return false
     return true
   })
+}
+window._narrowSales = _narrowSales
+
+function searchSales() {
+  const c = {
+    keywords: parseKeywords(document.getElementById('slKeyword').value),
+    dateFrom: document.getElementById('slDateFrom').value,
+    dateTo:   document.getElementById('slDateTo').value,
+    platform: document.getElementById('slPlatform').value,
+    brand:    document.getElementById('slBrand').value
+  }
+  State.sales.searchCriteria = c
   State.sales.page = 1
-  State.sales.filtered = sortData(result, State.sales.sort.key, State.sales.sort.dir)
+  State.sales.filtered = _narrowSales(c)   // 정렬은 렌더에서 적용
   saveFilterDefault('sales', {
     slKeyword: document.getElementById('slKeyword').value,
-    slDateFrom: dateFrom, slDateTo: dateTo, slPlatform: platform, slBrand: brand
+    slDateFrom: c.dateFrom, slDateTo: c.dateTo, slPlatform: c.platform, slBrand: c.brand
   })
   renderSalesTable()
 }
@@ -116,6 +123,7 @@ function resetSales() {
   State.sales.activePlatforms = [..._platforms]
   State.sales.inactivePlatforms = []
   State.sales.columnFilters = {}
+  State.sales.searchCriteria = null
   State.sales.filtered = [...State.allProducts]
   State.sales.sort = { key: 'registDate', dir: 'desc' }
   renderSalesTable()

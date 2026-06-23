@@ -142,6 +142,15 @@ function applyTabState() {
   // 설정/행사 탭은 열 때마다 렌더
   if (State.activeTab === 'settings') renderSettings()
   if (State.activeTab === 'event') renderEventTable()
+
+  // 실시간 동기화로 dirty 표시된 product/stock/sales 탭은 전환 시 재렌더(보이는 화면이라 측정 정상)
+  // → 타 세션 변경분이 이미 열린 재고/매출 탭에 반영. 플래그 없으면 재렌더 안 함(DOM/스크롤 보존)
+  const _at = State.activeTab
+  if ((_at === 'product' || _at === 'stock' || _at === 'sales') && State[_at] && State[_at].needsRerender) {
+    State[_at].needsRerender = false
+    const fn = { product:'renderProductTable', stock:'renderStockTable', sales:'renderSalesTable' }[_at]
+    if (typeof window[fn] === 'function') window[fn]()
+  }
 }
 
 // ===== 탭 첫 열림 시 렌더 호출 =====
@@ -184,6 +193,8 @@ function triggerTabRender(tab) {
     case 'hradmin':   if (typeof renderHrAdminTab === 'function') renderHrAdminTab(); break
     case 'trash':     if (typeof renderTrashTab === 'function') renderTrashTab(); break
   }
+  // 첫 렌더 시 dirty 플래그 해제 → applyTabState의 중복 재렌더 방지
+  if (State[tab]) State[tab].needsRerender = false
 }
 
 // ===== 네비게이션 바 바인딩 =====

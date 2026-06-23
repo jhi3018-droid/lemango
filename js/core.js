@@ -107,14 +107,26 @@ async function saveProducts() {
 }
 window.saveProducts = saveProducts
 
+// 한 뷰의 .filtered를 커밋된 검색조건(State.X.searchCriteria) 기준으로 재구축.
+// 검색조건 없으면 전체 목록. 활성 검색이 데이터 갱신(편집/동기화)에도 유지되도록 함.
+// 정렬은 렌더에서, 컬럼필터는 applyColFilters에서 적용 → 여기선 검색 narrowing만 담당.
+function _reNarrowFiltered(tab) {
+  const c = State[tab] && State[tab].searchCriteria
+  if (!c) return [...State.allProducts]
+  if (tab === 'product' && typeof _narrowProduct === 'function') return _narrowProduct(c)
+  if (tab === 'stock'   && typeof _narrowStock   === 'function') return _narrowStock(c)
+  if (tab === 'sales'   && typeof _narrowSales   === 'function') return _narrowSales(c)
+  return [...State.allProducts]
+}
+window._reNarrowFiltered = _reNarrowFiltered
+
 // Rebuilds all 3 product view-projection arrays and re-renders all product-derived tables.
 // Use after ANY product create/edit/delete so 상품조회/재고관리/매출현황/dashboard stay consistent.
-// Matches the established register.js semantics: full reset to [...State.allProducts]
-// (active 검색/컬럼 필터는 초기화됨 — 기존 신규등록/엑셀 업로드와 동일 동작).
+// 활성 검색은 유지(_reNarrowFiltered), 페이지는 보존(여기서 리셋 안 함).
 function refreshAllProductViews() {
-  State.product.filtered = [...State.allProducts]
-  State.stock.filtered   = [...State.allProducts]
-  State.sales.filtered   = [...State.allProducts]
+  State.product.filtered = _reNarrowFiltered('product')
+  State.stock.filtered   = _reNarrowFiltered('stock')
+  State.sales.filtered   = _reNarrowFiltered('sales')
   if (typeof renderProductTable === 'function') renderProductTable()
   if (typeof renderStockTable === 'function')   renderStockTable()
   if (typeof renderSalesTable === 'function')   renderSalesTable()
@@ -456,14 +468,22 @@ window._onProductsChanged = function(meta) {
       const fresh = await _fsLoadProducts()
       if (fresh && fresh.length) {
         State.allProducts = fresh
-        State.product.filtered = [...State.allProducts]
-        State.stock.filtered = [...State.allProducts]
-        State.sales.filtered = [...State.allProducts]
+        // 활성 검색 유지하며 .filtered 재구축 (검색조건 없으면 전체)
+        State.product.filtered = _reNarrowFiltered('product')
+        State.stock.filtered   = _reNarrowFiltered('stock')
+        State.sales.filtered   = _reNarrowFiltered('sales')
+        // 활성 탭만 즉시 렌더(보이는 화면). 나머지 product/stock/sales 탭은 dirty 표시 →
+        // 탭 전환 시 applyTabState에서 재렌더(숨김 테이블 렌더로 인한 sticky/너비 측정 깨짐 방지)
         const tab = _getActiveTab()
-        if (tab === 'product' && typeof renderProductTable === 'function') renderProductTable()
-        else if (tab === 'stock' && typeof renderStockTable === 'function') renderStockTable()
-        else if (tab === 'sales' && typeof renderSalesTable === 'function') renderSalesTable()
-        else if (tab === 'dashboard' && typeof renderDashboard === 'function') renderDashboard()
+        ;['product','stock','sales'].forEach(t => {
+          if (t === tab) {
+            const fn = { product:'renderProductTable', stock:'renderStockTable', sales:'renderSalesTable' }[t]
+            if (typeof window[fn] === 'function') window[fn]()
+          } else {
+            State[t].needsRerender = true
+          }
+        })
+        if (tab === 'dashboard' && typeof renderDashboard === 'function') renderDashboard()
       }
     } catch(e) { console.error('[RealtimeSync] 상품 재로드 실패:', e) }
   }, 1000)
@@ -1212,9 +1232,9 @@ function populateAllSelects() {
 const State = {
   allProducts: [],
   planItems:   [],
-  product: { filtered: [], sort: { key: 'registDate', dir: 'desc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {} },
-  stock:   { filtered: [], sort: { key: 'registDate', dir: 'desc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {} },
-  sales:   { filtered: [], sort: { key: 'registDate', dir: 'desc' }, page: 1, pageSize: 10, activePlatforms: [], inactivePlatforms: [], columnFilters: {}, colWidths: {} },
+  product: { filtered: [], sort: { key: 'registDate', dir: 'desc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {}, searchCriteria: null, needsRerender: false },
+  stock:   { filtered: [], sort: { key: 'registDate', dir: 'desc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {}, searchCriteria: null, needsRerender: false },
+  sales:   { filtered: [], sort: { key: 'registDate', dir: 'desc' }, page: 1, pageSize: 10, activePlatforms: [], inactivePlatforms: [], columnFilters: {}, colWidths: {}, searchCriteria: null, needsRerender: false },
   plan:    { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {} },
   event:   { filtered: [], sort: { key: 'startDate', dir: 'asc' }, page: 1 },
   work:    { filtered: [], sort: { key: 'startDate', dir: 'desc' }, page: 1 },

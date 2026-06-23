@@ -3200,6 +3200,33 @@ Established the reference style that every dashboard-opened srm-modal should fol
    - cross-tab 품번 race(메모리 Set 비공유)
    - 정렬 cross-reload 영속화 상실(오늘 작업의 의도된 동작 — registDate desc 기본). 사용자가 영속화 원하면 재검토
 
+#### RC2 STEP 2b: 타 세션/탭 stale (dirty flag) + 검색 영속화 (🟢) — 재고/매출 stale 시리즈 완결
+
+두 문제가 `.filtered` 라이프사이클이라는 같은 뿌리 → 함께 처리.
+
+**PART 1 — 타 탭 stale (dirty flag, Option C)**
+- 문제: 실시간 동기화(`_onProductsChanged`)가 활성 탭만 재렌더 → 이미 열린 비활성 재고/매출 탭이 stale(수동 검색 전까지)
+- `js/core.js` `_onProductsChanged`: `.filtered` 재구축 후 **활성 탭만 즉시 렌더**, 비활성 product/stock/sales는 `State[t].needsRerender = true` 표시. 대시보드는 활성일 때만
+- `js/router.js` `applyTabState`: product/stock/sales 전환 시 `needsRerender`면 재렌더 + 플래그 해제 (settings/event 재렌더 선례 위치). **보이는 탭만 렌더 → 숨김 테이블 sticky/너비 측정(getBoundingClientRect=0) 깨짐 회피**
+- `triggerTabRender`: 첫 렌더 후 `needsRerender=false` → 첫 열림 중복 렌더 방지
+- `_renderedTabs` 가드 / own-save skip **미변경**(가산적)
+
+**PART 2 — 검색 영속화**
+- 문제: 검색바 결과가 `.filtered`에만 존재 → `refreshAllProductViews`(편집)·동기화로 `.filtered` 재구축 시 검색 소실(전체 재등장). 컬럼필터는 살아있음(영속)
+- 각 `searchX`: 커밋된 검색조건을 `State.X.searchCriteria`에 저장 + 순수함수 `_narrowProduct/_narrowStock/_narrowSales(c)`로 좁힘(기존 인라인 술어 verbatim 추출, 렌더/DOM 부작용 없음)
+- `js/core.js` `_reNarrowFiltered(tab)` 신설: `searchCriteria ? _narrowX(criteria) : [...allProducts]`. `refreshAllProductViews` + `_onProductsChanged`가 이걸로 `.filtered` 재구축 → **활성 검색이 편집/동기화에도 유지**
+- **커밋된 조건** 사용(라이브 DOM 아님) → 동기화가 미커밋 입력 텍스트를 적용하는 오류 방지. 브랜드 필터도 criteria 일부라 함께 유지
+- `searchX`는 사전정렬 제거(렌더-정렬에 위임), page=1 유지. `refreshAllProductViews`는 page 보존. resetX는 `searchCriteria=null`
+- State 초기화에 `searchCriteria:null, needsRerender:false` 선언
+
+- **검증**: `_narrowX` 술어 기존과 동일, sort+brand+검색+컬럼필터 합성, soft-delete/trash(2a)/own-save/`_renderedTabs`/매출공식/plan 무영향. 5개 파일 `node -c` 통과, code-reviewer 🟢
+- **참고(의도된 동작)**: 활성 검색 중 휴지통 복원 시 복원 상품은 검색 매칭될 때만 표시(이전엔 무조건). 더 정확한 동작
+- **남은 한계**: `refreshAllProductViews`(로컬 편집 경로)는 여전히 3개 테이블 무조건 렌더(숨김 포함) — 기존 동작, dirty-flag는 원격 sync 전용(올바른 범위)
+
+**🎯 재고/매출 stale 시리즈 완결**: RC1(sales.filtered 누락 헬퍼) + RC2 2a(휴지통) + RC2 2b(타탭 dirty + 검색 영속화). 신규/편집/삭제/복원/타세션 변경이 상품조회·재고관리·매출현황 3개 뷰에 일관 반영
+
+- **배포**: `firebase deploy --only hosting` (소유주 수동, 규칙 변경 없음)
+
 ---
 
 ## 다음 작업 후보 (미구현)
