@@ -3047,6 +3047,38 @@ Established the reference style that every dashboard-opened srm-modal should fol
 
 ---
 
+### 2026-06-23
+
+#### 색상 라운드트립 버그 수정 — 마스터 인식 diff (Option B, 🟢)
+- **증상**: 상품/기획 엑셀을 수정 없이 다시 업로드하면 색상 필드(colorKr/colorEn/colorCode)가 "변경됨"으로 표시되고, 확정 시 colorEn이 강제 덮어써짐(예: `"NA"` → `"Navy"`)
+- **근본 원인 (비대칭)**: 다운로드는 DB 원본값을 그대로 기록(`_getProductValue`, excel.js:192)하지만, 업로드는 모든 색상을 색상 마스터로 재해석(excel.js:1338-1349)하여 canonical 형태로 snap. diff는 DB 원본 vs 재해석된 업로드값을 비교(1480-1482)하므로 차이 발생
+- **데이터 현실**: 2026-04-13 CSV 임포트된 633개 르망고 상품 전부 `colorCode=""` (빈값) + `colorEn`에 영문명이 아닌 **코드**("NA","MT")가 저장됨. colorKr이 마스터에 있는 상품(네이비/민트 등)은 전부 거짓 diff 발생, 마스터 밖 색상(피치 등)은 영향 없음
+- **harmful vs cosmetic**: colorEn diff는 적용 시 실제 덮어쓰기(harmful), colorCode diff는 셀이 비어 valueKeys에 없어 미적용(cosmetic) → 비일관적
+
+**수정 (마스터 인식 diff + apply 보존)** — `js/excel.js` 단일 파일 (+37줄)
+- `resolveColorIdentity(colorKr, colorEn, colorCode)` 신설 (window 노출): (코드 → 한글명 → **colorEn-as-code 레거시 fallback**) 순으로 마스터 조회 → canonical 코드 반환, 없으면 null. 업로드 파서와 동일 순서 mirror + 레거시 1단계 추가
+- `_sameColorIdentity(a, b)`: 양측 모두 non-null이고 동일 코드일 때만 true. 한쪽이라도 마스터 밖이거나 코드가 다르면 false → 정상 diff 실행
+- `_COLOR_KEYS = ['colorKr','colorEn','colorCode']` 상수
+- `_diffProduct` / `_diffPlan`: `colorSame`이면 색상 3필드를 diff 루프에서 skip → 거짓 diff 제거
+- 상품/기획 apply SCALAR_MAP 루프: `colorSame && 색상키 && ![삭제]`면 override skip → 기존 색상 보존 (harmful colorEn 덮어쓰기 제거). `[삭제]` 토큰은 가드 통과하여 정상 삭제
+
+**동작 매트릭스 (시뮬레이션 검증)**
+| 시나리오 | existing | uploaded(해석후) | identity | diff |
+|---|---|---|---|---|
+| 무수정 네이비(마스터) | 네이비/NA/"" | 네이비/Navy/NA | NA=NA | 억제 ✓ |
+| 무수정 민트 | 민트/MT/"" | 민트/Mint/MT | MT=MT | 억제 ✓ |
+| 네이비→블랙(실변경) | 네이비/NA/"" | 블랙/Black/BK | NA≠BK | 표시 ✓ |
+| 자유입력 피치 무수정 | 피치/PE/"" | 피치/PE/"" | 둘다 null | diff 없음(원래대로) ✓ |
+| 피치→네이비(실변경) | 피치/PE/"" | 네이비/Navy/NA | null≠NA | 표시 ✓ |
+
+- **회귀 없음**: 비색상 필드/sizeSpec/images/mallCodes diff 무변경, 매출 공식(Cafe24/사방넷) 무관, color picker 무관. code-reviewer 🟢
+- **레거시 구양식 경로 (presentKeys 없음)**: `{...existing, ...item.product}` 통째 덮어쓰기라 보존 로직 미적용 — 라운드트립 양식 아님, 범위 밖
+- **배포**: `firebase deploy --only hosting` (소유주 수동, 규칙 변경 없음)
+
+**⚠️ Option E (배포 + 백업 후 별도 1회 실행 권장)**: 본 수정은 거짓 diff/덮어쓰기만 차단 — DB의 비정규 색상 데이터(colorEn=코드, colorCode 빈값) 자체는 그대로. **백업 확인 후** 설정 → 🎨 색상 관리 → 🔍 마스터 매칭 (`runColorMigration()`, color-master.js:700-745)을 1회 실행하면 798개 상품의 colorEn/colorCode가 canonical로 일괄 정규화됨. 600+행 대량 변경이므로 자동 실행 금지, 백업 검증 후 수동 실행
+
+---
+
 ## 다음 작업 후보 (미구현)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 인쇄/PDF 출력

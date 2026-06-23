@@ -1468,10 +1468,37 @@ const _DIFF_PRESENT_KEY = { productCode: 'code' }
 // images.* 섹션 → 업로드 헤더 url* key 매핑
 const _IMG_PRESENT_KEY = { sum: 'urlSum', lemango: 'urlLemango', noir: 'urlNoir', external: 'urlExternal', design: 'urlDesign', shoot: 'urlShoot' }
 
+// ===== Master-aware color comparison (round-trip idempotency) =====
+// Color fields (colorKr/colorEn/colorCode) are the three color keys handled together.
+const _COLOR_KEYS = ['colorKr', 'colorEn', 'colorCode']
+// Resolve a (kr, en, code) triple to its canonical master code, or null if off-master.
+// Legacy note: CSV-imported products store the color CODE in colorEn (e.g. "NA"), not the
+// English name — so we also try colorEn-as-code so existing DB rows resolve to the same
+// identity as the master-canonical form the upload pipeline produces.
+function resolveColorIdentity(colorKr, colorEn, colorCode) {
+  let m = null
+  if (colorCode && typeof getColorByCode === 'function') m = getColorByCode(colorCode)
+  if (!m && colorKr && typeof getColorByNameKr === 'function') m = getColorByNameKr(colorKr)
+  if (!m && colorEn && typeof getColorByCode === 'function') m = getColorByCode(colorEn)
+  return m ? m.code : null
+}
+window.resolveColorIdentity = resolveColorIdentity
+// True only when BOTH sides resolve to the same non-null master color.
+// Off-master / mismatched / one-sided cases return false → normal per-field diff runs.
+function _sameColorIdentity(a, b) {
+  const ia = resolveColorIdentity(a && a.colorKr, a && a.colorEn, a && a.colorCode)
+  const ib = resolveColorIdentity(b && b.colorKr, b && b.colorEn, b && b.colorCode)
+  return !!(ia && ib && ia === ib)
+}
+
 function _diffProduct(existing, uploaded, presentKeys, deleteKeys) {
   deleteKeys = deleteKeys || new Set()
   const diffs = []
+  // Master-aware: same canonical color on both sides → suppress all 3 color diffs
+  // (prevents false round-trip diff against non-canonical stored data)
+  const colorSame = _sameColorIdentity(existing, uploaded)
   _DIFF_FIELDS.forEach(f => {
+    if (colorSame && _COLOR_KEYS.indexOf(f.key) >= 0) return
     // presentKeys 있고 해당 필드의 헤더 키가 없으면 비교 스킵 (업로드 파일에 컬럼 없음)
     if (presentKeys) {
       const headerKey = _DIFF_PRESENT_KEY[f.key] || f.key
@@ -1690,7 +1717,11 @@ function _applyProductUpload(parsed) {
         saleStatus:'saleStatus', productionStatus:'productionStatus',
         mainImage:'mainImage', videoUrl:'videoUrl'
       }
+      // Master-aware: same canonical color → preserve existing color (no harmful overwrite,
+      // e.g. legacy colorEn="NA" must NOT be snapped to "Navy" on a no-edit round-trip)
+      const colorSame = _sameColorIdentity(existing, item.product)
       Object.entries(SCALAR_MAP).forEach(([hdrKey, prodKey]) => {
+        if (colorSame && _COLOR_KEYS.indexOf(prodKey) >= 0 && !deleteKeys.has(hdrKey)) return
         if (deleteKeys.has(hdrKey)) {
           // [삭제] keyword: numeric → 0, otherwise empty string
           merged[prodKey] = NUMERIC_FIELDS.has(prodKey) ? 0 : ''
@@ -2104,7 +2135,10 @@ const _normImgVal = v => Array.isArray(v) ? v.join('\n') : String(v ?? '')
 function _diffPlan(existing, uploaded, presentKeys, deleteKeys) {
   deleteKeys = deleteKeys || new Set()
   const diffs = []
+  // Master-aware: same canonical color on both sides → suppress all 3 color diffs
+  const colorSame = _sameColorIdentity(existing, uploaded)
   _PLAN_DIFF_FIELDS.forEach(f => {
+    if (colorSame && _COLOR_KEYS.indexOf(f.key) >= 0) return
     if (presentKeys) {
       const hdrKey = f.hdrKey || f.key
       if (!presentKeys.has(hdrKey)) return
@@ -2354,7 +2388,10 @@ async function _applyPlanUpload(parsed) {
         madeMonth:'madeMonth', madeBy:'madeBy', madeIn:'madeIn',
         memo:'memo', mainImage:'mainImage', videoUrl:'videoUrl'
       }
+      // Master-aware: same canonical color → preserve existing color (no harmful overwrite)
+      const colorSame = _sameColorIdentity(existing, uploaded)
       Object.entries(SCALAR_MAP).forEach(([hdrKey, prodKey]) => {
+        if (colorSame && _COLOR_KEYS.indexOf(prodKey) >= 0 && !deleteKeys.has(hdrKey)) return
         if (deleteKeys.has(hdrKey)) {
           merged[prodKey] = NUMERIC_FIELDS.has(prodKey) ? 0 : ''
         } else if (presentKeys.has(hdrKey) && valueKeys.has(hdrKey)) {
