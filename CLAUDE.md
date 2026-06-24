@@ -3229,6 +3229,22 @@ Established the reference style that every dashboard-opened srm-modal should fol
 
 ---
 
+### 2026-06-24
+
+#### 사이즈 규격 측정항목 4종 추가 — 비키니 상/하의 (🟢)
+- Phase A 단일 소스(`SIZE_SPEC_PARTS`)의 두 번째 페이오프 검증: **측정부위 추가 = `SIZE_SPEC_PARTS` 4줄 append 만으로 화면·엑셀(다운로드/업로드/diff) 전체 자동 반영.** code-reviewer 🟢.
+- **추가 부위 4종** (기존 7종 뒤, 비키니 셋 상/하의 분리 측정용):
+  - `lengthTop`(총장(상)) / `lengthBottom`(총장(하)) / `underBust`(밑가슴) / `thighWidth`(허벅지단면)
+- **기존 `length`(총장) 유지** — 제거/병합 안 함 (사용자 결정, 구분용 별도 항목). 신규 4종은 가산
+- **부위 수**: 7 → 11. **`buildSizeSpecColumns()`**: 43 → **67** 컬럼 (6 사이즈 × 11 부위 + F). console.assert 드리프트 검증 자동 통과
+- **라벨 스타일**: plain (`(cm)` 없음 — UI 테이블이 `pt.label + '(cm)'` 자체 부착). 신규 라벨에 괄호 포함(`총장(상)`) — 업로드 헤더 매칭이 정확 일치(`s === sz + ' ' + partLabel`, 정규식 아님)라 `총장` vs `총장(상)` prefix 모호성 없음, 라운드트립 안전
+- **기능 변경 파일 = `js/core.js` 단 1개** (Phase A 페이오프): `SIZE_SPEC_PARTS` 4줄 + `SIZE_SPEC_SAMPLE` 4키(32/24/40/28) 추가. utils.js/excel.js 등 소비자 전부 자동 반영(수동 편집 0건)
+- **F 단일값·매출 공식(Cafe24 P+Q-U(MAX)-Y / 사방넷 H+I) 미변경**, 마이그레이션 불필요(가산적). 기존 7종 데이터는 신규 4종 빈값 → Phase C `getActiveParts`로 보기/HTML 자동 숨김
+- **검증**: `node -c` 통과, `git diff --stat`=js/core.js 1파일(+5/-1), 하드코딩 part 리스트 0건(product-code.js 매치는 무관한 디자인코드명)
+- **배포**: `firebase deploy --only hosting` (소유주 수동, 규칙 변경 없음)
+
+---
+
 ## 다음 작업 후보 (미구현)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 인쇄/PDF 출력

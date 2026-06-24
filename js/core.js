@@ -710,6 +710,10 @@ const SIZE_SPEC_PARTS = [
   { key: 'shoulder', label: '어깨',   excel: '어깨' },   // Phase B 추가
   { key: 'sleeve',   label: '소매',   excel: '소매' },   // Phase B 추가
   { key: 'hem',      label: '밑단',   excel: '밑단' },   // Phase B 추가
+  { key: 'lengthTop',    label: '총장(상)',   excel: '총장(상)' },   // 비키니 상의
+  { key: 'underBust',    label: '밑가슴',     excel: '밑가슴' },     // 비키니 상의
+  { key: 'lengthBottom', label: '총장(하)',   excel: '총장(하)' },   // 비키니 하의
+  { key: 'thighWidth',   label: '허벅지단면', excel: '허벅지단면' }, // 비키니 하의
 ]
 
 // 엑셀 사이즈규격 컬럼 생성기 — 사이즈규격 컬럼은 반드시 이 함수로만 생성한다 (triple-list desync 방지)
@@ -738,7 +742,7 @@ function getActiveParts(sizeSpec, activeSizes) {
 }
 
 // 샘플 엑셀 예시 셀 값 (part key 기준, 미정의 부위는 '')
-const SIZE_SPEC_SAMPLE = { bust: '48', waist: '38', hip: '52', length: '68', shoulder: '37', sleeve: '58', hem: '45' }
+const SIZE_SPEC_SAMPLE = { bust: '48', waist: '38', hip: '52', length: '68', shoulder: '37', sleeve: '58', hem: '45', lengthTop: '32', lengthBottom: '24', underBust: '40', thighWidth: '28' }
 
 // 방어적 window 미러
 window.SIZE_SPEC_SIZES = SIZE_SPEC_SIZES
