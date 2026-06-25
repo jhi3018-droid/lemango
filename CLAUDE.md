@@ -3254,6 +3254,14 @@ Established the reference style that every dashboard-opened srm-modal should fol
 - **검증**: `node -c` 통과, `git diff --stat`=js/core.js 1파일(+6/-1), 중복 키 0건
 - **배포**: `firebase deploy --only hosting` (소유주 수동, 규칙 변경 없음)
 
+#### 사이즈 규격 입력 — 숫자 스피너 화살표 제거 (CSS, 🟢)
+- 사이즈 규격 수정 그리드(`buildSizeSpecEdit`, `js/utils.js`)의 `<input type="number" class="size-spec-input">` 에서 브라우저 기본 스피너(▲▼) 제거. 사용자가 화살표 없이 숫자 직접 입력
+- **접근**: `type="number"` 유지(모바일 숫자 키보드·숫자 검증 보존) + CSS로 스피너만 숨김. `type="text"` 전환 안 함
+- **변경 파일 = `style.css` 단 1개** (+3줄): `.size-spec-input::-webkit-outer/inner-spin-button { -webkit-appearance:none; margin:0 }` + `.size-spec-input { -moz-appearance:textfield; appearance:textfield }`
+- **스코프 안전**: `.size-spec-input` 은 사이즈 규격 입력 전용 클래스(grep 확인 — utils.js/style.css/CLAUDE.md 외 미사용). 가격/수량 등 타 number 입력 미영향
+- **양쪽 도메인 자동 반영**: 상품조회(modals.js)·신규기획(plan.js)·신규등록(register.js) 모두 공유 `buildSizeSpecEdit` 사용 → 한 곳 수정으로 전부 적용
+- `collectSizeSpec` 등 저장 로직 미변경(클래스/`type=number`/`data-*` 그대로). 마이그레이션 불필요
+
 ---
 
 ## 다음 작업 후보 (미구현)

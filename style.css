@@ -1155,6 +1155,10 @@ body.col-resize-active * { cursor: col-resize !important; }
 .size-spec-table td { text-align:center; padding:6px 8px; border-bottom:0.5px solid #f0efe9; }
 .size-spec-label { background:#faf9f7 !important; font-weight:500; color:#1a1a2e; width:60px; }
 .size-spec-input { width:60px; padding:4px 6px; border:1px solid #e8e6e0; border-radius:4px; font-size:12px; text-align:center; box-sizing:border-box; }
+/* 숫자 스피너 화살표 제거 — 사이즈 규격 입력에만 적용 (type=number 유지) */
+.size-spec-input::-webkit-outer-spin-button,
+.size-spec-input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+.size-spec-input { -moz-appearance:textfield; appearance:textfield; }
 .size-spec-edit td { padding:4px; }
 
 /* 보기/수정 wrapper 토글 — 상세모달 + 기획상세모달 공통 */
