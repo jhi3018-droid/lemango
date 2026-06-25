@@ -3243,6 +3243,17 @@ Established the reference style that every dashboard-opened srm-modal should fol
 - **검증**: `node -c` 통과, `git diff --stat`=js/core.js 1파일(+5/-1), 하드코딩 part 리스트 0건(product-code.js 매치는 무관한 디자인코드명)
 - **배포**: `firebase deploy --only hosting` (소유주 수동, 규칙 변경 없음)
 
+#### 사이즈 규격 측정항목 4종 추가 — 비키니 컵/허리 (🟢)
+- Phase A 단일 소스(`SIZE_SPEC_PARTS`)의 세 번째 페이오프 검증: **측정부위 추가 = `SIZE_SPEC_PARTS` 4줄 append 만으로 화면·엑셀(다운로드/업로드/diff/merge) 전체 자동 반영.** code-reviewer 🟢.
+- **추가 부위 4종** (기존 11종 뒤): `cupWidth`(컵가로) / `cupHeight`(컵세로) / `frontWaist`(앞허리) / `backWaist`(뒤허리)
+- **부위 수**: 11 → 15. **`buildSizeSpecColumns()`**: 67 → **91** 컬럼 (6 사이즈 × 15 부위 + F). console.assert 드리프트 검증 자동 통과
+- **라벨 스타일**: plain (`(cm)` 없음 — UI 테이블이 `pt.label + '(cm)'` 자체 부착). 신규 라벨 특수문자 없음 → 업로드 헤더 정확 일치(`s === sz + ' ' + partLabel`) 라운드트립 안전
+- **기능 변경 파일 = `js/core.js` 단 1개**: `SIZE_SPEC_PARTS` 4줄 + `SIZE_SPEC_SAMPLE` 4키(13/15/30/32) 추가. utils.js/excel.js 등 소비자 전부 자동 반영(수동 편집 0건, grep 확인 — 신규 key는 core.js에만 존재)
+- **중복 검증**: 배열 정확히 15개 unique key (이전 비키니 작업 보고서의 copy-paste 표시 이슈 재발 방지 위해 실제 배열 확인). git diff = 정확히 4줄 추가 + 샘플 1줄
+- **F 단일값·매출 공식(Cafe24 P+Q-U(MAX)-Y / 사방넷 H+I) 미변경**, 마이그레이션 불필요(가산적). 기존 11종 데이터는 신규 4종 빈값 → Phase C `getActiveParts`로 보기/HTML 자동 숨김
+- **검증**: `node -c` 통과, `git diff --stat`=js/core.js 1파일(+6/-1), 중복 키 0건
+- **배포**: `firebase deploy --only hosting` (소유주 수동, 규칙 변경 없음)
+
 ---
 
 ## 다음 작업 후보 (미구현)

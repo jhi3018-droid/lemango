@@ -703,6 +703,7 @@ const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', 'F']
 // 측정 부위(parts)를 추가/변경하려면 SIZE_SPEC_PARTS 한 곳만 수정하면 화면/엑셀이 자동 반영된다.
 const SIZE_SPEC_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL']   // utils.js 에서 이관
 const SIZE_SPEC_PARTS = [
+  { key: 'torso',    label: '토르소', excel: '토르소' }, // 최좌측
   { key: 'bust',     label: '가슴',   excel: '가슴' },
   { key: 'waist',    label: '허리',   excel: '허리' },
   { key: 'hip',      label: '엉덩이', excel: '엉덩이' },
@@ -712,8 +713,12 @@ const SIZE_SPEC_PARTS = [
   { key: 'hem',      label: '밑단',   excel: '밑단' },   // Phase B 추가
   { key: 'lengthTop',    label: '총장(상)',   excel: '총장(상)' },   // 비키니 상의
   { key: 'underBust',    label: '밑가슴',     excel: '밑가슴' },     // 비키니 상의
+  { key: 'cupWidth',     label: '컵가로',     excel: '컵가로' },     // 비키니 컵 (밑가슴 우측)
+  { key: 'cupHeight',    label: '컵세로',     excel: '컵세로' },     // 비키니 컵 (밑가슴 우측)
   { key: 'lengthBottom', label: '총장(하)',   excel: '총장(하)' },   // 비키니 하의
   { key: 'thighWidth',   label: '허벅지단면', excel: '허벅지단면' }, // 비키니 하의
+  { key: 'frontWaist',   label: '앞허리',     excel: '앞허리' },     // 비키니 하의
+  { key: 'backWaist',    label: '뒤허리',     excel: '뒤허리' },     // 비키니 하의
 ]
 
 // 엑셀 사이즈규격 컬럼 생성기 — 사이즈규격 컬럼은 반드시 이 함수로만 생성한다 (triple-list desync 방지)
@@ -742,7 +747,7 @@ function getActiveParts(sizeSpec, activeSizes) {
 }
 
 // 샘플 엑셀 예시 셀 값 (part key 기준, 미정의 부위는 '')
-const SIZE_SPEC_SAMPLE = { bust: '48', waist: '38', hip: '52', length: '68', shoulder: '37', sleeve: '58', hem: '45', lengthTop: '32', lengthBottom: '24', underBust: '40', thighWidth: '28' }
+const SIZE_SPEC_SAMPLE = { torso: '130', bust: '48', waist: '38', hip: '52', length: '68', shoulder: '37', sleeve: '58', hem: '45', lengthTop: '32', lengthBottom: '24', underBust: '40', thighWidth: '28', cupWidth: '13', cupHeight: '15', frontWaist: '30', backWaist: '32' }
 
 // 방어적 window 미러
 window.SIZE_SPEC_SIZES = SIZE_SPEC_SIZES
