@@ -86,6 +86,8 @@ async function _fsLoadProductHistory() {
 }
 window._fsLoadProductHistory = _fsLoadProductHistory
 
+// 반환값: true=쓰기 성공, false=쓰기 실패. db/State 없으면 undefined(쓰기 미수행).
+// (기존 호출자는 반환값을 무시하므로 영향 없음. 실패를 await로 분기하려는 호출자만 사용.)
 async function saveProducts() {
   if (!db || !State.allProducts) return
   try {
@@ -101,8 +103,10 @@ async function saveProducts() {
     batch.set(metaRef, { chunks, total: all.length, updatedAt: new Date().toISOString() })
     await batch.commit()
     window._lastProductSaveTime = Date.now()
+    return true
   } catch (e) {
     _onSaveFailed('saveProducts', e)
+    return false
   }
 }
 window.saveProducts = saveProducts

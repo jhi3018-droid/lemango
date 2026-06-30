@@ -3295,6 +3295,29 @@ Established the reference style that every dashboard-opened srm-modal should fol
 
 ---
 
+#### 캐시 무효화 (firebase.json) + 바코드 저장 하드닝 (🟢)
+- **배경**: "바코드 업로드 후 새로고침 시 사라짐" 버그 조사 결과 — 코드(415899b)는 정상, **원인은 브라우저 stale 캐시**. 소유주 하드 새로고침(Ctrl+Shift+R) 후 정상 영속화 확인 → 캐시 확정. `index.html` script 태그에 `?v=` 없음 + `firebase.json` hosting에 Cache-Control 헤더 없음 → 배포해도 구버전 JS가 서빙됨 (이번 한정 아니라 **모든 배포에 영향**)
+- 변경 파일 3개: `firebase.json`(+20), `js/core.js`(+4), `js/stock.js`(±16)
+
+**PART 1 — firebase.json 캐시 헤더 (모든 향후 배포에 적용)**
+- hosting 블록에 `headers` 배열 추가: `**/*.@(js|css)`, `/index.html`, `/` 에 `Cache-Control: no-cache, max-age=0, must-revalidate`
+- `no-cache` = "사용 전 재검증"(ETag, 변경 없으면 304 → 빠름). 캐시 완전 비활성 아님 — 신선도+속도 균형
+- 기존 config 전부 보존(ignore/rewrites SPA fallback/firestore·storage rules). headers만 추가
+- ⚠️ **이번 배포 자체는 마지막으로 1회 하드 새로고침 필요** — 헤더는 다음 배포부터 효력. 이후 배포는 자동 반영
+
+**PART 2 — confirmBarcodeUpload 저장 하드닝**
+- `confirmBarcodeUpload` → `async`. `await saveProducts()` 후 **저장 성공 시에만** 성공 토스트/인덱스 재구축/모달 닫기
+- `saveProducts()` (core.js) 반환값 추가: **true**(커밋 성공) / **false**(catch — `_onSaveFailed` 토스트 후) / **undefined**(db·State 없음). 기존 호출자 전부 반환값 무시 → 순수 가산적, 영향 없음. throw 동작 미변경(re-throw 안 함 — 다른 await 호출자 unhandled rejection 방지)
+- confirm 분기: `ok === false` → "바코드 저장 실패 — 다시 시도해주세요" 에러 토스트 + 확정 버튼 재활성(데이터 유지, 재시도 가능) + return. `undefined`(db없음)는 차단 안 함
+- saveProducts가 내부에서 에러를 삼키고 false 반환(throw 안 함)하므로 **try/catch 아닌 반환값 분기** 사용 → 성공+실패 이중 토스트 방지
+- 저장 실패 시 인덱스 재구축 생략 → POS findByBarcode가 미영속 바코드를 노출하지 않음(안전)
+
+**결정**: 읽기-검증(read-back) 생략 — `await batch.commit()` resolve = 서버 ACK이므로 추가 라운드트립 불필요
+**검증**: firebase.json 유효 JSON, `node -c` core/stock 통과, 매출 공식 미변경, 타 saveProducts 호출자 20곳 반환값 무시 확인. code-reviewer 🟢
+- **배포**: `firebase deploy --only hosting` (소유주 수동, firestore/storage 규칙 미변경). 배포 후 1회 하드 새로고침 안내
+
+---
+
 ## 다음 작업 후보 (미구현)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 인쇄/PDF 출력

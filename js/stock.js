@@ -750,7 +750,7 @@ function renderBarcodePreview() {
   document.getElementById('bcConfirmBtn').disabled = valid === 0
 }
 
-function confirmBarcodeUpload() {
+async function confirmBarcodeUpload() {
   const validData = _bcUploadData.filter(d => d.valid && d.product && SIZES.includes(d.size))
   if (!validData.length) { showToast('업로드 가능한 바코드가 없습니다.', 'warning'); return }
 
@@ -765,9 +765,19 @@ function confirmBarcodeUpload() {
   })
 
   const skipped = _bcUploadData.length - count
-  if (typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))  // Firestore 영속화
-  if (typeof buildBarcodeIndex === 'function') buildBarcodeIndex()                     // 신규 바코드 즉시 조회 가능
 
+  // 저장 완료를 await 한 뒤 성공 안내 — 쓰기 실패 시 거짓 성공 토스트를 막는다.
+  // saveProducts 는 내부에서 에러를 잡아 false 를 반환(throw 안 함) → 반환값으로 분기.
+  const btn = document.getElementById('bcConfirmBtn')
+  if (btn) btn.disabled = true
+  const ok = typeof saveProducts === 'function' ? await saveProducts() : true
+  if (ok === false) {  // Firestore 쓰기 실패 (undefined=db없음은 차단 안 함)
+    // 실패 토스트는 saveProducts 내부 _onSaveFailed 가 이미 표시 → 여기선 거짓 성공만 차단
+    if (btn) btn.disabled = false  // 데이터 유지 → 재시도 가능
+    return
+  }
+
+  if (typeof buildBarcodeIndex === 'function') buildBarcodeIndex()  // 신규 바코드 즉시 조회 가능
   showToast(`바코드 ${count}건 반영${skipped ? ` (제외 ${skipped}건)` : ''}`, 'success')
   logActivity('upload', '재고관리', `바코드 업로드 — 반영 ${count}건, 제외 ${skipped}건`)
   closeBarcodeUploadModal(true)
