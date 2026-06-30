@@ -626,6 +626,9 @@ function downloadBarcodeSample() {
   XLSX.writeFile(wb, '르망고_바코드_샘플.xlsx')
 }
 
+// 13자리 숫자 바코드 형식 검증 (GS1 표준)
+function _bcIsValidFormat(bc) { return /^\d{13}$/.test(bc) }
+
 function handleBarcodeUpload(input) {
   const file = input.files?.[0]
   if (!file) return
@@ -636,7 +639,10 @@ function handleBarcodeUpload(input) {
     try {
       const wb = XLSX.read(e.target.result, { type: 'array' })
       const ws = wb.Sheets[wb.SheetNames[0]]
-      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+      // raw:false → 텍스트 서식 셀을 그대로 보존하고 숫자 셀의 과학적표기/부동소수를 방지.
+      // (앞자리 0은 엑셀이 숫자로 저장한 시점에 이미 파일 레벨에서 손실되므로, 복구 불가 →
+      //  아래 13자리 검증으로 손실/형식오류를 감지해 사용자에게 경고한다.)
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false })
 
       const dataRows = raw.slice(1).filter(r => String(r[0] || '').trim() && String(r[2] || '').trim())
 
@@ -644,17 +650,12 @@ function handleBarcodeUpload(input) {
         const code = String(r[0]).trim()
         const size = String(r[1]).trim().toUpperCase()
         const barcode = String(r[2]).trim()
-        const product = State.allProducts.find(p => p.productCode === code)
+        const product = State.allProducts.find(p => p.productCode === code && !p.deleted)
         const existing = product?.barcodes?.[size] || ''
-
-        return {
-          code, size, barcode,
-          status: product ? (existing ? '덮어쓰기' : '신규') : '미등록',
-          existing,
-          product
-        }
+        return { code, size, barcode, existing, product, status: '', valid: false, error: '' }
       })
 
+      _bcValidateRows()
       renderBarcodePreview()
     } catch (err) {
       showToast('파일 읽기 오류: ' + err.message, 'error')
@@ -663,45 +664,112 @@ function handleBarcodeUpload(input) {
   reader.readAsArrayBuffer(file)
 }
 
+// 업로드 행 검증 — 형식/매칭/중복(배치 내 + 기존등록) 판정. status + valid + error 부여.
+// status: 'new'|'same'|'overwrite' (업로드 대상) / 'format'|'unmatched'|'collision' (제외)
+function _bcValidateRows() {
+  // 다른 상품/사이즈에 이미 등록된 바코드 충돌 검출을 위해 역인덱스 최신화
+  if (typeof buildBarcodeIndex === 'function') buildBarcodeIndex()
+
+  const batchSeen = new Map()  // barcode → { code, size } (배치 내 첫 등장 위치)
+
+  _bcUploadData.forEach(d => {
+    d.error = ''
+    // 1) 형식 검증 (13자리 숫자)
+    if (!_bcIsValidFormat(d.barcode)) {
+      d.status = 'format'; d.valid = false
+      d.error = (/^\d*$/.test(d.barcode) && d.barcode.length < 13)
+        ? `13자리 미만 (${d.barcode.length}자리 — 앞자리 0 손실 또는 형식오류 가능)`
+        : '13자리 숫자 형식 아님'
+      return
+    }
+    // 2) 상품/사이즈 매칭
+    if (!d.product || !SIZES.includes(d.size)) {
+      d.status = 'unmatched'; d.valid = false
+      d.error = !d.product ? '품번 미등록' : ('사이즈 인식 불가: ' + d.size)
+      return
+    }
+    // 3) 배치(파일) 내 중복 — 동일 바코드가 다른 품번/사이즈에 사용됨
+    const seen = batchSeen.get(d.barcode)
+    if (seen && (seen.code !== d.code || seen.size !== d.size)) {
+      d.status = 'collision'; d.valid = false
+      d.error = `파일 내 중복: ${seen.code}/${seen.size} 와 동일 바코드`
+      return
+    }
+    // 4) 기존 등록과 충돌 — 동일 바코드가 다른 품번/사이즈에 이미 등록됨
+    //    (동일 품번+사이즈에 이미 등록된 경우는 충돌 아님 → no-op/덮어쓰기)
+    const hit = typeof findByBarcode === 'function' ? findByBarcode(d.barcode) : null
+    if (hit && (hit.productCode !== d.code || hit.size !== d.size)) {
+      d.status = 'collision'; d.valid = false
+      d.error = `이미 ${hit.productCode}/${hit.size} 에 등록됨`
+      return
+    }
+    // 통과 → 신규 / 동일(no-op) / 덮어쓰기
+    batchSeen.set(d.barcode, { code: d.code, size: d.size })
+    d.status = !d.existing ? 'new' : (d.existing === d.barcode ? 'same' : 'overwrite')
+    d.valid = true
+  })
+}
+
+const _BC_PREVIEW_META = {
+  new:       { cls: 'bc-row-new',       badge: '<span class="badge-preview-ok">신규</span>' },
+  same:      { cls: 'bc-row-new',       badge: '<span class="badge-preview-ok">동일</span>' },
+  overwrite: { cls: 'bc-row-overwrite', badge: '<span class="badge-preview-warn">덮어쓰기</span>' },
+  format:    { cls: 'bc-row-miss',      badge: '<span class="badge-preview-error">형식오류</span>' },
+  collision: { cls: 'bc-row-dup',       badge: '<span class="badge-preview-dup">중복</span>' },
+  unmatched: { cls: 'bc-row-miss',      badge: '<span class="badge-preview-error">미등록</span>' },
+}
+
 function renderBarcodePreview() {
   document.getElementById('bcPreviewArea').style.display = 'block'
 
   const total = _bcUploadData.length
-  const matched = _bcUploadData.filter(d => d.status !== '미등록').length
-  document.getElementById('bcTotalCount').textContent = total
-  document.getElementById('bcMatchCount').textContent = matched
-  document.getElementById('bcMissCount').textContent = total - matched
+  const valid = _bcUploadData.filter(d => d.valid).length
+  const formatErr = _bcUploadData.filter(d => d.status === 'format').length
+  const collision = _bcUploadData.filter(d => d.status === 'collision').length
+  const unmatched = _bcUploadData.filter(d => d.status === 'unmatched').length
+
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v }
+  set('bcTotalCount', total)
+  set('bcValidCount', valid)
+  set('bcFormatCount', formatErr)
+  set('bcDupCount', collision)
+  set('bcMissCount', unmatched)
 
   document.getElementById('bcPreviewBody').innerHTML = _bcUploadData.map(d => {
-    const cls = d.status === '미등록' ? 'bc-row-miss' : d.status === '덮어쓰기' ? 'bc-row-overwrite' : 'bc-row-new'
-    const badge = d.status === '미등록' ? '<span class="badge-preview-err">미등록</span>'
-      : d.status === '덮어쓰기' ? '<span class="badge-preview-warn">덮어쓰기</span>'
-      : '<span class="badge-preview-ok">신규</span>'
-    return `<tr class="${cls}">
-      <td>${badge}</td>
+    const m = _BC_PREVIEW_META[d.status] || _BC_PREVIEW_META.unmatched
+    return `<tr class="${m.cls}">
+      <td>${m.badge}</td>
       <td>${esc(d.code)}</td>
       <td style="text-align:center">${esc(d.size)}</td>
       <td style="font-family:monospace">${esc(d.barcode)}</td>
       <td style="font-family:monospace;color:var(--text-secondary)">${esc(d.existing) || '-'}</td>
+      <td style="font-size:11px;color:var(--danger)">${esc(d.error || '')}</td>
     </tr>`
   }).join('')
 
-  document.getElementById('bcConfirmBtn').disabled = matched === 0
+  document.getElementById('bcConfirmBtn').disabled = valid === 0
 }
 
 function confirmBarcodeUpload() {
-  const validData = _bcUploadData.filter(d => d.product && SIZES.includes(d.size))
-  if (!validData.length) { showToast('매칭되는 상품이 없습니다.', 'warning'); return }
+  const validData = _bcUploadData.filter(d => d.valid && d.product && SIZES.includes(d.size))
+  if (!validData.length) { showToast('업로드 가능한 바코드가 없습니다.', 'warning'); return }
 
   let count = 0
   validData.forEach(d => {
-    if (!d.product.barcodes) d.product.barcodes = Object.fromEntries(SIZES.map(sz => [sz, '']))
-    d.product.barcodes[d.size] = d.barcode
+    // 미리보기 시점 캡처가 아닌 현재 State 기준으로 상품 재해석 (미리보기~확정 사이 원격 동기화로 객체가 교체됐을 수 있음)
+    const p = State.allProducts.find(x => x.productCode === d.code && !x.deleted) || d.product
+    if (!p) return
+    if (!p.barcodes) p.barcodes = Object.fromEntries(SIZES.map(sz => [sz, '']))
+    p.barcodes[d.size] = d.barcode
     count++
   })
 
-  showToast(`바코드 ${count}건 업로드 완료`, 'success')
-  logActivity('upload', '재고관리', `바코드 업로드 — ${count}건`)
+  const skipped = _bcUploadData.length - count
+  if (typeof saveProducts === 'function') saveProducts().catch(e => console.error(e))  // Firestore 영속화
+  if (typeof buildBarcodeIndex === 'function') buildBarcodeIndex()                     // 신규 바코드 즉시 조회 가능
+
+  showToast(`바코드 ${count}건 반영${skipped ? ` (제외 ${skipped}건)` : ''}`, 'success')
+  logActivity('upload', '재고관리', `바코드 업로드 — 반영 ${count}건, 제외 ${skipped}건`)
   closeBarcodeUploadModal(true)
   renderStockTable()
 }

@@ -1174,6 +1174,8 @@ body.col-resize-active * { cursor: col-resize !important; }
 /* 바코드 업로드 미리보기 행 */
 .bc-row-miss { background: #fff3f3; }
 .bc-row-overwrite { background: #fffbe6; }
+.bc-row-new { background: #f1f8f3; }
+.bc-row-dup { background: #e3f2fd; }
 .dsection-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

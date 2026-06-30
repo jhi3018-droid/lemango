@@ -225,6 +225,9 @@ async function initApp() {
     State.workItems = [..._workItems]
     State.work.filtered = [...State.workItems]
 
+    // 바코드 역인덱스 초기 구축 (POS 스캔 기반 — 로드/동기화/업로드 후 재구축)
+    if (typeof buildBarcodeIndex === 'function') buildBarcodeIndex()
+
     populateAllSelects()
 
     // 열린 탭들만 렌더 (첫 렌더 마킹)

@@ -468,6 +468,7 @@ window._onProductsChanged = function(meta) {
       const fresh = await _fsLoadProducts()
       if (fresh && fresh.length) {
         State.allProducts = fresh
+        if (typeof buildBarcodeIndex === 'function') buildBarcodeIndex()  // 타 세션 등록 바코드 즉시 조회 가능
         // 활성 검색 유지하며 .filtered 재구축 (검색조건 없으면 전체)
         State.product.filtered = _reNarrowFiltered('product')
         State.stock.filtered   = _reNarrowFiltered('stock')
@@ -763,6 +764,54 @@ console.assert(
   buildSizeSpecColumns().length === SIZE_SPEC_SIZES.length * SIZE_SPEC_PARTS.length + 1,
   'size-spec column count drift'
 )
+
+// =============================================
+// ===== 바코드 역인덱스 (barcode → {productCode, size}) — POS Phase 0 =====
+// =============================================
+// State.allProducts 의 p.barcodes(사이즈별 객체)를 스캔하여 바코드→상품/사이즈 O(1) 조회 Map 구축.
+// POS 스캔(scan-to-find)의 기반. 로드/실시간동기화/바코드 업로드 후 재구축한다.
+// 규모: 798상품 × 7사이즈 = 약 5,586엔트리 — 재구축 비용 무시 가능.
+const _barcodeIndex = new Map()      // barcode(string) → { productCode, size }
+let _barcodeCollisions = []          // [{ barcode, existing:{productCode,size}, dupe:{productCode,size} }]
+
+function buildBarcodeIndex() {
+  _barcodeIndex.clear()
+  _barcodeCollisions = []
+  ;(State.allProducts || []).forEach(p => {
+    if (!p || p.deleted === true || !p.barcodes) return
+    SIZES.forEach(sz => {
+      const bc = String(p.barcodes[sz] || '').trim()
+      if (!bc) return
+      if (_barcodeIndex.has(bc)) {
+        // 동일 바코드가 2개 상품/사이즈에 등록됨 — 데이터 정합성 문제
+        _barcodeCollisions.push({
+          barcode: bc,
+          existing: _barcodeIndex.get(bc),
+          dupe: { productCode: p.productCode, size: sz }
+        })
+      } else {
+        _barcodeIndex.set(bc, { productCode: p.productCode, size: sz })
+      }
+    })
+  })
+  State.barcodeIndex = _barcodeIndex
+  if (_barcodeCollisions.length) {
+    console.warn('[BarcodeIndex] 바코드 충돌 ' + _barcodeCollisions.length + '건 (동일 바코드가 복수 상품/사이즈에 등록):', _barcodeCollisions)
+  }
+  return { idx: _barcodeIndex, collisions: _barcodeCollisions }
+}
+window.buildBarcodeIndex = buildBarcodeIndex
+
+// 바코드 1건 조회 — POS 스캔이 호출. O(1). 미등록이면 null.
+function findByBarcode(barcode) {
+  const bc = String(barcode || '').trim()
+  if (!bc) return null
+  return _barcodeIndex.get(bc) || null
+}
+window.findByBarcode = findByBarcode
+
+function getBarcodeCollisions() { return _barcodeCollisions.slice() }
+window.getBarcodeCollisions = getBarcodeCollisions
 
 const SPEC_ROWS = [
   { key: 'bust', label: '가슴' },

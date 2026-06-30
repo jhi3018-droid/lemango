@@ -3264,6 +3264,37 @@ Established the reference style that every dashboard-opened srm-modal should fol
 
 ---
 
+### 2026-06-30
+
+#### POS Phase 0 — 바코드 업로드 하드닝 + 역인덱스 (🟢)
+- **POS 스캔 기능의 선행 기반(Phase 0).** POS/매장/매출 코드 없음 — 바코드 인프라만 구축. 배포 후 소유주가 실제 바코드 엑셀 등록(현재 0% 채워짐) → 이후 POS Phase 1(매장 구조) 진행
+- 변경 파일 5개: `js/core.js`(+49), `js/stock.js`(±113), `js/main.js`(+3), `index.html`(±11), `style.css`(+2)
+
+**PART 1 — 바코드 일괄 업로드 하드닝 (`js/stock.js`)**
+- **앞자리 0 / 텍스트 안전**: `sheet_to_json` `raw:false` 전환(기존 default raw:true) → 텍스트 서식 셀 보존 + 숫자 과학적표기/부동소수 방지. ⚠️ 앞자리 0은 엑셀이 숫자로 저장한 시점에 파일 레벨에서 이미 손실 → 복구 불가 → **13자리 미만 감지 시 경고**(앞자리 0 손실 가능성 힌트). 모달에 "바코드 열은 반드시 '텍스트' 서식으로 저장 후 업로드" 안내 추가
+- **13자리 형식 검증**: `_bcIsValidFormat(bc)` = `/^\d{13}$/`. 위반 시 `status:'format'` + 비고에 사유. 숫자인데 13자리 미만이면 "앞자리 0 손실 또는 형식오류 가능" 힌트
+- **유니크 검증** (`_bcValidateRows`): (1) 배치(파일) 내 동일 바코드가 다른 품번/사이즈에 사용 → 중복 (2) 역인덱스로 기존 등록과 충돌 검사 → 다른 품번/사이즈에 이미 등록됐으면 중복. **동일 품번+사이즈 재업로드는 충돌 아님**(no-op/덮어쓰기, `hit.productCode!==code || hit.size!==size` 가드)
+- **상태 우선순위**: format(형식오류) → unmatched(미등록) → collision(중복, 배치내/기존등록) → overwrite(덮어쓰기)/same(동일)/new(신규). 앞 3종 제외, 뒤 3종만 업로드
+- **미리보기 개선**: 요약 카운트 정상/형식오류/중복/미등록 + 비고 컬럼(행별 사유). 정상 행만 업로드, 제외 건수 토스트 보고
+- **영속화 버그 수정**: 기존 `confirmBarcodeUpload`가 `saveProducts()` 미호출(바코드 새로고침 시 손실) → `saveProducts()` + `buildBarcodeIndex()` 추가. POS 기반이라 영속화 필수
+
+**PART 2 — 역인덱스 barcode → {productCode, size} (`js/core.js`)**
+- `buildBarcodeIndex()` — `State.allProducts`의 `p.barcodes`(사이즈별 객체) 스캔 → `Map<barcode,{productCode,size}>`. soft-deleted(`p.deleted`) 상품 제외. 충돌(동일 바코드 복수 상품/사이즈) → `_barcodeCollisions` + `console.warn`. `State.barcodeIndex`에도 노출
+- `findByBarcode(barcode)` — O(1) Map 조회, 미등록 null. **POS 스캔이 호출할 함수**(이번 빌드는 미사용, 준비만)
+- `getBarcodeCollisions()` — 충돌 목록 반환
+- **재구축 트리거 3곳**: 초기 로드(`main.js` filtered 세팅 직후), 실시간 동기화(`core.js _onProductsChanged` — 타 세션 등록 바코드 즉시 조회), 업로드 확정 후(`stock.js`)
+- 규모 798×7≈5,586엔트리 — 재구축 비용 무시 가능
+- **로드 순서 안전**: `buildBarcodeIndex`는 `SIZES`(core.js 후반 정의) 참조하나 런타임(로드/액션 이벤트)에만 호출 → TDZ 무관
+
+**결정 로그**
+- 형식오류/중복: block(전체차단) 아닌 **skip + 보고** (정상 행만 업로드, 제외 건수 표시)
+- soft-deleted 상품 바코드: 인덱스/매칭 제외(휴지통 상품에 바코드 안 씀) — 기존 대비 미세 동작 변경(품번 매칭에 `!p.deleted` 추가)
+
+**검증**: `node -c` 3파일 통과, 매출 공식(Cafe24 P+Q-U(MAX)-Y / 사방넷 H+I) 미변경, 입고 엑셀/상세모달 수동 바코드/정렬·브랜드·검색·staleness 미영향, 구 ID `bcMatchCount` 잔여 참조 0건. code-reviewer 🟢
+- **배포**: `firebase deploy --only hosting` (소유주 수동, 규칙 변경 없음). ⚠️ 배포 후 소유주가 실제 바코드 엑셀 등록 → POS Phase 1(매장 구조) 진행
+
+---
+
 ## 다음 작업 후보 (미구현)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 인쇄/PDF 출력
