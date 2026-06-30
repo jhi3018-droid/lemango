@@ -588,9 +588,11 @@ function renderStockTable() {
 // ===== 바코드 업로드 =====
 // =============================================
 let _bcUploadData = []
+let _bcIncomplete = 0   // 불완전 행(코드 XOR 바코드만 입력) 개수 — 완전 빈 행은 제외
 
 function openBarcodeUploadModal() {
   _bcUploadData = []
+  _bcIncomplete = 0
   const input = document.getElementById('bcUploadFile')
   if (input) input.value = ''
   document.getElementById('bcPreviewArea').style.display = 'none'
@@ -644,13 +646,24 @@ function handleBarcodeUpload(input) {
       //  아래 13자리 검증으로 손실/형식오류를 감지해 사용자에게 경고한다.)
       const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false })
 
-      const dataRows = raw.slice(1).filter(r => String(r[0] || '').trim() && String(r[2] || '').trim())
+      // 데이터행(코드+바코드 모두 있음) / 불완전행(코드 XOR 바코드만) / 완전빈행(둘 다 없음) 분류
+      // 완전빈행 = 엑셀 trailing 빈줄 → 조용히 무시 / 불완전행 = 실수 가능성 → 카운트 후 경고
+      _bcIncomplete = 0
+      const dataRows = []
+      raw.slice(1).forEach(r => {
+        const c = String(r[0] || '').trim()
+        const b = String(r[2] || '').trim()
+        if (c && b) { dataRows.push(r); return }
+        if (!c && !b) return            // 완전 빈 행 → 무시
+        _bcIncomplete++                 // 코드 또는 바코드 한쪽만 → 불완전
+      })
 
       _bcUploadData = dataRows.map(r => {
-        const code = String(r[0]).trim()
+        // 품번 비교는 대소문자 무시(양쪽 대문자화). 저장은 실제 상품의 원래 casing에 한다 (p.barcodes만 변경).
+        const code = String(r[0]).trim().toUpperCase()
         const size = String(r[1]).trim().toUpperCase()
         const barcode = String(r[2]).trim()
-        const product = State.allProducts.find(p => p.productCode === code && !p.deleted)
+        const product = State.allProducts.find(p => (p.productCode || '').toUpperCase() === code && !p.deleted)
         const existing = product?.barcodes?.[size] || ''
         return { code, size, barcode, existing, product, status: '', valid: false, error: '' }
       })
@@ -698,7 +711,7 @@ function _bcValidateRows() {
     // 4) 기존 등록과 충돌 — 동일 바코드가 다른 품번/사이즈에 이미 등록됨
     //    (동일 품번+사이즈에 이미 등록된 경우는 충돌 아님 → no-op/덮어쓰기)
     const hit = typeof findByBarcode === 'function' ? findByBarcode(d.barcode) : null
-    if (hit && (hit.productCode !== d.code || hit.size !== d.size)) {
+    if (hit && ((hit.productCode || '').toUpperCase() !== d.code || hit.size !== d.size)) {
       d.status = 'collision'; d.valid = false
       d.error = `이미 ${hit.productCode}/${hit.size} 에 등록됨`
       return
@@ -734,6 +747,14 @@ function renderBarcodePreview() {
   set('bcFormatCount', formatErr)
   set('bcDupCount', collision)
   set('bcMissCount', unmatched)
+  set('bcIncompleteCount', _bcIncomplete)
+
+  // 불완전 행 안내 (코드/바코드 한쪽만 입력) — 0이면 숨김
+  const incWrap = document.getElementById('bcIncompleteWrap')
+  if (incWrap) incWrap.style.display = _bcIncomplete > 0 ? '' : 'none'
+  // 미등록 품번 복사 버튼 — 미등록 행 있을 때만
+  const copyBtn = document.getElementById('bcCopyUnmatchedBtn')
+  if (copyBtn) copyBtn.style.display = unmatched > 0 ? '' : 'none'
 
   document.getElementById('bcPreviewBody').innerHTML = _bcUploadData.map(d => {
     const m = _BC_PREVIEW_META[d.status] || _BC_PREVIEW_META.unmatched
@@ -750,6 +771,26 @@ function renderBarcodePreview() {
   document.getElementById('bcConfirmBtn').disabled = valid === 0
 }
 
+// 미등록(품번 매칭 실패) 행의 품번을 중복 제거하여 클립보드 복사 — 엑셀 수정용
+function copyUnmatchedBarcodeCodes() {
+  // 품번 자체가 미등록인 행만 (사이즈 인식 불가는 품번이 존재하므로 제외 — 버튼 라벨 '미등록 품번'에 부합)
+  const codes = [...new Set(_bcUploadData.filter(d => d.status === 'unmatched' && !d.product).map(d => d.code))]
+  if (!codes.length) { showToast('미등록 품번이 없습니다.', 'warning'); return }
+  const text = codes.join('\n')
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text)
+      .then(() => showToast(`미등록 품번 ${codes.length}개 복사됨`, 'success'))
+      .catch(() => showToast('복사 실패', 'error'))
+  } else {
+    // 폴백 (구형 브라우저)
+    const ta = document.createElement('textarea')
+    ta.value = text; document.body.appendChild(ta); ta.select()
+    try { document.execCommand('copy'); showToast(`미등록 품번 ${codes.length}개 복사됨`, 'success') }
+    catch (e) { showToast('복사 실패', 'error') }
+    document.body.removeChild(ta)
+  }
+}
+
 async function confirmBarcodeUpload() {
   const validData = _bcUploadData.filter(d => d.valid && d.product && SIZES.includes(d.size))
   if (!validData.length) { showToast('업로드 가능한 바코드가 없습니다.', 'warning'); return }
@@ -757,7 +798,8 @@ async function confirmBarcodeUpload() {
   let count = 0
   validData.forEach(d => {
     // 미리보기 시점 캡처가 아닌 현재 State 기준으로 상품 재해석 (미리보기~확정 사이 원격 동기화로 객체가 교체됐을 수 있음)
-    const p = State.allProducts.find(x => x.productCode === d.code && !x.deleted) || d.product
+    // d.code 는 대문자 정규화됨 → 비교도 대문자화. 저장은 실제 상품 객체(p.barcodes)에 — productCode 원본 casing 보존
+    const p = State.allProducts.find(x => (x.productCode || '').toUpperCase() === d.code && !x.deleted) || d.product
     if (!p) return
     if (!p.barcodes) p.barcodes = Object.fromEntries(SIZES.map(sz => [sz, '']))
     p.barcodes[d.size] = d.barcode

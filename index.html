@@ -2507,12 +2507,14 @@
       </div>
     </div>
     <div id="bcPreviewArea" style="display:none;margin-top:16px">
-      <div class="bc-summary" style="display:flex;gap:14px;font-size:13px;margin-bottom:12px;flex-wrap:wrap">
+      <div class="bc-summary" style="display:flex;gap:14px;font-size:13px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
         <span>총 <strong id="bcTotalCount">0</strong>건</span>
         <span style="color:var(--success)">정상 <strong id="bcValidCount">0</strong>건</span>
         <span style="color:var(--danger)">형식오류 <strong id="bcFormatCount">0</strong>건</span>
         <span style="color:#1565c0">중복 <strong id="bcDupCount">0</strong>건</span>
         <span style="color:var(--danger)">미등록 <strong id="bcMissCount">0</strong>건</span>
+        <span id="bcIncompleteWrap" style="display:none;color:var(--warning)">불완전 <strong id="bcIncompleteCount">0</strong>건</span>
+        <button id="bcCopyUnmatchedBtn" class="btn btn-outline" style="display:none;margin-left:auto;padding:4px 10px;font-size:12px;white-space:nowrap" onclick="copyUnmatchedBarcodeCodes()">미등록 품번 복사</button>
       </div>
       <div class="bc-preview-table-wrap" style="max-height:360px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">
         <table class="data-table" style="margin:0;font-size:13px">

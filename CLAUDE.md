@@ -3318,6 +3318,19 @@ Established the reference style that every dashboard-opened srm-modal should fol
 
 ---
 
+#### 바코드 업로드 하드닝 — 대소문자 무시 + 미등록 복사 + 불완전 행 경고 (🟢)
+- POS Phase 0 후속. 소유주 실제 바코드 엑셀 등록 전 마찰 제거 3종. 변경 파일 2개: `js/stock.js`(±51), `index.html`(±4). 동작 안전성(잘못된 쓰기 없음)은 기존과 동일 — 마찰만 감소
+- **PART 1 — 품번 대소문자 무시 매칭** (최고 가치): 기존 `p.productCode === code` strict 비교(대소문자 구분)라 엑셀 품번이 소문자/혼합이면 거짓 "미등록". → 양쪽 대문자화 비교
+  - 3개 조회 지점 일관 적용: 읽기(`handleBarcodeUpload`: `code = trim().toUpperCase()`, `(p.productCode||'').toUpperCase()===code`), 확정 재해석(`confirmBarcodeUpload`: `(x.productCode||'').toUpperCase()===d.code`), 충돌검사(`(hit.productCode||'').toUpperCase()!==d.code`)
+  - **저장은 실제 상품 객체(`p.barcodes[size]`)에** — `productCode` 원본 casing 절대 변경 안 함. 비교만 대문자화. 저장된 798개 전부 대문자라 기존 매칭 무영향, 소문자 입력 허용만 추가
+  - `d.code` 자체를 대문자 정규화 → 배치 내 중복검사(batchSeen)도 일관 (소문자/대문자 동일 품번을 다른 코드로 오판하지 않음). `findByBarcode`는 바코드 기준이라 무관
+- **PART 2 — "미등록 품번 복사" 버튼**: `copyUnmatchedBarcodeCodes()` — unmatched 행 품번 Set 중복제거 → 줄바꿈 조인 → 클립보드(navigator.clipboard + execCommand 폴백) → "미등록 품번 N개 복사됨" 토스트. `#bcCopyUnmatchedBtn`은 미등록>0일 때만 표시(renderBarcodePreview에서 토글). 엑셀 수정용
+- **PART 3 — 불완전 행 경고**: 기존엔 코드/바코드 빈 행을 미리보기 전 조용히 제외(소유주가 누락 인지 불가). → raw 행 분류: 코드+바코드 둘 다 → 데이터행 / 둘 다 없음 → 완전빈행(trailing, 조용히 무시) / **한쪽만 → 불완전행 `_bcIncomplete++`**. 미리보기 요약에 "불완전 N건"(`#bcIncompleteWrap`, 0이면 숨김). 비차단(정상 행은 그대로 업로드). `_bcIncomplete`는 모달 열기+업로드 시작 시 리셋
+- **검증**: `node -c` 통과, 매출 공식 미변경, Phase 0 형식/충돌/미등록 검출 무영향, 저장/인덱스/element-ID 일관. code-reviewer 🟢
+- **배포**: `firebase deploy --only hosting` (소유주 수동, 규칙 미변경)
+
+---
+
 ## 다음 작업 후보 (미구현)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 인쇄/PDF 출력
