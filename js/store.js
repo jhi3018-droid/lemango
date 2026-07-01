@@ -50,19 +50,24 @@ function _buildStoreContextHtml() {
   return `<span class="store-ctx-fixed">🏬 ${esc(_storeNameById(sid))}</span>`
 }
 
-// 서브 패널 placeholder ("준비중"). 재고현황(stock) 패널에는 관리자용 재고 업로드 버튼(1e).
+// 서브 패널. 재고현황(stock) 패널은 실제 뷰(1f), 나머지는 "준비중" placeholder.
 function _storeSubPanelHtml(sub) {
   const shown = sub.key === _storeActiveSub
   const grade = (typeof _currentUserGrade !== 'undefined' && _currentUserGrade) ? _currentUserGrade : 1
-  let toolbar = ''
-  if (sub.key === 'stock' && grade >= 3) {
-    // 1e: 재고 업로드 진입점. 1f(실제 재고현황 뷰)에서 이 툴바에 통합 예정.
-    toolbar = `<div class="store-panel-toolbar">
-      <button class="btn btn-new" onclick="openStoreStockUploadModal()">📥 재고 업로드</button>
+  if (sub.key === 'stock') {
+    // 1f: 매장별 재고현황 뷰. 조회는 전 직원(권한 방침), 재고 업로드 버튼은 관리자(grade>=3)만.
+    const uploadBtn = grade >= 3 ? `<button class="btn btn-new" onclick="openStoreStockUploadModal()">📥 재고 업로드</button>` : ''
+    return `<div class="store-panel${shown ? '' : ' store-panel-hidden'}" id="storePanel_stock">
+      <div class="store-panel-toolbar">
+        <button class="btn btn-outline" onclick="renderStoreStockView()">↻ 새로고침</button>
+        ${uploadBtn}
+      </div>
+      <div id="storeStockViewBody" class="store-stock-view">
+        <div class="store-placeholder"><div class="store-placeholder-desc">불러오는 중…</div></div>
+      </div>
     </div>`
   }
   return `<div class="store-panel${shown ? '' : ' store-panel-hidden'}" id="storePanel_${sub.key}">
-    ${toolbar}
     <div class="store-placeholder">
       <div class="store-placeholder-icon">🚧</div>
       <div class="store-placeholder-title">${esc(sub.label)}</div>
@@ -93,6 +98,8 @@ function renderStoreTab() {
     <div class="store-subtabs">${subBar}</div>
     <div class="store-panels">${panels}</div>
   `
+  // 재고현황이 활성 서브탭이면 즉시 로드(온디맨드). 비활성이면 전환 시 로드.
+  if (_storeActiveSub === 'stock') renderStoreStockView()
 }
 
 // 서브탭 전환 (패널 표시 토글 + 활성 버튼)
@@ -105,6 +112,7 @@ function switchStoreTab(sub) {
   document.querySelectorAll('.store-panel').forEach(p => {
     p.classList.toggle('store-panel-hidden', p.id !== 'storePanel_' + sub)
   })
+  if (sub === 'stock') renderStoreStockView()   // 재고현황으로 전환 시 온디맨드 로드
 }
 
 // 관리자 매장 스위처 setter — _storeViewOverride 설정 후 재렌더
@@ -407,3 +415,120 @@ window.handleStoreStockUpload = handleStoreStockUpload
 window.renderStoreStockPreview = renderStoreStockPreview
 window.copyUnmatchedStoreCodes = copyUnmatchedStoreCodes
 window.confirmStoreStockUpload = confirmStoreStockUpload
+
+// =============================================
+// ===== 매장별 재고현황 뷰 (POS Phase 1f) =====
+// =============================================
+// 조회는 전 직원 개방(권한 방침). 온디맨드 로드(loadStoreStock/buildStoreStockIndex, 1d) — 라이브 리스너 없음.
+// 상품 정보(상품명/이미지/정상가)는 State.allProducts 에서 read-only 조인. 품번 클릭 → 상세 모달.
+
+let _ssvStore = ''   // 현재 뷰에 표시 중인 매장 id (상세 모달이 참조)
+
+// 품번으로 상품 조회 (정확 매칭 → 대소문자 무시 폴백)
+function _ssvFindProduct(code) {
+  const list = State.allProducts || []
+  return list.find(x => x.productCode === code)
+      || list.find(x => (x.productCode || '').toUpperCase() === (code || '').toUpperCase())
+      || null
+}
+
+// 매장별 재고 테이블 렌더 (async — buildStoreStockIndex)
+async function renderStoreStockView() {
+  const body = document.getElementById('storeStockViewBody')
+  if (!body) return
+  const store = (typeof resolveActiveStore === 'function') ? resolveActiveStore() : ''
+  _ssvStore = store || ''
+  if (!store) {
+    body.innerHTML = `<div class="store-placeholder"><div class="store-placeholder-icon">🏬</div><div class="store-placeholder-desc">배정된 매장이 없습니다 — 관리자에게 문의하세요.</div></div>`
+    return
+  }
+  body.innerHTML = `<div class="store-placeholder"><div class="store-placeholder-desc">불러오는 중…</div></div>`
+  let map = {}
+  try {
+    map = (typeof buildStoreStockIndex === 'function') ? await buildStoreStockIndex(store) : {}
+  } catch (e) {
+    body.innerHTML = `<div class="store-placeholder"><div class="store-placeholder-desc" style="color:var(--danger)">재고 로드 실패: ${esc(e.message || '')}</div></div>`
+    return
+  }
+  const codes = Object.keys(map).sort()
+  if (!codes.length) {
+    const admin = _ssuIsAdmin()
+    body.innerHTML = `<div class="store-placeholder"><div class="store-placeholder-icon">📦</div><div class="store-placeholder-desc">재고 데이터가 없습니다${admin ? ' — 재고 업로드로 등록하세요' : ''}</div></div>`
+    return
+  }
+  const headSizes = SIZES.map(sz => `<th class="ssv-num">${esc(sz)}</th>`).join('')
+  const rows = codes.map(code => {
+    const sizes = map[code] || {}
+    const p = _ssvFindProduct(code)
+    const nameCell = p
+      ? (esc(p.nameKr || p.nameEn || '') + (p.deleted ? ' <span class="ssv-del-flag">삭제된 상품</span>' : ''))
+      : '<span style="color:var(--text-muted)">(상품 정보 없음)</span>'
+    let total = 0
+    const sizeCells = SIZES.map(sz => {
+      const v = Number(sizes[sz] || 0); total += v
+      return `<td class="ssv-num${v < 0 ? ' ssv-neg' : ''}">${v}</td>`
+    }).join('')
+    return `<tr>
+      <td><span class="code-link" onclick="openStoreStockDetail('${esc(code)}')">${esc(code)}</span></td>
+      <td>${nameCell}</td>
+      ${sizeCells}
+      <td class="ssv-num ssv-total${total < 0 ? ' ssv-neg' : ''}">${total}</td>
+    </tr>`
+  }).join('')
+  body.innerHTML = `
+    <div class="ssv-meta">${esc(_storeNameById(store))} · 총 ${codes.length}품번</div>
+    <div class="ssv-table-wrap">
+      <table class="data-table ssv-table">
+        <thead><tr><th style="width:150px">품번</th><th>상품명</th>${headSizes}<th class="ssv-num">합계</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`
+}
+
+// 품번 클릭 → 상세 모달 (이미지 + 정상가 + 사이즈별 재고 + 합계). 로케이션/할인은 향후(확장 지점 주석).
+function openStoreStockDetail(code) {
+  const store = _ssvStore
+  const sizes = (typeof getStoreStock === 'function') ? getStoreStock(store, code) : {}
+  const p = _ssvFindProduct(code)
+  const name = p ? (p.nameKr || p.nameEn || '') : ''
+  const price = (p && (p.salePrice || p.salePrice === 0)) ? (Number(p.salePrice).toLocaleString() + '원') : '-'
+  const img = (p && typeof getThumbUrl === 'function') ? getThumbUrl(p) : ''
+  const imgHtml = img
+    ? `<img src="${esc(img)}" class="ssv-detail-img" onerror="this.style.visibility='hidden'">`
+    : `<div class="ssv-detail-img ssv-detail-noimg">이미지 없음</div>`
+  let total = 0
+  const sizeRows = SIZES.map(sz => {
+    const v = Number(sizes[sz] || 0); total += v
+    return `<div class="ssv-detail-size${v < 0 ? ' ssv-neg' : ''}"><span class="ssv-detail-size-lbl">${esc(sz)}</span><span class="ssv-detail-size-val">${v}</span></div>`
+  }).join('')
+  const delFlag = (p && p.deleted) ? ' <span class="ssv-del-flag">삭제된 상품</span>' : ''
+
+  const bodyEl = document.getElementById('ssvDetailBody')
+  if (bodyEl) bodyEl.innerHTML = `
+    <div class="ssv-detail-head">
+      ${imgHtml}
+      <div class="ssv-detail-info">
+        <div class="ssv-detail-code">${esc(code)}${delFlag}</div>
+        <div class="ssv-detail-name">${p ? esc(name) : '(상품 정보 없음)'}</div>
+        <div class="ssv-detail-price">정상가 <strong>${price}</strong></div>
+      </div>
+    </div>
+    <div class="ssv-detail-section-title">사이즈별 재고 · ${esc(_storeNameById(store))}</div>
+    <div class="ssv-detail-sizes">${sizeRows}</div>
+    <div class="ssv-detail-total">합계 <strong>${total}</strong></div>
+    <!-- 확장 지점(1f 범위 외, 향후 추가): 로케이션(사이즈별, 데이터구조 변경 후) / 할인(할인율·할인가, Phase 5) -->
+  `
+  const titleEl = document.getElementById('ssvDetailTitle')
+  if (titleEl) titleEl.textContent = (p ? name : code) + ' — 매장 재고'
+  const modal = document.getElementById('storeStockDetailModal')
+  if (modal) { modal.showModal(); if (typeof centerModal === 'function') centerModal(modal) }
+}
+
+function closeStoreStockDetail() {
+  const modal = document.getElementById('storeStockDetailModal')
+  if (modal) modal.close()
+}
+
+window.renderStoreStockView = renderStoreStockView
+window.openStoreStockDetail = openStoreStockDetail
+window.closeStoreStockDetail = closeStoreStockDetail

@@ -3482,10 +3482,27 @@ Established the reference style that every dashboard-opened srm-modal should fol
 - **검증**: `node -c` 통과, 재사용 CSS(badge-preview-*/bc-row-*) 존재 확인, SIZES(2XL) 사용, 매출 공식 미변경, 바코드 업로드/1a~1d 무영향, 전역 충돌 0, code-reviewer 🟢
 - **배포**: `firebase deploy --only hosting` (규칙 변경 없음 — 1d에서 이미 배포). 다음: 1f (매장별 재고현황 뷰)
 
+#### POS Phase 1f — 매장별 재고현황 뷰 (🟢) — ✅ Phase 1 완료
+- **Phase 1의 마지막 조각.** 매장별 재고현황 패널의 "준비중" placeholder → 실제 재고 테이블. 품번 클릭 → 상세 모달(이미지+정상가+사이즈별 재고+합계). 1d/1e 인프라 소비. 조회는 전 직원 개방(권한 방침)
+- **변경 파일 4개**: `js/store.js`(+139, 뷰+상세모달), `index.html`(+9, 상세모달), `js/main.js`(+1, 등록), `style.css`(+28)
+- **재고 테이블** (`renderStoreStockView`, async): `resolveActiveStore()` → `buildStoreStockIndex(store)` 로드 → 컬럼 `품번|상품명|XS|S|M|L|XL|2XL|F|합계`. 상품명은 `State.allProducts`에서 read-only 조인(`_ssvFindProduct` 정확→대소문자 폴백). 합계=7사이즈 합. 음수 빨강(`ssv-neg`), 소프트삭제 "삭제된 상품" 배지(계속 표시), 상품 정보 없으면 "(상품 정보 없음)"
+- **상태 처리**: 매장 없음(office/미배정)→안내, 재고 0건→빈 상태(관리자는 업로드 힌트), 로드 실패→에러 메시지. 크래시 없음
+- **권한**: 뷰 자체는 전 직원(admin 게이트 없음), **📥 재고 업로드 버튼만 grade≥3**. 새로고침 버튼은 전원
+- **온디맨드 로드**(라이브 리스너 없음): 탭 렌더 시 stock 활성이면 로드 / `switchStoreTab('stock')` 전환 시 / 새로고침 클릭 / 1e 업로드 확정 후(renderStoreTab 재호출 → 자동 로드)
+- **상세 모달** (`openStoreStockDetail`, `storeStockDetailModal`): `getStoreStock(_ssvStore, code)`(복사본) + 상품 조인 → 이미지(`getThumbUrl`+폴백) + 정상가(salePrice) + 사이즈별 재고 그리드 + 합계. **로케이션/할인 미포함**(1f 범위 외, 확장 지점 주석만 — 로케이션은 사이즈별 데이터구조 변경 후, 할인은 Phase 5). makeDraggableResizable 등록 + close/ESC
+- **`_ssvStore`**: 현재 표시 매장 id — 상세 모달이 참조. `renderStoreStockView`가 매 로드 시 갱신 → 스위처 변경 후에도 최신
+- **검증**: `node -c` 통과, XSS `esc()` 처리(품번 alphanumeric onclick 안전), inline display:none 미사용, `code-link`/`getThumbUrl`(utils.js:316) 존재, SIZES(2XL), 매출 공식·1a~1e 무영향, 전역 충돌 0, code-reviewer 🟢
+- **배포**: `firebase deploy --only hosting` (규칙 변경 없음)
+
+#### ✅ POS Phase 1 완료 — 매장 기반(store foundation) 구축 완료
+- **1a** 매장 config(부산점/성남점, stable id, soft-delete 가드) → **1b** 사용자 storeId 배정 + `resolveActiveStore()` → **1c** 매장 탭 shell(서브내비 6개 + 관리자 스위처) → **1d** storeStock 데이터 모델(원자적 increment/merge) + Firestore 규칙 → **1e** 재고 엑셀 업로드(SET/ADD, 품번+사이즈 또는 바코드) → **1f** 매장별 재고현황 뷰 + 상세 모달
+- **다음: Phase 2 (입고 스캔)** — 바코드 스캔으로 매장 입고(ADD), storeStock 원자적 증가. 서브탭 '입고 스캔' placeholder에 구현. 이후 Phase 3(판매)/4(취소·환불)/5(할인·보충·로케이션)
+
 ---
 
 ## 다음 작업 후보 (미구현)
-- [ ] POS Phase 1f (매장별 재고현황 뷰)
+- [ ] POS Phase 2 (입고 스캔 — 바코드 스캔 매장 입고)
+- [ ] POS Phase 3~6 (판매 → 취소/환불 → 할인·보충·로케이션 → 통합 재고 뷰)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 인쇄/PDF 출력
 - [ ] 이미지합치기 웹 통합 (테스트 후)

@@ -2585,6 +2585,15 @@
     </div>
   </div>
 </dialog>
+
+<!-- 매장 재고 상세 모달 (POS Phase 1f) -->
+<dialog id="storeStockDetailModal" class="srm-modal" style="width:460px;max-height:80vh;padding:0;overflow:hidden;border-radius:10px">
+  <div class="srm-header modal-header" style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:move">
+    <span id="ssvDetailTitle" style="font-size:15px;font-weight:700;color:#fff;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">매장 재고</span>
+    <button class="modal-close" style="margin:0" onclick="closeStoreStockDetail()">×</button>
+  </div>
+  <div id="ssvDetailBody" style="padding:18px 20px;overflow-y:auto;flex:1"></div>
+</dialog>
 <script src="js/event.js"></script>
 <script src="js/work.js"></script>
 <script src="js/dashboard.js"></script>

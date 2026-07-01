@@ -5718,3 +5718,31 @@ td[data-editable]:hover { background: #FAEEDA; }
 .ssu-mode { display: flex; gap: 14px; flex-wrap: wrap; }
 .ssu-mode-opt { font-size: 13px; color: var(--primary); cursor: pointer; display: flex; align-items: center; gap: 4px; }
 .ssu-mode-hint { font-size: 11px; color: var(--text-muted); }
+
+/* 매장별 재고현황 뷰 (POS Phase 1f) */
+.store-stock-view { min-height: 200px; }
+.ssv-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+.ssv-table-wrap { max-height: calc(100vh - 320px); overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
+.ssv-table { margin: 0; font-size: 13px; }
+.ssv-table thead th { position: sticky; top: 0; z-index: 2; background: var(--primary); color: #fff; }
+.ssv-table .ssv-num { text-align: right; width: 46px; }
+.ssv-table td.ssv-num { font-variant-numeric: tabular-nums; }
+.ssv-total { font-weight: 700; }
+.ssv-neg { color: var(--danger); font-weight: 700; }
+.ssv-del-flag { font-size: 10px; color: var(--danger); background: rgba(224,82,82,0.12); border-radius: 3px; padding: 1px 5px; margin-left: 4px; }
+
+/* 매장 재고 상세 모달 */
+.ssv-detail-head { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 16px; }
+.ssv-detail-img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); flex-shrink: 0; }
+.ssv-detail-noimg { display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--text-muted); background: rgba(0,0,0,0.03); }
+.ssv-detail-info { flex: 1; min-width: 0; }
+.ssv-detail-code { font-size: 13px; font-family: monospace; color: var(--text-secondary); }
+.ssv-detail-name { font-size: 15px; font-weight: 700; color: var(--primary); margin: 2px 0 6px; }
+.ssv-detail-price { font-size: 13px; color: var(--primary); }
+.ssv-detail-section-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin: 4px 0 8px; }
+.ssv-detail-sizes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.ssv-detail-size { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; border: 1px solid var(--border); border-radius: 6px; }
+.ssv-detail-size-lbl { font-size: 11px; color: var(--text-muted); }
+.ssv-detail-size-val { font-size: 15px; font-weight: 700; color: var(--primary); }
+.ssv-detail-total { text-align: right; margin-top: 12px; font-size: 14px; color: var(--primary); }
+.ssv-detail-total strong { font-size: 17px; color: var(--accent); }
