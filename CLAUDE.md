@@ -3444,10 +3444,21 @@ Established the reference style that every dashboard-opened srm-modal should fol
 - **검증**: `node -c` 3파일 통과, 매출 공식 미변경, dept/직급/등급 편집·가입·로그인 무영향, TDZ 없음(런타임 참조), code-reviewer 🟢
 - **배포**: `firebase deploy --only hosting` (소유주 수동, 규칙 변경 없음 — 규칙은 1d). 다음: 1c (탭 shell)
 
+#### POS Phase 1c — 매장 탭 shell + 서브내비 + 관리자 스위처 (🟢)
+- **첫 가시적 POS UI.** 🏬 매장 탭 + 서브 화면 6개(전부 "준비중" placeholder) + 관리자 매장 스위처. 재고/판매/업로드 로직 없음(1d~/Phase 3~). 1a(매장 config)+1b(storeId/resolveActiveStore) 기반
+- **신규 파일 1개** `js/store.js`(~130줄) + **변경 4개**: `js/core.js`(+2), `js/router.js`(+1/-1), `index.html`(+7), `style.css`(+73)
+- **탭 통합**: `TAB_LABELS.store='🏬 매장'` + `TAB_PERMISSIONS.store=1`(권한 방침 — 조회는 전 직원 개방) + nav 버튼(신규기획↔행사일정 사이) + `<section id="tab-store"><div id="storePage">` + router `case 'store'` + no-products 화이트리스트에 'store' 추가(shell은 상품 불필요) + `js/store.js` script 태그(main.js 앞)
+- **서브 화면 6개** (`STORE_SUBS`, 소유주 확정 순서): 판매 / 입고 스캔 / 매장별 재고현황 / 보충대상조회 / 매장 할인 상품 관리 / 로케이션. 전부 "🚧 준비중" placeholder. 기본 서브탭 = **매장별 재고현황**(1f에서 실제 구현될 화면)
+- **`renderStoreTab()`**: 헤더(제목 + 매장 컨텍스트) + 서브탭 바 + 6패널을 `#storePage`에 렌더. **`switchStoreTab(sub)`**: `.store-panel-hidden` 클래스 토글(inline display:none 미사용) + 활성 버튼. `_storeActiveSub` 모듈 변수로 재렌더 시 선택 유지
+- **관리자 매장 스위처** (grade≥3만): `getActiveStores()` 목록, 현재값=`resolveActiveStore()`. **`onStoreSwitcherChange()`가 `_storeViewOverride` setter**(1b는 선언만, 1c가 setter 추가) → 설정 후 재렌더. 활성 매장 0개면 안내 문구
+- **3개 사용자 상태**: 관리자(grade≥3)→스위처 / staff(배정)→매장명 고정 라벨 / 미배정→"배정된 매장이 없습니다" 안내. 단 권한 방침대로 **미배정도 탭은 접근 가능**(조회 개방, 작업 화면 게이트는 향후)
+- **검증**: `node -c` 통과, XSS `esc()` 처리, inline display:none 미사용(CSS 클래스), TDZ 없음(런타임 참조), 전역 충돌 0, 기존 탭/매출 공식 무영향, code-reviewer 🟢
+- **배포**: `firebase deploy --only hosting` (소유주 수동, 규칙 변경 없음). 다음: 1d (storeStock 데이터 모델 + Firestore 규칙)
+
 ---
 
 ## 다음 작업 후보 (미구현)
-- [ ] POS Phase 1c~1f (탭 shell → 재고모델 → 시딩 업로드 → 재고현황 뷰)
+- [ ] POS Phase 1d~1f (재고모델+규칙 → 시딩 업로드 → 재고현황 뷰)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 인쇄/PDF 출력
 - [ ] 이미지합치기 웹 통합 (테스트 후)

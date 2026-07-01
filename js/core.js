@@ -878,6 +878,7 @@ window.resolveActiveStore = resolveActiveStore
 const TAB_PERMISSIONS = {
   dashboard: 1, product: 1, stock: 1, sales: 1, plan: 1,
   event: 1, work: 1, board: 1, orgchart: 1, mypage: 1,
+  store: 1,   // POS 매장 탭 — 조회는 전 직원 개방(권한 방침), 작업 화면은 내부에서 게이트(Phase 3~)
   hradmin: 2, trash: 3, settings: 4,
   // members: 제거됨 — hradmin 의 sub-panel(memberListPanel)로 통합. 진입은 hradmin 권한으로 충분
   // trash: 휴지통 — 소프트 삭제된 상품 복원/영구삭제 (Grade 3+ admin only)
@@ -1444,6 +1445,7 @@ const TAB_LABELS = {
   board:     '게시판',
   orgchart:  '조직도',
   mypage:    '개인정보',
+  store:     '🏬 매장',
   hradmin:   '인사관리',
   trash:     '🗑️ 휴지통'
 }

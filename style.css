@@ -5626,3 +5626,76 @@ td[data-editable]:hover { background: #FAEEDA; }
   cursor: not-allowed;
   opacity: 0.6;
 }
+
+/* ===== 매장 탭 (POS Phase 1c) ===== */
+.store-page { padding: 4px 2px; }
+.store-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 4px 4px 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+.store-title { font-size: 18px; font-weight: 700; color: var(--primary); margin: 0; }
+.store-context { display: flex; align-items: center; gap: 8px; }
+.store-switcher-label { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+.store-switcher {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  background: #fff;
+  color: var(--primary);
+  cursor: pointer;
+}
+.store-switcher:focus { outline: none; box-shadow: 0 0 0 2px rgba(201,169,110,0.25); border-color: var(--accent); }
+.store-ctx-fixed {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary);
+  background: rgba(201,169,110,0.12);
+  border-radius: 6px;
+  padding: 6px 12px;
+}
+.store-ctx-empty { font-size: 13px; color: var(--danger); }
+
+.store-subtabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 16px;
+}
+.store-subtab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  padding: 9px 14px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.store-subtab:hover { color: var(--primary); }
+.store-subtab-active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+.store-panel-hidden { display: none; }
+.store-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 320px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.store-placeholder-icon { font-size: 40px; opacity: 0.6; }
+.store-placeholder-title { font-size: 16px; font-weight: 600; color: var(--primary); }
+.store-placeholder-desc { font-size: 13px; }
