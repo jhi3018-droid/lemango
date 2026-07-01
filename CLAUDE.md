@@ -4,6 +4,53 @@
 르망고(수영복 브랜드) 내부 상품 관리 웹 시스템.
 순수 HTML + CSS + JavaScript (프레임워크 없음). 로컬 서버: `python -m http.server 8765`
 
+## 📋 보고서 형식 규칙 / Report Format Rule (MANDATORY)
+
+**모든 보고서·작업 결과·설계 문서는 반드시 아래 마커로 시작한다.**
+The owner does not read English and pastes CC's reports into Claude.ai for Korean summarization. Working logs (agent progress, "waiting for background agents", tool output) get mixed with the actual deliverable, so **every report MUST begin with a clear start marker** so the owner can instantly find where the real result starts.
+
+### 시작 마커 (필수 — 보고서 맨 위에 출력)
+```
+========================================
+📋 작업 결과 / REPORT START
+========================================
+```
+
+### 종료 마커 (권장 — 보고서 맨 아래에 출력)
+```
+========================================
+✅ 작업 결과 끝 / REPORT END
+========================================
+```
+
+### 사용 시점 / When to use
+- ✅ 모든 작업 완료 보고서 (every task-completion report)
+- ✅ 모든 조사/설계 문서 (every investigation/design document)
+- ✅ 소유주가 Claude.ai에 붙여넣을 모든 결과물 (any deliverable pasted back to Claude.ai)
+- ➖ 한 줄짜리 간단 확인 응답에는 불필요 (not needed for quick one-line confirmations — but harmless if included)
+
+### 예시 / Example
+```
+========================================
+📋 작업 결과 / REPORT START
+========================================
+
+# 상품조회 정렬 버그 수정
+
+## 1. 요약
+- 원인: ...
+- 수정: ...
+
+## 2. 변경 파일
+- js/products.js: ...
+
+========================================
+✅ 작업 결과 끝 / REPORT END
+========================================
+```
+
+> ⚠️ 이 규칙은 지금부터 적용된다. 마커의 한글 문구(`작업 결과`)는 소유주가 결과물 시작 지점을 즉시 알아보기 위한 것이므로 반드시 포함한다.
+
 ## 파일 구조
 ```
 르망고/
