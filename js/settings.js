@@ -435,6 +435,52 @@ function renderSettings() {
     </div>`
   }
 
+  // 매장 관리 카드 (POS Phase 1a, 시스템 관리자 grade 4+ 표시)
+  let storeSection = ''
+  if (isTopAdmin) {
+    const _storeList = (typeof _stores !== 'undefined' ? _stores : [])
+      .map((s, i) => ({ s, i }))
+      .sort((a, b) => (a.s.order || 0) - (b.s.order || 0))
+    const storeListHtml = _storeList.map(({ s, i }) => `
+      <div class="set-item store-item${s.active ? '' : ' store-item-inactive'}" id="storeItem_${i}">
+        <div class="set-item-view">
+          <span class="set-item-label" style="font-weight:600">${esc(s.name)}</span>
+          <span class="store-id-tag" title="매장 ID (수정 불가)">${esc(s.id)}</span>
+          ${s.active ? '' : '<span class="store-inactive-badge">비활성</span>'}
+          <button class="set-item-action store-toggle-btn" onclick="toggleStoreActive(${i})" title="${s.active ? '비활성화' : '활성화'}">${s.active ? '&#128309;' : '&#9898;'}</button>
+          <button class="set-item-action set-item-edit" onclick="editStoreSetting(${i})" title="이름 수정">&#9998;</button>
+          <button class="set-item-action set-item-del" onclick="removeStoreSetting(${i})" title="삭제">&#10005;</button>
+        </div>
+        <div class="set-item-editrow" style="display:none">
+          <input type="text" class="set-edit-input" value="${esc(s.name)}" data-field="val" style="flex:1" />
+          <button class="set-edit-save" onclick="saveStoreEdit(${i})">저장</button>
+          <button class="set-edit-cancel" onclick="renderSettings()">취소</button>
+        </div>
+      </div>`).join('') || '<div class="set-empty">항목 없음</div>'
+
+    const storeCard = `<div class="set-card set-card-wide">
+      <div class="set-card-header">
+        <span class="set-card-title">매장 목록</span>
+        <span class="set-card-count">${_storeList.length}</span>
+      </div>
+      <div class="set-list set-list-scroll">${storeListHtml}</div>
+      <div class="set-add-row">
+        <input type="text" id="setStoreName" placeholder="매장명 (예: 광주점)" class="set-add-input" style="flex:1"
+          onkeydown="if(event.key==='Enter')addStoreSetting()" />
+        <button class="btn btn-new set-add-btn" onclick="addStoreSetting()">+ 추가</button>
+      </div>
+    </div>`
+
+    storeSection = `<div class="set-section">
+      <button class="set-section-btn" onclick="toggleSetSection(this)">
+        <span>🏬 매장 관리</span><span class="set-section-arrow">▼</span>
+      </button>
+      <div class="set-section-body">
+        <div class="set-grid">${storeCard}</div>
+      </div>
+    </div>`
+  }
+
   // 출퇴근 허용 IP 카드 (시스템 관리자/대표이사 grade 4+)
   let ipSection = ''
   if (isTopAdmin) {
@@ -560,6 +606,8 @@ function renderSettings() {
     </div>
 
     ${deptSection}
+
+    ${storeSection}
 
     ${ipSection}
 
@@ -1200,6 +1248,88 @@ async function removeDeptSetting(idx) {
   renderSettings()
   showToast('삭제됐습니다.', 'success')
   logActivity('setting', '설정', `부서 삭제: ${name}`)
+}
+
+// =============================================
+// ===== 매장 CRUD (POS Phase 1a, 시스템 관리자 전용) =====
+// =============================================
+function addStoreSetting() {
+  const name = document.getElementById('setStoreName')?.value.trim()
+  if (!name) { showToast('매장명을 입력해주세요.', 'warning'); return }
+  if ((_stores || []).some(s => s.name === name)) { showToast(`"${name}"은 이미 존재합니다.`, 'error'); return }
+  const id = generateStoreId()
+  const nextOrder = _stores.length ? Math.max(..._stores.map(s => s.order || 0)) + 1 : 1
+  _stores.push({ id, name, active: true, order: nextOrder, location: '' })
+  saveStores()
+  populateAllSelects()
+  renderSettings()
+  showToast(`"${name}" (${id}) 추가됐습니다.`, 'success')
+  logActivity('setting', '매장', `매장 추가: ${name} (${id})`)
+}
+
+function editStoreSetting(idx) {
+  const el = document.getElementById('storeItem_' + idx)
+  if (!el) return
+  el.querySelector('.set-item-view').style.display = 'none'
+  el.querySelector('.set-item-editrow').style.display = ''
+  el.querySelector('.set-edit-input')?.focus()
+}
+
+function saveStoreEdit(idx) {
+  const el = document.getElementById('storeItem_' + idx)
+  if (!el) return
+  const store = _stores[idx]
+  if (!store) return
+  const newName = el.querySelector('[data-field="val"]')?.value.trim()
+  const oldName = store.name
+  if (!newName) { showToast('매장명을 입력해주세요.', 'warning'); return }
+  if (newName === oldName) { renderSettings(); return }
+  if ((_stores || []).some((s, i) => i !== idx && s.name === newName)) { showToast(`"${newName}"은 이미 존재합니다.`, 'error'); return }
+  // ID(store.id)는 절대 변경하지 않음 — 이름만 수정
+  store.name = newName
+  saveStores()
+  populateAllSelects()
+  renderSettings()
+  showToast(`"${oldName}" → "${newName}" 변경됐습니다.`, 'success')
+  logActivity('setting', '매장', `매장 수정: ${oldName} → ${newName} (${store.id})`)
+}
+
+function toggleStoreActive(idx) {
+  const store = _stores[idx]
+  if (!store) return
+  store.active = !store.active
+  saveStores()
+  populateAllSelects()
+  renderSettings()
+  showToast(`"${store.name}" ${store.active ? '활성화' : '비활성화'}됐습니다.`, 'success')
+  logActivity('setting', '매장', `매장 ${store.active ? '활성화' : '비활성화'}: ${store.name} (${store.id})`)
+}
+
+async function removeStoreSetting(idx) {
+  const store = _stores[idx]
+  if (!store) return
+  // 삭제 가드: 재고/매출 데이터가 있으면 hard-delete 금지 → soft-disable 유도 (1d/1e 연동 준비됨)
+  let hasData = false
+  try { hasData = (typeof storeHasData === 'function') ? await storeHasData(store.id) : false }
+  catch (e) { hasData = true }  // 확인 불가 시 안전측: 삭제 차단
+  if (hasData) {
+    showToast(`"${store.name}"은 재고/매출 기록이 있어 삭제할 수 없습니다. 비활성화만 가능합니다.`, 'error')
+    if (store.active && await korConfirm(`"${store.name}"을 비활성화하시겠습니까?`)) {
+      store.active = false
+      saveStores(); populateAllSelects(); renderSettings()
+      showToast(`"${store.name}" 비활성화됐습니다.`, 'success')
+      logActivity('setting', '매장', `매장 비활성화(삭제 대체): ${store.name} (${store.id})`)
+    }
+    return
+  }
+  // 데이터 없는 매장: 삭제 대신 비활성화 권장
+  if (!await korConfirm(`"${store.name}" 매장을 완전히 삭제하시겠습니까?\n\n삭제 대신 비활성화를 권장합니다 (기록 보존).`, '삭제', '취소')) return
+  _stores.splice(idx, 1)
+  saveStores()
+  populateAllSelects()
+  renderSettings()
+  showToast('삭제됐습니다.', 'success')
+  logActivity('setting', '매장', `매장 삭제: ${store.name} (${store.id})`)
 }
 
 // ===== 분류코드 CRUD (인라인 에디트) =====

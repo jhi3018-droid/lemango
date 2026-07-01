@@ -129,6 +129,10 @@ async function initApp() {
       _depts.length = 0; fsData.depts.forEach(d => _depts.push(d))
       localStorage.setItem('lemango_depts_v1', JSON.stringify(_depts))
     }
+    if (Array.isArray(fsData.stores) && fsData.stores.length && typeof _stores !== 'undefined') {
+      _stores.length = 0; fsData.stores.forEach(s => _stores.push(s))
+      localStorage.setItem('lemango_stores_v1', JSON.stringify(_stores))
+    }
     if (Array.isArray(fsData.planPhases) && fsData.planPhases.length) {
       _planPhases = fsData.planPhases
       localStorage.setItem('lemango_plan_phases_v1', JSON.stringify(_planPhases))

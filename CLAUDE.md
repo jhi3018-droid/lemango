@@ -3378,7 +3378,34 @@ Established the reference style that every dashboard-opened srm-modal should fol
 
 ---
 
+### 2026-07-01
+
+#### POS 설계 문서 (Phase 1) — `docs/pos-phase1-design.md`
+- 매장 POS 서브시스템 기반 설계 문서. 코드 없음, 설계만. 소유주+Claude.ai 검토용
+- 핵심 결정: 매장재고는 기존 `sharedData/products_*` 청크 모델이 아닌 **별도 per-doc 컬렉션 `storeStock/{storeId}_{productCode}`** (판매마다 전체 카탈로그 재다운로드 방지 + `FieldValue.increment` 원자적 차감)
+- SET vs INCREMENT 시딩 충돌 해결(시간적 분리: SET=마감시간+가드, live=increment 전용), 16개 예상 문제점(6🔴), Phase 1 세부 분리(1a~1f)
+
+#### 보고서 시작/종료 마커 규칙 (CLAUDE.md)
+- 소유주가 영문 미독해 → Claude.ai에 붙여넣어 한글 요약. 작업 로그와 결과물 구분 위해 모든 보고서를 `📋 작업 결과 / REPORT START` 마커로 시작
+- CLAUDE.md 상단에 규칙 섹션 추가
+
+#### POS Phase 1a — 매장 config + 설정 관리 (🟢)
+- **POS 시스템 첫 구현 단계.** `_depts` 패턴 미러링, 기존 기능 무영향. 사용자 storeId(1b)/탭(1c)/재고모델(1d)/업로드(1e)/재고뷰(1f)는 별도 단계
+- **변경 파일 4개**: `js/core.js`(+87), `js/main.js`(+4), `js/settings.js`(+130), `style.css`(+22)
+- **매장 데이터 모델** (`_stores`, core.js): `[{id, name, active, order, location}]` — flat string인 `_depts`와 달리 **stable id를 가진 객체 배열**. localStorage `lemango_stores_v1` + Firestore `sharedData/stores`. 기본값 부산점(st1)/성남점(st2)
+- **6개 touchpoint** (설계 문서는 5개로 표기했으나 실제 6개 — initApp 로드 누락 발견): (1) IIFE 선언/로드 core.js, (2) `saveStores()`, (3) force-upload payload, (4) `_fsReloadSharedSettings` 5분 리로드, (5) `_onSharedDataChanged` realtime case 'stores', (6) `initApp` Firestore-first 로드 main.js
+- **안정적 ID 생성** (`generateStoreId`): `st` + (soft-disabled 포함 전체 매장 최대 접미사 + 1). soft-disable 매장은 `_stores`에 남아 ID 영구 점유 → 재사용 방지. empty 매장 hard-delete 시 ID 해제는 참조 데이터 없어 안전
+- **삭제 가드** (`removeStoreSetting` + `storeHasData` 프로브): 재고/매출 있으면 hard-delete 거부 → 비활성화 유도. `storeHasData`는 storeStock/storeSales `.limit(1)` 조회(미존재 컬렉션=빈결과=false, 에러 시 안전측 true). 1d/1e 연동 준비 완료(코드 변경 없이 자동 동작). empty 매장도 비활성화 권장
+- **설정 CRUD 카드** (grade≥4, settings.js): 🏬 매장 관리 섹션. 이름 인라인 수정(ID 불변), 활성 토글, ID read-only 표시. `addStoreSetting/editStoreSetting/saveStoreEdit/toggleStoreActive/removeStoreSetting` → 각각 `saveStores`+`populateAllSelects`+`renderSettings`+`logActivity('setting','매장',...)`
+- **`getActiveStores()` 헬퍼** (window 노출): 활성 매장 order순 — 1b 회원배정/1c 스위처가 사용. populateAllSelects 직접 wiring은 실제 select 생기는 1b/1c에서 (1a는 dead-code 방지 위해 미wiring)
+- **Firestore 규칙 결정**: `sharedData/stores` admin-only 규칙은 **1d로 연기**(다른 POS 규칙과 배치 배포). 1a는 기존 generic `sharedData/{docId}` (approved write) + UI grade≥4 게이트로 충분. 규칙 변경 없음
+- **검증**: `node -c` 3파일 통과, 매출 공식 미변경, `_depts`/기존 설정 카드 무영향, XSS `esc()` 처리, code-reviewer 🟢
+- **배포**: `firebase deploy --only hosting` (소유주 수동, 규칙 변경 없음). 다음: 1b (사용자 storeId)
+
+---
+
 ## 다음 작업 후보 (미구현)
+- [ ] POS Phase 1b~1f (사용자 storeId → 탭 shell → 재고모델 → 시딩 업로드 → 재고현황 뷰)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 인쇄/PDF 출력
 - [ ] 이미지합치기 웹 통합 (테스트 후)

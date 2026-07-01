@@ -207,6 +207,7 @@ window.forceUploadAll = async function() {
     settings: _settings,
     channels: _channels,
     depts: typeof _depts !== 'undefined' ? _depts : [],
+    stores: typeof _stores !== 'undefined' ? _stores : [],
     planItems: State.planItems || [],
     planPhases: typeof _planPhases !== 'undefined' ? _planPhases : null,
     designCodes: typeof _designCodes !== 'undefined' ? _designCodes : [],
@@ -287,6 +288,10 @@ async function _fsReloadSharedSettings() {
     if (Array.isArray(fsData.depts)) {
       _depts.length = 0; fsData.depts.forEach(d => _depts.push(d))
       localStorage.setItem('lemango_depts_v1', JSON.stringify(_depts))
+    }
+    if (Array.isArray(fsData.stores) && typeof _stores !== 'undefined') {
+      _stores.length = 0; fsData.stores.forEach(s => _stores.push(s))
+      localStorage.setItem('lemango_stores_v1', JSON.stringify(_stores))
     }
     if (Array.isArray(fsData.planPhases)) {
       _planPhases = fsData.planPhases
@@ -558,6 +563,15 @@ window._onSharedDataChanged = function(docId, data) {
             if (typeof populateAllSelects === 'function') populateAllSelects()
           }
           console.log('[RealtimeSync] 부서 동기화')
+          break
+        case 'stores':
+          if (typeof _stores !== 'undefined') {
+            _stores.length = 0; (parsed || []).forEach(s => _stores.push(s))
+            localStorage.setItem('lemango_stores_v1', JSON.stringify(_stores))
+            if (typeof populateAllSelects === 'function') populateAllSelects()
+            if (tab === 'settings' && typeof renderSettings === 'function') renderSettings()
+          }
+          console.log('[RealtimeSync] 매장 동기화')
           break
         case 'workCategories':
           _workCategories.length = 0
@@ -1152,6 +1166,79 @@ async function saveDepts() {
     _onSaveFailed('saveDepts', e)
   }
 }
+
+// =============================================
+// ===== 매장 관리 (POS Phase 1a) =====
+// =============================================
+// _stores: [{ id, name, active, order, location }]
+//   - id      : 안정적·불변·재사용 금지. storeStock/storeSales 가 이 id 를 참조 (1d~)
+//   - name    : 표시명 (수정 가능)
+//   - active  : soft-disable 플래그 (데이터 있는 매장은 hard-delete 금지)
+//   - order   : 표시 순서
+//   - location: 자유 텍스트 (향후 사용, 지금은 빈값 무해)
+// _depts 패턴을 그대로 미러링하되, flat string[] 이 아니라 stable id 를 가진 객체 배열.
+const DEFAULT_STORES = [
+  { id: 'st1', name: '부산점', active: true, order: 1, location: '' },
+  { id: 'st2', name: '성남점', active: true, order: 2, location: '' }
+]
+
+let _stores = (() => {
+  try {
+    const saved = localStorage.getItem('lemango_stores_v1')
+    return saved ? JSON.parse(saved) : DEFAULT_STORES.map(s => ({ ...s }))
+  } catch { return DEFAULT_STORES.map(s => ({ ...s })) }
+})()
+
+async function saveStores() {
+  localStorage.setItem('lemango_stores_v1', JSON.stringify(_stores))
+  try {
+    await _fsSync('stores', _stores)
+    if (!window._lastSharedSaveTime) window._lastSharedSaveTime = {}
+    window._lastSharedSaveTime['stores'] = Date.now()
+  } catch (e) {
+    _onSaveFailed('saveStores', e)
+  }
+}
+
+// 안정적 매장 ID 생성: st + (모든 매장 중 최대 숫자 접미사 + 1).
+// ⚠️ soft-disable 된 매장도 _stores 에 남아있으므로 max 계산에 포함 → ID 재사용 방지.
+// (데이터 있는 매장은 hard-delete 불가 → 배열에 남음 → ID 영구 점유. empty 매장만 hard-delete 되고
+//  그 ID 재사용은 참조 데이터가 없어 안전.)
+function generateStoreId() {
+  let maxN = 0
+  ;(_stores || []).forEach(s => {
+    const m = /^st(\d+)$/.exec(s.id || '')
+    if (m) { const n = parseInt(m[1], 10); if (n > maxN) maxN = n }
+  })
+  return 'st' + (maxN + 1)
+}
+
+// 운영용 선택자(1b 회원배정·1c 스위처)에서 쓸 활성 매장 목록 (order 순).
+function getActiveStores() {
+  return (_stores || []).filter(s => s && s.active).sort((a, b) => (a.order || 0) - (b.order || 0))
+}
+
+// 매장 삭제 가드용 프로브 — 해당 매장에 재고/매출 데이터가 있는지 확인.
+// storeStock/storeSales 컬렉션은 1d~ 에서 생성됨. 존재하지 않는 컬렉션 쿼리는 빈 결과 반환(에러 아님)이므로
+// 지금은 항상 false 반환하지만, 1d/1e 가 데이터를 넣으면 코드 변경 없이 자동으로 동작.
+async function storeHasData(storeId) {
+  if (!db || !storeId) return false
+  try {
+    const stockSnap = await db.collection('storeStock').where('storeId', '==', storeId).limit(1).get()
+    if (!stockSnap.empty) return true
+    const salesSnap = await db.collection('storeSales').where('storeId', '==', storeId).limit(1).get()
+    if (!salesSnap.empty) return true
+    return false
+  } catch (e) {
+    // 조회 실패(권한/네트워크) 시 안전측: 데이터 있다고 간주 → hard-delete 차단 → soft-disable 유도
+    console.warn('storeHasData 조회 실패, 안전상 삭제 차단:', e.message)
+    return true
+  }
+}
+
+window.getActiveStores = getActiveStores
+window.generateStoreId = generateStoreId
+window.storeHasData = storeHasData
 
 // =============================================
 // ===== 출퇴근 허용 IP 관리 =====

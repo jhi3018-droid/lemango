@@ -2772,6 +2772,28 @@ body.col-resize-active * { cursor: col-resize !important; }
 .set-item:hover .set-item-action { opacity: 1; }
 .set-item-edit:hover { background: var(--accent); color: white; border-color: var(--accent); }
 .set-item-del:hover  { background: var(--danger); color: white; border-color: var(--danger); }
+/* 매장 관리 (POS Phase 1a) */
+.store-id-tag {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: rgba(0,0,0,0.05);
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-left: 6px;
+  font-family: monospace;
+  flex-shrink: 0;
+}
+.store-inactive-badge {
+  font-size: 10px;
+  color: var(--danger);
+  background: rgba(224,82,82,0.12);
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+.store-item-inactive .set-item-label { color: var(--text-muted); text-decoration: line-through; }
+.store-toggle-btn { opacity: 1 !important; }
 .set-edit-input {
   padding: 4px 7px;
   border: 1px solid var(--accent);
