@@ -123,6 +123,7 @@ async function checkApproval(user) {
         name: user.email.split('@')[0],
         phone: '', dept: '', position: '대표이사',
         grade: 4, status: 'approved',
+        storeId: '',          // POS Phase 1b — 매장 배정 (관리자는 스위처로 매장 선택)
         createdAt: new Date(), lastLogin: new Date()
       }
       await docRef.set(userData)
@@ -168,6 +169,7 @@ function showApp(userData) {
   _currentUserDept = userData.dept || ''
   _currentUserName = userData.name || ''
   _currentUserGrade = userData.grade || 1
+  _currentUserStoreId = userData.storeId || ''   // POS Phase 1b — 로그인 시 매장 캐시
   updateHeaderUser(userData)
   applyGradeAccess(userData.grade)
   if (typeof updateTabVisibility === 'function') updateTabVisibility()
@@ -235,6 +237,8 @@ window.handleLogout = function() {
     _currentUserPosition = ''
     _currentUserDept = ''
     _currentUserGrade = 1
+    if (typeof _currentUserStoreId !== 'undefined') _currentUserStoreId = ''   // POS Phase 1b
+    if (typeof _storeViewOverride !== 'undefined') _storeViewOverride = ''      // 관리자 스위처 오버라이드 초기화
     if (typeof _notifications !== 'undefined') { _notifications = []; if (typeof saveNotifications === 'function') saveNotifications() }
     // 알림 자동팝업 1회 플래그 초기화 — 다음 로그인 시 다시 1회 표시 가능
     try { sessionStorage.removeItem('_notifAutoPopupDone') } catch(e) {}
@@ -318,6 +322,7 @@ window.handleSignup = async function() {
         position: '사원',
         grade: 1,
         status: 'pending',
+        storeId: '',          // POS Phase 1b — 매장 배정 (가입 시 빈값, 관리자가 나중에 배정)
         createdAt: new Date(),
         lastLogin: null
       })
@@ -372,6 +377,7 @@ async function initAdminAccount() {
       dept: '경영지원',
       grade: 4,
       status: 'approved',
+      storeId: '',          // POS Phase 1b — 매장 배정 (관리자는 스위처로 매장 선택)
       createdAt: new Date(),
       lastLogin: null
     })

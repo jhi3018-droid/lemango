@@ -846,6 +846,30 @@ let _allUsers = []
 window._allUsers = _allUsers
 let _currentUserDept = ''
 let _currentUserName = ''
+// POS Phase 1b — 현재 사용자 매장 캐시 + 관리자 스위처 오버라이드
+let _currentUserStoreId = ''    // 로그인 시 users.storeId 에서 캐시 (staff = 고정 매장)
+let _storeViewOverride = ''     // 관리자(grade>=3) 스위처가 선택한 매장 (1c 에서 설정, 여기선 선언만)
+
+// 활성 매장 중 첫 번째 id (관리자 매장 미배정 시 기본값)
+function firstActiveStoreId() {
+  const list = (typeof getActiveStores === 'function') ? getActiveStores() : []
+  return list.length ? list[0].id : null
+}
+
+// 현재 보고 있는 매장 id 를 결정하는 POS 핵심 프리미티브.
+//   - 관리자(grade>=3): 스위처 오버라이드 우선, 없으면 첫 활성 매장
+//   - staff(grade<3)  : 본인 배정 매장 (미배정이면 null)
+// storeStock/storeSales 읽기·쓰기(1d~), 재고현황 뷰(1f) 등 POS 전체가 이 함수로 매장을 정함.
+function resolveActiveStore() {
+  const grade = (typeof _currentUserGrade !== 'undefined' && _currentUserGrade) ? _currentUserGrade : 1
+  if (grade >= 3) {
+    return _storeViewOverride || firstActiveStoreId()
+  }
+  return _currentUserStoreId || null
+}
+
+window.firstActiveStoreId = firstActiveStoreId
+window.resolveActiveStore = resolveActiveStore
 
 // =============================================
 // ===== 탭 접근 권한 (등급 기반) =====

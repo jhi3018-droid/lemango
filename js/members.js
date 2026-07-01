@@ -551,6 +551,21 @@ window.openMemberProfileModal = async function(uid) {
   const gradeSel = document.getElementById('mpGrade')
   gradeSel.value = member.grade || 1
   gradeSel.disabled = !isTopAdmin
+  // POS Phase 1b — 매장 배정 (활성 매장 목록 + "(매장 없음)"). 등급과 동일하게 시스템 관리자(grade>=4)만 변경 가능.
+  const storeSel = document.getElementById('mpStore')
+  if (storeSel) {
+    const active = (typeof getActiveStores === 'function') ? getActiveStores() : []
+    // 배정된 매장이 비활성/삭제됐어도 값 유실 방지: 목록에 없으면 임시 옵션으로 추가
+    const cur = member.storeId || ''
+    let opts = '<option value="">(매장 없음)</option>'
+    opts += active.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')
+    if (cur && !active.some(s => s.id === cur)) {
+      opts += `<option value="${esc(cur)}">${esc(cur)} (비활성/삭제됨)</option>`
+    }
+    storeSel.innerHTML = opts
+    storeSel.value = cur
+    storeSel.disabled = !isTopAdmin
+  }
   const created = member.createdAt ? formatTimestamp(member.createdAt) : '-'
   document.getElementById('mpCreatedAt').value = created
 
@@ -621,12 +636,21 @@ window.saveMemberProfile = async function() {
     // Firestore 업데이트
     const updates = { email, name, phone, position, dept }
     if (isTopAdmin) updates.grade = grade
+    // POS Phase 1b — 매장 배정은 시스템 관리자(grade>=4)만 변경 (mpStore 는 그 외에는 disabled)
+    if (isTopAdmin) {
+      const storeSel = document.getElementById('mpStore')
+      if (storeSel) updates.storeId = storeSel.value || ''
+    }
     await db.collection('users').doc(_profileUid).update(updates)
 
     // 본인 정보 변경 시 헤더 갱신 + position 캐시
     if (isSelf) {
       State.currentUser = { ...State.currentUser, ...updates }
       _currentUserPosition = position
+      // 본인이 자신의 매장을 변경한 경우(관리자 self-edit) 즉시 캐시 반영 — 재로그인 불필요
+      if (Object.prototype.hasOwnProperty.call(updates, 'storeId') && typeof _currentUserStoreId !== 'undefined') {
+        _currentUserStoreId = updates.storeId
+      }
       updateHeaderUser(State.currentUser)
     }
 

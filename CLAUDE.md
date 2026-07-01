@@ -3402,10 +3402,21 @@ Established the reference style that every dashboard-opened srm-modal should fol
 - **검증**: `node -c` 3파일 통과, 매출 공식 미변경, `_depts`/기존 설정 카드 무영향, XSS `esc()` 처리, code-reviewer 🟢
 - **배포**: `firebase deploy --only hosting` (소유주 수동, 규칙 변경 없음). 다음: 1b (사용자 storeId)
 
+#### POS Phase 1b — 사용자 ↔ 매장 배정 (storeId) (🟢)
+- 사용자에 `storeId` 필드 추가 + 로그인 캐시 + `resolveActiveStore()` 프리미티브. 재고/탭/업로드 없음 — 사용자↔매장 링크만. 1a(매장 config) 기반
+- **변경 파일 4개**: `js/auth.js`(+6), `js/core.js`(+24), `js/members.js`(+24), `index.html`(+4)
+- **스키마** (`dept` 오버로드 아님, 신규 필드): `storeId: ''` 를 3개 사용자 생성 지점에 추가 — 가입(auth.js:312-324), 첫 사용자 부트스트랩(auth.js:120-128), 초기 관리자(auth.js:367-378). 기존 사용자는 필드 없음=빈값(마이그레이션 불필요, graceful)
+- **로그인/로그아웃 캐시**: `_currentUserStoreId` (core.js) — showApp 에서 `userData.storeId||''` 세팅(auth.js), 로그아웃 시 `''` 리셋 + `_storeViewOverride` 리셋
+- **`resolveActiveStore()` (POS 핵심 프리미티브, core.js, window 노출)**: 관리자(grade≥3) → `_storeViewOverride || firstActiveStoreId()`(스위처는 1c), staff(grade<3) → `_currentUserStoreId || null`. `firstActiveStoreId()` = 활성 매장 첫 id(없으면 null). 3개 상태(관리자/staff-배정/staff-미배정) 모두 crash 없음
+- **회원 프로필 모달 매장 선택자** (`mpStore`, index.html + members.js): 활성 매장 + "(매장 없음)" + 배정 매장이 비활성/삭제됐어도 값 유실 방지 옵션. **등급 필드와 동일하게 시스템 관리자(grade≥4)만 변경 가능**(`disabled=!isTopAdmin`) → staff 는 본인 매장 재배정 불가. 저장 시 `isTopAdmin`일 때만 `storeId` 기록. 본인(관리자) self-edit 시 `_currentUserStoreId` 즉시 갱신(재로그인 불필요)
+- **결정**: 매장 배정 권한은 이 모달에서 grade≥4(설계의 grade≥3은 1c 매장 스위처용 — 다른 컨트롤). 회원 목록 테이블 매장 컬럼은 회귀 표면 최소화 위해 생략(모달에 표시). memberAddModal 로 추가된 사용자는 storeId 빈값(graceful, 관리자가 프로필에서 배정)
+- **검증**: `node -c` 3파일 통과, 매출 공식 미변경, dept/직급/등급 편집·가입·로그인 무영향, TDZ 없음(런타임 참조), code-reviewer 🟢
+- **배포**: `firebase deploy --only hosting` (소유주 수동, 규칙 변경 없음 — 규칙은 1d). 다음: 1c (탭 shell)
+
 ---
 
 ## 다음 작업 후보 (미구현)
-- [ ] POS Phase 1b~1f (사용자 storeId → 탭 shell → 재고모델 → 시딩 업로드 → 재고현황 뷰)
+- [ ] POS Phase 1c~1f (탭 shell → 재고모델 → 시딩 업로드 → 재고현황 뷰)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 인쇄/PDF 출력
 - [ ] 이미지합치기 웹 통합 (테스트 후)
