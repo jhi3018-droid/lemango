@@ -3494,6 +3494,24 @@ Established the reference style that every dashboard-opened srm-modal should fol
 - **검증**: `node -c` 통과, XSS `esc()` 처리(품번 alphanumeric onclick 안전), inline display:none 미사용, `code-link`/`getThumbUrl`(utils.js:316) 존재, SIZES(2XL), 매출 공식·1a~1e 무영향, 전역 충돌 0, code-reviewer 🟢
 - **배포**: `firebase deploy --only hosting` (규칙 변경 없음)
 
+#### POS Phase 2 설계 문서 — `docs/pos-phase2-design.md`
+- 입고 스캔 + 고정 로케이션(sizeLocations) + 입고 이력(storeInbound) 심층 설계. 코드 없음. 소유주+Claude.ai 검토용
+- 핵심: 1d 원자적 재고 코어 불변(위치는 별도 키 overwrite) / 커서 바코드 고정 focus 상태머신 / 스캔 시점 중복검출(위치 충돌 불가) / 확정 시 단일 원자적 배치(재고+위치+이력)
+- Phase 2 세부분리 2a(위치 데이터층)→2b(스캔 화면)→2c(확정+이력)→2d(이력 뷰). 소유주 미결 7문항
+
+#### POS Phase 2a — 고정 로케이션 데이터층 (sizeLocations) (🟢)
+- Phase 2의 데이터층. storeStock 에 `sizeLocations`(사이즈별 위치 라벨) 추가 + 위치 헬퍼. **1d 원자적 재고 코어 완전 불변** — 위치는 별도 키 overwrite, 재고 math 와 절대 안 섞임. UI 없음(콘솔 테스트). 1d~1f 기반
+- **변경 파일 1개**: `js/core.js`(+50/-3)
+- **모델**: `storeStock` 문서에 `sizeLocations: {M:'AA-AA-01-03',...}` 추가. `sizes`(재고) 경로 **완전 불변**(FieldValue.increment 그대로)
+- **`setStoreStockLocation(storeId,code,size,location)`**: merge-set **overwrite**(increment 아님)로 `sizeLocations[size]`만 교체. `sizes` 절대 안 건드림. 가드(db/storeId/code/SIZES/빈위치→skip), storeId 포함(규칙 호환), 실패 false. code 는 writeStoreStock 과 동일 사용(같은 문서 대상)
+- **병렬 위치 인덱스** `_storeLocIndex`(재고 인덱스 `_storeStockIndex` 와 별개): `buildStoreStockIndex` 가 둘 다 채우되 **재고 맵은 기존과 동일**(getStoreStock/1f 불변). `getStoreStockLocation(storeId,code,size)` → 위치 라벨('' 없으면)
+- **`loadStoreStock`**: 반환 행에 `sizeLocations: d.sizeLocations||{}` 추가(기존 미사용 whole-doc `location` 대체 — 아무도 안 읽던 vestigial 필드 제거, 마이그레이션 불필요, 기존 문서는 {} 기본)
+- **`getStoreStock` byte-identical**: 재고 sizes 복사본만 반환, 위치 안 섞음(1f 의존)
+- **규칙 변경 없음**: sizeLocations 는 같은 storeStock 문서 + storeId 포함 → 기존 규칙이 이미 커버 (storeInbound 규칙은 2c)
+- **인덱스 즉시 반영 개선**: `setStoreStockLocation` 의 인메모리 `_storeLocIndex` 갱신을 **무조건**으로(버킷 없으면 생성: `_storeLocIndex[storeId]||={}`, `[code]||={}`, `[size]=loc`) → 미인덱스 신규 품번도 rebuild 없이 read-after-write 동작. 위치 인덱스만 갱신(재고 인덱스/getStoreStock 불변)
+- **검증**: `node -c` 통과, writeStoreStock/getStoreStock/_storeStockIndex byte-identical(diff 에 코드 변경 0, 주석/신규 위치 함수에만 등장), d.location 참조 0, `_stores` config 의 무관한 location(주소) 미변경, 매출 공식·1a~1f 무영향, 전역 충돌 0, code-reviewer 🟢
+- **배포**: `firebase deploy --only hosting` (규칙 변경 없음). 다음: 2b (입고 스캔 화면 + 스테이징 리스트)
+
 #### ✅ POS Phase 1 완료 — 매장 기반(store foundation) 구축 완료
 - **1a** 매장 config(부산점/성남점, stable id, soft-delete 가드) → **1b** 사용자 storeId 배정 + `resolveActiveStore()` → **1c** 매장 탭 shell(서브내비 6개 + 관리자 스위처) → **1d** storeStock 데이터 모델(원자적 increment/merge) + Firestore 규칙 → **1e** 재고 엑셀 업로드(SET/ADD, 품번+사이즈 또는 바코드) → **1f** 매장별 재고현황 뷰 + 상세 모달
 - **다음: Phase 2 (입고 스캔)** — 바코드 스캔으로 매장 입고(ADD), storeStock 원자적 증가. 서브탭 '입고 스캔' placeholder에 구현. 이후 Phase 3(판매)/4(취소·환불)/5(할인·보충·로케이션)

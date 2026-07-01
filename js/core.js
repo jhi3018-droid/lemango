@@ -1283,6 +1283,9 @@ window.storeHasData = storeHasData
 
 // 매장 재고 인메모리 인덱스: { [storeId]: { [productCode]: sizesObj } }
 let _storeStockIndex = {}
+// 매장 위치(로케이션) 인메모리 인덱스 — 재고 인덱스와 별개 병렬 맵 (POS Phase 2a).
+// { [storeId]: { [productCode]: { [size]: '위치라벨' } } }. 재고 읽기(getStoreStock/1f)에 영향 없음.
+let _storeLocIndex = {}
 
 // 복합 문서 ID. productCode 는 언더스코어 없음(데이터 검증 완료) → 첫 '_' 분리 안전.
 function storeStockDocId(storeId, code) {
@@ -1316,8 +1319,37 @@ async function writeStoreStock(storeId, code, size, delta) {
   }
 }
 
+// 위치(로케이션) 라벨 덮어쓰기 (POS Phase 2a). ⚠️ increment 아님 — merge-set 로 sizeLocations[size] 만 교체.
+// sizes(재고)는 절대 건드리지 않음 — 1d 원자적 재고 코어와 완전 분리. storeId 포함(규칙 의존).
+// code 는 writeStoreStock 과 동일하게 그대로 사용(호출부가 정규 productCode 로 해석) → 같은 문서 대상.
+// 빈 위치는 쓰지 않음(위치 지우기는 Phase 2 범위 밖). 실패 시 false 반환(throw 안 함).
+async function setStoreStockLocation(storeId, code, size, location) {
+  if (!db) { console.warn('setStoreStockLocation: db 없음'); return false }
+  if (!storeId || !code) { console.warn('setStoreStockLocation: storeId/code 필수'); return false }
+  if (!SIZES.includes(size)) { console.warn('setStoreStockLocation: 잘못된 사이즈', size); return false }
+  const loc = String(location || '').trim()
+  if (!loc) { console.warn('setStoreStockLocation: 빈 위치 무시'); return false }
+  try {
+    await db.collection('storeStock').doc(storeStockDocId(storeId, code)).set({
+      storeId: storeId,
+      productCode: code,
+      sizeLocations: { [size]: loc },
+      updatedAt: new Date().toISOString()
+    }, { merge: true })
+    // 인메모리 위치 인덱스 즉시 반영 — 버킷이 없으면 생성(read-after-write 가 rebuild 없이 동작).
+    // ⚠️ 위치 인덱스만 갱신 — 재고 인덱스(_storeStockIndex)/getStoreStock 은 건드리지 않음.
+    _storeLocIndex[storeId] = _storeLocIndex[storeId] || {}
+    _storeLocIndex[storeId][code] = _storeLocIndex[storeId][code] || {}
+    _storeLocIndex[storeId][code][size] = loc
+    return true
+  } catch (e) {
+    console.error('setStoreStockLocation 실패:', e.message)
+    return false
+  }
+}
+
 // 매장 전체 재고 로드 — where(storeId) + 캐시 폴백(서버 우선, 실패 시 기본 캐시).
-// 반환: [{ productCode, sizes, location, updatedAt, storeId }]
+// 반환: [{ productCode, sizes, sizeLocations, updatedAt, storeId }]
 async function loadStoreStock(storeId) {
   if (!db || !storeId) return []
   const q = db.collection('storeStock').where('storeId', '==', storeId)
@@ -1334,7 +1366,7 @@ async function loadStoreStock(storeId) {
       productCode: d.productCode || '',
       storeId: d.storeId || storeId,
       sizes: Object.assign(_emptyStoreSizes(), d.sizes || {}),
-      location: d.location || '',
+      sizeLocations: d.sizeLocations || {},   // POS Phase 2a — 기존 whole-doc location(미사용) 대체
       updatedAt: d.updatedAt || ''
     })
   })
@@ -1342,20 +1374,36 @@ async function loadStoreStock(storeId) {
 }
 
 // 인메모리 인덱스 구축 (매장별). buildBarcodeIndex 선례 미러. 재고현황 뷰(1f)/업로드(1e) 확정 후 호출.
+// 재고 인덱스(_storeStockIndex)는 기존과 동일 — getStoreStock/1f 동작 불변.
+// 위치 인덱스(_storeLocIndex)는 병렬로 추가만 함(POS Phase 2a) — 재고 읽기에 영향 없음.
 async function buildStoreStockIndex(storeId) {
   if (!storeId) return {}
   const rows = await loadStoreStock(storeId)
   const map = {}
-  rows.forEach(r => { if (r.productCode) map[r.productCode] = r.sizes })
+  const locMap = {}
+  rows.forEach(r => {
+    if (!r.productCode) return
+    map[r.productCode] = r.sizes
+    locMap[r.productCode] = r.sizeLocations || {}
+  })
   _storeStockIndex[storeId] = map
+  _storeLocIndex[storeId] = locMap
   return map
 }
 
 // 인덱스에서 (매장, 상품) 재고 조회 — 없으면 0 채운 맵. (동기, 인덱스 선구축 전제)
 // ⚠️ 항상 복사본 반환 — 호출부가 반환값을 mutate 해도 인메모리 인덱스 오염 방지.
+// ⚠️ 재고(sizes)만 반환 — 위치는 섞지 않음(1f 의존). 위치는 getStoreStockLocation 사용.
 function getStoreStock(storeId, code) {
   const m = _storeStockIndex[storeId]
   return Object.assign(_emptyStoreSizes(), (m && m[code]) ? m[code] : {})
+}
+
+// 위치 인덱스에서 (매장, 상품, 사이즈) 위치 라벨 조회 — 없으면 '' (동기, 인덱스 선구축 전제). POS Phase 2a.
+function getStoreStockLocation(storeId, code, size) {
+  const m = _storeLocIndex[storeId]
+  const locs = (m && m[code]) ? m[code] : null
+  return (locs && locs[size]) ? String(locs[size]) : ''
 }
 
 window.storeStockDocId = storeStockDocId
@@ -1363,6 +1411,8 @@ window.writeStoreStock = writeStoreStock
 window.loadStoreStock = loadStoreStock
 window.buildStoreStockIndex = buildStoreStockIndex
 window.getStoreStock = getStoreStock
+window.setStoreStockLocation = setStoreStockLocation
+window.getStoreStockLocation = getStoreStockLocation
 
 // =============================================
 // ===== 출퇴근 허용 IP 관리 =====
