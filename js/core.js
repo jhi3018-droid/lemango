@@ -863,6 +863,11 @@ function firstActiveStoreId() {
 function resolveActiveStore() {
   const grade = (typeof _currentUserGrade !== 'undefined' && _currentUserGrade) ? _currentUserGrade : 1
   if (grade >= 3) {
+    // self-heal: 오버라이드가 현재 활성 매장 목록에 없으면(소프트 비활성/삭제됨) 리셋 → 표시/오버라이드 desync 방지
+    if (_storeViewOverride) {
+      const active = (typeof getActiveStores === 'function') ? getActiveStores() : []
+      if (!active.some(s => s.id === _storeViewOverride)) _storeViewOverride = ''
+    }
     return _storeViewOverride || firstActiveStoreId()
   }
   return _currentUserStoreId || null
@@ -1264,6 +1269,100 @@ async function storeHasData(storeId) {
 window.getActiveStores = getActiveStores
 window.generateStoreId = generateStoreId
 window.storeHasData = storeHasData
+
+// =============================================
+// ===== 매장 재고 데이터 모델 (POS Phase 1d) =====
+// =============================================
+// 컬렉션 storeStock/{storeId}_{productCode} — 매장별·상품별 1문서.
+//   { storeId, productCode, sizes:{XS..2XL,F}, location, updatedAt }
+// ⚠️ 안전 3원칙:
+//   1) 원자적 차감/증가는 FieldValue.increment (read-modify-write += 절대 금지 — 동시성 유실)
+//   2) set({merge:true}) 사용 (update() 금지 — 문서 없으면 throw). merge+increment 는 문서/필드 자동 생성(0부터)
+//   3) 모든 write 에 storeId 포함 (Firestore 규칙 + 쿼리가 의존)
+// SIZES 는 앱 전역 상수(2XL 포함) 재사용 — 별도 키 도입 금지.
+
+// 매장 재고 인메모리 인덱스: { [storeId]: { [productCode]: sizesObj } }
+let _storeStockIndex = {}
+
+// 복합 문서 ID. productCode 는 언더스코어 없음(데이터 검증 완료) → 첫 '_' 분리 안전.
+function storeStockDocId(storeId, code) {
+  return String(storeId || '') + '_' + String(code || '')
+}
+
+// 빈 사이즈 맵 (0 채움) — 문서 없을 때 기본값
+function _emptyStoreSizes() {
+  return Object.fromEntries(SIZES.map(sz => [sz, 0]))
+}
+
+// 원자적 재고 변경 (판매 -qty / 입고·조정 +qty). merge-set + increment.
+// size 는 SIZES 에 포함돼야 하며, storeId/code 필수. 실패 시 false 반환(throw 안 함).
+async function writeStoreStock(storeId, code, size, delta) {
+  if (!db) { console.warn('writeStoreStock: db 없음'); return false }
+  if (!storeId || !code) { console.warn('writeStoreStock: storeId/code 필수'); return false }
+  if (!SIZES.includes(size)) { console.warn('writeStoreStock: 잘못된 사이즈', size); return false }
+  const n = Number(delta)
+  if (!isFinite(n) || n === 0) { console.warn('writeStoreStock: delta 무효', delta); return false }
+  try {
+    await db.collection('storeStock').doc(storeStockDocId(storeId, code)).set({
+      storeId: storeId,
+      productCode: code,
+      sizes: { [size]: firebase.firestore.FieldValue.increment(n) },
+      updatedAt: new Date().toISOString()
+    }, { merge: true })
+    return true
+  } catch (e) {
+    console.error('writeStoreStock 실패:', e.message)
+    return false
+  }
+}
+
+// 매장 전체 재고 로드 — where(storeId) + 캐시 폴백(서버 우선, 실패 시 기본 캐시).
+// 반환: [{ productCode, sizes, location, updatedAt, storeId }]
+async function loadStoreStock(storeId) {
+  if (!db || !storeId) return []
+  const q = db.collection('storeStock').where('storeId', '==', storeId)
+  let snap = null
+  try {
+    snap = await q.get({ source: 'server' })
+  } catch (e) {
+    try { snap = await q.get() } catch (e2) { console.warn('loadStoreStock 실패:', e2.message); return [] }
+  }
+  const rows = []
+  snap.forEach(doc => {
+    const d = doc.data() || {}
+    rows.push({
+      productCode: d.productCode || '',
+      storeId: d.storeId || storeId,
+      sizes: Object.assign(_emptyStoreSizes(), d.sizes || {}),
+      location: d.location || '',
+      updatedAt: d.updatedAt || ''
+    })
+  })
+  return rows
+}
+
+// 인메모리 인덱스 구축 (매장별). buildBarcodeIndex 선례 미러. 재고현황 뷰(1f)/업로드(1e) 확정 후 호출.
+async function buildStoreStockIndex(storeId) {
+  if (!storeId) return {}
+  const rows = await loadStoreStock(storeId)
+  const map = {}
+  rows.forEach(r => { if (r.productCode) map[r.productCode] = r.sizes })
+  _storeStockIndex[storeId] = map
+  return map
+}
+
+// 인덱스에서 (매장, 상품) 재고 조회 — 없으면 0 채운 맵. (동기, 인덱스 선구축 전제)
+// ⚠️ 항상 복사본 반환 — 호출부가 반환값을 mutate 해도 인메모리 인덱스 오염 방지.
+function getStoreStock(storeId, code) {
+  const m = _storeStockIndex[storeId]
+  return Object.assign(_emptyStoreSizes(), (m && m[code]) ? m[code] : {})
+}
+
+window.storeStockDocId = storeStockDocId
+window.writeStoreStock = writeStoreStock
+window.loadStoreStock = loadStoreStock
+window.buildStoreStockIndex = buildStoreStockIndex
+window.getStoreStock = getStoreStock
 
 // =============================================
 // ===== 출퇴근 허용 IP 관리 =====

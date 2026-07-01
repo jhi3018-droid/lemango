@@ -3455,10 +3455,24 @@ Established the reference style that every dashboard-opened srm-modal should fol
 - **검증**: `node -c` 통과, XSS `esc()` 처리, inline display:none 미사용(CSS 클래스), TDZ 없음(런타임 참조), 전역 충돌 0, 기존 탭/매출 공식 무영향, code-reviewer 🟢
 - **배포**: `firebase deploy --only hosting` (소유주 수동, 규칙 변경 없음). 다음: 1d (storeStock 데이터 모델 + Firestore 규칙)
 
+#### POS Phase 1d — storeStock 데이터 모델 + Firestore 규칙 (🟢, 안전 핵심)
+- **POS 동시성/무결성 핵심.** `storeStock` per-doc 컬렉션 + 원자적 재고 헬퍼(`FieldValue.increment`) + 인메모리 인덱스 + Firestore 규칙(storeStock/stores/storeSales). UI 없음(콘솔+규칙 시뮬레이터 테스트). 1a~1c 기반
+- **변경 파일 2개**: `js/core.js`(+99, 헬퍼+self-heal), `firestore.rules`(+38/-1, 규칙)
+- **⚠️ SIZES 상수 확정**: 앱 전역 `SIZES = ['XS','S','M','L','XL','2XL','F']` — 설계 문서 예시의 'XXL'은 **오류**. storeStock 은 실제 `SIZES`(2XL) 재사용, 별도 키 미도입. (`SIZE_SPEC_SIZES`의 XXL은 사이즈규격 측정용 — 재고와 무관)
+- **⚠️ 언더스코어 안전**: 상품 품번 언더스코어 0건(lemango/noir 데이터 검증) → 복합 ID `{storeId}_{productCode}` 첫 '_' 분리 안전
+- **안전 3원칙 (비협상)**: (1) `FieldValue.increment`만 사용, read-modify-write `+=` 절대 금지(동시성 유실) (2) `set({merge:true})` 사용, `update()` 금지(문서 없으면 throw) — merge+increment가 문서/필드 0부터 자동 생성 (3) 모든 write에 `storeId` 포함(규칙+쿼리 의존)
+- **헬퍼** (core.js, window 노출): `storeStockDocId(storeId,code)` / `writeStoreStock(storeId,code,size,delta)`(merge+increment, size∈SIZES·비제로 delta 가드, 실패 시 false) / `loadStoreStock(storeId)`(where + 캐시폴백 `{source:'server'}`→`.catch()`→`.get()`) / `buildStoreStockIndex(storeId)`(buildBarcodeIndex 선례) / `getStoreStock(storeId,code)`(인덱스 조회, 없으면 0맵). `_storeStockIndex` 인메모리
+- **🔴 Firestore 규칙 설계 정정 (중요)**: 설계·지시서는 "가장 구체적 규칙 우선" 가정했으나 **Firestore 규칙은 OR-합집합**(매칭되는 어떤 allow든 true면 허용). 따라서 nested `match /sharedData/stores`만 추가해선 제한 불가 → **일반 규칙을 `allow write: if isApproved() && docId != 'stores'`로 수정** + 구체 규칙 `match /sharedData/stores { allow write: if isAdmin() }` 추가. 결과: 비관리자는 stores 쓰기 불가, 관리자만 가능, 그 외 sharedData(products_*/settings/…)는 영향 없음
+- **규칙 블록 3개 신규**: `storeStock`(read=승인자 전원, write=관리자 OR 본인매장 `storeId!='' && ==userDoc.storeId`), `storeSales`(create 게이트 동일, `update/delete: if false` append-only, Phase 3 전방호환), `sharedData/stores`(admin write). 기존 `isApproved/isAdmin/userDoc` 재사용, 브레이스 44/44
+- **`!= ''` 가드**: office/미배정 staff(storeId='')가 `'' == ''`로 write 뚫는 구멍 차단
+- **1c 이월 수정 (self-heal)**: `resolveActiveStore`에서 `_storeViewOverride`가 활성 매장 목록에 없으면(소프트 비활성/삭제) `''`로 리셋 → 표시/오버라이드 desync 방지
+- **검증**: `node -c` 통과, 규칙 브레이스 44/44, 매출 공식 미변경, 1a~1c 무영향, 전역 충돌 0, code-reviewer 🟢
+- **⚠️ 배포 = `firebase deploy --only firestore:rules,hosting`** (규칙 변경!). **배포 시퀀싱**: (1) storeId 스키마 1b 완료✅ (2) **매장 직원에게 storeId 배정 먼저**(인사관리, 규칙이 막기 전) (3) 규칙 배포 (4) 관리자는 배정 전에도 시딩/쓰기 가능(isAdmin 우회). 배포 후 규칙 시뮬레이터로 3개 사용자 유형 테스트 권장. 다음: 1e (초기 재고 엑셀 업로드)
+
 ---
 
 ## 다음 작업 후보 (미구현)
-- [ ] POS Phase 1d~1f (재고모델+규칙 → 시딩 업로드 → 재고현황 뷰)
+- [ ] POS Phase 1e~1f (초기 재고 엑셀 시딩 → 재고현황 뷰)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 인쇄/PDF 출력
 - [ ] 이미지합치기 웹 통합 (테스트 후)
