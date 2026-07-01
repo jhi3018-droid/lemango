@@ -3469,10 +3469,23 @@ Established the reference style that every dashboard-opened srm-modal should fol
 - **검증**: `node -c` 통과, 규칙 브레이스 44/44, 매출 공식 미변경, 1a~1c 무영향, 전역 충돌 0, code-reviewer 🟢
 - **⚠️ 배포 = `firebase deploy --only firestore:rules,hosting`** (규칙 변경!). **배포 시퀀싱**: (1) storeId 스키마 1b 완료✅ (2) **매장 직원에게 storeId 배정 먼저**(인사관리, 규칙이 막기 전) (3) 규칙 배포 (4) 관리자는 배정 전에도 시딩/쓰기 가능(isAdmin 우회). 배포 후 규칙 시뮬레이터로 3개 사용자 유형 테스트 권장. 다음: 1e (초기 재고 엑셀 업로드)
 
+#### POS Phase 1e — 매장 재고 엑셀 업로드 (SET/ADD) (🟢)
+- **매장 재고 시딩 + 보충 업로드.** 엑셀 `품번|사이즈|바코드|수량`, 이중 식별(품번+사이즈 OR 바코드), SET(절대 덮어쓰기)/ADD(increment 증가) 2모드. 1d 헬퍼 + findByBarcode(Phase 0) 소비. UI는 업로드만(재고현황 뷰는 1f)
+- **변경 파일 4개**: `js/store.js`(+301, 업로드 로직), `index.html`(+46, 모달), `js/main.js`(+2, 등록), `style.css`(+19). 바코드 업로드 패턴(stock.js:593-827) 미러
+- **모달** `storeStockUploadModal` (index.html): 대상 매장 표시 + SET/ADD 라디오 토글 + 파일 선택 + 샘플 다운로드 + 미리보기(요약 카운트 + 비고 + 미등록 복사 버튼). makeDraggableResizable + ESC close map 등록
+- **이중 식별** (`_ssuResolveRow`): 방식 B(바코드) `findByBarcode` 우선 → {productCode,size} / 방식 A(품번+사이즈) 대소문자 무시 매칭 + `SIZES.includes`. **둘 다 있으면 바코드 우선 + 품번/사이즈 불일치 시 'mismatch' 오류 차단**(잘못된 데이터 방지). 둘 다 없으면 'incomplete'. 수량 필수(0 이상 정수)
+- **행 상태**: ok(정상)/format(형식오류)/unmatched(미등록)/incomplete(불완전)/duplicate(SET 중복)/mismatch(불일치). 미리보기 카운트 + 비고, 정상 0건이면 확정 차단
+- **🔴 SET vs ADD 완전 분리** (`confirmStoreStockUpload`): 품번별 그룹핑 후 문서당 1 batch.set. **SET=절대값**(`sizesMap[sz]=v` 평문 숫자), **ADD=`FieldValue.increment(v)`**. 두 경로 절대 교차 안 함. 문서당 단일 write(같은 문서 배치 중복 쓰기 회피), 500개씩 청크
+- **모드별 중복**: SET → 동일(품번,사이즈) 2회 = 'duplicate' 오류 제외(절대값 모호) / ADD → 합산(dupSum, byCode 누적). `setStoreUploadMode`가 `_ssuValidateRows` 재실행 → 모드 토글 시 중복 규칙 전환
+- **가드**: SET → 기존재고 비제로 있으면 korConfirm 경고(덮어쓰기 확인) / ADD → 재업로드 중복증가 경고. 대상 매장 = `resolveActiveStore()`, 없으면 차단. **업로드 진입+확정 관리자(grade≥3) 게이트**(시딩은 관리자 작업; own-store staff ADD는 향후)
+- **커밋**: batch.commit await, 실패 시 토스트+버튼 복구, 확정 후 `buildStoreStockIndex` 재구축 + `logActivity('upload','매장재고',...)`. 진입점: 매장 탭 '매장별 재고현황' 패널에 📥 재고 업로드 버튼(관리자만) — 1f에서 통합
+- **검증**: `node -c` 통과, 재사용 CSS(badge-preview-*/bc-row-*) 존재 확인, SIZES(2XL) 사용, 매출 공식 미변경, 바코드 업로드/1a~1d 무영향, 전역 충돌 0, code-reviewer 🟢
+- **배포**: `firebase deploy --only hosting` (규칙 변경 없음 — 1d에서 이미 배포). 다음: 1f (매장별 재고현황 뷰)
+
 ---
 
 ## 다음 작업 후보 (미구현)
-- [ ] POS Phase 1e~1f (초기 재고 엑셀 시딩 → 재고현황 뷰)
+- [ ] POS Phase 1f (매장별 재고현황 뷰)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 인쇄/PDF 출력
 - [ ] 이미지합치기 웹 통합 (테스트 후)

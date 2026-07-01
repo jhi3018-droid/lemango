@@ -2539,6 +2539,52 @@
     </div>
   </div>
 </dialog>
+
+<!-- 매장 재고 업로드 모달 (POS Phase 1e) -->
+<dialog id="storeStockUploadModal" class="srm-modal" style="width:700px;max-height:82vh;padding:0;overflow:hidden;border-radius:10px">
+  <div class="srm-header modal-header" style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">🏬 매장 재고 업로드</span>
+    <button class="modal-close" onclick="closeStoreStockUploadModal()">×</button>
+  </div>
+  <div style="padding:18px;overflow-y:auto;flex:1">
+    <div class="ssu-topbar">
+      <div class="ssu-target">대상 매장: <strong id="ssuTargetStoreName">-</strong></div>
+      <div class="ssu-mode">
+        <label class="ssu-mode-opt"><input type="radio" name="ssuMode" value="set" checked onchange="setStoreUploadMode('set')"> 초기재고 설정 <span class="ssu-mode-hint">(덮어쓰기 / SET)</span></label>
+        <label class="ssu-mode-opt"><input type="radio" name="ssuMode" value="add" onchange="setStoreUploadMode('add')"> 재고 추가 <span class="ssu-mode-hint">(증가 / ADD)</span></label>
+      </div>
+    </div>
+    <div class="bc-upload-area" style="margin-top:12px">
+      <p style="margin:0 0 6px;font-size:13px;color:var(--text-secondary)">엑셀 파일을 선택하세요 (품번 / 사이즈 / 바코드 / 수량)</p>
+      <p style="margin:0 0 12px;font-size:12px;color:var(--text-muted)">행 구분: <strong>품번+사이즈</strong> 또는 <strong>바코드</strong> 중 하나로 상품 지정, <strong>수량</strong>은 필수. (바코드 있으면 바코드 우선)</p>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="file" id="ssuUploadFile" accept=".xlsx,.xls,.csv" onchange="handleStoreStockUpload(this)" />
+        <button class="btn btn-outline" onclick="downloadStoreStockSample()" style="white-space:nowrap">샘플 다운로드</button>
+      </div>
+    </div>
+    <div id="ssuPreviewArea" style="display:none;margin-top:16px">
+      <div class="bc-summary" style="display:flex;gap:14px;font-size:13px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+        <span>총 <strong id="ssuTotalCount">0</strong>건</span>
+        <span style="color:var(--success)">정상 <strong id="ssuValidCount">0</strong>건</span>
+        <span style="color:var(--danger)">형식오류 <strong id="ssuFormatCount">0</strong>건</span>
+        <span style="color:var(--danger)">미등록 <strong id="ssuMissCount">0</strong>건</span>
+        <span style="color:var(--warning)">불완전 <strong id="ssuIncompleteCount">0</strong>건</span>
+        <span style="color:#1565c0">중복/불일치 <strong id="ssuDupCount">0</strong>건</span>
+        <button id="ssuCopyUnmatchedBtn" class="btn btn-outline" style="display:none;margin-left:auto;padding:4px 10px;font-size:12px;white-space:nowrap" onclick="copyUnmatchedStoreCodes()">미등록 항목 복사</button>
+      </div>
+      <div class="bc-preview-table-wrap" style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">
+        <table class="data-table" style="margin:0;font-size:13px">
+          <thead><tr><th style="width:74px">상태</th><th>품번</th><th style="width:56px">사이즈</th><th>바코드</th><th style="width:64px">수량</th><th style="width:210px">비고</th></tr></thead>
+          <tbody id="ssuPreviewBody"></tbody>
+        </table>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+        <button class="btn btn-outline" onclick="closeStoreStockUploadModal()">취소</button>
+        <button class="btn btn-new" id="ssuConfirmBtn" onclick="confirmStoreStockUpload()">덮어쓰기 확정</button>
+      </div>
+    </div>
+  </div>
+</dialog>
 <script src="js/event.js"></script>
 <script src="js/work.js"></script>
 <script src="js/dashboard.js"></script>

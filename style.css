@@ -5699,3 +5699,22 @@ td[data-editable]:hover { background: #FAEEDA; }
 .store-placeholder-icon { font-size: 40px; opacity: 0.6; }
 .store-placeholder-title { font-size: 16px; font-weight: 600; color: var(--primary); }
 .store-placeholder-desc { font-size: 13px; }
+.store-panel-toolbar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 12px; }
+
+/* 매장 재고 업로드 모달 (POS Phase 1e) */
+.ssu-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  background: rgba(201,169,110,0.10);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.ssu-target { font-size: 13px; color: var(--primary); }
+.ssu-target strong { color: var(--accent); }
+.ssu-mode { display: flex; gap: 14px; flex-wrap: wrap; }
+.ssu-mode-opt { font-size: 13px; color: var(--primary); cursor: pointer; display: flex; align-items: center; gap: 4px; }
+.ssu-mode-hint { font-size: 11px; color: var(--text-muted); }

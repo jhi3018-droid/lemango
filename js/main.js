@@ -55,6 +55,7 @@ async function initApp() {
   makeDraggableResizable(document.getElementById('personalScheduleModal'), 440, 300)
   makeDraggableResizable(document.getElementById('dashDayModal'), 360, 200)
   makeDraggableResizable(document.getElementById('barcodeUploadModal'), 500, 300)
+  makeDraggableResizable(document.getElementById('storeStockUploadModal'), 560, 340)
   makeDraggableResizable(document.getElementById('downloadFormatModal'), 400, 300)
   makeDraggableResizable(document.getElementById('downloadFormatEditorModal'), 600, 400)
   makeDraggableResizable(document.getElementById('bulkEditPreviewModal'), 600, 400)
@@ -80,6 +81,7 @@ async function initApp() {
     stockRegisterModal: closeStockRegisterModal,
     outgoingModal: closeOutgoingModal,
     barcodeUploadModal: closeBarcodeUploadModal,
+    storeStockUploadModal: closeStoreStockUploadModal,
     workRegisterModal: closeWorkRegisterModal,
     planRegisterModal: closePlanRegisterModal,
     personalScheduleModal: closePersonalScheduleModal,
