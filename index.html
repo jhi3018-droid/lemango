@@ -2685,6 +2685,19 @@
   </div>
 </dialog>
 
+<!-- 판매 품번 조회 창 (판매 화면 → 조회 버튼) — 입고 조회와 병렬. 바코드 등록 사이즈만 → 판매 라인 추가. ESC 닫힘. -->
+<dialog id="saleLookupModal" class="srm-modal inb-lookup-modal" style="width:640px;max-width:94vw;max-height:82vh;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header" style="cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">🔎 품번으로 상품 찾기 (판매)</span>
+    <button class="modal-close" onclick="closeSaleLookup()">×</button>
+  </div>
+  <div class="inb-lookup-body">
+    <input id="saleLookupSearch" class="inb-input inb-lookup-search" type="text" autocomplete="off" placeholder="품번 또는 상품명 검색" oninput="renderSaleLookupResults()">
+    <div id="saleLookupResults" class="inb-lookup-results"></div>
+    <div id="saleLookupSizes" class="inb-lookup-sizes inb-hidden"></div>
+  </div>
+</dialog>
+
 <!-- 보충대상조회 placeholder 창 (Phase 5) -->
 <dialog id="replenishModal" class="srm-modal" style="width:560px;max-width:92vw;max-height:70vh;padding:0;overflow:hidden;border-radius:10px">
   <div class="srm-header modal-header" style="cursor:move">

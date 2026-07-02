@@ -68,6 +68,7 @@ async function initApp() {
   makeDraggableResizable(document.getElementById('inbLookupModal'), 420, 320)
   makeDraggableResizable(document.getElementById('inbCloseConfirmModal'), 340, 180)
   makeDraggableResizable(document.getElementById('inbHistoryModal'), 560, 360)
+  makeDraggableResizable(document.getElementById('saleLookupModal'), 420, 320)
   makeDraggableResizable(document.getElementById('inbCancelModal'), 360, 240)
   makeDraggableResizable(document.getElementById('downloadFormatModal'), 400, 300)
   makeDraggableResizable(document.getElementById('downloadFormatEditorModal'), 600, 400)

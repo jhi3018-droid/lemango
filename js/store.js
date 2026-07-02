@@ -78,6 +78,65 @@ function _storeSubPanelHtml(sub) {
       </div>
     </div>`
   }
+  if (sub.key === 'sale') {
+    // 3b: 판매 화면. 스캔 → 판매 리스트(즉시 추가/병합) → 합계 → 결제수단/휴대폰 → 최종확정(3c stub).
+    // 재고/원장 쓰기 없음. 권한 게이트 + draft. 입고 스캔과 병렬 코드(파이프라인 공유 안 함).
+    return `<div class="store-panel${shown ? '' : ' store-panel-hidden'}" id="storePanel_sale">
+      <div id="saleGate" class="inb-hidden"></div>
+      <div id="saleScreen" class="sale-screen inb-hidden">
+        <div class="sale-entry-card">
+          <div class="sale-entry-storelbl" id="saleStoreLabel"></div>
+          <div class="sale-top">
+            <div class="sale-left">
+              <div class="inb-field inb-field-barcode">
+                <label class="inb-label">바코드 <span class="inb-label-hint">스캔하면 판매 리스트에 바로 추가 · 커서 고정</span></label>
+                <div class="inb-barcode-row">
+                  <input id="saleBarcode" class="inb-input inb-input-barcode" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="바코드를 스캔하세요">
+                  <button class="btn btn-outline inb-lookup-btn" onclick="saleManualLookup()">조회</button>
+                </div>
+              </div>
+            </div>
+            <div class="sale-right">
+              <div class="inb-card">
+                <div class="inb-card-img" id="saleImage"><div class="inb-card-noimg inb-card-noimg-empty">📷</div></div>
+                <div class="inb-card-info" id="saleInfo"><div class="inb-card-empty">바코드를 스캔하면<br>상품 정보가 여기에 표시됩니다</div></div>
+              </div>
+              <div id="saleBanner" class="inb-banner" aria-live="assertive"></div>
+            </div>
+          </div>
+        </div>
+        <div class="sale-list-section">
+          <div class="inb-list-head">판매 리스트 <span class="inb-list-count-badge"><span id="saleListCount">0</span>건</span></div>
+          <div class="sale-list-wrap">
+            <table class="data-table sale-list-table">
+              <thead><tr>
+                <th style="width:40px">순번</th><th>품번</th><th class="inb-c" style="width:56px">사이즈</th>
+                <th style="width:84px">단가</th><th style="width:96px">할인단가</th>
+                <th style="width:88px">정상가</th><th style="width:88px">할인가</th><th style="width:96px">판매가</th>
+                <th style="width:84px">수량</th><th class="inb-c" style="width:52px">삭제</th>
+              </tr></thead>
+              <tbody id="saleListBody"></tbody>
+            </table>
+          </div>
+          <div class="sale-footer">
+            <div class="sale-totals">
+              <span class="sale-total-item">합계 <strong id="saleTotalSum">0</strong>원</span>
+              <span class="sale-total-item">할인합계 <strong id="saleTotalDiscount">0</strong>원</span>
+              <span class="sale-total-item">수량합계 <strong id="saleTotalQty">0</strong></span>
+            </div>
+            <div class="sale-pay-row">
+              <label class="inb-type-label">결제수단 <select id="salePayMethod" class="inb-type-select" onchange="onSalePayChange()">
+                <option value="카드">카드</option><option value="현금">현금</option><option value="계좌이체">계좌이체</option><option value="기타">기타</option>
+              </select></label>
+              <input id="salePhone" class="sale-phone-input" type="text" autocomplete="off" maxlength="20" placeholder="휴대폰 번호 (선택 · 적립금 대사)" oninput="onSalePhoneInput()">
+              <button class="btn btn-new sale-confirm-btn" id="saleConfirmBtn" onclick="saleFinalConfirm()">최종 확정 <span class="inb-confirm-tag">(3c에서 활성화)</span></button>
+            </div>
+            <div class="inb-confirm-note">🔒 최종 확정(재고 차감·매출 기록)은 다음 단계(3c)에서 활성화됩니다 — 현재는 판매 리스트만 임시저장됩니다</div>
+          </div>
+        </div>
+      </div>
+    </div>`
+  }
   return `<div class="store-panel${shown ? '' : ' store-panel-hidden'}" id="storePanel_${sub.key}">
     <div class="store-placeholder">
       <div class="store-placeholder-icon">🚧</div>
@@ -111,6 +170,7 @@ function renderStoreTab() {
   `
   // 재고현황이 활성 서브탭이면 즉시 로드(온디맨드). 비활성이면 전환 시 로드.
   if (_storeActiveSub === 'stock') renderStoreStockView()
+  else if (_storeActiveSub === 'sale') renderSaleScreen()
 }
 
 // 서브탭 전환 (패널 표시 토글 + 활성 버튼)
@@ -124,6 +184,7 @@ function switchStoreTab(sub) {
     p.classList.toggle('store-panel-hidden', p.id !== 'storePanel_' + sub)
   })
   if (sub === 'stock') renderStoreStockView()   // 재고현황으로 전환 시 온디맨드 로드
+  else if (sub === 'sale') renderSaleScreen()   // 판매 화면 전환 시 로드 + 커서 세팅
 }
 
 // 관리자 매장 스위처 setter — _storeViewOverride 설정 후 재렌더
@@ -496,21 +557,33 @@ async function renderStoreStockView() {
     </div>`
 }
 
-// 품번 클릭 → 상세 모달 (이미지 + 정상가 + 사이즈별 재고 + 합계). 로케이션/할인은 향후(확장 지점 주석).
-function openStoreStockDetail(code) {
-  const store = _ssvStore
-  const sizes = (typeof getStoreStock === 'function') ? getStoreStock(store, code) : {}
-  const p = _ssvFindProduct(code)
+// ── 공유 상품 상세 모달 — 이미지 + 상품명 + 정상가 + 사이즈별 재고·로케이션 (매장별, 읽기 전용) ──
+// 판매 리스트(3b) + 매장별 재고현황(1f) 두 곳에서 동일 모달 사용(분기 방지). storeId 미지정 시 resolveActiveStore.
+async function openStoreProductDetail(code, storeId) {
+  const modal = document.getElementById('storeStockDetailModal')
+  if (!modal) return
+  const store = storeId
+    || (typeof resolveActiveStore === 'function' ? resolveActiveStore() : '')
+    || _ssvStore || _saleStore || ''
+  // 재고+위치 인덱스 최신화 (2a: buildStoreStockIndex 가 _storeStockIndex + _storeLocIndex 둘 다 채움)
+  if (store && typeof buildStoreStockIndex === 'function') { try { await buildStoreStockIndex(store) } catch (e) {} }
+  const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(code) : null
   const name = p ? (p.nameKr || p.nameEn || '') : ''
   const price = (p && (p.salePrice || p.salePrice === 0)) ? (Number(p.salePrice).toLocaleString() + '원') : '-'
   const img = (p && typeof getThumbUrl === 'function') ? getThumbUrl(p) : ''
+  const sizes = (typeof getStoreStock === 'function') ? getStoreStock(store, code) : {}
   const imgHtml = img
     ? `<img src="${esc(img)}" class="ssv-detail-img" onerror="this.style.visibility='hidden'">`
     : `<div class="ssv-detail-img ssv-detail-noimg">이미지 없음</div>`
   let total = 0
-  const sizeRows = SIZES.map(sz => {
+  const rows = SIZES.map(sz => {
     const v = Number(sizes[sz] || 0); total += v
-    return `<div class="ssv-detail-size${v < 0 ? ' ssv-neg' : ''}"><span class="ssv-detail-size-lbl">${esc(sz)}</span><span class="ssv-detail-size-val">${v}</span></div>`
+    const loc = (typeof getStoreStockLocation === 'function') ? getStoreStockLocation(store, code, sz) : ''
+    return `<tr>
+      <td class="spd-sz">${esc(sz)}</td>
+      <td class="spd-qty${v < 0 ? ' ssv-neg' : ''}">${v}</td>
+      <td class="spd-loc">${loc ? esc(loc) : '-'}</td>
+    </tr>`
   }).join('')
   const delFlag = (p && p.deleted) ? ' <span class="ssv-del-flag">삭제된 상품</span>' : ''
 
@@ -524,16 +597,19 @@ function openStoreStockDetail(code) {
         <div class="ssv-detail-price">정상가 <strong>${price}</strong></div>
       </div>
     </div>
-    <div class="ssv-detail-section-title">사이즈별 재고 · ${esc(_storeNameById(store))}</div>
-    <div class="ssv-detail-sizes">${sizeRows}</div>
-    <div class="ssv-detail-total">합계 <strong>${total}</strong></div>
-    <!-- 확장 지점(1f 범위 외, 향후 추가): 로케이션(사이즈별, 데이터구조 변경 후) / 할인(할인율·할인가, Phase 5) -->
-  `
+    <div class="ssv-detail-section-title">사이즈별 재고 · 로케이션 · ${esc(_storeNameById(store))}</div>
+    <table class="data-table spd-table">
+      <thead><tr><th>사이즈</th><th>재고</th><th>로케이션</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr><td>합계</td><td class="${total < 0 ? 'ssv-neg' : ''}">${total}</td><td>-</td></tr></tfoot>
+    </table>`
   const titleEl = document.getElementById('ssvDetailTitle')
   if (titleEl) titleEl.textContent = (p ? name : code) + ' — 매장 재고'
-  const modal = document.getElementById('storeStockDetailModal')
-  if (modal) { modal.showModal(); if (typeof centerModal === 'function') centerModal(modal) }
+  modal.showModal(); if (typeof centerModal === 'function') centerModal(modal)
 }
+
+// 1f 호환 래퍼 — 기존 onclick(openStoreStockDetail) 유지, 공유 모달로 위임(현재 뷰 매장)
+function openStoreStockDetail(code) { openStoreProductDetail(code, _ssvStore) }
 
 function closeStoreStockDetail() {
   const modal = document.getElementById('storeStockDetailModal')
@@ -541,6 +617,7 @@ function closeStoreStockDetail() {
 }
 
 window.renderStoreStockView = renderStoreStockView
+window.openStoreProductDetail = openStoreProductDetail
 window.openStoreStockDetail = openStoreStockDetail
 window.closeStoreStockDetail = closeStoreStockDetail
 
@@ -1738,3 +1815,354 @@ window.generateSaleNo = generateSaleNo
 window.buildSaleDoc = buildSaleDoc
 window.buildVoidDoc = buildVoidDoc
 window.voidDocId = voidDocId
+
+// =============================================
+// ===== 판매 화면 (POS Phase 3b) =====
+// =============================================
+// 판매 서브탭. 스캔 → 판매 리스트 즉시 추가/병합 → 합계 → 결제수단/휴대폰 → 최종확정(3c stub).
+// 🔒 재고/원장 쓰기 없음. 입고 스캔과 병렬 코드(파이프라인 공유 안 함). 순수 헬퍼만 재사용(findByBarcode/_ssvFindProduct/_inbBarcodedSizes/_inbParseQty/getStoreStock/getThumbUrl).
+
+let _saleStore = ''         // 현재 판매 매장
+let _saleList = []          // 판매 라인 [{productCode,size,qty,unitPrice,unitDiscount,discountSource}]
+let _saleCardKey = null     // 마지막 스캔 (카드 표시용)
+let _saleComposing = false  // IME 조합 중
+let _saleLastEnterTime = 0  // 스캐너 이중발사 디바운스
+let _saleBannerTimer = null // 오류 배너 타이머
+let _saleLookupCode = ''    // 품번조회 선택 상품
+
+function _saleFocusBarcode() { const el = document.getElementById('saleBarcode'); if (el) { el.focus(); if (el.select) el.select() } }
+
+function _saleShowBanner(msg) {
+  const b = document.getElementById('saleBanner')
+  if (!b) { showToast(msg, 'warning'); return }
+  b.innerHTML = `<div class="inb-banner-inner"><div class="inb-banner-icon">🚫</div><div class="inb-banner-msg">${esc(msg)}</div></div>`
+  b.classList.add('inb-banner-show')
+  if (_saleBannerTimer) clearTimeout(_saleBannerTimer)
+  _saleBannerTimer = setTimeout(() => { b.classList.remove('inb-banner-show'); b.innerHTML = '' }, 2500)
+}
+
+// ── draft (매장별) ──
+function _saleDraftKey(store) { return 'lemango_sale_draft_' + (store || _saleStore || '') }
+function _saleSaveDraft() {
+  if (!_saleStore) return
+  const payEl = document.getElementById('salePayMethod'), phoneEl = document.getElementById('salePhone')
+  try {
+    localStorage.setItem(_saleDraftKey(_saleStore), JSON.stringify({
+      v: 1, items: _saleList,
+      payMethod: payEl ? payEl.value : '카드',
+      phone: phoneEl ? phoneEl.value : ''
+    }))
+  } catch (e) { console.warn('판매 draft 저장 실패:', e && e.message) }
+}
+function _saleLoadDraft(store) {
+  const EMPTY = { items: [], payMethod: '카드', phone: '' }
+  let raw = null
+  try { raw = localStorage.getItem(_saleDraftKey(store)) } catch (e) { return EMPTY }
+  if (!raw) return EMPTY
+  try {
+    const o = JSON.parse(raw)
+    if (!o || o.v !== 1) return EMPTY
+    const items = Array.isArray(o.items) ? o.items.filter(l => l && l.productCode && l.size).map(l => ({
+      productCode: String(l.productCode), size: String(l.size),
+      qty: Math.max(1, Math.floor(Number(l.qty) || 1)),
+      unitPrice: Math.max(0, Math.floor(Number(l.unitPrice) || 0)),
+      unitDiscount: Math.max(0, Math.floor(Number(l.unitDiscount) || 0)),
+      discountSource: l.discountSource === 'store-discount' ? 'store-discount' : 'manual'
+    })) : []
+    return { items, payMethod: o.payMethod || '카드', phone: o.phone || '' }
+  } catch (e) {
+    console.warn('판매 draft 파싱 실패 — 초기화:', e && e.message)
+    showToast('판매 임시저장 손상 — 초기화했습니다', 'warning')
+    try { localStorage.removeItem(_saleDraftKey(store)) } catch (e2) {}
+    return EMPTY
+  }
+}
+
+// ── 화면 렌더 (권한 게이트 + draft 로드 + 커서) ──
+function renderSaleScreen() {
+  const gate = document.getElementById('saleGate'), screen = document.getElementById('saleScreen')
+  if (!gate || !screen) return
+  const store = (typeof resolveActiveStore === 'function') ? resolveActiveStore() : ''
+  if (!store) {   // 판매 = 작업 → office/미배정 차단
+    _saleStore = ''; _saleList = []
+    screen.classList.add('inb-hidden'); gate.classList.remove('inb-hidden')
+    gate.innerHTML = `<div class="store-placeholder"><div class="store-placeholder-icon">🚫</div><div class="store-placeholder-title">판매 불가</div><div class="store-placeholder-desc">배정된 매장이 없습니다 — 관리자에게 문의하세요.</div></div>`
+    return
+  }
+  gate.classList.add('inb-hidden'); gate.innerHTML = ''
+  screen.classList.remove('inb-hidden')
+  _saleStore = store
+  const draft = _saleLoadDraft(store)   // 매장 전환 시 해당 매장 draft
+  _saleList = draft.items
+  _saleCardKey = null
+  if (typeof buildStoreStockIndex === 'function') buildStoreStockIndex(store).then(() => { if (_saleStore === store && _saleCardKey) _saleRenderCard(_saleCardKey.code, _saleCardKey.size) }).catch(() => {})
+  if (typeof buildBarcodeIndex === 'function') buildBarcodeIndex()
+  _saleBindEvents()
+  const payEl = document.getElementById('salePayMethod'); if (payEl) payEl.value = draft.payMethod || '카드'
+  const phoneEl = document.getElementById('salePhone'); if (phoneEl) phoneEl.value = draft.phone || ''
+  _saleRenderCard(null)
+  _saleRenderList()
+  const lbl = document.getElementById('saleStoreLabel'); if (lbl) lbl.textContent = '판매 매장: ' + _storeNameById(store)
+  _saleFocusBarcode()
+}
+
+function _saleBindEvents() {
+  const bc = document.getElementById('saleBarcode')
+  if (bc && !bc.dataset.saleBound) {
+    bc.dataset.saleBound = '1'
+    bc.addEventListener('keydown', onSaleBarcodeKey)
+    bc.addEventListener('compositionstart', () => { _saleComposing = true })
+    bc.addEventListener('compositionend', () => { _saleComposing = false })
+  }
+}
+
+// ── 바코드 Enter (스캔) ──
+function onSaleBarcodeKey(e) {
+  if (e.key !== 'Enter') return
+  if (e.isComposing || _saleComposing) return
+  e.preventDefault()
+  const now = Date.now()
+  const el = document.getElementById('saleBarcode')
+  const raw = el ? String(el.value || '') : ''
+  if (now - _saleLastEnterTime < INB_DEBOUNCE_MS) { if (el) el.value = ''; _saleFocusBarcode(); return }   // CR+LF 디바운스(입고와 공유 상수)
+  _saleLastEnterTime = now
+  const rawTrim = raw.trim()
+  if (!rawTrim) { _saleFocusBarcode(); return }
+  if (el) el.value = ''
+  const cleaned = rawTrim.replace(/[^0-9A-Za-z]/g, '')
+  const hasHangul = /[㄰-㆏가-힣]/.test(rawTrim)
+  if (!cleaned || hasHangul) { _saleShowBanner('한/영 키를 확인하세요 (영문 모드 필요)'); _saleFocusBarcode(); return }
+  handleSaleScan(cleaned)
+}
+
+// 조회 버튼: 바코드로 해석되면 스캔, 아니면 품번 검색 창
+function saleManualLookup() {
+  const el = document.getElementById('saleBarcode')
+  const raw = el ? String(el.value || '').trim() : ''
+  if (raw) {
+    const cleaned = raw.replace(/[^0-9A-Za-z]/g, '')
+    const hasHangul = /[㄰-㆏가-힣]/.test(raw)
+    if (!hasHangul && cleaned && typeof findByBarcode === 'function' && findByBarcode(cleaned)) { if (el) el.value = ''; handleSaleScan(cleaned); return }
+    openSaleLookup(raw); return
+  }
+  openSaleLookup('')
+}
+
+// 스캔 해석 → Rule 1(미등록)만 차단, 나머지는 라인 추가/병합
+function handleSaleScan(barcode) {
+  if (!_saleStore) { _saleFocusBarcode(); return }
+  const hit = (typeof findByBarcode === 'function') ? findByBarcode(barcode) : null
+  if (!hit) { _saleShowBanner('등록되지 않은 바코드입니다: ' + barcode); _saleFocusBarcode(); return }
+  _saleBeginLine(hit.productCode, hit.size)
+}
+
+// 판매 라인 추가/병합 (스캔·조회 공용). 같은 (품번,사이즈) → qty++ 병합(팝업 없음).
+function _saleBeginLine(code, size) {
+  if (!_saleStore || !code || !size) { _saleFocusBarcode(); return }
+  const idx = _saleList.findIndex(l => l.productCode === code && l.size === size)
+  if (idx >= 0) {
+    _saleList[idx].qty = (Number(_saleList[idx].qty) || 0) + 1
+  } else {
+    const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(code) : null
+    const unitPrice = p ? Math.max(0, Math.floor(Number(p.salePrice) || 0)) : 0
+    _saleList.push({ productCode: code, size, qty: 1, unitPrice, unitDiscount: 0, discountSource: 'manual' })
+  }
+  _saleCardKey = { code, size }
+  _saleSaveDraft()
+  _saleRenderCard(code, size)
+  _saleRenderList()
+  _saleFocusBarcode()   // 커서 바코드 유지
+}
+
+// 스캔 상품 카드 (이미지 + 품번/사이즈 + 판매가/할인가 + 현재재고 red if ≤0)
+function _saleRenderCard(code, size) {
+  const infoEl = document.getElementById('saleInfo'), imgEl = document.getElementById('saleImage')
+  if (!code) {
+    if (infoEl) infoEl.innerHTML = '<div class="inb-card-empty">바코드를 스캔하면<br>상품 정보가 여기에 표시됩니다</div>'
+    if (imgEl) imgEl.innerHTML = '<div class="inb-card-noimg inb-card-noimg-empty">📷</div>'
+    return
+  }
+  const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(code) : null
+  const name = p ? (p.nameKr || p.nameEn || '') : '(상품 정보 없음)'
+  const price = p ? Math.max(0, Math.floor(Number(p.salePrice) || 0)) : 0
+  const stock = (typeof getStoreStock === 'function') ? Number(getStoreStock(_saleStore, code)[size] || 0) : 0
+  const stockCls = stock <= 0 ? ' inb-card-stock-zero' : ''
+  if (infoEl) infoEl.innerHTML = `
+    <div class="inb-card-code">${esc(code)} <span class="inb-card-size">${esc(size)}</span></div>
+    <div class="inb-card-name">${esc(name)}</div>
+    <div class="sale-card-price">판매가 <strong>${price.toLocaleString()}</strong>원 · 할인가 <strong>0</strong>원</div>
+    <div class="inb-card-stock${stockCls}">현재 재고 <strong>${stock}</strong>개 <span class="inb-card-stock-sz">(${esc(size)})</span></div>`
+  const img = (p && typeof getThumbUrl === 'function') ? getThumbUrl(p) : ''
+  if (imgEl) imgEl.innerHTML = img
+    ? `<img src="${esc(img)}" onerror="this.parentNode.innerHTML='<div class=\\'inb-card-noimg\\'>이미지 없음</div>'">`
+    : '<div class="inb-card-noimg">이미지 없음</div>'
+}
+
+// 판매 리스트 렌더 (파생값 항상 재계산, 정수 KRW). mockup: 정상가=단가×수량, 할인가=할인단가×수량, 판매가=정상가−할인가.
+function _saleRenderList() {
+  const body = document.getElementById('saleListBody')
+  const countEl = document.getElementById('saleListCount')
+  if (countEl) countEl.textContent = String(_saleList.length)
+  if (!body) { _saleUpdateTotals(); return }
+  if (!_saleList.length) { body.innerHTML = '<tr><td colspan="10" class="inbhist-empty">스캔한 상품이 여기에 쌓입니다</td></tr>'; _saleUpdateTotals(); return }
+  body.innerHTML = _saleList.map((l, i) => {
+    const unitPrice = Math.max(0, Math.floor(Number(l.unitPrice) || 0))
+    let unitDiscount = Math.max(0, Math.floor(Number(l.unitDiscount) || 0)); if (unitDiscount > unitPrice) unitDiscount = unitPrice
+    const qty = Math.max(1, Math.floor(Number(l.qty) || 1))
+    const lineNormal = unitPrice * qty, lineDiscount = unitDiscount * qty, lineTotal = lineNormal - lineDiscount
+    const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(l.productCode) : null
+    const nm = p ? (p.nameKr || p.nameEn || '') : ''
+    return `<tr>
+      <td class="inb-c">${i + 1}</td>
+      <td><span class="code-link" onclick="openStoreProductDetail('${esc(l.productCode)}', '${esc(_saleStore)}')">${esc(l.productCode)}</span>${nm ? `<div class="sale-line-name">${esc(nm)}</div>` : ''}</td>
+      <td class="inb-c">${esc(l.size)}</td>
+      <td style="text-align:right">${unitPrice.toLocaleString()}</td>
+      <td><input type="number" class="sale-line-input" min="0" step="1" value="${unitDiscount}" onchange="onSaleLineDiscount(${i}, this)"></td>
+      <td style="text-align:right">${lineNormal.toLocaleString()}</td>
+      <td style="text-align:right">${lineDiscount.toLocaleString()}</td>
+      <td style="text-align:right;font-weight:700">${lineTotal.toLocaleString()}</td>
+      <td><input type="number" class="sale-line-input" min="1" step="1" value="${qty}" onchange="onSaleLineQty(${i}, this)"></td>
+      <td class="inb-c"><button class="inb-del-btn" onclick="removeSaleLine(${i})">삭제</button></td>
+    </tr>`
+  }).join('')
+  _saleUpdateTotals()
+}
+
+// 합계 실시간 (합계=Σ판매가, 할인합계=Σ할인가, 수량합계=Σ수량). 정수.
+function _saleUpdateTotals() {
+  let sum = 0, disc = 0, qty = 0
+  _saleList.forEach(l => {
+    const up = Math.max(0, Math.floor(Number(l.unitPrice) || 0))
+    let ud = Math.max(0, Math.floor(Number(l.unitDiscount) || 0)); if (ud > up) ud = up
+    const q = Math.max(1, Math.floor(Number(l.qty) || 1))
+    disc += ud * q; sum += (up * q - ud * q); qty += q
+  })
+  const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v }
+  set('saleTotalSum', sum.toLocaleString())
+  set('saleTotalDiscount', disc.toLocaleString())
+  set('saleTotalQty', String(qty))
+}
+
+// 수량 인라인 편집 (양의 정수)
+function onSaleLineQty(i, el) {
+  if (i < 0 || i >= _saleList.length) return
+  const n = (typeof _inbParseQty === 'function') ? _inbParseQty(el.value) : (/^\d+$/.test(String(el.value).trim()) ? parseInt(el.value, 10) : NaN)
+  if (!isNaN(n) && n >= 1) { _saleList[i].qty = n; _saleSaveDraft(); _saleRenderList() }
+  else { el.value = String(_saleList[i].qty); showToast('수량은 1 이상 정수만 가능합니다', 'warning') }
+}
+
+// 할인단가 인라인 편집 (0 이상 정수, 단가 초과 시 클램프)
+function onSaleLineDiscount(i, el) {
+  if (i < 0 || i >= _saleList.length) return
+  const s = String(el.value || '').trim()
+  const n = /^\d+$/.test(s) ? parseInt(s, 10) : NaN
+  if (isNaN(n)) { el.value = String(_saleList[i].unitDiscount || 0); showToast('할인단가는 0 이상 정수만 가능합니다', 'warning'); return }
+  const up = Math.max(0, Math.floor(Number(_saleList[i].unitPrice) || 0))
+  const clamped = Math.min(n, up)
+  _saleList[i].unitDiscount = clamped
+  if (clamped !== n) showToast('할인단가는 단가를 초과할 수 없습니다', 'warning')
+  _saleSaveDraft(); _saleRenderList()
+}
+
+function removeSaleLine(i) {
+  if (i < 0 || i >= _saleList.length) return
+  _saleList.splice(i, 1); _saleSaveDraft(); _saleRenderList(); _saleFocusBarcode()
+}
+
+function onSalePayChange() { _saleSaveDraft() }
+function onSalePhoneInput() { _saleSaveDraft() }   // 원시값 저장(정규화는 3c 확정 시)
+
+// 🔒 최종 확정 — 3b stub. 재고/원장 쓰기 없음. 실제 반영은 3c.
+function saleFinalConfirm() {
+  if (!_saleList.length) { _saleShowBanner('판매 리스트가 비어 있습니다'); _saleFocusBarcode(); return }
+  showToast('최종 확정(재고 차감·매출 기록)은 다음 단계(3c)에서 구현됩니다 — 현재는 판매 리스트만 임시저장됩니다', 'warning')
+  _saleFocusBarcode()
+}
+
+// ── 품번 조회 (조회 버튼) — 입고 조회와 병렬. 바코드 등록 사이즈만. 스캔과 동일 라인 추가로 수렴. ──
+function openSaleLookup(seed) {
+  const modal = document.getElementById('saleLookupModal'); if (!modal) return
+  _saleLookupCode = ''
+  const s = document.getElementById('saleLookupSearch'); if (s) s.value = seed || ''
+  _saleHideLookupSizes()
+  renderSaleLookupResults()
+  modal.showModal(); if (typeof centerModal === 'function') centerModal(modal)
+  if (s) setTimeout(() => s.focus(), 30)
+}
+function closeSaleLookup() { const m = document.getElementById('saleLookupModal'); if (m) m.close() }
+function _saleHideLookupSizes() { _saleLookupCode = ''; const z = document.getElementById('saleLookupSizes'); if (z) { z.classList.add('inb-hidden'); z.innerHTML = '' } }
+
+function renderSaleLookupResults() {
+  const out = document.getElementById('saleLookupResults'); if (!out) return
+  _saleHideLookupSizes()
+  const q = String((document.getElementById('saleLookupSearch') || {}).value || '').trim().toLowerCase()
+  if (!q) { out.innerHTML = '<div class="inb-lookup-hint">품번 또는 상품명을 입력하세요</div>'; return }
+  const list = (State.allProducts || []).filter(p => {
+    if (!p || p.deleted) return false
+    if ((typeof _inbBarcodedSizes === 'function' ? _inbBarcodedSizes(p) : []).length === 0) return false   // 바코드 등록 상품만
+    const c = (p.productCode || '').toLowerCase(), nk = (p.nameKr || '').toLowerCase(), ne = (p.nameEn || '').toLowerCase()
+    return c.indexOf(q) >= 0 || nk.indexOf(q) >= 0 || ne.indexOf(q) >= 0
+  })
+  if (!list.length) { out.innerHTML = '<div class="inb-lookup-hint">검색 결과가 없습니다</div>'; return }
+  const capped = list.slice(0, 60)
+  const more = list.length > 60 ? `<div class="inb-lookup-hint">상위 60건만 표시 — 검색어를 더 입력하세요 (전체 ${list.length}건)</div>` : ''
+  out.innerHTML = capped.map(p => {
+    const name = esc(p.nameKr || p.nameEn || '')
+    const img = (typeof getThumbUrl === 'function') ? getThumbUrl(p) : ''
+    const thumb = img ? `<img src="${esc(img)}" class="inb-lookup-thumb" onerror="this.style.visibility='hidden'">` : '<span class="inb-lookup-thumb inb-lookup-thumb-none">—</span>'
+    return `<div class="inb-lookup-row" onclick="selectSaleLookupProduct('${esc(p.productCode)}')">${thumb}<span class="inb-lookup-code">${esc(p.productCode)}</span><span class="inb-lookup-name">${name}</span></div>`
+  }).join('') + more
+}
+function selectSaleLookupProduct(code) {
+  _saleLookupCode = code
+  const sizes = document.getElementById('saleLookupSizes'); if (!sizes) return
+  const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(code) : null
+  const name = p ? esc(p.nameKr || p.nameEn || '') : ''
+  const stockMap = (typeof getStoreStock === 'function') ? getStoreStock(_saleStore, code) : {}
+  const bc = p ? (typeof _inbBarcodedSizes === 'function' ? _inbBarcodedSizes(p) : []) : []
+  if (!bc.length) { sizes.innerHTML = '<div class="inb-lookup-hint">이 상품은 바코드가 등록되어 있지 않습니다</div>'; sizes.classList.remove('inb-hidden'); return }
+  sizes.innerHTML = `<div class="inb-lookup-sizes-head">${esc(code)} <span class="inb-lookup-sizes-name">${name}</span> — 사이즈 선택</div>
+    <div class="inb-size-grid">` + bc.map(sz => {
+    const st = Number(stockMap[sz] || 0)
+    return `<button class="inb-size-btn" onclick="chooseSaleLookupSize('${esc(sz)}')"><span class="inb-size-lbl">${esc(sz)}</span><span class="inb-size-stock">재고 ${st}</span></button>`
+  }).join('') + '</div>'
+  sizes.classList.remove('inb-hidden')
+}
+function chooseSaleLookupSize(size) {
+  const code = _saleLookupCode
+  if (!code || !size) return
+  closeSaleLookup()
+  _saleBeginLine(code, size)
+}
+
+// 다른 창 복귀 시 판매 화면 보이면 커서 재확보 + 조회창 닫힘 시 복귀
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return
+  const lookup = document.getElementById('saleLookupModal')
+  if (lookup && lookup.open) { const s = document.getElementById('saleLookupSearch'); if (s) s.focus(); return }
+  const panel = document.getElementById('storePanel_sale')
+  if (panel && panel.offsetParent !== null && _saleStore) _saleFocusBarcode()
+})
+;(function () {
+  const lookup = document.getElementById('saleLookupModal')
+  if (lookup) lookup.addEventListener('close', () => {
+    const panel = document.getElementById('storePanel_sale')
+    if (panel && panel.offsetParent !== null) _saleFocusBarcode()
+  })
+})()
+
+window.renderSaleScreen = renderSaleScreen
+window.onSaleBarcodeKey = onSaleBarcodeKey
+window.saleManualLookup = saleManualLookup
+window.handleSaleScan = handleSaleScan
+window.onSaleLineQty = onSaleLineQty
+window.onSaleLineDiscount = onSaleLineDiscount
+window.removeSaleLine = removeSaleLine
+window.onSalePayChange = onSalePayChange
+window.onSalePhoneInput = onSalePhoneInput
+window.saleFinalConfirm = saleFinalConfirm
+window.openSaleLookup = openSaleLookup
+window.closeSaleLookup = closeSaleLookup
+window.renderSaleLookupResults = renderSaleLookupResults
+window.selectSaleLookupProduct = selectSaleLookupProduct
+window.chooseSaleLookupSize = chooseSaleLookupSize
