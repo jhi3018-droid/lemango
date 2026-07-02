@@ -16,7 +16,7 @@ const AL_CAT_MAP = {
   'all':    null,
   'login':  ['login', 'logout', 'login_fail'],
   'data':   ['create', 'update', 'delete'],
-  'upload': ['upload', 'inbound'],
+  'upload': ['upload', 'inbound', 'inbound-cancel'],
   'member': ['approve', 'setting'],
   'error':  ['error']
 }
@@ -132,6 +132,7 @@ function alActionBadge(action) {
     'delete':     ['삭제',       'al-badge-delete'],
     'upload':     ['업로드',     'al-badge-upload'],
     'inbound':    ['매장입고',   'al-badge-upload'],
+    'inbound-cancel': ['입고취소', 'al-badge-delete'],
     'approve':    ['승인',       'al-badge-approve'],
     'setting':    ['설정',       'al-badge-setting'],
     'error':      ['에러',       'al-badge-error']

@@ -3629,6 +3629,22 @@ Established the reference style that every dashboard-opened srm-modal should fol
 - **변경 4파일**: `js/store.js`(inboundNo/memo 가산 + `_inbHistDateTime`/기간쿼리/`downloadInbHistory`/`_inbHistUpdateExportBtn`), `index.html`(메모 입력 + 이력 창 기간피커/엑셀버튼/컬럼), `style.css`(`.inb-memo-input`/`.inbhist-no`/`.inbhist-memo`), `CLAUDE.md`
 - **검증**: `node -c` 통과, 2c 3대 불변(increment 전용·단일배치·double-confirm 가드·실패시 draft 보존 — 가산 필드가 안 건드림), 범위쿼리 인덱스 일치(새 인덱스 0), 2d 읽기전용 유지(유일 write=2c batch), 매출 공식 무영향. code-reviewer 🟢
 
+#### 입고 취소 — 역반영 + 사유 필수 + 기록 보존 (재고 변경, 🟢) ⚠️규칙 포함 배포
+- 입고 이력 라인별 **취소** → 재고 역반영(increment(-qty)) + 원본 doc 에 취소 표시(삭제 안 함, 감사 보존). **사유 필수(클라+서버)**. `firebase deploy --only firestore:rules,hosting` (규칙 변경 — 소유주 수동)
+- **⭐ runTransaction (batch+precheck 대신 채택, 코드베이스 첫 트랜잭션)**: `tx.get(원본)` → `cancelled!==true` 검증 → `tx.set(storeStock, increment(-qty), merge)` + `tx.update(원본, 취소필드)`. 원자적 check-and-set → **동시 취소 레이스 완전 차단**(트랜잭션이 원본 변경 감지 시 재시도, 이미 취소면 ALREADY_CANCELLED throw). batch+precheck 는 read~commit 사이 미세 window 존재 → 트랜잭션이 정답. reads-before-writes 준수(get 후 set/update)
+- **역반영 = increment(-qty) 전용** (2c apply 의 정확한 역). `sizeLocations` 는 안 건드림(수량 되돌림이 위치 라벨을 지우지 않음). 음수 재고 허용(경고만 — 이미 판매됨 가능, 1f 빨강 표시, 확인창에 결과재고 N→N-qty 미리보기)
+- **1회성(one-shot) 서버 강제**: `firestore.rules` storeInbound `allow update` 정밀 개방 — 관리자 OR 본인매장 + `resource.data.get('cancelled', false) != true`(재취소 불가) + `request.resource.data.cancelled == true`(취소만) + `cancelReason is string && size()>0`(사유 서버 강제) + `cancelledBy == request.auth.uid`(취소자 위조 방지) + `diff().affectedKeys().hasOnly([취소 5필드])`(취소 필드만 변경). delete 여전히 `if false`. brace 46/46
+  - **🔴 code-reviewer 블로커 수정**: `resource.data.cancelled != true` 는 **미존재 필드 직접 접근 시 규칙 에러→거부** (Firestore: 없는 필드 dot-access 는 null 아님, 에러). 기존 storeInbound 문서엔 cancelled 필드 없음 → 첫 취소 100% 거부됐을 것 → **`resource.data.get('cancelled', false)`** 로 수정(부재 시 기본 false). 배포 전 발견·수정
+  - **감사 강화**: `cancelledBy == request.auth.uid` 추가(WHO 위조 방지, hasOnly 는 키만 제한하고 값 미검증이라)
+- **double-cancel 방어**: 취소된 라인 strikethrough + "취소됨" 배지(사유/누가/언제 tooltip) + [취소] 버튼 제거 / `_inbCancelInFlight` in-flight 가드(2c 패턴, try 안 set + finally release) / 트랜잭션 서버 재검증(위)
+- **사유 필수**: 확인창 textarea, 빈값 차단(클라 trim) + 규칙 `size()>0`(서버). 기본 포커스 = 사유(파괴 버튼 아님)
+- **실패 처리**: 트랜잭션 원자적 — 실패 시 재고·원본 **아무것도 안 변함**, 재시도 가능(창 유지). ALREADY_CANCELLED/NOT_FOUND → 안내 + 이력 새로고침
+- **권한**: 취소 버튼 = 관리자 OR 본인매장 직원만 표시(office/타매장 숨김, `-`), requestInbCancel 방어 체크 + 규칙 서버 강제 (판매취소/강제차감 정책행 충족)
+- **이력 통합**: 요약 "기간 입고 N건 · 총 M개 (취소 제외)"(정상만 집계), 엑셀에 상태/취소사유 컬럼 추가(취소행 포함·표시). `logActivity('inbound-cancel','입고취소', inboundNo/품번/사이즈/수량/사유)` + 활동로그 배지
+- **변경 6파일**: `js/store.js`(requestInbCancel/confirmInbCancel/closeInbCancelModal + `_inbCancelInFlight`/`_inbCancelTarget` + 이력 취소열/요약제외 + 엑셀 2컬럼), `index.html`(inbCancelModal + 이력 9번째 컬럼), `js/main.js`(모달 등록), `js/activity-log.js`(inbound-cancel 배지), `firestore.rules`(storeInbound update 정밀 개방), `style.css`(취소 UI), `CLAUDE.md`
+- **검증**: `node -c` 통과, rules brace 46/46, 역반영 increment 전용·sizeLocations 불변, 트랜잭션 reads-before-writes, 2c 확정 경로 무영향, 매출 공식 무영향. code-reviewer 🟢
+- **정책 충족**: 🔴 감사 로그(WHO/WHEN/WHAT/REASON) — 입고취소 = 사유 필수 + 자체 레코드(원본에 취소필드) + logActivity. **판매취소/환불/강제차감**은 향후 단계에서 동일 패턴 적용 예정
+
 ---
 
 ## 다음 작업 후보 (미구현)

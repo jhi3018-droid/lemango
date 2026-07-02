@@ -2716,9 +2716,27 @@
     </div>
     <div class="inbhist-table-wrap">
       <table class="data-table inbhist-table">
-        <thead><tr><th style="width:112px">입고번호</th><th style="width:92px">일시</th><th>품번</th><th style="width:52px">사이즈</th><th style="width:52px">수량</th><th style="width:120px">로케이션</th><th style="width:96px">작업자</th><th style="width:150px">메모</th></tr></thead>
+        <thead><tr><th style="width:112px">입고번호</th><th style="width:82px">일시</th><th>품번</th><th style="width:48px">사이즈</th><th style="width:48px">수량</th><th style="width:110px">로케이션</th><th style="width:84px">작업자</th><th style="width:130px">메모</th><th style="width:66px">취소</th></tr></thead>
         <tbody id="inbHistBody"></tbody>
       </table>
+    </div>
+  </div>
+</dialog>
+<!-- 입고 취소 확인 (POS) — 역반영 + 사유 필수. 파괴적 버튼엔 기본 포커스 안 둠(사유 입력에 포커스). -->
+<dialog id="inbCancelModal" class="srm-modal" style="width:480px;max-width:92vw;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header" style="cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">입고 취소</span>
+    <button class="modal-close" onclick="closeInbCancelModal()">×</button>
+  </div>
+  <div class="inbcancel-body">
+    <div class="inbcancel-summary" id="inbCancelSummary"></div>
+    <div class="inbcancel-preview" id="inbCancelPreview"></div>
+    <label class="inbcancel-reason-label">취소 사유 <span class="inbcancel-req">* 필수</span></label>
+    <textarea id="inbCancelReason" class="inbcancel-reason" rows="2" maxlength="200" placeholder="사유를 입력하세요 — 예: 오등록 / 반품 / 파손"></textarea>
+    <div class="inbcancel-warn">⚠️ 매장 재고가 즉시 차감되며 이 작업은 기록에 남습니다 (원본 삭제 안 됨)</div>
+    <div class="inbcancel-btns">
+      <button class="btn btn-outline" onclick="closeInbCancelModal()">닫기</button>
+      <button class="btn inbcancel-exec-btn" id="inbCancelConfirmBtn" onclick="confirmInbCancel()">취소 실행</button>
     </div>
   </div>
 </dialog>

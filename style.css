@@ -5918,3 +5918,35 @@ td[data-editable]:hover { background: #FAEEDA; }
 .inbhist-memo { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
 .inbhist-empty { text-align: center; color: var(--text-muted); padding: 32px 0 !important; font-size: 14px; }
 #inbHistExportBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+.inbhist-sum-note { font-size: 11px; font-weight: 400; opacity: 0.75; }
+.inbhist-action { text-align: center; }
+.inbhist-cancel-btn {
+  background: none; border: 1px solid var(--danger); color: var(--danger);
+  border-radius: 5px; padding: 3px 10px; font-size: 12px; cursor: pointer; font-family: inherit;
+}
+.inbhist-cancel-btn:hover { background: var(--danger); color: #fff; }
+.inbhist-cancel-badge {
+  display: inline-block; font-size: 11px; font-weight: 700; color: var(--danger);
+  background: rgba(224,82,82,0.12); border-radius: 4px; padding: 2px 7px; cursor: help;
+}
+.inbhist-cancelled-row td { text-decoration: line-through; color: var(--text-muted); }
+.inbhist-cancelled-row .inbhist-cancel-badge { text-decoration: none; }
+.inbhist-noperm { color: var(--text-muted); }
+
+/* 입고 취소 확인 다이얼로그 */
+.inbcancel-body { padding: 18px 20px; }
+.inbcancel-summary { font-size: 14px; color: var(--primary); margin-bottom: 10px; }
+.inbcancel-line { margin-bottom: 3px; }
+.inbcancel-sz { display: inline-block; font-size: 12px; background: var(--primary); color: #fff; border-radius: 4px; padding: 1px 7px; }
+.inbcancel-no { font-family: monospace; font-size: 12px; color: var(--text-muted); }
+.inbcancel-preview { font-size: 14px; color: var(--primary); background: rgba(201,169,110,0.10); border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; }
+.inbcancel-neg { color: var(--danger); font-weight: 700; }
+.inbcancel-reason-label { font-size: 13px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 5px; }
+.inbcancel-req { font-size: 11px; color: var(--danger); font-weight: 700; }
+.inbcancel-reason { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; font-family: inherit; resize: vertical; box-sizing: border-box; }
+.inbcancel-reason:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(201,169,110,0.2); }
+.inbcancel-warn { font-size: 12px; color: var(--danger); margin: 10px 0 14px; }
+.inbcancel-btns { display: flex; justify-content: flex-end; gap: 10px; }
+.inbcancel-exec-btn { background: #fff; border: 1px solid var(--danger); color: var(--danger); }
+.inbcancel-exec-btn:hover { background: var(--danger); color: #fff; }
+.inbcancel-exec-btn:disabled { opacity: 0.5; cursor: not-allowed; }

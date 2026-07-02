@@ -63,10 +63,11 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // storeInbound — 매장 입고 이력 (POS Phase 2c). 라인당 1 doc, append-only 감사 이력.
+    // storeInbound — 매장 입고 이력 (POS Phase 2c). 라인당 1 doc, 감사 이력.
     //   read : 승인자 전원 (입고 이력 조회 개방 — 권한 방침)
     //   create: 관리자(전 매장) OR 본인 매장(storeId 일치, 비어있지 않을 때) — storeStock/storeSales 와 동일 게이트
-    //   update/delete: 전면 금지 (불변 감사 이력)
+    //   update: 입고 취소(cancellation)만 정밀 허용 — 관리자 OR 본인 매장, 미취소→취소 1회성, 사유 필수(서버강제), 취소 필드만 변경 가능
+    //   delete: 전면 금지 (원본 레코드 삭제 불가 — 감사 보존)
     match /storeInbound/{docId} {
       allow read: if isApproved();
       allow create: if isApproved() && (
@@ -74,7 +75,18 @@ service cloud.firestore {
         (request.resource.data.storeId != '' &&
          request.resource.data.storeId == userDoc(request.auth.uid).storeId)
       );
-      allow update, delete: if false;
+      allow update: if isApproved()
+        && (isAdmin() ||
+            (resource.data.storeId != '' &&
+             resource.data.storeId == userDoc(request.auth.uid).storeId))
+        && resource.data.get('cancelled', false) != true            // 1회성: 이미 취소된 건 재취소 불가 (⚠️ .get(k,default) — 미존재 필드 직접 접근은 규칙에서 에러→거부되므로 필수)
+        && request.resource.data.cancelled == true                  // 이 업데이트는 반드시 '취소' 여야 함
+        && request.resource.data.cancelReason is string
+        && request.resource.data.cancelReason.size() > 0            // 사유 서버 강제(빈값 불가)
+        && request.resource.data.cancelledBy == request.auth.uid    // 감사 무결성: 취소자 위조 방지(WHO=실제 인증 사용자)
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['cancelled','cancelledAt','cancelledBy','cancelledByName','cancelReason']);  // 취소 필드만 변경 허용
+      allow delete: if false;
     }
 
     // notifications

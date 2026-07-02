@@ -1243,7 +1243,7 @@ async function _inbHistoryLoad() {
   const body = document.getElementById('inbHistBody')
   const sumEl = document.getElementById('inbHistSummary')
   if (!body) return
-  const COLS = 8
+  const COLS = 9
   const setEmpty = (msg) => { body.innerHTML = `<tr><td colspan="${COLS}" class="inbhist-empty">${esc(msg)}</td></tr>`; if (sumEl) sumEl.textContent = ''; _inbHistRows = []; _inbHistUpdateExportBtn() }
   const store = (document.getElementById('inbHistStore') || {}).value || ''
   const startEl = document.getElementById('inbHistStart'), endEl = document.getElementById('inbHistEnd')
@@ -1274,24 +1274,40 @@ async function _inbHistoryLoad() {
     }
   }
   const rows = []
-  snap.forEach(d => rows.push(d.data() || {}))
+  snap.forEach(d => rows.push(Object.assign({ _id: d.id }, d.data() || {})))   // _id = 취소 대상 식별용
   rows.sort((a, b) => String(b.confirmedAt || '').localeCompare(String(a.confirmedAt || '')))   // 최신 위 (DESC, 기간 전체)
   _inbHistRows = rows
   _inbHistUpdateExportBtn()
   if (!rows.length) { setEmpty('해당 기간의 입고 내역이 없습니다'); return }
 
-  const totalQty = rows.reduce((s, r) => s + (Number(r.qty) || 0), 0)
-  if (sumEl) sumEl.innerHTML = `기간 입고 <strong>${rows.length}</strong>건 · 총 <strong>${totalQty}</strong>개`
-  body.innerHTML = rows.map(r => `<tr>
-    <td class="inbhist-no">${esc(r.inboundNo || '-')}</td>
-    <td class="inbhist-time">${esc(_inbHistDateTime(r.confirmedAt, 'md'))}</td>
-    <td>${esc(r.productCode || '')}</td>
-    <td style="text-align:center">${esc(r.size || '')}</td>
-    <td style="text-align:right">${Number(r.qty) || 0}</td>
-    <td>${esc(r.location || '')}</td>
-    <td>${esc(r.workerName || '')}</td>
-    <td class="inbhist-memo">${esc(r.memo || '')}</td>
-  </tr>`).join('')
+  // 요약은 취소 제외(정상 라인만)
+  const active = rows.filter(r => r.cancelled !== true)
+  const totalQty = active.reduce((s, r) => s + (Number(r.qty) || 0), 0)
+  if (sumEl) sumEl.innerHTML = `기간 입고 <strong>${active.length}</strong>건 · 총 <strong>${totalQty}</strong>개 <span class="inbhist-sum-note">(취소 제외)</span>`
+  // 취소 권한 = 관리자(grade>=3) OR 본인 매장 직원. 권한 없으면 버튼 숨김(서버 규칙이 최종 방어)
+  const myGrade = (typeof _currentUserGrade !== 'undefined' && _currentUserGrade) ? _currentUserGrade : 1
+  const myStore = (typeof _currentUserStoreId !== 'undefined' && _currentUserStoreId) ? _currentUserStoreId : ''
+  body.innerHTML = rows.map(r => {
+    const cancelled = r.cancelled === true
+    const rowCls = cancelled ? ' class="inbhist-cancelled-row"' : ''
+    const canCancel = (myGrade >= 3) || (myStore && myStore === r.storeId)
+    const actionCell = cancelled
+      ? `<span class="inbhist-cancel-badge" title="${esc('취소: ' + (r.cancelledByName || '') + ' (' + _inbHistDateTime(r.cancelledAt, 'full') + ') · ' + (r.cancelReason || ''))}">취소됨</span>`
+      : (canCancel
+          ? `<button class="inbhist-cancel-btn" onclick="requestInbCancel('${esc(r._id)}')">취소</button>`
+          : '<span class="inbhist-noperm">-</span>')
+    return `<tr${rowCls}>
+      <td class="inbhist-no">${esc(r.inboundNo || '-')}</td>
+      <td class="inbhist-time">${esc(_inbHistDateTime(r.confirmedAt, 'md'))}</td>
+      <td>${esc(r.productCode || '')}</td>
+      <td style="text-align:center">${esc(r.size || '')}</td>
+      <td style="text-align:right">${Number(r.qty) || 0}</td>
+      <td>${esc(r.location || '')}</td>
+      <td>${esc(r.workerName || '')}</td>
+      <td class="inbhist-memo">${esc(r.memo || '')}</td>
+      <td class="inbhist-action">${actionCell}</td>
+    </tr>`
+  }).join('')
 }
 
 // 엑셀 버튼 활성/비활성 (빈 결과 → 비활성)
@@ -1300,22 +1316,117 @@ function _inbHistUpdateExportBtn() {
   if (btn) btn.disabled = !(_inbHistRows && _inbHistRows.length)
 }
 
-// 조회된 기간 결과 엑셀 다운로드 (읽기 전용). 컬럼: 입고번호|일시(full)|품번|사이즈|수량|로케이션|작업자|메모. 최신순(화면과 동일).
+// 조회된 기간 결과 엑셀 다운로드 (읽기 전용). 취소행 포함하되 상태/사유 컬럼으로 표시. 최신순(화면과 동일).
 function downloadInbHistory() {
   if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
   if (!_inbHistRows || !_inbHistRows.length) { showToast('내보낼 입고 내역이 없습니다', 'warning'); return }
-  const header = ['입고번호', '일시', '품번', '사이즈', '수량', '로케이션', '작업자', '메모']
+  const header = ['입고번호', '일시', '품번', '사이즈', '수량', '로케이션', '작업자', '메모', '상태', '취소사유']
   const aoa = [header].concat(_inbHistRows.map(r => [
     r.inboundNo || '-', _inbHistDateTime(r.confirmedAt, 'full'), r.productCode || '', r.size || '',
-    Number(r.qty) || 0, r.location || '', r.workerName || '', r.memo || ''
+    Number(r.qty) || 0, r.location || '', r.workerName || '', r.memo || '',
+    (r.cancelled === true ? '취소됨' : '정상'), (r.cancelled === true ? (r.cancelReason || '') : '')
   ]))
   const ws = XLSX.utils.aoa_to_sheet(aoa)
-  ws['!cols'] = [{ wch: 18 }, { wch: 17 }, { wch: 16 }, { wch: 7 }, { wch: 7 }, { wch: 16 }, { wch: 12 }, { wch: 24 }]
+  ws['!cols'] = [{ wch: 18 }, { wch: 17 }, { wch: 16 }, { wch: 7 }, { wch: 7 }, { wch: 16 }, { wch: 12 }, { wch: 24 }, { wch: 8 }, { wch: 24 }]
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, '입고내역')
   const storeName = _storeNameById(_inbHistCtx.store) || _inbHistCtx.store || '매장'
   const fname = '입고내역_' + storeName + '_' + (_inbHistCtx.start || '') + '~' + (_inbHistCtx.end || '') + '.xlsx'
   XLSX.writeFile(wb, fname)
+}
+
+// ── 입고 취소 (역반영 + 사유 필수 + 기록 보존) — 재고 변경, 2c 급 엄격도 ──
+// runTransaction: 원본 doc read → !cancelled 검증 → storeStock increment(-qty) + 원본에 취소 필드 write (원자적 check-and-set).
+// 동시 취소 레이스를 완전 차단(트랜잭션 재시도) — batch+precheck 의 미세 window 없음.
+let _inbCancelInFlight = false
+let _inbCancelTarget = null   // 취소 대상 행 (_inbHistRows 항목, _id 포함)
+
+function requestInbCancel(docId) {
+  const row = (_inbHistRows || []).find(r => r._id === docId)
+  if (!row) { showToast('내역을 찾을 수 없습니다', 'warning'); return }
+  if (row.cancelled === true) { showToast('이미 취소된 내역입니다', 'warning'); _inbHistoryLoad(); return }
+  // 권한 방어(버튼 게이트 + 서버 규칙 외 추가) — 관리자 OR 본인 매장만
+  const g = (typeof _currentUserGrade !== 'undefined' && _currentUserGrade) ? _currentUserGrade : 1
+  const ms = (typeof _currentUserStoreId !== 'undefined' && _currentUserStoreId) ? _currentUserStoreId : ''
+  if (!(g >= 3 || (ms && ms === row.storeId))) { showToast('본인 매장 입고만 취소할 수 있습니다', 'warning'); return }
+  _inbCancelTarget = row
+  const modal = document.getElementById('inbCancelModal')
+  if (!modal) return
+  const sumEl = document.getElementById('inbCancelSummary')
+  if (sumEl) sumEl.innerHTML = `<div class="inbcancel-line"><strong>${esc(row.productCode || '')}</strong> <span class="inbcancel-sz">${esc(row.size || '')}</span> · 수량 <strong>${Number(row.qty) || 0}</strong> · ${esc(row.location || '')}</div><div class="inbcancel-no">${esc(row.inboundNo || '-')}</div>`
+  const prevEl = document.getElementById('inbCancelPreview')
+  if (prevEl) prevEl.textContent = '재고 계산 중…'
+  const reasonEl = document.getElementById('inbCancelReason'); if (reasonEl) reasonEl.value = ''
+  modal.showModal()
+  if (typeof centerModal === 'function') centerModal(modal)
+  // 결과 재고 미리보기 — 해당 매장 인덱스 보장 후 계산(비동기)
+  ;(async () => {
+    try { if (typeof buildStoreStockIndex === 'function') await buildStoreStockIndex(row.storeId) } catch (e) {}
+    if (_inbCancelTarget !== row) return   // 그 사이 다른 대상으로 바뀌면 무시
+    const cur = (typeof getStoreStock === 'function') ? Number(getStoreStock(row.storeId, row.productCode)[row.size] || 0) : 0
+    const after = cur - (Number(row.qty) || 0)
+    if (prevEl) prevEl.innerHTML = `취소 시 재고: <strong>${cur}</strong> → <strong class="${after < 0 ? 'inbcancel-neg' : ''}">${after}</strong>` + (after < 0 ? ' <span class="inbcancel-neg">(음수 — 이미 판매됨 가능)</span>' : '')
+  })()
+  setTimeout(() => { const r = document.getElementById('inbCancelReason'); if (r) r.focus() }, 40)   // 포커스 = 사유(파괴 버튼 아님)
+}
+
+function closeInbCancelModal() {
+  const modal = document.getElementById('inbCancelModal')
+  if (modal) modal.close()
+}
+
+async function confirmInbCancel() {
+  if (_inbCancelInFlight) return
+  const row = _inbCancelTarget
+  if (!row) return
+  const reasonEl = document.getElementById('inbCancelReason')
+  const reason = reasonEl ? String(reasonEl.value || '').trim() : ''
+  if (!reason) { showToast('취소 사유를 입력하세요', 'warning'); if (reasonEl) reasonEl.focus(); return }
+  if (!db) { showToast('서버 연결 없음', 'warning'); return }
+  const btn = document.getElementById('inbCancelConfirmBtn')
+  try {
+    _inbCancelInFlight = true
+    if (btn) { btn.disabled = true; if (btn.dataset.orig == null) btn.dataset.orig = btn.textContent; btn.textContent = '취소 중…' }
+    const uid = (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) ? firebase.auth().currentUser.uid : ''
+    const workerName = (typeof formatUserName === 'function')
+      ? formatUserName(_currentUserName, (typeof _currentUserPosition !== 'undefined' ? _currentUserPosition : ''))
+      : ((typeof _currentUserName !== 'undefined' && _currentUserName) || '')
+    const nowIso = new Date().toISOString()
+    const inbRef = db.collection('storeInbound').doc(row._id)
+
+    // 원자적 check-and-set: read → !cancelled 확인 → 재고 역반영 + 취소 필드 기록
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(inbRef)
+      if (!snap.exists) throw new Error('NOT_FOUND')
+      const d = snap.data() || {}
+      if (d.cancelled === true) throw new Error('ALREADY_CANCELLED')
+      const stockRef = db.collection('storeStock').doc(storeStockDocId(d.storeId, d.productCode))
+      tx.set(stockRef, {
+        storeId: d.storeId, productCode: d.productCode,
+        sizes: { [d.size]: firebase.firestore.FieldValue.increment(-Number(d.qty || 0)) },   // 역반영 = increment(-qty). sizeLocations 안 건드림
+        updatedAt: nowIso
+      }, { merge: true })
+      tx.update(inbRef, {
+        cancelled: true, cancelledAt: nowIso, cancelledBy: uid, cancelledByName: workerName, cancelReason: reason
+      })
+    })
+
+    showToast('입고 취소 완료: ' + (row.inboundNo || '') + ' ' + (row.productCode || '') + ' ' + (row.size || '') + ' -' + (Number(row.qty) || 0), 'success')
+    if (typeof logActivity === 'function') logActivity('inbound-cancel', '입고취소', (row.inboundNo || '') + ' ' + (row.productCode || '') + '/' + (row.size || '') + ' -' + (Number(row.qty) || 0) + ' · 사유: ' + reason)
+    try { if (typeof buildStoreStockIndex === 'function') await buildStoreStockIndex(row.storeId) } catch (e) {}
+    if (typeof renderStoreStockView === 'function') renderStoreStockView()
+    closeInbCancelModal()
+    _inbCancelTarget = null
+    _inbHistoryLoad()   // 이력 새로고침 (취소됨 표시)
+  } catch (e) {
+    const msg = e && e.message
+    if (msg === 'ALREADY_CANCELLED') { showToast('이미 취소된 내역입니다', 'warning'); closeInbCancelModal(); _inbCancelTarget = null; _inbHistoryLoad() }
+    else if (msg === 'NOT_FOUND') { showToast('내역을 찾을 수 없습니다', 'warning'); closeInbCancelModal(); _inbCancelTarget = null; _inbHistoryLoad() }
+    else { console.error('입고 취소 실패:', msg); showToast('입고 취소 실패 — 다시 시도하세요' + (msg ? ' (' + msg + ')' : ''), 'error') }   // 재시도 위해 창 유지
+  } finally {
+    _inbCancelInFlight = false
+    if (btn) { btn.disabled = false; if (btn.dataset.orig != null) { btn.textContent = btn.dataset.orig; delete btn.dataset.orig } }
+  }
 }
 
 // ── 품번 조회 (조회 버튼) — 바코드 없는 상품/스캔 불가 상황용. 스캔과 동일 파이프라인으로 수렴 ──
@@ -1453,6 +1564,9 @@ window.openInbHistoryModal = openInbHistoryModal
 window.closeInbHistoryModal = closeInbHistoryModal
 window._inbHistoryLoad = _inbHistoryLoad
 window.downloadInbHistory = downloadInbHistory
+window.requestInbCancel = requestInbCancel
+window.closeInbCancelModal = closeInbCancelModal
+window.confirmInbCancel = confirmInbCancel
 window.renderInboundScreen = renderInboundScreen
 window.openInbLookup = openInbLookup
 window.closeInbLookup = closeInbLookup
