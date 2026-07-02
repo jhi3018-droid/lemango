@@ -6,12 +6,11 @@
 //   - 조회 화면(매출/재고)은 전 직원 개방 → 탭 자체는 TAB_PERMISSIONS.store=1
 //   - 작업 화면(판매/취소/차감)은 본인 매장 직원+관리자 → 각 패널 내부에서 게이트(향후 단계)
 
-// 서브 화면 정의 (소유주 확정 순서)
+// 서브 화면 정의 (소유주 확정 순서). 2b-r: 6→4 축소.
+//   입고 스캔 → 재고현황 툴바 버튼(window), 보충대상조회 → 재고현황 툴바 버튼(placeholder window)
 const STORE_SUBS = [
   { key: 'sale',      label: '판매' },
-  { key: 'inbound',   label: '입고 스캔' },
   { key: 'stock',     label: '매장별 재고현황' },
-  { key: 'replenish', label: '보충대상조회' },
   { key: 'discount',  label: '매장 할인 상품 관리' },
   { key: 'location',  label: '로케이션' },
 ]
@@ -55,60 +54,24 @@ function _storeSubPanelHtml(sub) {
   const shown = sub.key === _storeActiveSub
   const grade = (typeof _currentUserGrade !== 'undefined' && _currentUserGrade) ? _currentUserGrade : 1
   if (sub.key === 'stock') {
-    // 1f: 매장별 재고현황 뷰. 조회는 전 직원(권한 방침), 재고 업로드 버튼은 관리자(grade>=3)만.
-    const uploadBtn = grade >= 3 ? `<button class="btn btn-new" onclick="openStoreStockUploadModal()">📥 재고 업로드</button>` : ''
+    // 1f: 매장별 재고현황 뷰 = 허브(hub). 조회는 전 직원(권한 방침).
+    // 2b-r 툴바: [입고 스캔(작업 게이트)] [보충대상조회(조회)] [재고 업로드(관리자)] [새로고침]
+    const uploadBtn = grade >= 3 ? `<button class="btn btn-outline" onclick="openStoreStockUploadModal()">📥 재고 업로드</button>` : ''
+    // 입고 스캔 = 작업 → 본인 매장 직원 + 관리자만. resolveActiveStore() null(office/미배정)이면 비활성 + 사유.
+    const store = (typeof resolveActiveStore === 'function') ? resolveActiveStore() : ''
+    const scanBtn = store
+      ? `<button class="btn btn-new" onclick="openInboundScanModal()">📥 입고 스캔</button>`
+      : `<button class="btn btn-new" disabled title="배정된 매장이 없습니다 — 입고 불가">📥 입고 스캔</button>`
+    const replenishBtn = `<button class="btn btn-outline" onclick="openReplenishModal()">📋 보충대상조회</button>`
     return `<div class="store-panel${shown ? '' : ' store-panel-hidden'}" id="storePanel_stock">
       <div class="store-panel-toolbar">
-        <button class="btn btn-outline" onclick="renderStoreStockView()">↻ 새로고침</button>
+        ${scanBtn}
+        ${replenishBtn}
         ${uploadBtn}
+        <button class="btn btn-outline" onclick="renderStoreStockView()">↻ 새로고침</button>
       </div>
       <div id="storeStockViewBody" class="store-stock-view">
         <div class="store-placeholder"><div class="store-placeholder-desc">불러오는 중…</div></div>
-      </div>
-    </div>`
-  }
-  if (sub.key === 'inbound') {
-    // 2b: 입고 스캔 화면. 권한 게이트 + 스캔 폼 + 입고 리스트(staging). 재고 쓰기 없음(2c).
-    return `<div class="store-panel${shown ? '' : ' store-panel-hidden'}" id="storePanel_inbound">
-      <div id="inbGate" class="inb-hidden"></div>
-      <div id="inbScreen" class="inb-screen inb-hidden">
-        <div class="inb-entry-card">
-          <div class="inb-entry-storelbl" id="inbStoreLabel"></div>
-          <div class="inb-entry-main">
-            <div class="inb-fields">
-              <div class="inb-field inb-field-barcode">
-                <label class="inb-label">바코드 <span class="inb-label-hint">스캔하면 자동 인식 · 커서는 여기 고정</span></label>
-                <div class="inb-barcode-row">
-                  <input id="inbBarcode" class="inb-input inb-input-barcode" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="바코드를 스캔하세요">
-                  <button class="btn btn-outline inb-lookup-btn" onclick="inbManualLookup()">조회</button>
-                </div>
-              </div>
-              <div class="inb-field inb-field-qty">
-                <label class="inb-label">수량</label>
-                <input id="inbQty" class="inb-input inb-input-qty" type="number" min="1" step="1" value="1" onchange="onInbQtyChange(this)">
-              </div>
-            </div>
-            <div class="inb-image" id="inbImage"></div>
-          </div>
-          <div class="inb-info" id="inbInfo"><span class="inb-info-empty">바코드를 스캔하세요</span></div>
-          <div class="inb-field inb-field-loc">
-            <label class="inb-label">로케이션 <span class="inb-label-hint">위치 확인 후 Enter = 입고 리스트에 등록</span></label>
-            <input id="inbLocation" class="inb-input inb-input-loc" type="text" autocomplete="off" placeholder="위치 입력 후 Enter로 등록">
-          </div>
-        </div>
-        <div class="inb-list-section">
-          <div class="inb-list-head">입고 리스트 <span class="inb-list-count-badge"><span id="inbListCount">0</span>건</span></div>
-          <div class="inb-list-wrap">
-            <table class="data-table inb-list-table">
-              <thead><tr><th>품번</th><th class="inb-c" style="width:64px">사이즈</th><th style="width:92px">수량</th><th style="width:160px">로케이션</th><th class="inb-c" style="width:72px">수정/삭제</th></tr></thead>
-              <tbody id="inbListBody"></tbody>
-            </table>
-          </div>
-          <div class="inb-list-footer">
-            <span class="inb-confirm-note">🔒 최종 확정(재고 반영)은 다음 단계(2c)에서 활성화됩니다 — 현재는 리스트만 임시저장됩니다</span>
-            <button class="btn btn-new inb-confirm-btn" id="inbConfirmBtn" onclick="inbFinalConfirm()">최종 확정 <span class="inb-confirm-tag">(2c에서 활성화)</span></button>
-          </div>
-        </div>
       </div>
     </div>`
   }
@@ -145,7 +108,6 @@ function renderStoreTab() {
   `
   // 재고현황이 활성 서브탭이면 즉시 로드(온디맨드). 비활성이면 전환 시 로드.
   if (_storeActiveSub === 'stock') renderStoreStockView()
-  else if (_storeActiveSub === 'inbound') renderInboundScreen()
 }
 
 // 서브탭 전환 (패널 표시 토글 + 활성 버튼)
@@ -159,7 +121,6 @@ function switchStoreTab(sub) {
     p.classList.toggle('store-panel-hidden', p.id !== 'storePanel_' + sub)
   })
   if (sub === 'stock') renderStoreStockView()   // 재고현황으로 전환 시 온디맨드 로드
-  else if (sub === 'inbound') renderInboundScreen()   // 입고 스캔으로 전환 시 로드 + 커서 세팅
 }
 
 // 관리자 매장 스위처 setter — _storeViewOverride 설정 후 재렌더
@@ -597,12 +558,26 @@ let _inbStore = ''          // 현재 입고 대상 매장 id
 let _inbEntry = null        // 진행 중 항목: null | { code, size, qty, product, location }
 let _inbList = []           // staging 리스트: [{ code, size, qty, location }] (code,size 유니크)
 let _inbComposing = false   // IME 조합 중 여부 (한글 입력 중 Enter 무시)
+let _inbLookupCode = ''     // 품번 조회에서 선택된 상품 코드 (사이즈 선택 대기)
 let _inbLastEnterTime = 0   // 스캐너 CR+LF 이중발사 디바운스용 (ms)
 let _inbQuotaWarned = false // localStorage 용량 경고 1회 제한
+let _inbBannerTimer = null  // 인-윈도우 오류 배너 자동 숨김 타이머
 
 const INB_DEBOUNCE_MS = 60  // 이 시간 내 연속 Enter 는 동일 스캔의 이중발사(CR+LF)로 간주 → 무시.
                             // 사람이 스캐너를 다시 당기는 의도적 재스캔(~150ms+)은 통과 → 수량 증가.
 const INB_DRAFT_VER = 1
+
+// ── 인-윈도우 오류 배너 (Item 2) ──
+// 스캔 오류 토스트는 <dialog> top-layer 뒤에 가려 안 보임 → 창 안(제품 카드 영역) 큰 배너로 표시.
+// 진행 항목 카드는 파괴하지 않음 — .inb-right 위 absolute 오버레이. ~2.5s 자동 소멸(클릭 불필요, 커서 유지).
+function _inbShowBanner(msg) {
+  const b = document.getElementById('inbBanner')
+  if (!b) { showToast(msg, 'warning'); return }   // 배너 없으면 토스트 폴백
+  b.innerHTML = `<div class="inb-banner-inner"><div class="inb-banner-icon">🚫</div><div class="inb-banner-msg">${esc(msg)}</div></div>`
+  b.classList.add('inb-banner-show')              // 전용 표시 클래스 (inb-hidden 아님 — override 버그 회피)
+  if (_inbBannerTimer) clearTimeout(_inbBannerTimer)   // 연속 오류 → 타이머 재시작(누적 아님), 텍스트만 교체
+  _inbBannerTimer = setTimeout(() => { b.classList.remove('inb-banner-show'); b.innerHTML = '' }, 2500)  // 소멸 시 완전 숨김 + 잔여 제거
+}
 
 // ── 포커스 헬퍼 (모든 경로가 이걸로 마무리) ──
 function _inbFocusBarcode() { const el = document.getElementById('inbBarcode'); if (el) { el.focus(); if (el.select) el.select() } }
@@ -729,58 +704,76 @@ function onInbBarcodeKey(e) {
   const cleaned = rawTrim.replace(/[^0-9A-Za-z]/g, '')
   const hasHangul = /[㄰-㆏가-힣]/.test(rawTrim)
   if (!cleaned || hasHangul) {   // IME 오염 스캔 → 전용 안내(일반 '미등록' 아님)
-    showToast('한/영 키를 확인하세요 (영문 모드 필요)', 'warning')
+    _inbShowBanner('한/영 키를 확인하세요 (영문 모드 필요)')
     _inbFocusBarcode(); return
   }
   handleInbScan(cleaned)
 }
 
 // 조회 버튼 (타이핑한 바코드 수동 조회 — 스캔과 동일 경로)
+// 조회 버튼: 값이 바코드로 해석되면 기존 스캔 경로, 아니면 품번 검색 창을 연다.
 function inbManualLookup() {
   const el = document.getElementById('inbBarcode')
   const raw = el ? String(el.value || '').trim() : ''
-  if (!raw) { showToast('바코드를 입력하세요', 'warning'); _inbFocusBarcode(); return }
-  if (el) el.value = ''
-  const cleaned = raw.replace(/[^0-9A-Za-z]/g, '')
-  const hasHangul = /[㄰-㆏가-힣]/.test(raw)
-  if (!cleaned || hasHangul) { showToast('한/영 키를 확인하세요 (영문 모드 필요)', 'warning'); _inbFocusBarcode(); return }
-  handleInbScan(cleaned)
+  if (raw) {
+    const cleaned = raw.replace(/[^0-9A-Za-z]/g, '')
+    const hasHangul = /[㄰-㆏가-힣]/.test(raw)
+    // 입력값이 등록된 바코드로 해석되면 스캔과 동일 경로 (변경 없음)
+    if (!hasHangul && cleaned && typeof findByBarcode === 'function' && findByBarcode(cleaned)) {
+      if (el) el.value = ''
+      handleInbScan(cleaned)
+      return
+    }
+    // 바코드로 해석 안 됨 → 품번 검색 창 (입력값을 검색어 시드로)
+    openInbLookup(raw)
+    return
+  }
+  // 빈 값 → 품번 검색 창
+  openInbLookup('')
 }
 
-// ── 스캔 해석 + 4대 규칙 분기 ──
+// ── 스캔 해석 (바코드 → code/size) → 공용 진입점 위임 ──
 function handleInbScan(barcode) {
   const store = _inbStore
   if (!store) { _inbFocusBarcode(); return }
   const hit = (typeof findByBarcode === 'function') ? findByBarcode(barcode) : null
-  if (!hit) {   // Rule 1: 미등록 바코드
-    showToast('등록되지 않은 바코드입니다: ' + barcode, 'warning')
+  if (!hit) {   // Rule 1: 미등록 바코드 → 인-윈도우 배너
+    _inbShowBanner('등록되지 않은 바코드입니다: ' + barcode)
     _inbFocusBarcode(); return
   }
-  const code = hit.productCode, size = hit.size
+  _inbBeginEntry(hit.productCode, hit.size)   // 스캔·조회 공용 파이프라인으로 수렴
+}
+
+// ── 공용 진입점: (code, size) → 4대 규칙 분기 (스캔·품번조회가 동일하게 호출) ──
+// 스캔 해석과 조회 선택이 여기로 수렴 → 규칙 로직 중복 없음. barcode 유무와 무관.
+function _inbBeginEntry(code, size) {
+  const store = _inbStore
+  if (!store) { _inbFocusBarcode(); return }
+  if (!code || !size) { _inbFocusBarcode(); return }
 
   if (_inbEntry) {
     if (_inbEntry.code === code && _inbEntry.size === size) {
-      // 같은 상품/사이즈 재스캔 → 수량 +1 (Rule 2 발동 안 함). 현재 필드값 기준으로 증가(타이핑 존중).
+      // 같은 상품/사이즈 재입력(재스캔/재선택) → 수량 +1 (Rule 2 발동 안 함). 현재 필드값 기준(타이핑 존중).
       const cur = _inbReadQtyField()
       _inbEntry.qty = cur + 1
       _inbRenderEntry()
       _inbFocusBarcode(); return
     }
     // Rule 2: 진행 중 다른 상품/사이즈 → 차단 (진행 항목 변경 안 함)
-    showToast('현재 상품을 먼저 완료하세요', 'warning')
+    _inbShowBanner('현재 상품을 먼저 완료하세요')
     _inbFocusBarcode(); return
   }
 
   // 진행 항목 없음 → Rule 4: 리스트 중복?
   const idx = _inbList.findIndex(r => r.code === code && r.size === size)
-  if (idx >= 0) { _inbHandleDuplicate(idx); return }   // 스캔 시점 팝업 → 위치 충돌 구조적 불가
+  if (idx >= 0) { _inbHandleDuplicate(idx); return }   // 입력 시점 팝업 → 위치 충돌 구조적 불가
 
   // 신규 진행 항목 시작
   const product = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(code) : null
   const existingLoc = (typeof getStoreStockLocation === 'function') ? getStoreStockLocation(store, code, size) : ''
   _inbEntry = { code, size, qty: 1, product, location: existingLoc }
   _inbRenderEntry()
-  _inbFocusBarcode()   // 커서는 바코드 유지 (수량 재스캔 대비)
+  _inbFocusBarcode()   // 커서는 바코드 유지 (수량 재입력 대비)
 }
 
 // Rule 4: 이미 리스트에 있는 상품 → 스캔 즉시 팝업 [추가]/[취소]
@@ -812,11 +805,11 @@ function onInbLocationKey(e) {
 function commitInbEntry() {
   if (!_inbEntry) { _inbFocusBarcode(); return }
   const qty = _inbReadQtyField()
-  if (!(Number.isInteger(qty) && qty >= 1)) { showToast('수량은 1 이상이어야 합니다', 'warning'); _inbFocusQty(); return }
+  if (!(Number.isInteger(qty) && qty >= 1)) { _inbShowBanner('수량은 1 이상이어야 합니다'); _inbFocusQty(); return }
   const locEl = document.getElementById('inbLocation')
   const loc = locEl ? String(locEl.value || '').trim() : ''
   if (!loc) {   // Rule 3: 로케이션 빈값 → 커밋 차단, 로케이션으로 포커스
-    showToast('로케이션을 입력하세요', 'warning')
+    _inbShowBanner('로케이션을 입력하세요')
     _inbFocusLocation(); return
   }
   const code = _inbEntry.code, size = _inbEntry.size
@@ -832,18 +825,22 @@ function commitInbEntry() {
   _inbFocusBarcode()  // 등록 후 커서 복귀
 }
 
-// 진행 항목의 정보 블록(품번/사이즈/상품명/기존재고) HTML — display-only (입력 필드 아님).
+// 진행 항목의 제품 카드 정보(품번/사이즈/상품명/기존재고/기존로케이션) HTML — display-only.
+// 2b-r: 큰 글씨 카드. 기존재고 0 은 색상 구분(신규 위치 필요 인지). 반응형 타이포는 CSS(clamp/cqi).
 function _inbInfoHtml(e) {
   const p = e.product
   const name = p ? (p.nameKr || p.nameEn || '') : '(상품 정보 없음)'
   const existStock = (typeof getStoreStock === 'function') ? Number(getStoreStock(_inbStore, e.code)[e.size] || 0) : 0
+  const stockCls = existStock === 0 ? ' inb-card-stock-zero' : ''
+  const loc = e.location ? esc(e.location) : '<span class="inb-card-loc-none">미지정</span>'
   return `
-    <div class="inb-info-code">${esc(e.code)} <span class="inb-info-size">${esc(e.size)}</span></div>
-    <div class="inb-info-name">${esc(name)}</div>
-    <div class="inb-info-stock">기존 재고 <strong>${existStock}</strong>개 <span class="inb-info-stock-sz">(${esc(e.size)} 사이즈)</span></div>`
+    <div class="inb-card-code">${esc(e.code)} <span class="inb-card-size">${esc(e.size)}</span></div>
+    <div class="inb-card-name">${esc(name)}</div>
+    <div class="inb-card-stock${stockCls}">기존 재고 <strong>${existStock}</strong><span class="inb-card-stock-unit">개</span> <span class="inb-card-stock-sz">(${esc(e.size)} 사이즈)</span></div>
+    <div class="inb-card-loc">기존 로케이션 <strong>${loc}</strong></div>`
 }
 
-// 진행 항목 카드 렌더 (이미지/품번/사이즈/기존재고 + 수량/로케이션 프리필). null 이면 폼 리셋.
+// 진행 항목 카드 렌더 (큰 이미지 + 품번/사이즈/기존재고/기존위치 + 수량/로케이션 프리필). null 이면 폼 리셋.
 function _inbRenderEntry() {
   const qtyEl = document.getElementById('inbQty')
   const locEl = document.getElementById('inbLocation')
@@ -852,8 +849,8 @@ function _inbRenderEntry() {
   if (!_inbEntry) {
     if (qtyEl) qtyEl.value = '1'
     if (locEl) locEl.value = ''
-    if (infoEl) infoEl.innerHTML = '<span class="inb-info-empty">바코드를 스캔하세요</span>'
-    if (imgEl) imgEl.innerHTML = ''
+    if (infoEl) infoEl.innerHTML = '<div class="inb-card-empty">바코드를 스캔하면<br>상품 정보가 여기에 크게 표시됩니다</div>'
+    if (imgEl) imgEl.innerHTML = '<div class="inb-card-noimg inb-card-noimg-empty">📷</div>'
     return
   }
   const e = _inbEntry
@@ -863,8 +860,8 @@ function _inbRenderEntry() {
   if (infoEl) infoEl.innerHTML = _inbInfoHtml(e)
   const img = (p && typeof getThumbUrl === 'function') ? getThumbUrl(p) : ''
   if (imgEl) imgEl.innerHTML = img
-    ? `<img src="${esc(img)}" onerror="this.style.visibility='hidden'">`
-    : '<div class="inb-noimg">이미지 없음</div>'
+    ? `<img src="${esc(img)}" onerror="this.parentNode.innerHTML='<div class=\\'inb-card-noimg\\'>이미지 없음</div>'">`
+    : '<div class="inb-card-noimg">이미지 없음</div>'
 }
 
 // 재고 인덱스 async 빌드 완료 후 보정 (🟡#1): 기존재고 숫자 최신화 + 로케이션 프리필.
@@ -910,10 +907,20 @@ function onInbQtyChange(el) {
 }
 
 // ── 입고 리스트 렌더 ──
+// 리스트 헤더(건수 + 총 수량) 갱신. 전체 재렌더 없이 헤더만 — 인라인 수량 편집 시 포커스 유실 방지.
+function _inbUpdateListHeader() {
+  const countEl = document.getElementById('inbListCount')
+  const totalEl = document.getElementById('inbListTotal')
+  const wrap = document.getElementById('inbListTotalWrap')
+  if (countEl) countEl.textContent = String(_inbList.length)
+  const total = _inbList.reduce((s, r) => s + (Number(r.qty) || 0), 0)
+  if (totalEl) totalEl.textContent = String(total)
+  if (wrap) wrap.classList.toggle('inb-hidden', _inbList.length === 0)   // 빈 리스트면 "총 N개" 숨김
+}
+
 function _inbRenderList() {
   const body = document.getElementById('inbListBody')
-  const countEl = document.getElementById('inbListCount')
-  if (countEl) countEl.textContent = String(_inbList.length)
+  _inbUpdateListHeader()
   if (!body) return
   if (!_inbList.length) {
     body.innerHTML = '<tr><td colspan="5" class="inb-list-empty">스캔한 항목이 여기에 쌓입니다</td></tr>'
@@ -932,7 +939,7 @@ function _inbRenderList() {
 function onInbListQty(i, el) {
   if (i < 0 || i >= _inbList.length) return
   const n = _inbParseQty(el.value)
-  if (!isNaN(n)) { _inbList[i].qty = n; el.value = String(n); _inbSaveDraft() }
+  if (!isNaN(n)) { _inbList[i].qty = n; el.value = String(n); _inbSaveDraft(); _inbUpdateListHeader() }
   else { el.value = String(_inbList[i].qty); showToast('수량은 1 이상 정수만 가능합니다', 'warning') }
 }
 
@@ -955,20 +962,208 @@ function removeInbRow(i) {
 
 // 🔒 최종 확정 — 2b 에서는 재고 쓰기 없음. 스텁(안내만). 원자적 반영(재고+입고이력)은 2c.
 function inbFinalConfirm() {
-  if (!_inbList.length) { showToast('입고 리스트가 비어 있습니다', 'warning'); _inbFocusBarcode(); return }
+  if (!_inbList.length) { _inbShowBanner('입고 리스트가 비어 있습니다'); _inbFocusBarcode(); return }
   showToast('최종 확정(재고 반영)은 다음 단계(2c)에서 구현됩니다 — 현재는 리스트만 임시저장됩니다', 'warning')
   _inbFocusBarcode()
 }
 
-// 포커스 스틸 복구 (B3): 다른 창 다녀온 뒤(visibilitychange) 입고 화면이 보이면 커서 재확보
+// ── 입고 스캔 창(window) 열기/닫기 (2b-r) ──
+// 재고현황 허브의 [📥 입고 스캔] 버튼 → 준풀스크린 창. 명시적 닫기 전용(ESC/백드롭 닫기 없음 — main.js 참조).
+function openInboundScanModal() {
+  // 작업 게이트 재확인 (버튼도 게이트되지만 방어적)
+  const store = (typeof resolveActiveStore === 'function') ? resolveActiveStore() : ''
+  if (!store) { showToast('배정된 매장이 없습니다 — 입고 불가', 'warning'); return }
+  const modal = document.getElementById('inboundScanModal')
+  if (!modal) return
+  modal.showModal()
+  if (typeof centerModal === 'function') centerModal(modal)
+  renderInboundScreen()   // 게이트 + draft 로드 + 렌더 + 바코드 포커스
+}
+
+// 닫기 시도: 항목이 있으면 3지선다 확인(보존/삭제/취소), 없으면 즉시 닫기.
+// 명시적-닫기-전용 유지 — 확인창은 '닫기 시도'에 뜨는 것이지 새 닫기 경로가 아님.
+function closeInboundScanModal() {
+  if (_inbList && _inbList.length) { _openInbCloseConfirm(); return }
+  _doCloseInbScan(false)   // 빈 리스트 → 즉시 닫기 (변경 없음)
+}
+
+// 실제 닫기. clearDraft=true 면 이 매장 staging + localStorage draft 삭제 후 닫기.
+function _doCloseInbScan(clearDraft) {
+  if (clearDraft) {
+    _inbList = []
+    _inbEntry = null
+    try { localStorage.removeItem(_inbDraftKey(_inbStore)) } catch (e) {}
+    _inbRenderList()   // 헤더/총합 0 으로 갱신
+  }
+  const modal = document.getElementById('inboundScanModal')
+  if (modal) modal.close()
+  if (!clearDraft && _inbList && _inbList.length) showToast('입고 리스트가 임시저장되어 있습니다', '')
+  if (typeof renderStoreStockView === 'function') renderStoreStockView()   // 아래 재고현황 새로고침
+}
+
+function _openInbCloseConfirm() {
+  const m = document.getElementById('inbCloseConfirmModal')
+  if (!m) { _doCloseInbScan(false); return }   // 확인창 없으면 보존 닫기 폴백
+  const cntEl = document.getElementById('inbCloseConfirmCount')
+  if (cntEl) cntEl.textContent = String(_inbList.length)
+  m.showModal()
+  if (typeof centerModal === 'function') centerModal(m)
+  const cancelBtn = document.getElementById('inbCloseCancelBtn')
+  if (cancelBtn) setTimeout(() => cancelBtn.focus(), 30)   // 기본 포커스 = 취소 (파괴적 옵션 아님)
+}
+
+function _closeInbCloseConfirm() { const m = document.getElementById('inbCloseConfirmModal'); if (m) m.close() }
+function inbCloseKeep() { _closeInbCloseConfirm(); _doCloseInbScan(false) }        // 보존하고 닫기 (draft 유지)
+function inbCloseDiscard() { _closeInbCloseConfirm(); _doCloseInbScan(true) }      // 삭제하고 닫기 (draft 삭제)
+function inbCloseCancelChoice() { _closeInbCloseConfirm(); _inbFocusBarcode() }    // 취소 → 창 유지, 커서 복귀
+
+// 보충대상조회 — Phase 5 placeholder 창 (조회 → 전 직원)
+function openReplenishModal() {
+  const modal = document.getElementById('replenishModal')
+  if (modal) { modal.showModal(); if (typeof centerModal === 'function') centerModal(modal) }
+}
+function closeReplenishModal() {
+  const modal = document.getElementById('replenishModal')
+  if (modal) modal.close()
+}
+
+// ── 품번 조회 (조회 버튼) — 바코드 없는 상품/스캔 불가 상황용. 스캔과 동일 파이프라인으로 수렴 ──
+// 서브 다이얼로그(빠른 검색) — 작업 창(inboundScanModal)의 명시적-닫기-전용과 별개로 ESC 로 닫힘(빠른 취소).
+function openInbLookup(seed) {
+  const modal = document.getElementById('inbLookupModal')
+  if (!modal) return
+  _inbLookupCode = ''
+  const searchEl = document.getElementById('inbLookupSearch')
+  if (searchEl) searchEl.value = seed || ''
+  _inbHideLookupSizes()
+  renderInbLookupResults()
+  modal.showModal()
+  if (typeof centerModal === 'function') centerModal(modal)
+  if (searchEl) setTimeout(() => searchEl.focus(), 30)   // 열림 → 검색창 포커스
+}
+
+function closeInbLookup() {
+  const modal = document.getElementById('inbLookupModal')
+  if (modal) modal.close()   // close 이벤트 → 바코드 재포커스 (main.js 등록)
+}
+
+function _inbHideLookupSizes() {
+  _inbLookupCode = ''
+  const sizes = document.getElementById('inbLookupSizes')
+  if (sizes) { sizes.classList.add('inb-hidden'); sizes.innerHTML = '' }
+}
+
+// 바코드 등록 여부 (Item 5 정책): 입고는 바코드 기반 작업 → 바코드 등록된 (품번,사이즈)만 등록 대상.
+function _inbHasBarcode(p, size) {
+  return !!(p && p.barcodes && p.barcodes[size] && String(p.barcodes[size]).trim())
+}
+// 바코드 등록된 사이즈 목록. State.allProducts 의 p.barcodes 를 실시간으로 읽음 → 나중에 추가된 바코드 즉시 반영(Item 6).
+function _inbBarcodedSizes(p) {
+  return SIZES.filter(sz => _inbHasBarcode(p, sz))
+}
+
+// 검색: 품번 또는 상품명(한/영) 부분일치(대소문자 무시), soft-deleted 제외, 바코드 등록 사이즈 0인 상품 제외(Item 5). 최대 60건.
+// ⚠️ 매 호출마다 State.allProducts 를 새로 읽음 → 스냅샷 캐시 없음. 바코드 나중에 추가돼도 조회 재검색/재오픈 시 즉시 반영(Item 6).
+function renderInbLookupResults() {
+  const out = document.getElementById('inbLookupResults')
+  if (!out) return
+  _inbHideLookupSizes()
+  const q = String((document.getElementById('inbLookupSearch') || {}).value || '').trim().toLowerCase()
+  if (!q) { out.innerHTML = '<div class="inb-lookup-hint">품번 또는 상품명을 입력하세요</div>'; return }
+  const list = (State.allProducts || []).filter(p => {
+    if (!p || p.deleted) return false
+    if (_inbBarcodedSizes(p).length === 0) return false   // Item 5: 바코드 없는 상품은 조회에서 제외
+    const code = (p.productCode || '').toLowerCase()
+    const nk = (p.nameKr || '').toLowerCase()
+    const ne = (p.nameEn || '').toLowerCase()
+    return code.indexOf(q) >= 0 || nk.indexOf(q) >= 0 || ne.indexOf(q) >= 0
+  })
+  if (!list.length) { out.innerHTML = '<div class="inb-lookup-hint">검색 결과가 없습니다</div>'; return }
+  const capped = list.slice(0, 60)
+  const more = list.length > 60 ? `<div class="inb-lookup-hint">상위 60건만 표시 — 검색어를 더 입력하세요 (전체 ${list.length}건)</div>` : ''
+  out.innerHTML = capped.map(p => {
+    const name = esc(p.nameKr || p.nameEn || '')
+    const img = (typeof getThumbUrl === 'function') ? getThumbUrl(p) : ''
+    const thumb = img
+      ? `<img src="${esc(img)}" class="inb-lookup-thumb" onerror="this.style.visibility='hidden'">`
+      : '<span class="inb-lookup-thumb inb-lookup-thumb-none">—</span>'
+    return `<div class="inb-lookup-row" onclick="selectInbLookupProduct('${esc(p.productCode)}')">
+      ${thumb}
+      <span class="inb-lookup-code">${esc(p.productCode)}</span>
+      <span class="inb-lookup-name">${name}</span>
+    </div>`
+  }).join('') + more
+}
+
+// 상품 선택 → 사이즈 선택기 표시. Item 5: 바코드 등록된 사이즈만 표시(나머지는 숨김). 사이즈별 기존재고 힌트.
+function selectInbLookupProduct(code) {
+  _inbLookupCode = code
+  const sizes = document.getElementById('inbLookupSizes')
+  if (!sizes) return
+  const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(code) : null
+  const name = p ? esc(p.nameKr || p.nameEn || '') : ''
+  const stockMap = (typeof getStoreStock === 'function') ? getStoreStock(_inbStore, code) : {}
+  const bcSizes = p ? _inbBarcodedSizes(p) : []   // 바코드 등록된 사이즈만 (실시간 p.barcodes)
+  if (!bcSizes.length) {
+    // 이론상 도달 안 함(결과에서 이미 제외) — 방어적
+    sizes.innerHTML = '<div class="inb-lookup-hint">이 상품은 바코드가 등록되어 있지 않습니다</div>'
+    sizes.classList.remove('inb-hidden'); return
+  }
+  const btns = bcSizes.map(sz => {
+    const st = Number(stockMap[sz] || 0)
+    return `<button class="inb-size-btn" onclick="chooseInbLookupSize('${esc(sz)}')">
+      <span class="inb-size-lbl">${esc(sz)}</span>
+      <span class="inb-size-stock">재고 ${st}</span>
+    </button>`
+  }).join('')
+  sizes.innerHTML = `<div class="inb-lookup-sizes-head">${esc(code)} <span class="inb-lookup-sizes-name">${name}</span> — 사이즈 선택</div>
+    <div class="inb-size-grid">${btns}</div>`
+  sizes.classList.remove('inb-hidden')
+}
+
+// 사이즈 선택 → 조회 창 닫고 공용 진입점 호출 (스캔과 100% 동일 처리)
+function chooseInbLookupSize(size) {
+  const code = _inbLookupCode
+  if (!code || !size) return
+  closeInbLookup()
+  _inbBeginEntry(code, size)   // ← 스캔과 동일 파이프라인 (Rule 2/4, 재입력 qty++, 카드/프리필)
+}
+
+// 포커스 스틸 복구 (B3): 다른 창 다녀온 뒤(visibilitychange) 입고 스캔 창이 열려있으면 커서 재확보
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return
-  if (_storeActiveSub !== 'inbound' || !_inbStore) return
-  const panel = document.getElementById('storePanel_inbound')
-  if (panel && panel.offsetParent !== null) _inbFocusBarcode()   // offsetParent!==null = 실제 표시 중
+  const lookup = document.getElementById('inbLookupModal')
+  if (lookup && lookup.open) { const s = document.getElementById('inbLookupSearch'); if (s) s.focus(); return }  // 조회 창이 위면 검색창 유지
+  const modal = document.getElementById('inboundScanModal')
+  if (modal && modal.open && _inbStore) _inbFocusBarcode()
 })
 
+// 품번 조회 창 / 닫기 확인창이 닫히면(ESC/×/선택 후) 스캔 창이 열려있는 한 바코드로 커서 복귀
+;(function () {
+  const refocusIfScanOpen = () => {
+    const scan = document.getElementById('inboundScanModal')
+    if (scan && scan.open) _inbFocusBarcode()
+  }
+  const lookup = document.getElementById('inbLookupModal')
+  if (lookup) lookup.addEventListener('close', refocusIfScanOpen)
+  // 닫기 확인창 ESC → 취소(창 유지) 취급: close 이벤트로 커서만 복귀 (버튼 경로는 각자 처리)
+  const closeConf = document.getElementById('inbCloseConfirmModal')
+  if (closeConf) closeConf.addEventListener('close', refocusIfScanOpen)
+})()
+
+window.openInboundScanModal = openInboundScanModal
+window.closeInboundScanModal = closeInboundScanModal
+window.inbCloseKeep = inbCloseKeep
+window.inbCloseDiscard = inbCloseDiscard
+window.inbCloseCancelChoice = inbCloseCancelChoice
+window.openReplenishModal = openReplenishModal
+window.closeReplenishModal = closeReplenishModal
 window.renderInboundScreen = renderInboundScreen
+window.openInbLookup = openInbLookup
+window.closeInbLookup = closeInbLookup
+window.renderInbLookupResults = renderInbLookupResults
+window.selectInbLookupProduct = selectInbLookupProduct
+window.chooseInbLookupSize = chooseInbLookupSize
 window.onInbBarcodeKey = onInbBarcodeKey
 window.onInbLocationKey = onInbLocationKey
 window.inbManualLookup = inbManualLookup

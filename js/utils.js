@@ -539,6 +539,13 @@ function korConfirm(msg, okText = '확인', cancelText = '취소') {
 // ===== 토스트 =====
 function showToast(msg, type = '') {
   const el = document.getElementById('toast')
+  if (!el) return
+  // 네이티브 <dialog>(showModal)는 top-layer 라 일반 요소가 뒤에 가림.
+  // 열린 dialog 가 있으면 그 안(가장 최근=DOM 마지막)으로 토스트를 옮겨 위에 표시. 없으면 body(기존 동작).
+  // ⚠️ kor-confirm-dialog 는 transform 사용 → position:fixed 토스트가 그 안에선 어긋남 → 후보에서 제외.
+  const openDialogs = [...document.querySelectorAll('dialog[open]')].filter(d => !d.classList.contains('kor-confirm-dialog'))
+  const host = openDialogs.length ? openDialogs[openDialogs.length - 1] : document.body
+  if (el.parentNode !== host) host.appendChild(el)
   el.textContent = msg
   el.className = `toast ${type} show`
   clearTimeout(el._timer)

@@ -3537,6 +3537,55 @@ Established the reference style that every dashboard-opened srm-modal should fol
 - **검증**: `node -c` store.js 통과, 수량 파서 단위 테스트(1e3/0/-2/2.5/abc→거부, 3/10→허용), 한글 정규식 테스트(ㅕ891/가나→감지), inline `display:none` 미사용(`.inb-hidden` CSS 클래스), 매출 공식·1a~2a 무영향. code-reviewer 🟢
 - **다음: 2c** — 최종 확정 원자적 반영(storeStock 재고 increment + sizeLocations overwrite + storeInbound 이력 기록, 문서당 단일 merge-set) + 2d 입고 이력 뷰
 
+#### POS Phase 2b-r — 매장 서브메뉴 통합(6→4) + 입고 스캔 창 UX 재설계 (🟢, 재하우징+리스킨, 로직 불변)
+- **2b 로직 100% 보존 + 재배치/재디자인만.** 상태머신/4대 규칙/디바운스/IME/수량 파싱/draft/로케이션 Enter 커밋 전부 unchanged — 화면을 서브탭 → 허브 버튼으로 여는 **창(window)**으로 옮기고 UX 재설계. 여전히 **재고 쓰기 없음**(최종 확정 = 2c 스텁). `firebase deploy --only hosting`(규칙 변경 없음, 소유주 수동)
+- **변경 파일 4개**: `js/store.js`(서브탭 6→4, 허브 툴바 버튼, inbound 패널 마크업 제거→창 함수), `index.html`(`inboundScanModal` 준풀스크린 dialog + `replenishModal` placeholder), `js/main.js`(두 모달 등록 + **입고 창 ESC 차단** cancel-preventDefault), `style.css`(`.inb-*` 창/2컬럼/큰카드/반응형 재작성), `CLAUDE.md`
+- **메뉴 통합 (6→4)**: `STORE_SUBS` = 판매 / 매장별 재고현황 / 매장 할인 상품 관리 / 로케이션. **입고 스캔·보충대상조회 서브탭 제거** → 재고현황(허브) 툴바 버튼으로: `[📥 입고 스캔]`(작업 게이트) `[📋 보충대상조회]`(placeholder 창) `[📥 재고 업로드]`(관리자) `[↻ 새로고침]`
+- **입고 스캔 창** (`inboundScanModal`, `<dialog>` 92vw×90vh): 허브 버튼 → `openInboundScanModal()`(작업 게이트 재확인 → showModal + centerModal + `renderInboundScreen()`). 닫기 = `closeInboundScanModal()`(→ `renderStoreStockView()` 로 아래 테이블 새로고침 + 잔여 시 "임시저장" 안내). **명시적 닫기 전용**: `[닫기]`/× 만 — **ESC 차단**(main.js 전용 `cancel`→`preventDefault`, modalCloseMap 에 넣지 않음), **백드롭 클릭 닫기 없음**(리스너 미등록). 창 열 때 바코드 포커스, 닫고 다시 열면 draft 리스트 복원(2b draft 재사용, 요소 static → 이벤트 1회 바인딩 유지)
+- **UX 재설계 (2컬럼 + 큰 카드 + 반응형)**: `.inb-top` flex-wrap 2컬럼 — LEFT(바코드/수량/로케이션 큰 입력) · RIGHT(제품 카드). 카드 = 큰 이미지(`clamp(140px,34cqi,300px)`) + 품번(`clamp(22px,5cqi,40px)`) + 사이즈 배지 + **기존 재고 대형**(0 이면 `.inb-card-stock-zero` 빨강 = 신규 위치 필요 인지) + 기존 로케이션. **반응형 타이포**: `container-type:inline-size` + `cqi` 단위(창 크기에 비례) + `clamp()` 경계. 좁으면 컬럼 stack(flex-wrap). 입고 리스트는 전폭, 최종 확정 우하단(2c 스텁)
+- **CSS `<dialog>` 함정 수정**: `.inb-modal` 에 `display` 부여 금지 — `.srm-modal{display:none}`/`.srm-modal[open]{display:flex}` 가 열림/닫힘 제어. equal-specificity 후순위라 display 주면 **닫힌 dialog 가 보이는 버그** → `.inb-modal` display 규칙 제거(주석 명시). dialog 는 `srm-modal inb-modal` 두 클래스 → open 제어는 srm-modal, 헤더 dark bg(#1a1a2e)+흰 글자도 `.srm-header` 상속
+- **권한**: 입고 스캔 버튼 = 작업 게이트(`resolveActiveStore()` null 이면 `disabled`+사유 title). office/미배정 staff 는 버튼 비활성. 보충대상조회 = 조회, 전 직원(placeholder)
+- **검증**: `node -c` store/main 통과, 제거 클래스(`inb-entry`/`inb-image`/`inb-info-`/`inb-noimg`) 잔여 참조 0, storeStock write 0건(store.js 391-399 는 기존 1e 업로드, 미변경), 13개 참조 ID 전부 index.html 에 1회씩 존재, 매출 공식 무영향. code-reviewer 🟢
+- **다음: 2c** — 최종 확정 원자적 반영 (이제 창이 최종 home 이므로 2c 가 여기에 wiring)
+
+#### 입고 스캔 — 조회 버튼 품번 조회(스캔 동일 진입) (🟢, 재고 쓰기 없음)
+- 조회 버튼 확장: 바코드로 해석되면 기존 스캔 경로, **아니면 품번 검색 창** → 상품 선택 → 사이즈 선택 → **스캔과 100% 동일 파이프라인**. 바코드 없는 상품/스캔 불가 상황 대응. 재고 쓰기 없음(2c)
+- **⭐ 공용 진입점 수렴 (핵심)**: `handleInbScan`(바코드 해석)과 `chooseInbLookupSize`(조회 선택)가 모두 `_inbBeginEntry(code, size)` 하나를 호출 → 4대 규칙 로직 **중복 없음**(fork 아님). 스캔 해석 후·조회 선택 후 동일 함수로 수렴
+- `_inbBeginEntry(code,size)`: Rule 2(진행 중 다른 상품 차단)/Rule 4(리스트 중복 팝업)/재입력 qty++/신규 카드(이미지·품번·사이즈·기존재고·기존로케이션 프리필) — 스캔과 동일. barcode 유무 무관 → 바코드 없는 상품도 등록 가능(staging row = code/size/qty/location)
+- **조회 창** (`inbLookupModal`): 검색(품번 OR 상품명 한/영 부분일치, 대소문자 무시, soft-deleted 제외, 최대 60건 + 초과 안내) → 결과행(썸네일+품번+상품명) 클릭 → 사이즈 선택기(7 SIZES 큰 버튼 + 사이즈별 기존재고 힌트) → `_inbBeginEntry` + 창 닫기
+- **조회 진입 규칙**(`inbManualLookup`): 입력값이 `findByBarcode` 로 해석되면 스캔 경로 그대로 / 아니면 `openInbLookup(raw)`(입력값 검색어 시드) / 빈 값이면 `openInbLookup('')`
+- **포커스/닫기**: 조회 창 열림 → 검색창 포커스. **조회 창은 빠른 서브 다이얼로그 → ESC 로 닫힘**(작업 창 `inboundScanModal` 의 명시적-닫기-전용과 별개 — 의도적). 조회 창 닫힘(ESC/×/선택) → `close` 이벤트로 스캔 창 열려있으면 바코드 재포커스. visibilitychange 도 조회 창 우선(검색창 유지)
+- **변경 3파일**: `js/store.js`(handleInbScan → `_inbBeginEntry` 추출 + 조회 함수 `openInbLookup`/`renderInbLookupResults`/`selectInbLookupProduct`/`chooseInbLookupSize`/`closeInbLookup` + close 리스너 + exports), `index.html`(`inbLookupModal` dialog), `js/main.js`(makeDraggableResizable 등록), `style.css`(`.inb-lookup-*`/`.inb-size-*`)
+- **검증**: `node -c` 통과, 공용 진입점 2곳(731 스캔, 1071 조회)만 `_inbBeginEntry` 호출, storeStock write 0(391-399 = 1e 기존), 매출 공식 무영향. code-reviewer 🟢
+- **다음: 2c** — 최종 확정 원자적 반영
+
+#### 입고 리스트 총 수량 표시 (소규모, display-only, 🟢)
+- 입고 스캔 창의 입고 리스트 헤더에 **총 수량** 추가: "입고 리스트 2건 · **총 6개**"(행 수량 합). 로직 변경 없음, 재고 쓰기 없음
+- **변경 3파일**: `js/store.js`(`_inbUpdateListHeader()` 헬퍼 신설 — 건수+총합 갱신, `_inbRenderList` 가 위임 + `onInbListQty` 인라인 편집도 호출), `index.html`(`#inbListTotal`+`#inbListTotalWrap` span), `style.css`(`.inb-list-total-num` 약간 크게)
+- **모든 변경 경로 반영**: 등록/중복[추가]/삭제/draft복원 → `_inbRenderList`→`_inbUpdateListHeader` / 인라인 수량 편집 → `onInbListQty`→`_inbUpdateListHeader`(전체 재렌더 없이 헤더만, 포커스 유실 방지)
+- **빈 리스트**: `#inbListTotalWrap` 에 `inb-hidden` 토글 → "총 0개" 안 보이고 "0건"만 (깔끔)
+- `node -c` 통과, code-reviewer 🟢
+
+#### 입고 스캔 5종 폴리시 + 바코드 정책 정정 + 조회 즉시반영 (🟢, 재고 쓰기 없음)
+- **Item 1 — 닫기 확인(3지선다)**: staging 항목 있을 때 [닫기]/× → `inbCloseConfirmModal` (보존하고 닫기 / 삭제하고 닫기 / 취소). 빈 리스트면 즉시 닫기(변경 없음). 명시적-닫기-전용 유지(확인창은 닫기 시도에 뜸, 새 닫기 경로 아님). 기본 포커스 = **취소**(파괴적 옵션 아님), ESC=취소(창 유지). `closeInboundScanModal`→`_openInbCloseConfirm`/`_doCloseInbScan(clearDraft)`. 삭제 선택 시 `_inbList=[]` + `localStorage.removeItem(draft)`
+- **Item 2 — 인-윈도우 오류 배너**: 스캔 오류 토스트가 `<dialog>` top-layer 뒤에 가리는 문제 → `.inb-right` 위 absolute 오버레이 배너(`#inbBanner`, 큰 🚫 + 큰 글씨, ~2.5s 자동소멸, 진행 카드 파괴 안 함). `_inbShowBanner(msg)`. 적용: Rule1 미등록/IME 한영/Rule2 다른상품/Rule3 로케이션/수량<1/빈 리스트 확정. 성공(추가)은 토스트 유지(Item 3 로 이제 보임)
+- **Item 3 — 토스트를 모달 위로**: `showToast`(`js/utils.js`)가 열린 dialog 있으면 그 안(가장 최근=DOM 마지막)으로 `#toast` 이동 후 표시, 없으면 body(기존). 전역 토스트 시스템에 최소 침습(모달 없을 땐 동일). 조회창이 스캔창 위에 있어도 그 안으로 → 보임
+- **Item 4 — 요약 배지 확대**: `.inb-list-count-badge` 17px/800, `.inb-list-total-num` 22px, 헤더 16px/700 — 최종 확정 전 확인 값 글랜서블
+- **Item 5 — 조회 바코드 등록 사이즈만 (정책 정정)**: ⚠️ 이전 "바코드 없는 상품도 등록 가능" 지시는 **틀렸고 반전됨**. 입고는 바코드 기반 작업 → **바코드 등록된 (품번,사이즈)만 등록 대상**. `_inbHasBarcode(p,size)`/`_inbBarcodedSizes(p)`. 조회 검색 결과: 바코드 사이즈 0인 상품 **제외**. 사이즈 선택기: 바코드 있는 사이즈만 표시(숨김, disable 아님). 일부만 바코드 있으면 그 사이즈만. 스캔 경로는 무영향(스캔 자체가 바코드 존재 증명)
+- **Item 6 — 조회 즉시반영(freshness)**: 조회 필터는 매 검색/오픈마다 `State.allProducts` 의 `p.barcodes` 를 **실시간** 읽음(스냅샷 캐시 없음). 나중에 바코드 대량업로드(재고관리)로 바코드 추가 → `saveProducts`→실시간 sync(`_onProductsChanged`)가 `State.allProducts` 갱신 + `buildBarcodeIndex` 재구축. (a) 업로드 후 조회 열면 반영 ✓ (b) 창이 이미 열려있던 경우: 같은 세션은 sync 가 State 갱신 → **조회 재검색/재오픈 시 반영**. 스캔도 창 열 때 `buildBarcodeIndex` + sync 재구축으로 신규 바코드 스캔 성공
+- **정책 메모**: **입고 등록 가능 대상 = 바코드 등록된 (품번, 사이즈)만**. 바코드 추가 시 조회 즉시(재검색/재오픈) 반영 보장
+- **변경 4파일**: `js/store.js`, `index.html`(`#inbBanner`, `inbCloseConfirmModal`), `js/main.js`(두 모달 등록), `js/utils.js`(showToast 이동), `style.css`(배너/닫기확인/배지)
+- **검증**: `node -c` 통과, storeStock write 0(391-399=1e), 공용 진입점 2 caller 유지, 매출 공식 무영향. code-reviewer 🟢
+- **다음: 2c**
+
+#### 🐛 입고 오류 배너 버그 수정 (빨간 박스·텍스트 없음·안 사라짐)
+- **증상**: 스캔 오류 시 `#inbBanner` 가 텍스트 없는 반투명 빨간 박스로 카드 전체를 덮고(뒤 내용 비침) 자동 소멸 안 됨
+- **근본 원인**: `.inb-hidden{display:none}`(style.css:5753) vs `.inb-banner{display:flex}`(5769) — equal-specificity 에서 `.inb-banner` 가 **후순위라 override** → `class="inb-banner inb-hidden"` 가 항상 `display:flex` → 빈 배너(innerHTML 없음)가 창 열 때부터 상시 표시(반투명 rgba 0.96 → 뒤 비침), 2.5s 타이머가 `inb-hidden` 다시 넣어도 무효 → 안 사라짐. (`.inb-modal` 에서 잡았던 동일 트랩 재발)
+- **수정** (배너 한정): (1) `.inb-banner` 기본 `display:none` + 전용 `.inb-banner.inb-banner-show{display:flex}`(0,2,0 특이도)로만 표시 — `inb-hidden` 커플링 제거 (2) 배경 솔리드 `#d64545`(반투명 금지 → 비침 제거) (3) `.inb-banner-icon/msg` 명시적 `color:#fff`(상속/미정의 var 의존 안 함) (4) JS `_inbShowBanner` 가 `inb-banner-show` 토글 + 소멸 시 `innerHTML=''`(잔여 제거) + 타이머 재시작(연속 오류 시 텍스트 교체) (5) HTML 초기 class 에서 `inb-hidden` 제거
+- **변경 3파일**: `style.css`(배너 규칙 + `.inb-screen` 방어), `js/store.js`(`_inbShowBanner`), `index.html`(배너 class)
+- **동일 트랩 선제 차단(적용됨)**: `.inb-screen{display:flex}`도 `.inb-hidden` override 하는 동일 트랩 → `renderInboundScreen` office/미배정 게이트 분기가 `#inbScreen` 을 못 숨김. **현재 도달 불가**(office 직원 버튼 disabled + `openInboundScanModal` null store 차단으로 창 자체 못 엶)라 미발현이나, 재발 방지로 `.inb-screen.inb-hidden{display:none}`(0,2,0) 1줄 추가. code-reviewer 도 권장. 다른 `inb-hidden`+display 트랩 전수 스캔 → 없음(inbGate/inbListTotalWrap/inbLookupSizes 는 경쟁 display 없어 안전)
+- **검증**: `node -c` 통과, 배너에 `inb-hidden` 커플링 0, 재고 쓰기 없음, 파이프라인/규칙/draft 불변. code-reviewer 🟢
+
 ---
 
 ## 다음 작업 후보 (미구현)

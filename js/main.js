@@ -57,6 +57,16 @@ async function initApp() {
   makeDraggableResizable(document.getElementById('barcodeUploadModal'), 500, 300)
   makeDraggableResizable(document.getElementById('storeStockUploadModal'), 560, 340)
   makeDraggableResizable(document.getElementById('storeStockDetailModal'), 380, 300)
+  makeDraggableResizable(document.getElementById('inboundScanModal'), 720, 480)
+  makeDraggableResizable(document.getElementById('replenishModal'), 360, 200)
+  // 입고 스캔 창 = 명시적 닫기 전용 (2b-r). ESC(cancel) 를 무력화 → [닫기]/× 로만 닫힘.
+  // ⚠️ modalCloseMap 에 넣지 않음(넣으면 ESC 로 닫힘). 대신 전용 cancel-preventDefault 리스너로 ESC 차단.
+  //    백드롭 클릭 닫기 리스너도 등록하지 않음 → 백드롭 클릭으로도 안 닫힘. (스캔 세션 우발 종료 방지)
+  const _inbScanModal = document.getElementById('inboundScanModal')
+  if (_inbScanModal) _inbScanModal.addEventListener('cancel', e => e.preventDefault())
+  // 품번 조회 창 = 빠른 서브 다이얼로그 → ESC 로 닫힘(작업 창과 별개). 닫힐 때 커서 복귀는 store.js 에서 처리.
+  makeDraggableResizable(document.getElementById('inbLookupModal'), 420, 320)
+  makeDraggableResizable(document.getElementById('inbCloseConfirmModal'), 340, 180)
   makeDraggableResizable(document.getElementById('downloadFormatModal'), 400, 300)
   makeDraggableResizable(document.getElementById('downloadFormatEditorModal'), 600, 400)
   makeDraggableResizable(document.getElementById('bulkEditPreviewModal'), 600, 400)

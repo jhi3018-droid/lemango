@@ -2594,6 +2594,109 @@
   </div>
   <div id="ssvDetailBody" style="padding:18px 20px;overflow-y:auto;flex:1"></div>
 </dialog>
+
+<!-- 입고 스캔 창 (POS Phase 2b-r) — 재고현황 허브의 [입고 스캔] 버튼으로 열림. 준풀스크린 작업 창.
+     명시적 닫기 전용: ESC/백드롭 닫기 없음(main.js 에서 cancel preventDefault). 재고 쓰기 없음(2c 스텁). -->
+<dialog id="inboundScanModal" class="srm-modal inb-modal" style="width:92vw;max-width:1400px;height:90vh;max-height:90vh;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header inb-modal-header" style="cursor:move">
+    <span class="inb-modal-title">📥 입고 스캔 <span id="inbStoreLabel" class="inb-modal-store"></span></span>
+    <button class="modal-close" onclick="closeInboundScanModal()">×</button>
+  </div>
+  <div class="inb-modal-body">
+    <div id="inbGate" class="inb-hidden"></div>
+    <div id="inbScreen" class="inb-screen inb-hidden">
+      <div class="inb-top">
+        <!-- LEFT: 작업 흐름 (바코드 → 수량 → 로케이션) -->
+        <div class="inb-left">
+          <div class="inb-field inb-field-barcode">
+            <label class="inb-label">바코드 <span class="inb-label-hint">스캔하면 자동 인식 · 커서는 여기 고정</span></label>
+            <div class="inb-barcode-row">
+              <input id="inbBarcode" class="inb-input inb-input-barcode" type="text" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="바코드를 스캔하세요">
+              <button class="btn btn-outline inb-lookup-btn" onclick="inbManualLookup()">조회</button>
+            </div>
+          </div>
+          <div class="inb-field inb-field-qty">
+            <label class="inb-label">수량 <span class="inb-label-hint">같은 바코드 재스캔 시 자동 +1</span></label>
+            <input id="inbQty" class="inb-input inb-input-qty" type="number" min="1" step="1" value="1" onchange="onInbQtyChange(this)">
+          </div>
+          <div class="inb-field inb-field-loc">
+            <label class="inb-label">로케이션 <span class="inb-label-hint">위치 확인 후 Enter = 입고 리스트에 등록</span></label>
+            <input id="inbLocation" class="inb-input inb-input-loc" type="text" autocomplete="off" placeholder="위치 입력 후 Enter로 등록">
+          </div>
+        </div>
+        <!-- RIGHT: 큰 제품 카드 (스캔 시 큰 이미지 + 큰 글씨) + 오류 배너 오버레이 -->
+        <div class="inb-right">
+          <div class="inb-card">
+            <div class="inb-card-img" id="inbImage"><div class="inb-card-noimg inb-card-noimg-empty">📷</div></div>
+            <div class="inb-card-info" id="inbInfo"><div class="inb-card-empty">바코드를 스캔하면<br>상품 정보가 여기에 크게 표시됩니다</div></div>
+          </div>
+          <div id="inbBanner" class="inb-banner" aria-live="assertive"></div>
+        </div>
+      </div>
+      <div class="inb-list-section">
+        <div class="inb-list-head">입고 리스트 <span class="inb-list-count-badge"><span id="inbListCount">0</span>건<span id="inbListTotalWrap" class="inb-hidden"> · 총 <span id="inbListTotal" class="inb-list-total-num">0</span>개</span></span></div>
+        <div class="inb-list-wrap">
+          <table class="data-table inb-list-table">
+            <thead><tr><th>품번</th><th class="inb-c" style="width:72px">사이즈</th><th style="width:100px">수량</th><th style="width:180px">로케이션</th><th class="inb-c" style="width:80px">수정/삭제</th></tr></thead>
+            <tbody id="inbListBody"></tbody>
+          </table>
+        </div>
+        <div class="inb-list-footer">
+          <span class="inb-confirm-note">🔒 최종 확정(재고 반영)은 다음 단계(2c)에서 활성화됩니다 — 현재는 리스트만 임시저장됩니다</span>
+          <div class="inb-footer-btns">
+            <button class="btn btn-outline" onclick="closeInboundScanModal()">닫기</button>
+            <button class="btn btn-new inb-confirm-btn" id="inbConfirmBtn" onclick="inbFinalConfirm()">최종 확정 <span class="inb-confirm-tag">(2c에서 활성화)</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<!-- 품번 조회 창 (입고 스캔 → 조회 버튼) — 바코드 없는 상품/스캔 불가 시 품번 검색 → 사이즈 선택 → 스캔 동일 파이프라인.
+     빠른 서브 다이얼로그 → ESC 로 닫힘(작업 창의 명시적-닫기-전용과 별개). -->
+<dialog id="inbLookupModal" class="srm-modal inb-lookup-modal" style="width:640px;max-width:94vw;max-height:82vh;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header" style="cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">🔎 품번으로 상품 찾기</span>
+    <button class="modal-close" onclick="closeInbLookup()">×</button>
+  </div>
+  <div class="inb-lookup-body">
+    <input id="inbLookupSearch" class="inb-input inb-lookup-search" type="text" autocomplete="off" placeholder="품번 또는 상품명 검색" oninput="renderInbLookupResults()">
+    <div id="inbLookupResults" class="inb-lookup-results"></div>
+    <div id="inbLookupSizes" class="inb-lookup-sizes inb-hidden"></div>
+  </div>
+</dialog>
+
+<!-- 입고 스캔 닫기 확인 (staging 항목 있을 때) — 3지선다. ESC=취소(창 유지). 파괴적 옵션엔 기본 포커스 안 둠. -->
+<dialog id="inbCloseConfirmModal" class="srm-modal" style="width:460px;max-width:92vw;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header" style="cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">입고 스캔 닫기</span>
+  </div>
+  <div class="inb-closeconf-body">
+    <p class="inb-closeconf-msg">입고 리스트에 <strong id="inbCloseConfirmCount">0</strong>건이 남아 있습니다.<br>어떻게 하시겠습니까?</p>
+    <div class="inb-closeconf-btns">
+      <button class="btn btn-outline" id="inbCloseCancelBtn" onclick="inbCloseCancelChoice()">취소</button>
+      <button class="btn btn-new" onclick="inbCloseKeep()">보존하고 닫기</button>
+      <button class="btn inb-closeconf-discard" onclick="inbCloseDiscard()">삭제하고 닫기</button>
+    </div>
+    <p class="inb-closeconf-hint">보존: 다시 열면 리스트 복원 · 삭제: 임시저장까지 지움 (되돌릴 수 없음)</p>
+  </div>
+</dialog>
+
+<!-- 보충대상조회 placeholder 창 (Phase 5) -->
+<dialog id="replenishModal" class="srm-modal" style="width:560px;max-width:92vw;max-height:70vh;padding:0;overflow:hidden;border-radius:10px">
+  <div class="srm-header modal-header" style="cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">📋 보충대상조회</span>
+    <button class="modal-close" onclick="closeReplenishModal()">×</button>
+  </div>
+  <div style="padding:18px">
+    <div class="store-placeholder">
+      <div class="store-placeholder-icon">🚧</div>
+      <div class="store-placeholder-title">보충대상조회</div>
+      <div class="store-placeholder-desc">준비중입니다 (Phase 5)</div>
+    </div>
+  </div>
+</dialog>
 <script src="js/event.js"></script>
 <script src="js/work.js"></script>
 <script src="js/dashboard.js"></script>

@@ -5747,78 +5747,149 @@ td[data-editable]:hover { background: #FAEEDA; }
 .ssv-detail-total { text-align: right; margin-top: 12px; font-size: 14px; color: var(--primary); }
 .ssv-detail-total strong { font-size: 17px; color: var(--accent); }
 
-/* 입고 스캔 (POS Phase 2b) */
+/* 입고 스캔 창 (POS Phase 2b-r) — 준풀스크린 작업 창 + 2컬럼 + 큰 제품 카드 + 반응형 타이포 */
+/* ⚠️ .inb-modal 에 display 를 주지 않음 — .srm-modal(display:none)/.srm-modal[open](display:flex) 가
+   열림/닫힘을 제어. display 를 주면 닫힌 dialog 가 보이는 버그 발생(equal specificity + 후순위). */
 .inb-hidden { display: none; }
-.inb-screen { display: flex; flex-direction: column; gap: 18px; }
-.inb-entry-card {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 16px 18px;
-  background: #fff;
+.inb-modal-header {
+  padding: 14px 20px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-shrink: 0;
 }
-.inb-entry-storelbl { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
-.inb-entry-main { display: flex; gap: 16px; align-items: flex-start; }
-.inb-fields { flex: 1; min-width: 0; display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
-.inb-field { display: flex; flex-direction: column; gap: 5px; }
-.inb-field-barcode { flex: 1; min-width: 240px; }
-.inb-field-qty { width: 120px; flex-shrink: 0; }
-.inb-field-loc { margin-top: 14px; max-width: 420px; }
-.inb-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.inb-modal-title { font-size: 16px; font-weight: 700; color: #fff; }
+.inb-modal-store { font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.75); margin-left: 8px; }
+.inb-modal-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 20px 22px; overflow-y: auto; gap: 20px; }
+
+.inb-screen { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 20px; }
+.inb-screen.inb-hidden { display: none; }   /* 동일 트랩 선제 차단: (0,2,0) 로 .inb-screen 의 display:flex override (현재 도달 불가지만 방어) */
+/* 2컬럼 — 좁아지면 stack (flex-wrap) */
+.inb-top { display: flex; gap: 22px; align-items: stretch; flex-wrap: wrap; }
+.inb-left { flex: 1 1 340px; min-width: 300px; display: flex; flex-direction: column; gap: 18px; }
+.inb-right { flex: 1 1 420px; min-width: 300px; container-type: inline-size; position: relative; }
+
+/* 인-윈도우 오류 배너 (Item 2) — .inb-right 위 absolute 오버레이, 카드 파괴 안 함 */
+/* ⚠️ 표시 토글은 전용 클래스 .inb-banner-show 로만 — 공용 .inb-hidden 을 쓰면 equal-specificity 후순위라
+   .inb-banner 의 display 가 .inb-hidden 을 덮어써서 항상 보이는 버그(이전 발생). 기본은 display:none. */
+.inb-banner {
+  position: absolute; inset: 0; z-index: 5; border-radius: 12px;
+  background: #d64545;                    /* 솔리드 빨강 — 반투명 금지(뒤 카드 비침 방지) */
+  align-items: center; justify-content: center; padding: 20px;
+  display: none;                          /* 기본 숨김 */
+}
+.inb-banner.inb-banner-show { display: flex; animation: inbBannerIn 0.15s ease-out; }  /* (0,2,0) → 확실히 표시 */
+@keyframes inbBannerIn { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+.inb-banner-inner { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
+.inb-banner-icon { font-size: clamp(40px, 9cqi, 72px); line-height: 1; color: #fff; }
+.inb-banner-msg { font-size: clamp(18px, 4cqi, 30px); font-weight: 800; line-height: 1.3; color: #fff; }  /* 명시적 흰색(상속/미정의 var 의존 안 함) */
+
+/* 입고 스캔 닫기 확인 (Item 1) */
+.inb-closeconf-body { padding: 20px 22px; }
+.inb-closeconf-msg { font-size: 15px; color: var(--primary); line-height: 1.5; margin: 0 0 16px; text-align: center; }
+.inb-closeconf-msg strong { color: var(--accent); font-size: 18px; }
+.inb-closeconf-btns { display: flex; flex-direction: column; gap: 8px; }
+.inb-closeconf-btns .btn { width: 100%; padding: 11px; font-size: 14px; }
+.inb-closeconf-discard {
+  background: #fff; border: 1px solid var(--danger); color: var(--danger);
+}
+.inb-closeconf-discard:hover { background: var(--danger); color: #fff; }
+.inb-closeconf-hint { font-size: 11px; color: var(--text-muted); text-align: center; margin: 12px 0 0; line-height: 1.5; }
+
+.inb-field { display: flex; flex-direction: column; gap: 7px; }
+.inb-label { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
 .inb-label-hint { font-size: 11px; font-weight: 400; color: var(--text-muted); margin-left: 4px; }
 .inb-barcode-row { display: flex; gap: 8px; align-items: center; }
 .inb-input {
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 14px;
-  font-family: inherit;
-  color: var(--primary);
-  background: #fff;
+  padding: 13px 14px; border: 1px solid var(--border); border-radius: 9px;
+  font-size: 16px; font-family: inherit; color: var(--primary); background: #fff;
 }
 .inb-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(201,169,110,0.25); }
-.inb-input-barcode { flex: 1; min-width: 0; font-size: 17px; letter-spacing: 0.5px; font-variant-numeric: tabular-nums; }
-.inb-input-qty { width: 100%; text-align: center; font-size: 16px; font-weight: 600; }
-.inb-input-loc { width: 100%; font-size: 15px; }
-.inb-lookup-btn { white-space: nowrap; flex-shrink: 0; }
-.inb-image { width: 88px; height: 88px; flex-shrink: 0; }
-.inb-image img { width: 88px; height: 88px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
-.inb-noimg {
-  width: 88px; height: 88px; display: flex; align-items: center; justify-content: center;
-  font-size: 11px; color: var(--text-muted); background: rgba(0,0,0,0.03);
-  border: 1px dashed var(--border); border-radius: 8px;
-}
-.inb-info { margin-top: 14px; min-height: 44px; }
-.inb-info-empty { font-size: 13px; color: var(--text-muted); }
-.inb-info-code { font-size: 15px; font-weight: 700; color: var(--primary); font-family: monospace; }
-.inb-info-size {
-  display: inline-block; font-size: 12px; font-family: inherit; background: var(--primary);
-  color: #fff; border-radius: 4px; padding: 1px 7px; margin-left: 4px; vertical-align: middle;
-}
-.inb-info-name { font-size: 13px; color: var(--text-secondary); margin: 3px 0; }
-.inb-info-stock { font-size: 13px; color: var(--primary); }
-.inb-info-stock strong { font-size: 16px; color: var(--accent); }
-.inb-info-stock-sz { font-size: 11px; color: var(--text-muted); }
+.inb-input-barcode { flex: 1; min-width: 0; font-size: clamp(18px, 2.2vw, 26px); font-weight: 600; letter-spacing: 0.5px; font-variant-numeric: tabular-nums; }
+.inb-input-qty { width: 160px; text-align: center; font-size: clamp(18px, 2vw, 24px); font-weight: 700; }
+.inb-input-loc { width: 100%; font-size: clamp(16px, 1.8vw, 22px); }
+.inb-lookup-btn { white-space: nowrap; flex-shrink: 0; padding: 12px 16px; font-size: 15px; }
 
-.inb-list-section { display: flex; flex-direction: column; }
-.inb-list-head { font-size: 14px; font-weight: 600; color: var(--primary); margin-bottom: 8px; }
-.inb-list-count-badge {
-  font-size: 12px; font-weight: 700; background: rgba(201,169,110,0.15); color: var(--accent);
-  border-radius: 10px; padding: 2px 9px; margin-left: 4px;
+/* 큰 제품 카드 (오른쪽) — 반응형 타이포는 container query 단위(cqi)로 창 크기에 비례 */
+.inb-card {
+  height: 100%; min-height: 260px;
+  border: 1px solid var(--border); border-radius: 12px; background: rgba(201,169,110,0.05);
+  padding: 22px; display: flex; gap: 22px; align-items: center;
 }
-.inb-list-wrap { max-height: calc(100vh - 460px); min-height: 120px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
-.inb-list-table { margin: 0; font-size: 13px; }
-.inb-list-table thead th { position: sticky; top: 0; z-index: 2; background: var(--primary); color: #fff; }
+.inb-card-img { flex: 0 0 auto; width: clamp(140px, 34cqi, 300px); height: clamp(140px, 34cqi, 300px); }
+.inb-card-img img { width: 100%; height: 100%; object-fit: cover; border-radius: 12px; border: 1px solid var(--border); background: #fff; }
+.inb-card-noimg {
+  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+  font-size: 13px; color: var(--text-muted); background: rgba(0,0,0,0.03);
+  border: 1px dashed var(--border); border-radius: 12px;
+}
+.inb-card-noimg-empty { font-size: clamp(40px, 10cqi, 72px); opacity: 0.4; }
+.inb-card-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; justify-content: center; }
+.inb-card-empty { font-size: clamp(15px, 2.6cqi, 20px); color: var(--text-muted); line-height: 1.5; }
+.inb-card-code { font-size: clamp(22px, 5cqi, 40px); font-weight: 800; color: var(--primary); font-family: monospace; line-height: 1.1; word-break: break-all; }
+.inb-card-size {
+  display: inline-block; font-family: inherit; font-size: clamp(15px, 3cqi, 24px); font-weight: 700;
+  background: var(--primary); color: #fff; border-radius: 7px; padding: 2px 14px; margin-left: 6px; vertical-align: middle;
+}
+.inb-card-name { font-size: clamp(15px, 2.6cqi, 22px); color: var(--text-secondary); }
+.inb-card-stock { font-size: clamp(16px, 3cqi, 26px); color: var(--primary); margin-top: 4px; }
+.inb-card-stock strong { font-size: clamp(26px, 6cqi, 52px); color: var(--accent); font-weight: 800; }
+.inb-card-stock-unit { font-size: clamp(14px, 2cqi, 20px); margin-left: 2px; }
+.inb-card-stock-sz { font-size: clamp(12px, 2cqi, 16px); color: var(--text-muted); margin-left: 4px; }
+.inb-card-stock-zero strong { color: var(--danger); }          /* 재고 0 = 색상 구분(신규 위치 필요) */
+.inb-card-loc { font-size: clamp(15px, 2.6cqi, 22px); color: var(--primary); }
+.inb-card-loc strong { color: var(--accent); font-weight: 700; }
+.inb-card-loc-none { color: var(--text-muted); font-weight: 400; font-style: italic; }
+
+.inb-list-section { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.inb-list-head { font-size: 16px; font-weight: 700; color: var(--primary); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+.inb-list-count-badge {   /* Item 4: 최종 확정 전 확인하는 값 → 크고 잘 보이게 */
+  font-size: 17px; font-weight: 800; background: rgba(201,169,110,0.18); color: var(--accent);
+  border-radius: 12px; padding: 4px 14px;
+}
+.inb-list-total-num { font-size: 22px; }   /* 총 수량 — 가장 크게 */
+.inb-list-wrap { flex: 1; min-height: 120px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+.inb-list-table { margin: 0; font-size: 14px; width: 100%; }
+.inb-list-table thead th { position: sticky; top: 0; z-index: 2; background: var(--primary); color: #fff; padding: 10px 12px; }
+.inb-list-table td { padding: 8px 12px; }
 .inb-list-table .inb-c { text-align: center; }
-.inb-list-empty { text-align: center; color: var(--text-muted); padding: 28px 0 !important; font-size: 13px; }
-.inb-list-qty { width: 72px; padding: 5px 6px; border: 1px solid var(--border); border-radius: 5px; font-size: 13px; text-align: center; font-family: inherit; }
-.inb-list-loc { width: 100%; padding: 5px 8px; border: 1px solid var(--border); border-radius: 5px; font-size: 13px; font-family: inherit; }
+.inb-list-empty { text-align: center; color: var(--text-muted); padding: 36px 0 !important; font-size: 14px; }
+.inb-list-qty { width: 84px; padding: 7px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; text-align: center; font-family: inherit; }
+.inb-list-loc { width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; font-family: inherit; }
 .inb-list-qty:focus, .inb-list-loc:focus { outline: none; border-color: var(--accent); }
 .inb-del-btn {
   background: none; border: 1px solid var(--danger); color: var(--danger);
-  border-radius: 5px; padding: 3px 10px; font-size: 12px; cursor: pointer; font-family: inherit;
+  border-radius: 6px; padding: 5px 12px; font-size: 13px; cursor: pointer; font-family: inherit;
 }
 .inb-del-btn:hover { background: var(--danger); color: #fff; }
-.inb-list-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; flex-wrap: wrap; }
+.inb-list-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; flex-wrap: wrap; flex-shrink: 0; }
 .inb-confirm-note { font-size: 12px; color: var(--text-muted); flex: 1; min-width: 200px; }
 .inb-confirm-tag { font-size: 11px; font-weight: 400; opacity: 0.85; }
+.inb-footer-btns { display: flex; gap: 10px; flex-shrink: 0; }
 .inb-confirm-btn { flex-shrink: 0; }
+
+/* 품번 조회 창 (조회 버튼 → 품번 검색 → 사이즈 선택 → 스캔 동일 파이프라인) */
+.inb-lookup-body { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; overflow: hidden; flex: 1; min-height: 0; }
+.inb-lookup-search { width: 100%; font-size: 16px; padding: 11px 13px; }
+.inb-lookup-results { flex: 1; min-height: 120px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
+.inb-lookup-hint { padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px; }
+.inb-lookup-row {
+  display: flex; align-items: center; gap: 12px; padding: 8px 12px;
+  border-bottom: 1px solid var(--border); cursor: pointer;
+}
+.inb-lookup-row:last-child { border-bottom: none; }
+.inb-lookup-row:hover { background: rgba(201,169,110,0.10); }
+.inb-lookup-thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); flex-shrink: 0; background: #fff; }
+.inb-lookup-thumb-none { display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 14px; background: rgba(0,0,0,0.03); }
+.inb-lookup-code { font-family: monospace; font-weight: 700; color: var(--primary); font-size: 14px; flex-shrink: 0; }
+.inb-lookup-name { font-size: 13px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inb-lookup-sizes { border-top: 1px solid var(--border); padding-top: 12px; flex-shrink: 0; }
+.inb-lookup-sizes-head { font-size: 13px; font-weight: 600; color: var(--primary); margin-bottom: 10px; }
+.inb-lookup-sizes-name { font-weight: 400; color: var(--text-secondary); margin-left: 4px; }
+.inb-size-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(78px, 1fr)); gap: 8px; }
+.inb-size-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 12px 8px;
+  border: 1px solid var(--border); border-radius: 8px; background: #fff; cursor: pointer;
+  font-family: inherit; transition: background 0.12s, border-color 0.12s;
+}
+.inb-size-btn:hover { background: var(--accent); border-color: var(--accent); }
+.inb-size-btn:hover .inb-size-lbl, .inb-size-btn:hover .inb-size-stock { color: #fff; }
+.inb-size-lbl { font-size: 18px; font-weight: 800; color: var(--primary); }
+.inb-size-stock { font-size: 11px; color: var(--text-muted); }
