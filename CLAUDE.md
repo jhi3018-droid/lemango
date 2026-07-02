@@ -3586,11 +3586,29 @@ Established the reference style that every dashboard-opened srm-modal should fol
 - **동일 트랩 선제 차단(적용됨)**: `.inb-screen{display:flex}`도 `.inb-hidden` override 하는 동일 트랩 → `renderInboundScreen` office/미배정 게이트 분기가 `#inbScreen` 을 못 숨김. **현재 도달 불가**(office 직원 버튼 disabled + `openInboundScanModal` null store 차단으로 창 자체 못 엶)라 미발현이나, 재발 방지로 `.inb-screen.inb-hidden{display:none}`(0,2,0) 1줄 추가. code-reviewer 도 권장. 다른 `inb-hidden`+display 트랩 전수 스캔 → 없음(inbGate/inbListTotalWrap/inbLookupSizes 는 경쟁 display 없어 안전)
 - **검증**: `node -c` 통과, 배너에 `inb-hidden` 커플링 0, 재고 쓰기 없음, 파이프라인/규칙/draft 불변. code-reviewer 🟢
 
+#### POS Phase 2c — 최종 확정: 원자적 재고 반영 + 입고 이력 (첫 실재고 쓰기) (🟢)
+- **입고 스캔의 첫 실재고 변경 단계.** `inbFinalConfirm` 스텁 → 실제 배치 쓰기. ⚠️ **규칙+인덱스 포함** → 배포: `firebase deploy --only firestore:rules,firestore:indexes,hosting` (소유주 수동, 로컬 확인 후)
+- **원자적 배치**: 코드별 그룹 → storeStock 문서당 1 `batch.set({merge:true})` = `sizes:{[size]:increment(+qty)}`(재고=증분) + `sizeLocations:{[size]:location}`(위치=덮어쓰기) + storeId/productCode/updatedAt. **storeInbound 라인당 1 doc**(storeId/productCode/size/qty/location/workerUid/workerName/confirmedAt/dateKey(KST)/batchId). increment 와 overwrite 는 같은 merge-set 이지만 서로 다른 top-level 키 → math 안 섞임
+- **⚠️ 재고 = increment 전용**(절대값 아님 — 1e SET/ADD 경로와 다름). 1e batch(store.js:389-399)는 미변경
+- **🔴 double-confirm 가드 (필수)**: `_inbInFlight` 플래그 — 진입 즉시 `if(_inbInFlight)return`. 검증 통과 후 **try 첫 줄에서** `true` 로 set(첫 await 이전 동기 set → 재진입 차단) + 버튼 disabled+"반영 중…"(`_inbSetConfirmBusy`), **finally 에서 항상 release**(try 안에 둬서 어떤 throw 든 release → flag stuck 방지, Y1 반영). `appliedCodes` 만 try 밖(catch 접근). increment 비멱등 → 중복 배치 = 재고 2배 → 가드가 유일 방어. 버튼은 index.html 정적(renderInboundScreen/`_inbRenderList` 이 재생성 안 함) + 모달 top-layer 라 뒤 스위처 클릭 불가 → 우회 경로 없음
+- **성공**: list+draft(이 매장만) 삭제 → `buildStoreStockIndex` 재구축 → 허브 테이블 새로고침 → "입고 N건 · 총 M개 반영 완료" 토스트 → `logActivity('inbound','매장입고',...)` → 폼 리셋 + 바코드 포커스
+- **실패**: list+draft **그대로 보존** → 오류 배너 + 버튼 재활성 → 재시도 가능. 단일 배치라 전부-또는-전무(부분상태 없음)
+- **>450 op 메가입고**: 코드 경계로만 청크 분할(한 코드의 재고+이력 절대 안 쪼갬 — 코드당 최대 8op). 중간 실패 시 반영된 코드 라인 제거 + 남은 것 draft 보존 + "N건 완료, M건 남음" 안내. 정상 입고는 청크 1개=단일 원자 배치
+- **확정 시점 재검증**: 각 라인 qty≥1 정수 / 로케이션 non-blank / code·size / store / 비어있지 않음 → 무효 시 행 지목 + 차단(조용히 skip 금지)
+- **Firestore 규칙 (storeInbound)**: read=승인자 전원, create=관리자 OR 본인매장(`storeId!=''` office 가드), **update/delete=`if false`(불변 감사)**. storeStock/storeSales 게이트 미러. OR-union 안전(신규 컬렉션 단독 match, catch-all 없음 확인). brace 46/46
+- **복합 인덱스**: `firestore.indexes.json` 에 storeInbound (storeId ASC, dateKey ASC) 추가 — 2d 조회(`where storeId==X && dateKey==Y`)용
+- **dateKey**: `Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul'})` → 클라 TZ 무관 KST YYYY-MM-DD
+- **활동로그 배지(Y2)**: `AL_CAT_MAP.upload` 에 `inbound` 추가 + `alActionBadge` 에 `inbound→매장입고` 배지 → 활동로그 패널에서 분류/필터/색상 적용
+- **변경 6파일**: `js/store.js`(inbFinalConfirm 실구현 + `_inbAddCodeToBatch`/`_inbDateKeyKST`/`_inbSetConfirmBusy`/`_inbInFlight`), `js/activity-log.js`(inbound 배지), `index.html`(버튼/노트 문구 2c→실동작), `firestore.rules`(storeInbound), `firestore.indexes.json`(복합인덱스), `CLAUDE.md`
+- **검증**: `node -c` 통과, indexes JSON 유효, rules brace 46/46, 매출 공식 무영향, 1e SET/ADD·2b 스캔·1f 뷰 불변. code-reviewer 🟢
+- **다음: 2d** — 입고 이력 뷰 (storeInbound 날짜별 조회)
+
 ---
 
 ## 다음 작업 후보 (미구현)
 - [x] POS Phase 2b (입고 스캔 화면 + staging 리스트 + draft) — 2026-07-02 완료 (재고 쓰기 없음)
-- [ ] POS Phase 2c (최종 확정 원자적 반영: storeStock increment + sizeLocations + storeInbound 이력) / 2d (입고 이력 뷰)
+- [x] POS Phase 2c (최종 확정 원자적 반영: storeStock increment + sizeLocations + storeInbound 이력) — 2026-07-02 완료
+- [ ] POS Phase 2d (입고 이력 뷰 — storeInbound 날짜별 조회)
 - [ ] POS Phase 3~6 (판매 → 취소/환불 → 할인·보충·로케이션 → 통합 재고 뷰)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 인쇄/PDF 출력
