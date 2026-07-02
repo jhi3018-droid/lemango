@@ -55,17 +55,20 @@ function _storeSubPanelHtml(sub) {
   const grade = (typeof _currentUserGrade !== 'undefined' && _currentUserGrade) ? _currentUserGrade : 1
   if (sub.key === 'stock') {
     // 1f: 매장별 재고현황 뷰 = 허브(hub). 조회는 전 직원(권한 방침).
-    // 2b-r 툴바: [입고 스캔(작업 게이트)] [보충대상조회(조회)] [재고 업로드(관리자)] [새로고침]
+    // 2b-r/2d 툴바: [입고 스캔(작업 게이트)] [입고 내역(조회, 전 직원)] [보충대상조회(조회)] [재고 업로드(관리자)] [새로고침]
     const uploadBtn = grade >= 3 ? `<button class="btn btn-outline" onclick="openStoreStockUploadModal()">📥 재고 업로드</button>` : ''
     // 입고 스캔 = 작업 → 본인 매장 직원 + 관리자만. resolveActiveStore() null(office/미배정)이면 비활성 + 사유.
     const store = (typeof resolveActiveStore === 'function') ? resolveActiveStore() : ''
     const scanBtn = store
       ? `<button class="btn btn-new" onclick="openInboundScanModal()">📥 입고 스캔</button>`
       : `<button class="btn btn-new" disabled title="배정된 매장이 없습니다 — 입고 불가">📥 입고 스캔</button>`
+    // 입고 내역 = 조회 → 전 직원 개방(권한 방침). office 직원도 표시(매장 선택기 제공).
+    const historyBtn = `<button class="btn btn-outline" onclick="openInbHistoryModal()">📋 입고 내역</button>`
     const replenishBtn = `<button class="btn btn-outline" onclick="openReplenishModal()">📋 보충대상조회</button>`
     return `<div class="store-panel${shown ? '' : ' store-panel-hidden'}" id="storePanel_stock">
       <div class="store-panel-toolbar">
         ${scanBtn}
+        ${historyBtn}
         ${replenishBtn}
         ${uploadBtn}
         <button class="btn btn-outline" onclick="renderStoreStockView()">↻ 새로고침</button>
@@ -971,6 +974,19 @@ function _inbDateKeyKST() {
   }
 }
 
+// 입고번호 IN-YYYYMMDD-HHMMSS (KST) — 사람이 읽는 업무 키. 초 단위 granularity + 가드로 사실상 충돌 없음(카운터 불요).
+// (기술적 유니크 그룹핑은 batchId=…+Date.now()ms 가 담당; inboundNo 는 표시/업무용)
+function _inbInboundNo() {
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(new Date())
+    const g = {}; parts.forEach(p => { g[p.type] = p.value })
+    return 'IN-' + g.year + g.month + g.day + '-' + g.hour + g.minute + g.second
+  } catch (e) {
+    const d = new Date(), p = n => String(n).padStart(2, '0')
+    return 'IN-' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds())
+  }
+}
+
 // 최종 확정 버튼 busy 상태 토글 (disabled + "반영 중…")
 function _inbSetConfirmBusy(busy) {
   const btn = document.getElementById('inbConfirmBtn')
@@ -1003,7 +1019,8 @@ function _inbAddCodeToBatch(batch, store, code, codeLines, meta) {
       storeId: store, productCode: r.code, size: r.size, qty: Math.floor(Number(r.qty)),
       location: String(r.location).trim(),
       workerUid: meta.uid, workerName: meta.workerName,
-      confirmedAt: meta.nowIso, dateKey: meta.dateKey, batchId: meta.batchId
+      confirmedAt: meta.nowIso, dateKey: meta.dateKey, batchId: meta.batchId,
+      inboundNo: meta.inboundNo, memo: meta.memo   // (추가 필드) 입고번호 + 메모 — 라인 전체 동일
     })
   })
 }
@@ -1043,7 +1060,9 @@ async function inbFinalConfirm() {
     const nowIso = new Date().toISOString()
     const dateKey = _inbDateKeyKST()
     const batchId = dateKey + '_' + (uid || 'x') + '_' + Date.now()
-    const meta = { uid, workerName, nowIso, dateKey, batchId }
+    const inboundNo = _inbInboundNo()                                        // 입고번호 (표시/업무 키)
+    const memo = String((document.getElementById('inbMemo') || {}).value || '').trim()   // 선택 메모
+    const meta = { uid, workerName, nowIso, dateKey, batchId, inboundNo, memo }
 
     // 코드별 라인 그룹 + op 수 (코드당 1 storeStock + 라인수 storeInbound)
     const codeLines = {}
@@ -1075,6 +1094,7 @@ async function inbFinalConfirm() {
     _inbList = []
     _inbEntry = null
     try { localStorage.removeItem(_inbDraftKey(store)) } catch (e) {}
+    const memoEl = document.getElementById('inbMemo'); if (memoEl) memoEl.value = ''   // 메모 초기화(성공 시)
     _inbRenderEntry()
     _inbRenderList()
     try { if (typeof buildStoreStockIndex === 'function') await buildStoreStockIndex(store) } catch (e) {}
@@ -1162,6 +1182,140 @@ function openReplenishModal() {
 function closeReplenishModal() {
   const modal = document.getElementById('replenishModal')
   if (modal) modal.close()
+}
+
+// ── 입고 내역 뷰 (POS Phase 2d) — 날짜별 storeInbound 조회 (읽기 전용). 전 직원 개방(권한 방침) ──
+// 2c 복합인덱스(storeId, dateKey) 사용. 쓰기 없음. ESC 로 닫히는 일반 뷰어(작업 창 아님).
+
+// confirmedAt(ISO/UTC) → KST HH:MM
+// confirmedAt(ISO/UTC) → KST. fmt: 'time'=HH:MM, 'md'=MM-DD HH:MM(이력 표시), 'full'=YYYY-MM-DD HH:MM(엑셀)
+function _inbHistDateTime(iso, fmt) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d)) return ''
+  try {
+    const opt = { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hour12: false }
+    if (fmt === 'md') { opt.month = '2-digit'; opt.day = '2-digit' }
+    if (fmt === 'full') { opt.year = 'numeric'; opt.month = '2-digit'; opt.day = '2-digit' }
+    const parts = new Intl.DateTimeFormat('en-CA', opt).formatToParts(d)
+    const g = {}; parts.forEach(p => { g[p.type] = p.value })
+    if (fmt === 'md') return g.month + '-' + g.day + ' ' + g.hour + ':' + g.minute
+    if (fmt === 'full') return g.year + '-' + g.month + '-' + g.day + ' ' + g.hour + ':' + g.minute
+    return g.hour + ':' + g.minute
+  } catch (e) {
+    const p = n => String(n).padStart(2, '0')
+    if (fmt === 'full') return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes())
+    if (fmt === 'md') return p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes())
+    return p(d.getHours()) + ':' + p(d.getMinutes())
+  }
+}
+
+let _inbHistRows = []                     // 마지막 조회 결과(정렬 완료) — 엑셀 export 용
+let _inbHistCtx = { store: '', start: '', end: '' }   // 파일명용 컨텍스트
+
+function openInbHistoryModal() {
+  const modal = document.getElementById('inbHistoryModal')
+  if (!modal) return
+  // 매장 선택기 — 조회 개방이라 전원 제공. 기본 = resolveActiveStore() 또는 첫 활성 매장(office 는 own store 없음)
+  const active = (typeof getActiveStores === 'function') ? getActiveStores() : []
+  const cur = (typeof resolveActiveStore === 'function') ? (resolveActiveStore() || (active[0] && active[0].id) || '') : ''
+  const sel = document.getElementById('inbHistStore')
+  if (sel) {
+    sel.innerHTML = active.length
+      ? active.map(s => `<option value="${esc(s.id)}"${s.id === cur ? ' selected' : ''}>${esc(s.name)}</option>`).join('')
+      : '<option value="">(활성 매장 없음)</option>'
+  }
+  const today = _inbDateKeyKST()
+  const startEl = document.getElementById('inbHistStart'); if (startEl) startEl.value = today   // 기본 = 오늘~오늘
+  const endEl = document.getElementById('inbHistEnd'); if (endEl) endEl.value = today
+  modal.showModal()
+  if (typeof centerModal === 'function') centerModal(modal)
+  _inbHistoryLoad()
+}
+
+function closeInbHistoryModal() {
+  const modal = document.getElementById('inbHistoryModal')
+  if (modal) modal.close()
+}
+
+// 조회 실행 (열림/날짜·매장 변경/새로고침). 기간(시작~마지막) 쿼리. 서버 우선 + 캐시 폴백. 인덱스 빌드 중이면 친절 안내.
+async function _inbHistoryLoad() {
+  const body = document.getElementById('inbHistBody')
+  const sumEl = document.getElementById('inbHistSummary')
+  if (!body) return
+  const COLS = 8
+  const setEmpty = (msg) => { body.innerHTML = `<tr><td colspan="${COLS}" class="inbhist-empty">${esc(msg)}</td></tr>`; if (sumEl) sumEl.textContent = ''; _inbHistRows = []; _inbHistUpdateExportBtn() }
+  const store = (document.getElementById('inbHistStore') || {}).value || ''
+  const startEl = document.getElementById('inbHistStart'), endEl = document.getElementById('inbHistEnd')
+  let start = (startEl || {}).value || '', end = (endEl || {}).value || ''
+  if (!store) { setEmpty('매장을 선택하세요'); return }
+  if (!start || !end) { setEmpty('시작일/마지막일을 선택하세요'); return }
+  if (start > end) {   // 역순 입력 → 스왑(친절) + 입력칸 보정
+    const t = start; start = end; end = t
+    if (startEl) startEl.value = start; if (endEl) endEl.value = end
+    showToast('시작일이 마지막일보다 늦어 자동으로 교정했습니다', 'warning')
+  }
+  if (!db) { setEmpty('서버 연결 없음'); return }
+  _inbHistCtx = { store, start, end }
+  setEmpty('불러오는 중…')
+
+  // ⚠️ 쿼리: equality(storeId) + range(dateKey) → 배포된 복합인덱스(storeId ASC, dateKey ASC)로 서빙. orderBy 미사용(정렬은 클라이언트) → 새 인덱스 불요
+  const q = db.collection('storeInbound').where('storeId', '==', store).where('dateKey', '>=', start).where('dateKey', '<=', end)
+  const isIndexBuilding = (e) => e && (e.code === 'failed-precondition' || /index/i.test(e.message || ''))
+  let snap = null
+  try {
+    snap = await q.get({ source: 'server' })
+  } catch (e) {
+    if (isIndexBuilding(e)) { setEmpty('인덱스 준비 중 — 잠시 후 다시 시도하세요'); return }
+    try { snap = await q.get() }   // 네트워크 등 → 캐시 폴백
+    catch (e2) {
+      if (isIndexBuilding(e2)) { setEmpty('인덱스 준비 중 — 잠시 후 다시 시도하세요'); return }
+      setEmpty('불러오기 실패: ' + (e2 && e2.message ? e2.message : '')); return
+    }
+  }
+  const rows = []
+  snap.forEach(d => rows.push(d.data() || {}))
+  rows.sort((a, b) => String(b.confirmedAt || '').localeCompare(String(a.confirmedAt || '')))   // 최신 위 (DESC, 기간 전체)
+  _inbHistRows = rows
+  _inbHistUpdateExportBtn()
+  if (!rows.length) { setEmpty('해당 기간의 입고 내역이 없습니다'); return }
+
+  const totalQty = rows.reduce((s, r) => s + (Number(r.qty) || 0), 0)
+  if (sumEl) sumEl.innerHTML = `기간 입고 <strong>${rows.length}</strong>건 · 총 <strong>${totalQty}</strong>개`
+  body.innerHTML = rows.map(r => `<tr>
+    <td class="inbhist-no">${esc(r.inboundNo || '-')}</td>
+    <td class="inbhist-time">${esc(_inbHistDateTime(r.confirmedAt, 'md'))}</td>
+    <td>${esc(r.productCode || '')}</td>
+    <td style="text-align:center">${esc(r.size || '')}</td>
+    <td style="text-align:right">${Number(r.qty) || 0}</td>
+    <td>${esc(r.location || '')}</td>
+    <td>${esc(r.workerName || '')}</td>
+    <td class="inbhist-memo">${esc(r.memo || '')}</td>
+  </tr>`).join('')
+}
+
+// 엑셀 버튼 활성/비활성 (빈 결과 → 비활성)
+function _inbHistUpdateExportBtn() {
+  const btn = document.getElementById('inbHistExportBtn')
+  if (btn) btn.disabled = !(_inbHistRows && _inbHistRows.length)
+}
+
+// 조회된 기간 결과 엑셀 다운로드 (읽기 전용). 컬럼: 입고번호|일시(full)|품번|사이즈|수량|로케이션|작업자|메모. 최신순(화면과 동일).
+function downloadInbHistory() {
+  if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
+  if (!_inbHistRows || !_inbHistRows.length) { showToast('내보낼 입고 내역이 없습니다', 'warning'); return }
+  const header = ['입고번호', '일시', '품번', '사이즈', '수량', '로케이션', '작업자', '메모']
+  const aoa = [header].concat(_inbHistRows.map(r => [
+    r.inboundNo || '-', _inbHistDateTime(r.confirmedAt, 'full'), r.productCode || '', r.size || '',
+    Number(r.qty) || 0, r.location || '', r.workerName || '', r.memo || ''
+  ]))
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  ws['!cols'] = [{ wch: 18 }, { wch: 17 }, { wch: 16 }, { wch: 7 }, { wch: 7 }, { wch: 16 }, { wch: 12 }, { wch: 24 }]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '입고내역')
+  const storeName = _storeNameById(_inbHistCtx.store) || _inbHistCtx.store || '매장'
+  const fname = '입고내역_' + storeName + '_' + (_inbHistCtx.start || '') + '~' + (_inbHistCtx.end || '') + '.xlsx'
+  XLSX.writeFile(wb, fname)
 }
 
 // ── 품번 조회 (조회 버튼) — 바코드 없는 상품/스캔 불가 상황용. 스캔과 동일 파이프라인으로 수렴 ──
@@ -1295,6 +1449,10 @@ window.inbCloseDiscard = inbCloseDiscard
 window.inbCloseCancelChoice = inbCloseCancelChoice
 window.openReplenishModal = openReplenishModal
 window.closeReplenishModal = closeReplenishModal
+window.openInbHistoryModal = openInbHistoryModal
+window.closeInbHistoryModal = closeInbHistoryModal
+window._inbHistoryLoad = _inbHistoryLoad
+window.downloadInbHistory = downloadInbHistory
 window.renderInboundScreen = renderInboundScreen
 window.openInbLookup = openInbLookup
 window.closeInbLookup = closeInbLookup

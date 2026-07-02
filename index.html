@@ -2642,7 +2642,8 @@
           </table>
         </div>
         <div class="inb-list-footer">
-          <span class="inb-confirm-note">✅ 최종 확정 시 매장 재고에 즉시 반영되고 입고 이력이 기록됩니다</span>
+          <span class="inb-confirm-note">✅ 최종 확정 시 매장 재고에 즉시 반영 + 입고 이력 기록</span>
+          <input id="inbMemo" class="inb-memo-input" type="text" autocomplete="off" maxlength="200" placeholder="메모 (선택) — 예: 오전 택배 2박스">
           <div class="inb-footer-btns">
             <button class="btn btn-outline" onclick="closeInboundScanModal()">닫기</button>
             <button class="btn btn-new inb-confirm-btn" id="inbConfirmBtn" onclick="inbFinalConfirm()">최종 확정</button>
@@ -2694,6 +2695,30 @@
       <div class="store-placeholder-icon">🚧</div>
       <div class="store-placeholder-title">보충대상조회</div>
       <div class="store-placeholder-desc">준비중입니다 (Phase 5)</div>
+    </div>
+  </div>
+</dialog>
+
+<!-- 입고 내역 뷰 (POS Phase 2d) — 날짜별 storeInbound 조회. 읽기 전용, 전 직원 개방. ESC 닫힘(뷰어). -->
+<dialog id="inbHistoryModal" class="srm-modal" style="width:840px;max-width:95vw;max-height:85vh;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header" style="cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">📋 입고 내역</span>
+    <button class="modal-close" onclick="closeInbHistoryModal()">×</button>
+  </div>
+  <div class="inbhist-body">
+    <div class="inbhist-controls">
+      <label class="inbhist-ctl">시작일 <input type="date" id="inbHistStart" class="inbhist-date" onchange="_inbHistoryLoad()"></label>
+      <label class="inbhist-ctl">마지막일 <input type="date" id="inbHistEnd" class="inbhist-date" onchange="_inbHistoryLoad()"></label>
+      <label class="inbhist-ctl">매장 <select id="inbHistStore" class="inbhist-store" onchange="_inbHistoryLoad()"></select></label>
+      <button class="btn btn-outline" onclick="_inbHistoryLoad()">↻ 새로고침</button>
+      <button class="btn btn-outline" id="inbHistExportBtn" onclick="downloadInbHistory()">📤 엑셀 다운로드</button>
+      <span class="inbhist-summary inb-list-count-badge" id="inbHistSummary"></span>
+    </div>
+    <div class="inbhist-table-wrap">
+      <table class="data-table inbhist-table">
+        <thead><tr><th style="width:112px">입고번호</th><th style="width:92px">일시</th><th>품번</th><th style="width:52px">사이즈</th><th style="width:52px">수량</th><th style="width:120px">로케이션</th><th style="width:96px">작업자</th><th style="width:150px">메모</th></tr></thead>
+        <tbody id="inbHistBody"></tbody>
+      </table>
     </div>
   </div>
 </dialog>

@@ -67,6 +67,7 @@ async function initApp() {
   // 품번 조회 창 = 빠른 서브 다이얼로그 → ESC 로 닫힘(작업 창과 별개). 닫힐 때 커서 복귀는 store.js 에서 처리.
   makeDraggableResizable(document.getElementById('inbLookupModal'), 420, 320)
   makeDraggableResizable(document.getElementById('inbCloseConfirmModal'), 340, 180)
+  makeDraggableResizable(document.getElementById('inbHistoryModal'), 560, 360)
   makeDraggableResizable(document.getElementById('downloadFormatModal'), 400, 300)
   makeDraggableResizable(document.getElementById('downloadFormatEditorModal'), 600, 400)
   makeDraggableResizable(document.getElementById('bulkEditPreviewModal'), 600, 400)

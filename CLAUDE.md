@@ -3603,12 +3603,38 @@ Established the reference style that every dashboard-opened srm-modal should fol
 - **검증**: `node -c` 통과, indexes JSON 유효, rules brace 46/46, 매출 공식 무영향, 1e SET/ADD·2b 스캔·1f 뷰 불변. code-reviewer 🟢
 - **다음: 2d** — 입고 이력 뷰 (storeInbound 날짜별 조회)
 
+#### POS Phase 2d — 입고 내역 뷰 (날짜별 조회) — ✅ Phase 2 완료 (🟢, 읽기 전용)
+- **Phase 2 마지막 조각.** storeInbound(2c 생성) 날짜별 조회 뷰. **쓰기 없음** — 순수 읽기. `firebase deploy --only hosting`(규칙/인덱스는 2c 에서 이미 배포됨)
+- **배치 결정(설계 변경 + 사유)**: 원설계는 이력을 스캔 패널 내부 토글로 뒀으나, 스캔 패널이 작업-게이트된 창이 됨 → 소유주 정책 "입고 내역 조회 = 전 직원 개방"과 충돌. → **재고현황 허브 툴바에 `[📋 입고 내역]` 버튼**(전원 표시, office 포함) → 이력 창. CLAUDE.md/보고서에 기록
+- **이력 창** (`inbHistoryModal`, ESC 닫힘 일반 뷰어): 날짜 피커(기본 오늘 KST) + 매장 선택기(조회 개방이라 전원 제공, 기본 `resolveActiveStore()` 또는 첫 활성) + 새로고침 + 요약 배지
+- **쿼리**: `storeInbound.where('storeId','==',store).where('dateKey','==',date)` — 2c 복합인덱스(storeId,dateKey) 정확 일치, **orderBy 미사용**(정렬은 클라이언트 confirmedAt DESC → 최신 위). 서버 우선 + 캐시 폴백(온디맨드: 열림/날짜변경/매장변경/새로고침)
+- **테이블**: 시각(KST HH:MM) | 품번 | 사이즈 | 수량 | 로케이션 | 작업자. 요약 "해당일 입고 N건 · 총 M개". 빈 날짜 안내
+- **인덱스 빌드 엣지**: `failed-precondition`(또는 message /index/i) catch → "인덱스 준비 중 — 잠시 후 다시 시도" 친절 안내(raw 에러 대신). 서버·캐시 양쪽 처리
+- **권한**: 조회이므로 게이트 없음 — 전 승인자. 버튼 상시 표시. office(own store 없음)는 기본 첫 활성 매장
+- **변경 4파일**: `js/store.js`(허브 버튼 + `openInbHistoryModal`/`closeInbHistoryModal`/`_inbHistoryLoad`/`_inbHistTime`), `index.html`(`inbHistoryModal`), `js/main.js`(모달 등록), `style.css`(`.inbhist-*`)
+- **검증**: `node -c` 통과, 2d 코드 storeInbound/storeStock write 0(유일 write 는 2c 확정 batch), 쿼리 인덱스 일치, 매출 공식·2c 확정·1f 허브 무영향. code-reviewer 🟢
+
+#### ✅✅ POS Phase 2 완료 — 입고 스캔 전체 (2a→2d)
+- **2a** 고정 로케이션 데이터층(sizeLocations, 재고 코어 불변) → **2b** 입고 스캔 화면(커서 상태머신 + 4대 차단규칙 + staging + draft) → **2b-r** 허브 창 재하우징 + UX 재설계 + 품번조회 + 폴리시 → **2c** 최종 확정 원자적 반영(storeStock increment + sizeLocations overwrite + storeInbound 이력, double-confirm 가드) → **2d** 입고 내역 뷰
+- **결과물**: 바코드 스캔/품번조회 → 수량·로케이션 확인 → staging(draft 영속) → 최종 확정 시 실재고 원자적 증가 + 위치 기록 + 감사 이력 → 날짜별 이력 조회. 전 과정 마우스 없이(USB 스캐너) 운영 가능
+- **다음: Phase 3 (POS 판매)** — 바코드 스캔 판매 → 재고 차감(storeStock decrement) → storeSales 원장. 본인 매장 직원 전용(권한 방침). 이후 4(취소/환불)/5(할인·보충·로케이션 화면)
+
+#### 입고 이력 업그레이드 — 기간 조회 + 입고번호/메모 + 엑셀 (🟢, 2c 가산·2d 읽기 전용)
+- 2c 확정 + 2d 이력에 4종 업그레이드. `firebase deploy --only hosting`(규칙/인덱스 불변 — 범위 쿼리는 기존 복합인덱스로 서빙)
+- **Item 1 기간 조회**: 2d 단일 날짜 → **시작일~마지막일**(기본 오늘~오늘). 쿼리 `where(storeId==).where(dateKey>=start).where(dateKey<=end)` — equality+range 라 **기존 복합인덱스(storeId ASC, dateKey ASC)로 서빙, 새 인덱스 불요**, orderBy 미사용(클라 confirmedAt DESC 정렬, 기간 전체). start>end 자동 스왑 + 안내. 요약 "기간 입고 N건 · 총 M개"
+- **Item 2 일시 컬럼**: 시각 → **일시** `MM-DD HH:MM`(KST, `_inbHistDateTime(iso,'md')`). 엑셀은 `YYYY-MM-DD HH:MM`(full)
+- **Item 3 입고번호+메모 (2c 가산 필드)**: 확정 시 `inboundNo = IN-YYYYMMDD-HHMMSS`(KST, `_inbInboundNo`, 초 granularity+가드로 카운터 없이 충돌 없음 — batchId 는 기술 유니크 키 유지) + 스캔 창 `#inbMemo` 선택 메모 → **각 storeInbound 라인에 동일 저장**(가산 필드만, increment/위치/가드/실패처리 로직 불변). 성공 시 메모 입력 초기화. draft 에는 메모 미저장(확정 시점 입력값 — per-line 아님). 이력 테이블에 **입고번호·메모 컬럼**(구 레코드는 '-'). 규칙 변경 불요(create 게이트가 필드 열거 안 함, storeId 만 게이트)
+- **Item 4 엑셀 다운로드**: 이력 창 `[📤 엑셀 다운로드]` → 현재 조회된 행(`_inbHistRows`, 최신순) export. 컬럼 입고번호|일시(full)|품번|사이즈|수량|로케이션|작업자|메모. 파일명 `입고내역_{매장}_{start}~{end}.xlsx`. 빈 결과 → 버튼 disabled. 읽기 전용(SheetJS)
+- **읽기 비용 메모**: 넓은 기간은 그만큼 문서 읽음(범위 내 전량). 테이블은 스크롤로 렌더 정상. 대량 시 Firestore read 증가 — 운영상 과도한 기간은 지양 권장
+- **변경 4파일**: `js/store.js`(inboundNo/memo 가산 + `_inbHistDateTime`/기간쿼리/`downloadInbHistory`/`_inbHistUpdateExportBtn`), `index.html`(메모 입력 + 이력 창 기간피커/엑셀버튼/컬럼), `style.css`(`.inb-memo-input`/`.inbhist-no`/`.inbhist-memo`), `CLAUDE.md`
+- **검증**: `node -c` 통과, 2c 3대 불변(increment 전용·단일배치·double-confirm 가드·실패시 draft 보존 — 가산 필드가 안 건드림), 범위쿼리 인덱스 일치(새 인덱스 0), 2d 읽기전용 유지(유일 write=2c batch), 매출 공식 무영향. code-reviewer 🟢
+
 ---
 
 ## 다음 작업 후보 (미구현)
 - [x] POS Phase 2b (입고 스캔 화면 + staging 리스트 + draft) — 2026-07-02 완료 (재고 쓰기 없음)
 - [x] POS Phase 2c (최종 확정 원자적 반영: storeStock increment + sizeLocations + storeInbound 이력) — 2026-07-02 완료
-- [ ] POS Phase 2d (입고 이력 뷰 — storeInbound 날짜별 조회)
+- [x] POS Phase 2d (입고 이력 뷰 — storeInbound 날짜별 조회) — 2026-07-02 완료 · **Phase 2 전체 완료**
 - [ ] POS Phase 3~6 (판매 → 취소/환불 → 할인·보충·로케이션 → 통합 재고 뷰)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 인쇄/PDF 출력

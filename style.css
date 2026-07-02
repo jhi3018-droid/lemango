@@ -5864,6 +5864,11 @@ td[data-editable]:hover { background: #FAEEDA; }
 .inb-confirm-tag { font-size: 11px; font-weight: 400; opacity: 0.85; }
 .inb-footer-btns { display: flex; gap: 10px; flex-shrink: 0; }
 .inb-confirm-btn { flex-shrink: 0; }
+.inb-memo-input {
+  flex: 1; min-width: 180px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px;
+  font-size: 14px; font-family: inherit; color: var(--primary); background: #fff;
+}
+.inb-memo-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(201,169,110,0.2); }
 
 /* 품번 조회 창 (조회 버튼 → 품번 검색 → 사이즈 선택 → 스캔 동일 파이프라인) */
 .inb-lookup-body { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; overflow: hidden; flex: 1; min-height: 0; }
@@ -5893,3 +5898,23 @@ td[data-editable]:hover { background: #FAEEDA; }
 .inb-size-btn:hover .inb-size-lbl, .inb-size-btn:hover .inb-size-stock { color: #fff; }
 .inb-size-lbl { font-size: 18px; font-weight: 800; color: var(--primary); }
 .inb-size-stock { font-size: 11px; color: var(--text-muted); }
+
+/* 입고 내역 뷰 (POS Phase 2d) */
+.inbhist-body { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px; overflow: hidden; flex: 1; min-height: 0; }
+.inbhist-controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.inbhist-ctl { font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+.inbhist-date, .inbhist-store {
+  padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px;
+  font-size: 14px; font-family: inherit; background: #fff; color: var(--primary);
+}
+.inbhist-date:focus, .inbhist-store:focus { outline: none; border-color: var(--accent); }
+.inbhist-summary { margin-left: auto; }
+.inbhist-table-wrap { flex: 1; min-height: 140px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+.inbhist-table { margin: 0; font-size: 14px; width: 100%; }
+.inbhist-table thead th { position: sticky; top: 0; z-index: 2; background: var(--primary); color: #fff; padding: 9px 12px; }
+.inbhist-table td { padding: 7px 12px; }
+.inbhist-time { font-variant-numeric: tabular-nums; color: var(--text-secondary); white-space: nowrap; }
+.inbhist-no { font-family: monospace; font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+.inbhist-memo { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+.inbhist-empty { text-align: center; color: var(--text-muted); padding: 32px 0 !important; font-size: 14px; }
+#inbHistExportBtn:disabled { opacity: 0.45; cursor: not-allowed; }
