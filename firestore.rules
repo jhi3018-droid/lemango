@@ -56,16 +56,24 @@ service cloud.firestore {
       );
     }
 
-    // storeSales — 매장 매출 원장 (POS Phase 3+). 지금은 규칙 형태만 정의(전방 호환).
-    //   append-only: 취소/환불은 새 레코드로 기록, 기존 레코드 수정/삭제 금지.
-    //   create: 관리자 OR 본인 매장. update/delete: 전면 금지.
+    // storeSales — 매장 매출 원장 (POS Phase 3a). append-only 거래 단위 문서(영수증형).
+    //   read : 승인자 전원 (매출 조회 개방 — 권한 방침)
+    //   create: 관리자 OR 본인 매장(storeId 일치, 비어있지 않을 때). type∈['sale','void'].
+    //           void 레코드는 사유 필수 + voidedBy==본인(위조 방지) 추가 강제.
+    //   update/delete: 전면 금지 → 취소도 새 레코드(역기록). ⚠️ 결정적 id 'void_{saleDocId}' 라
+    //           동일 판매 2번째 취소 write 는 기존 doc update 로 평가 → 여기서 거부 → double-void 구조적 불가.
     match /storeSales/{docId} {
       allow read: if isApproved();
-      allow create: if isApproved() && (
-        isAdmin() ||
-        (request.resource.data.storeId != '' &&
-         request.resource.data.storeId == userDoc(request.auth.uid).storeId)
-      );
+      allow create: if isApproved()
+        && (isAdmin() ||
+            (request.resource.data.storeId != '' &&
+             request.resource.data.storeId == userDoc(request.auth.uid).storeId))
+        && (request.resource.data.type == 'sale' || request.resource.data.type == 'void')
+        && (request.resource.data.type != 'void' || (
+             request.resource.data.voidReason is string
+             && request.resource.data.voidReason.size() > 0
+             && request.resource.data.voidedBy == request.auth.uid
+           ));
       allow update, delete: if false;
     }
 

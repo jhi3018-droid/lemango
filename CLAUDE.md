@@ -3654,6 +3654,27 @@ Established the reference style that every dashboard-opened srm-modal should fol
 - **변경 6파일**: `js/core.js`(_inboundTypes 설정+normalizeLocation), `js/settings.js`(유형 관리 카드+CRUD), `js/store.js`(확정 유형 가산+정규화+이력 필터/유형컬럼/엑셀), `index.html`(유형 드롭다운+이력 필터/컬럼), `firestore.rules`(sharedData/inboundTypes), `style.css`, `CLAUDE.md`
 - **검증**: `node -c` 5파일 통과, rules 47/47, normalizeLocation 케이스 통과, 2c 확정/취소 스톡경로 increment 전용 불변(가산 필드만), 쿼리 인덱스 불변(유형/상태 메모리 필터), 매출 공식 무영향. code-reviewer 🟢
 
+#### POS Phase 3 설계 문서 — `docs/pos-phase3-design.md` (설계 전용, 코드 없음)
+- 판매 등록(바코드 스캔) + 당일 판매취소 + 매출 원장 심층 설계. 소유주 mockup(포스.xlsx) 기준. 소유주+Claude.ai 검토용
+- **핵심 결정**: (1) 매출 원장 = **append-only, 거래 단위 문서(영수증형), 취소=역기록**(배포된 storeSales `update/delete:false` 유지 — 규칙 comment 가 이미 "취소는 새 레코드"). inbound-cancel 의 update 방식과 의도적 divergence(돈 장부는 불변). (2) 취소 double-void 방어 = 결정적 id `void_{saleDocId}` + runTransaction 존재검사. (3) 판매 화면 = 판매 탭 직접(모달 아님), inbound 자산 재사용하되 **스캔=즉시 라인 추가/병합**(위치단계·진행중버퍼·Rule2/3/4 없음, Rule1만). (4) 재고 = `increment(-qty)` 원자적(2c 미러). 음수 허용(경고). (5) 정수 KRW 전용
+- **부위별 검증 섹션**: 매장 분리 3계층 증명(resolveActiveStore + storeStockDocId 합성 + 규칙 게이트), 재고 반영 맵(storeStock 리더 전수 + storeStock 은 onSnapshot 없음 → 동일세션 즉시/타세션 새로고침, 옵션 B 실시간 리스너 후속)
+- **결제수단 포함 권고**(정산 필요 + 레거시 typeless 방지 — inboundType 교훈), 할인 모델(manual now / Phase 5 store-discount plug-in, 정수), 오프라인 확정 차단 권고(팬텀 큐 방지)
+- **규칙/인덱스 변경 필요(구현 시)**: storeSales create refinement(void 사유+voidedBy), storeSales 복합인덱스(storeId,dateKey) — storeInbound 미러
+- **서브분할**: 3a 원장모델+규칙+인덱스 → 3b 판매화면+draft → 3c 원자적 확정 → 3d 매출조회 → 3e 판매취소. **시작=3a**
+- 소유주 미결 8문항(결제수단/화면위치/원장구조/취소방식/음수허용/부분환불Phase4/실시간반영/오프라인) — 각 추천 포함, 한국어
+
+#### POS Phase 3a — 매출 원장 데이터층 + 규칙 refinement + 복합인덱스 (콘솔 테스트, UI/재고쓰기 없음, 🟢)
+- 설계문서 8문항 전부 "추천대로" 승인 + 소유주 추가(customerPhone). 3a = 데이터층/생성자/규칙/인덱스만. 실제 판매 확정 배치=3c, 판매 취소=3e. `firebase deploy --only firestore:rules,firestore:indexes,hosting`
+- **생성자/헬퍼** (store.js, window 노출, 재고/DB 쓰기 0): `normalizePhone`(숫자만), `maskPhone`(010-****-5678), `generateSaleNo`(SL-YYYYMMDD-HHMMSS KST), `buildSaleDoc`(spec 강제 — totals 재계산·phone 정규화·정수·payMethod 화이트리스트), `buildVoidDoc`(원본 lines/totals/phone 복사), `voidDocId`(결정적 id)
+- **문서 스펙**: sale = `{type:'sale', saleNo, storeId, lines[{productCode,size,qty,unitPrice,unitDiscount,lineNormal,lineDiscount,lineTotal,discountSource}], totals{total,discountTotal,qtyTotal}, payMethod, customerPhone, workerUid/Name, soldAt, dateKey}`. void = `{type:'void', originalSaleId, originalSaleNo, storeId, lines, totals, voidReason, voidedBy, voidedByName, voidedAt, dateKey, customerPhone}`. **정수 KRW 전용**(라인 int×int, 파생값 항상 재계산 — 호출 totals 불신)
+- **customerPhone(소유주 추가)**: 공홈 적립금 대사 전용(회원관리 아님). 선택 입력, **숫자만 정규화 저장**('010-1234-5678'→'01012345678'). 일반 이력=마스킹 표시(maskPhone), 전용 폰검색(3d)=전체. void 는 원본 phone 상속. 3d 폰검색 = equality → 단일필드 auto 인덱스로 충분(복합 불요)
+- **규칙 refinement** (firestore.rules storeSales): create 게이트에 `type∈['sale','void']` + void 는 `voidReason 비어있지 않음 + voidedBy==auth.uid` 추가. **update/delete 는 여전히 `if false`(append-only 유지)**
+- **🔴 double-void 구조적 불가 증명**: 취소 doc id = `void_{saleDocId}` 결정적. 1차 취소 = 비존재 doc `.set` → create(허용). 2차 취소 = 기존 doc `.set` → Firestore 가 **update 로 평가** → `update:if false` → 거부 → 배치 전체 실패 → 재고 2차 역반영 없음. **트랜잭션 불필요**(append-only 규칙 + 결정적 id 가 방어). 3e 는 batch(재고 increment(+qty) + void doc) 로 원자 처리 가능 — 설계문서의 트랜잭션 권고를 이 더 단순한 batch 로 정련(보고서에 명시)
+- **복합 인덱스**: `firestore.indexes.json` storeSales (storeId ASC, dateKey ASC) — storeInbound 미러(3d 기간 조회용)
+- **알려진 한계(메모)**: 분할결제 미지원(payMethod 단일값), 적립금 지급표시/거스름돈 계산 = 추후 옵션. 부분환불 = Phase 4
+- **검증**: `node -c` 통과, indexes JSON 유효, rules 48/48, 3a 구간 DB write 0(grep), 단위테스트(phone/mask/라인수학 mockup 일치: 99000×1=99000, 55000×2−5000×2=100000), 매출 공식(Cafe24/사방넷) 무영향. code-reviewer 🟢
+- **다음: 3b** — 판매 화면(판매 탭) + draft (확정 stub)
+
 ---
 
 ## 다음 작업 후보 (미구현)

@@ -1633,3 +1633,108 @@ window.onInbListQty = onInbListQty
 window.onInbListLoc = onInbListLoc
 window.removeInbRow = removeInbRow
 window.inbFinalConfirm = inbFinalConfirm
+
+// =============================================
+// ===== 매출 원장 데이터층 (POS Phase 3a) =====
+// =============================================
+// 콘솔 테스트용 생성자/헬퍼만 — UI 없음, 재고/DB 쓰기 없음. 실제 판매 확정 배치는 3c, 판매 취소는 3e.
+// 설계: append-only 거래 단위 문서(영수증형), 취소=역기록(deterministic id). 정수 KRW 전용. 설계문서 pos-phase3-design.md §2/§7 준거.
+
+// 전화번호 정규화 — 숫자만(적립금 대사 매칭용). '' → ''. 길이 검증 안 함(자릿수 다양).
+function normalizePhone(raw) {
+  return String(raw == null ? '' : raw).replace(/\D/g, '')
+}
+
+// 전화번호 마스킹 표시 — 가운데 마스킹. '01012345678' → '010-****-5678'. 짧으면 graceful.
+function maskPhone(digits) {
+  const d = String(digits == null ? '' : digits).replace(/\D/g, '')
+  if (!d) return ''
+  if (d.length <= 4) return d
+  const head = d.slice(0, d.length >= 11 ? 3 : 2)   // 010 / 02 등
+  return head + '-****-' + d.slice(-4)
+}
+
+// 판매번호 SL-YYYYMMDD-HHMMSS (KST) — 고객 1명(1 체크아웃) 단위. 표시/업무 키(문서 id 는 auto).
+function generateSaleNo() {
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(new Date())
+    const g = {}; parts.forEach(p => { g[p.type] = p.value })
+    return 'SL-' + g.year + g.month + g.day + '-' + g.hour + g.minute + g.second
+  } catch (e) {
+    const d = new Date(), p = n => String(n).padStart(2, '0')
+    return 'SL-' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds())
+  }
+}
+
+// 판매 라인 정규화 — 정수 KRW, 파생값(정상가/할인가/판매가) 항상 재계산(입력 totals 신뢰 안 함). 0 ≤ 할인단가 ≤ 단가.
+function _buildSaleLine(raw) {
+  const qty = Math.max(1, Math.floor(Number(raw && raw.qty) || 0))
+  const unitPrice = Math.max(0, Math.floor(Number(raw && raw.unitPrice) || 0))
+  let unitDiscount = Math.max(0, Math.floor(Number(raw && raw.unitDiscount) || 0))
+  if (unitDiscount > unitPrice) unitDiscount = unitPrice
+  const lineNormal = unitPrice * qty         // 정상가
+  const lineDiscount = unitDiscount * qty     // 할인가
+  return {
+    productCode: String((raw && raw.productCode) || ''),
+    size: String((raw && raw.size) || ''),
+    qty, unitPrice, unitDiscount,
+    lineNormal, lineDiscount,
+    lineTotal: lineNormal - lineDiscount,     // 판매가 = 정상가 - 할인가
+    discountSource: (raw && raw.discountSource === 'store-discount') ? 'store-discount' : 'manual'
+  }
+}
+
+// 판매 문서 생성자 — spec 강제(totals 재계산, phone 정규화, 정수, payMethod 화이트리스트). 재고/DB 쓰기 없음.
+function buildSaleDoc(opts) {
+  opts = opts || {}
+  const lines = (opts.lines || []).map(_buildSaleLine)
+  const totals = {
+    total: lines.reduce((s, l) => s + l.lineTotal, 0),          // 합계
+    discountTotal: lines.reduce((s, l) => s + l.lineDiscount, 0), // 할인합계
+    qtyTotal: lines.reduce((s, l) => s + l.qty, 0)               // 수량합계
+  }
+  const PAY = ['카드', '현금', '계좌이체', '기타']
+  return {
+    type: 'sale',
+    saleNo: opts.saleNo || generateSaleNo(),
+    storeId: String(opts.storeId || ''),
+    lines: lines,
+    totals: totals,
+    payMethod: PAY.indexOf(opts.payMethod) >= 0 ? opts.payMethod : '카드',
+    customerPhone: normalizePhone(opts.customerPhone),
+    workerUid: String(opts.workerUid || ''),
+    workerName: String(opts.workerName || ''),
+    soldAt: opts.soldAt || new Date().toISOString(),
+    dateKey: opts.dateKey || _inbDateKeyKST()   // KST YYYY-MM-DD (2c/2d 와 동일 헬퍼)
+  }
+}
+
+// 취소(역기록) 문서 생성자 — 원본 lines/totals/phone 복사, 사유·voidedBy 필수(호출부/규칙 보장). 재고/DB 쓰기 없음.
+function buildVoidDoc(original, originalSaleId, opts) {
+  original = original || {}; opts = opts || {}
+  return {
+    type: 'void',
+    originalSaleId: String(originalSaleId || ''),
+    originalSaleNo: String(original.saleNo || ''),
+    storeId: String(original.storeId || ''),
+    lines: (original.lines || []).map(l => Object.assign({}, l)),   // 되돌릴 대상(원본 라인 스냅샷)
+    totals: original.totals ? Object.assign({}, original.totals) : { total: 0, discountTotal: 0, qtyTotal: 0 },
+    voidReason: String(opts.voidReason || ''),
+    voidedBy: String(opts.voidedBy || ''),
+    voidedByName: String(opts.voidedByName || ''),
+    voidedAt: opts.voidedAt || new Date().toISOString(),
+    dateKey: opts.dateKey || _inbDateKeyKST(),
+    customerPhone: normalizePhone(original.customerPhone)   // 적립금-지급-후-취소 대사용 상속
+  }
+}
+
+// 취소 문서 결정적 id — 원본 판매 doc id 기반. 동일 판매의 취소는 항상 같은 id →
+// 2번째 취소 write 는 기존 doc 에 대한 'update' 로 평가됨 → 규칙 update:false 로 거부 → double-void 구조적 불가.
+function voidDocId(saleDocId) { return 'void_' + String(saleDocId || '') }
+
+window.normalizePhone = normalizePhone
+window.maskPhone = maskPhone
+window.generateSaleNo = generateSaleNo
+window.buildSaleDoc = buildSaleDoc
+window.buildVoidDoc = buildVoidDoc
+window.voidDocId = voidDocId
