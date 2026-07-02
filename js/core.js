@@ -208,6 +208,7 @@ window.forceUploadAll = async function() {
     channels: _channels,
     depts: typeof _depts !== 'undefined' ? _depts : [],
     stores: typeof _stores !== 'undefined' ? _stores : [],
+    inboundTypes: typeof _inboundTypes !== 'undefined' ? _inboundTypes : [],
     planItems: State.planItems || [],
     planPhases: typeof _planPhases !== 'undefined' ? _planPhases : null,
     designCodes: typeof _designCodes !== 'undefined' ? _designCodes : [],
@@ -292,6 +293,10 @@ async function _fsReloadSharedSettings() {
     if (Array.isArray(fsData.stores) && typeof _stores !== 'undefined') {
       _stores.length = 0; fsData.stores.forEach(s => _stores.push(s))
       localStorage.setItem('lemango_stores_v1', JSON.stringify(_stores))
+    }
+    if (Array.isArray(fsData.inboundTypes) && typeof _inboundTypes !== 'undefined') {
+      _inboundTypes.length = 0; fsData.inboundTypes.forEach(t => _inboundTypes.push(t))
+      localStorage.setItem('lemango_inbound_types_v1', JSON.stringify(_inboundTypes))
     }
     if (Array.isArray(fsData.planPhases)) {
       _planPhases = fsData.planPhases
@@ -572,6 +577,15 @@ window._onSharedDataChanged = function(docId, data) {
             if (tab === 'settings' && typeof renderSettings === 'function') renderSettings()
           }
           console.log('[RealtimeSync] 매장 동기화')
+          break
+        case 'inboundTypes':
+          if (typeof _inboundTypes !== 'undefined') {
+            _inboundTypes.length = 0; (parsed || []).forEach(t => _inboundTypes.push(t))
+            localStorage.setItem('lemango_inbound_types_v1', JSON.stringify(_inboundTypes))
+            if (typeof populateAllSelects === 'function') populateAllSelects()
+            if (tab === 'settings' && typeof renderSettings === 'function') renderSettings()
+          }
+          console.log('[RealtimeSync] 입고 유형 동기화')
           break
         case 'workCategories':
           _workCategories.length = 0
@@ -1269,6 +1283,75 @@ async function storeHasData(storeId) {
 window.getActiveStores = getActiveStores
 window.generateStoreId = generateStoreId
 window.storeHasData = storeHasData
+
+// =============================================
+// ===== 입고 유형 설정 (POS — _stores 패턴 미러) =====
+// =============================================
+// _inboundTypes: [{ id, name, active, order }] — 입고가 왜 들어왔는지(신규/조정/이관). "입고취소"는 유형 아님(별도 cancelled 상태).
+//   id: 안정적·불변·재사용 금지 / name: 표시명(수정 가능) / active: soft-disable / order: 순서
+//   ⚠️ storeInbound.inboundType 에는 확정 시점의 name(라벨)을 스냅샷 저장 → 이후 rename 돼도 원본 이력 보존(감사).
+const DEFAULT_INBOUND_TYPES = [
+  { id: 'it1', name: '신규입고', active: true, order: 1 },
+  { id: 'it2', name: '조정입고', active: true, order: 2 },
+  { id: 'it3', name: '이관입고', active: true, order: 3 }
+]
+
+let _inboundTypes = (() => {
+  try {
+    const saved = localStorage.getItem('lemango_inbound_types_v1')
+    return saved ? JSON.parse(saved) : DEFAULT_INBOUND_TYPES.map(t => ({ ...t }))
+  } catch { return DEFAULT_INBOUND_TYPES.map(t => ({ ...t })) }
+})()
+
+async function saveInboundTypes() {
+  localStorage.setItem('lemango_inbound_types_v1', JSON.stringify(_inboundTypes))
+  try {
+    await _fsSync('inboundTypes', _inboundTypes)
+    if (!window._lastSharedSaveTime) window._lastSharedSaveTime = {}
+    window._lastSharedSaveTime['inboundTypes'] = Date.now()
+  } catch (e) {
+    _onSaveFailed('saveInboundTypes', e)
+  }
+}
+
+// 안정적 유형 ID 생성: it + (모든 유형 중 최대 숫자 접미사 + 1). soft-disable 포함 → 재사용 방지.
+function generateInboundTypeId() {
+  let maxN = 0
+  ;(_inboundTypes || []).forEach(t => {
+    const m = /^it(\d+)$/.exec(t.id || '')
+    if (m) { const n = parseInt(m[1], 10); if (n > maxN) maxN = n }
+  })
+  return 'it' + (maxN + 1)
+}
+
+// 활성 유형 목록 (order 순) — 확정 드롭다운/이력 필터가 사용.
+function getActiveInboundTypes() {
+  return (_inboundTypes || []).filter(t => t && t.active).sort((a, b) => (a.order || 0) - (b.order || 0))
+}
+
+// 삭제 가드 프로브 — 해당 유형(name)을 쓰는 storeInbound 가 있는지. 있으면 hard-delete 금지 → soft-disable 유도.
+async function inboundTypeHasData(typeName) {
+  if (!db || !typeName) return false
+  try {
+    const snap = await db.collection('storeInbound').where('inboundType', '==', typeName).limit(1).get()
+    return !snap.empty
+  } catch (e) {
+    console.warn('inboundTypeHasData 조회 실패, 안전상 삭제 차단:', e.message)
+    return true
+  }
+}
+
+window.getActiveInboundTypes = getActiveInboundTypes
+window.generateInboundTypeId = generateInboundTypeId
+window.inboundTypeHasData = inboundTypeHasData
+window.saveInboundTypes = saveInboundTypes
+
+// 로케이션 정규화 (유령 로케이션 방지) — 모든 위치 쓰기의 choke point.
+// trim + 내부 공백 제거 + 영문 대문자화(한글/숫자/하이픈은 그대로). 예: " aa-01 "→"AA-01", "AA -01"→"AA-01"
+function normalizeLocation(loc) {
+  return String(loc == null ? '' : loc).trim().replace(/\s+/g, '').toUpperCase()
+}
+window.normalizeLocation = normalizeLocation
 
 // =============================================
 // ===== 매장 재고 데이터 모델 (POS Phase 1d) =====

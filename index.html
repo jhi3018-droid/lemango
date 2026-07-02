@@ -2643,6 +2643,7 @@
         </div>
         <div class="inb-list-footer">
           <span class="inb-confirm-note">✅ 최종 확정 시 매장 재고에 즉시 반영 + 입고 이력 기록</span>
+          <label class="inb-type-label">입고 유형 <select id="inbType" class="inb-type-select"></select></label>
           <input id="inbMemo" class="inb-memo-input" type="text" autocomplete="off" maxlength="200" placeholder="메모 (선택) — 예: 오전 택배 2박스">
           <div class="inb-footer-btns">
             <button class="btn btn-outline" onclick="closeInboundScanModal()">닫기</button>
@@ -2710,13 +2711,15 @@
       <label class="inbhist-ctl">시작일 <input type="date" id="inbHistStart" class="inbhist-date" onchange="_inbHistoryLoad()"></label>
       <label class="inbhist-ctl">마지막일 <input type="date" id="inbHistEnd" class="inbhist-date" onchange="_inbHistoryLoad()"></label>
       <label class="inbhist-ctl">매장 <select id="inbHistStore" class="inbhist-store" onchange="_inbHistoryLoad()"></select></label>
+      <label class="inbhist-ctl">유형 <select id="inbHistType" class="inbhist-store" onchange="_inbHistApplyFilters()"></select></label>
+      <label class="inbhist-ctl">상태 <select id="inbHistStatus" class="inbhist-store" onchange="_inbHistApplyFilters()"><option value="all">전체</option><option value="active">정상만</option><option value="cancelled">취소만</option></select></label>
       <button class="btn btn-outline" onclick="_inbHistoryLoad()">↻ 새로고침</button>
       <button class="btn btn-outline" id="inbHistExportBtn" onclick="downloadInbHistory()">📤 엑셀 다운로드</button>
       <span class="inbhist-summary inb-list-count-badge" id="inbHistSummary"></span>
     </div>
     <div class="inbhist-table-wrap">
       <table class="data-table inbhist-table">
-        <thead><tr><th style="width:112px">입고번호</th><th style="width:82px">일시</th><th>품번</th><th style="width:48px">사이즈</th><th style="width:48px">수량</th><th style="width:110px">로케이션</th><th style="width:84px">작업자</th><th style="width:130px">메모</th><th style="width:66px">취소</th></tr></thead>
+        <thead><tr><th style="width:110px">입고번호</th><th style="width:80px">일시</th><th>품번</th><th style="width:46px">사이즈</th><th style="width:44px">수량</th><th style="width:104px">로케이션</th><th style="width:80px">작업자</th><th style="width:120px">메모</th><th style="width:74px">유형</th><th style="width:60px">취소</th></tr></thead>
         <tbody id="inbHistBody"></tbody>
       </table>
     </div>

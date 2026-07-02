@@ -28,11 +28,17 @@ service cloud.firestore {
     //   docId == 'stores' 를 명시적으로 제외해야 한다(그렇지 않으면 approved 누구나 stores 쓰기 가능).
     match /sharedData/{docId} {
       allow read: if isApproved();
-      allow write: if isApproved() && docId != 'stores';
+      allow write: if isApproved() && docId != 'stores' && docId != 'inboundTypes';
     }
 
     // sharedData/stores — 매장 설정(POS). 조회는 승인자 전원, 쓰기는 관리자(grade>=3)만.
     match /sharedData/stores {
+      allow read: if isApproved();
+      allow write: if isAdmin();
+    }
+
+    // sharedData/inboundTypes — 입고 유형 설정(POS). 조회는 승인자 전원, 쓰기는 관리자(grade>=3)만. (stores 와 동일 OR-union 패턴)
+    match /sharedData/inboundTypes {
       allow read: if isApproved();
       allow write: if isAdmin();
     }

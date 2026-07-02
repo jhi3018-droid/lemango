@@ -662,6 +662,16 @@ function renderInboundScreen() {
   _inbBindEvents()
   _inbRenderEntry()
   _inbRenderList()
+  // 입고 유형 드롭다운 (활성 유형, 기본 첫 활성 / 이전 선택 유지)
+  const typeSel = document.getElementById('inbType')
+  if (typeSel) {
+    const types = (typeof getActiveInboundTypes === 'function') ? getActiveInboundTypes() : []
+    const prev = typeSel.value
+    typeSel.innerHTML = types.length
+      ? types.map(t => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join('')
+      : '<option value="신규입고">신규입고</option>'
+    if (prev && types.some(t => t.name === prev)) typeSel.value = prev
+  }
   const lbl = document.getElementById('inbStoreLabel')
   if (lbl) lbl.textContent = '입고 대상: ' + _storeNameById(store)
   _inbFocusBarcode()
@@ -811,11 +821,12 @@ function commitInbEntry() {
   const qty = _inbReadQtyField()
   if (!(Number.isInteger(qty) && qty >= 1)) { _inbShowBanner('수량은 1 이상이어야 합니다'); _inbFocusQty(); return }
   const locEl = document.getElementById('inbLocation')
-  const loc = locEl ? String(locEl.value || '').trim() : ''
+  const loc = locEl ? ((typeof normalizeLocation === 'function') ? normalizeLocation(locEl.value) : String(locEl.value || '').trim()) : ''
   if (!loc) {   // Rule 3: 로케이션 빈값 → 커밋 차단, 로케이션으로 포커스
     _inbShowBanner('로케이션을 입력하세요')
     _inbFocusLocation(); return
   }
+  if (locEl) locEl.value = loc   // 정규화 값 반영(사용자에게 보이도록)
   const code = _inbEntry.code, size = _inbEntry.size
   // Rule 4 로 유니크 보장되지만 방어적으로 병합
   const idx = _inbList.findIndex(r => r.code === code && r.size === size)
@@ -950,7 +961,7 @@ function onInbListQty(i, el) {
 // 리스트 로케이션 인라인 편집 (trim, 빈값 거부 — staging 행에 빈 로케이션 불허)
 function onInbListLoc(i, el) {
   if (i < 0 || i >= _inbList.length) return
-  const v = String(el.value || '').trim()
+  const v = (typeof normalizeLocation === 'function') ? normalizeLocation(el.value) : String(el.value || '').trim()   // 정규화
   if (!v) { el.value = _inbList[i].location; showToast('로케이션은 비울 수 없습니다', 'warning'); return }
   _inbList[i].location = v; el.value = v; _inbSaveDraft()
 }
@@ -1004,7 +1015,7 @@ function _inbAddCodeToBatch(batch, store, code, codeLines, meta) {
   const sumBySize = {}, locBySize = {}
   codeLines.forEach(r => {
     sumBySize[r.size] = (sumBySize[r.size] || 0) + Math.floor(Number(r.qty))
-    locBySize[r.size] = String(r.location).trim()
+    locBySize[r.size] = (typeof normalizeLocation === 'function') ? normalizeLocation(r.location) : String(r.location || '').trim()   // 정규화(방어)
   })
   Object.keys(sumBySize).forEach(sz => {
     sizesMap[sz] = firebase.firestore.FieldValue.increment(sumBySize[sz])   // 재고 = increment
@@ -1017,10 +1028,11 @@ function _inbAddCodeToBatch(batch, store, code, codeLines, meta) {
     const inbRef = db.collection('storeInbound').doc()
     batch.set(inbRef, {
       storeId: store, productCode: r.code, size: r.size, qty: Math.floor(Number(r.qty)),
-      location: String(r.location).trim(),
+      location: (typeof normalizeLocation === 'function') ? normalizeLocation(r.location) : String(r.location || '').trim(),
       workerUid: meta.uid, workerName: meta.workerName,
       confirmedAt: meta.nowIso, dateKey: meta.dateKey, batchId: meta.batchId,
-      inboundNo: meta.inboundNo, memo: meta.memo   // (추가 필드) 입고번호 + 메모 — 라인 전체 동일
+      inboundNo: meta.inboundNo, memo: meta.memo,   // (추가 필드) 입고번호 + 메모 — 라인 전체 동일
+      inboundType: meta.inboundType                 // (추가 필드) 입고 유형(라벨 스냅샷) — 라인 전체 동일
     })
   })
 }
@@ -1062,7 +1074,11 @@ async function inbFinalConfirm() {
     const batchId = dateKey + '_' + (uid || 'x') + '_' + Date.now()
     const inboundNo = _inbInboundNo()                                        // 입고번호 (표시/업무 키)
     const memo = String((document.getElementById('inbMemo') || {}).value || '').trim()   // 선택 메모
-    const meta = { uid, workerName, nowIso, dateKey, batchId, inboundNo, memo }
+    // 입고 유형(라벨 스냅샷). 드롭다운 값 없으면 첫 활성 유형, 그것도 없으면 '신규입고'
+    const typeEl = document.getElementById('inbType')
+    const activeTypes = (typeof getActiveInboundTypes === 'function') ? getActiveInboundTypes() : []
+    const inboundType = (typeEl && typeEl.value) || (activeTypes[0] && activeTypes[0].name) || '신규입고'
+    const meta = { uid, workerName, nowIso, dateKey, batchId, inboundNo, memo, inboundType }
 
     // 코드별 라인 그룹 + op 수 (코드당 1 storeStock + 라인수 storeInbound)
     const codeLines = {}
@@ -1210,7 +1226,8 @@ function _inbHistDateTime(iso, fmt) {
   }
 }
 
-let _inbHistRows = []                     // 마지막 조회 결과(정렬 완료) — 엑셀 export 용
+let _inbHistRows = []                     // 조회된 전체(기간) 행 (정렬 완료)
+let _inbHistView = []                     // 유형/상태 필터 적용된 표시 행 — 엑셀 export 대상
 let _inbHistCtx = { store: '', start: '', end: '' }   // 파일명용 컨텍스트
 
 function openInbHistoryModal() {
@@ -1228,6 +1245,13 @@ function openInbHistoryModal() {
   const today = _inbDateKeyKST()
   const startEl = document.getElementById('inbHistStart'); if (startEl) startEl.value = today   // 기본 = 오늘~오늘
   const endEl = document.getElementById('inbHistEnd'); if (endEl) endEl.value = today
+  // 유형 필터 (전체 + 활성 유형), 상태 필터 기본 전체
+  const typeSel = document.getElementById('inbHistType')
+  if (typeSel) {
+    const types = (typeof getActiveInboundTypes === 'function') ? getActiveInboundTypes() : []
+    typeSel.innerHTML = '<option value="">전체 유형</option>' + types.map(t => `<option value="${esc(t.name)}">${esc(t.name)}</option>`).join('')
+  }
+  const statusSel = document.getElementById('inbHistStatus'); if (statusSel) statusSel.value = 'all'
   modal.showModal()
   if (typeof centerModal === 'function') centerModal(modal)
   _inbHistoryLoad()
@@ -1243,8 +1267,8 @@ async function _inbHistoryLoad() {
   const body = document.getElementById('inbHistBody')
   const sumEl = document.getElementById('inbHistSummary')
   if (!body) return
-  const COLS = 9
-  const setEmpty = (msg) => { body.innerHTML = `<tr><td colspan="${COLS}" class="inbhist-empty">${esc(msg)}</td></tr>`; if (sumEl) sumEl.textContent = ''; _inbHistRows = []; _inbHistUpdateExportBtn() }
+  const COLS = 10
+  const setEmpty = (msg) => { body.innerHTML = `<tr><td colspan="${COLS}" class="inbhist-empty">${esc(msg)}</td></tr>`; if (sumEl) sumEl.textContent = ''; _inbHistRows = []; _inbHistView = []; _inbHistUpdateExportBtn() }
   const store = (document.getElementById('inbHistStore') || {}).value || ''
   const startEl = document.getElementById('inbHistStart'), endEl = document.getElementById('inbHistEnd')
   let start = (startEl || {}).value || '', end = (endEl || {}).value || ''
@@ -1277,13 +1301,36 @@ async function _inbHistoryLoad() {
   snap.forEach(d => rows.push(Object.assign({ _id: d.id }, d.data() || {})))   // _id = 취소 대상 식별용
   rows.sort((a, b) => String(b.confirmedAt || '').localeCompare(String(a.confirmedAt || '')))   // 최신 위 (DESC, 기간 전체)
   _inbHistRows = rows
-  _inbHistUpdateExportBtn()
-  if (!rows.length) { setEmpty('해당 기간의 입고 내역이 없습니다'); return }
+  _inbHistApplyFilters()   // 유형/상태 클라이언트 필터 + 렌더 + 요약 + export
+}
 
-  // 요약은 취소 제외(정상 라인만)
-  const active = rows.filter(r => r.cancelled !== true)
-  const totalQty = active.reduce((s, r) => s + (Number(r.qty) || 0), 0)
-  if (sumEl) sumEl.innerHTML = `기간 입고 <strong>${active.length}</strong>건 · 총 <strong>${totalQty}</strong>개 <span class="inbhist-sum-note">(취소 제외)</span>`
+// 유형/상태 클라이언트 필터 적용 + 테이블/요약/엑셀버튼 렌더 (재조회 없음 — 쿼리는 storeId+dateKey range 로 고정, 인덱스 안전)
+// ⚠️ 유형/상태를 Firestore where 에 넣지 말 것(인덱스 깨짐) — 반드시 메모리 필터.
+const INB_LEGACY_TYPE = '신규입고'   // 유형 없는 구 레코드 표시/필터 기본값
+function _inbHistApplyFilters() {
+  const body = document.getElementById('inbHistBody')
+  const sumEl = document.getElementById('inbHistSummary')
+  if (!body) return
+  const COLS = 10
+  const typeF = (document.getElementById('inbHistType') || {}).value || ''
+  const statusF = (document.getElementById('inbHistStatus') || {}).value || 'all'
+  const rows = (_inbHistRows || []).filter(r => {
+    const rt = r.inboundType || INB_LEGACY_TYPE
+    if (typeF && rt !== typeF) return false
+    if (statusF === 'active' && r.cancelled === true) return false
+    if (statusF === 'cancelled' && r.cancelled !== true) return false
+    return true
+  })
+  _inbHistView = rows
+  _inbHistUpdateExportBtn()
+  if (!rows.length) {
+    const msg = (_inbHistRows && _inbHistRows.length) ? '조건(유형/상태)에 맞는 내역이 없습니다' : '해당 기간의 입고 내역이 없습니다'
+    body.innerHTML = `<tr><td colspan="${COLS}" class="inbhist-empty">${esc(msg)}</td></tr>`
+    if (sumEl) sumEl.textContent = ''
+    return
+  }
+  const totalQty = rows.filter(r => r.cancelled !== true).reduce((s, r) => s + (Number(r.qty) || 0), 0)
+  if (sumEl) sumEl.innerHTML = `표시 <strong>${rows.length}</strong>건 · 총 <strong>${totalQty}</strong>개 <span class="inbhist-sum-note">(취소 제외)</span>`
   // 취소 권한 = 관리자(grade>=3) OR 본인 매장 직원. 권한 없으면 버튼 숨김(서버 규칙이 최종 방어)
   const myGrade = (typeof _currentUserGrade !== 'undefined' && _currentUserGrade) ? _currentUserGrade : 1
   const myStore = (typeof _currentUserStoreId !== 'undefined' && _currentUserStoreId) ? _currentUserStoreId : ''
@@ -1305,29 +1352,31 @@ async function _inbHistoryLoad() {
       <td>${esc(r.location || '')}</td>
       <td>${esc(r.workerName || '')}</td>
       <td class="inbhist-memo">${esc(r.memo || '')}</td>
+      <td class="inbhist-type">${esc(r.inboundType || INB_LEGACY_TYPE)}</td>
       <td class="inbhist-action">${actionCell}</td>
     </tr>`
   }).join('')
 }
 
-// 엑셀 버튼 활성/비활성 (빈 결과 → 비활성)
+// 엑셀 버튼 활성/비활성 (필터 결과 빈 → 비활성)
 function _inbHistUpdateExportBtn() {
   const btn = document.getElementById('inbHistExportBtn')
-  if (btn) btn.disabled = !(_inbHistRows && _inbHistRows.length)
+  if (btn) btn.disabled = !(_inbHistView && _inbHistView.length)
 }
 
-// 조회된 기간 결과 엑셀 다운로드 (읽기 전용). 취소행 포함하되 상태/사유 컬럼으로 표시. 최신순(화면과 동일).
+// 필터 적용된 결과 엑셀 다운로드 (읽기 전용). 입고유형 + 상태/취소사유 컬럼 포함. 최신순(화면과 동일).
 function downloadInbHistory() {
   if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
-  if (!_inbHistRows || !_inbHistRows.length) { showToast('내보낼 입고 내역이 없습니다', 'warning'); return }
-  const header = ['입고번호', '일시', '품번', '사이즈', '수량', '로케이션', '작업자', '메모', '상태', '취소사유']
-  const aoa = [header].concat(_inbHistRows.map(r => [
+  if (!_inbHistView || !_inbHistView.length) { showToast('내보낼 입고 내역이 없습니다', 'warning'); return }
+  const header = ['입고번호', '일시', '품번', '사이즈', '수량', '로케이션', '작업자', '메모', '입고유형', '상태', '취소사유']
+  const aoa = [header].concat(_inbHistView.map(r => [
     r.inboundNo || '-', _inbHistDateTime(r.confirmedAt, 'full'), r.productCode || '', r.size || '',
     Number(r.qty) || 0, r.location || '', r.workerName || '', r.memo || '',
+    (r.inboundType || INB_LEGACY_TYPE),
     (r.cancelled === true ? '취소됨' : '정상'), (r.cancelled === true ? (r.cancelReason || '') : '')
   ]))
   const ws = XLSX.utils.aoa_to_sheet(aoa)
-  ws['!cols'] = [{ wch: 18 }, { wch: 17 }, { wch: 16 }, { wch: 7 }, { wch: 7 }, { wch: 16 }, { wch: 12 }, { wch: 24 }, { wch: 8 }, { wch: 24 }]
+  ws['!cols'] = [{ wch: 18 }, { wch: 17 }, { wch: 16 }, { wch: 7 }, { wch: 7 }, { wch: 16 }, { wch: 12 }, { wch: 24 }, { wch: 10 }, { wch: 8 }, { wch: 24 }]
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, '입고내역')
   const storeName = _storeNameById(_inbHistCtx.store) || _inbHistCtx.store || '매장'
@@ -1563,6 +1612,7 @@ window.closeReplenishModal = closeReplenishModal
 window.openInbHistoryModal = openInbHistoryModal
 window.closeInbHistoryModal = closeInbHistoryModal
 window._inbHistoryLoad = _inbHistoryLoad
+window._inbHistApplyFilters = _inbHistApplyFilters
 window.downloadInbHistory = downloadInbHistory
 window.requestInbCancel = requestInbCancel
 window.closeInbCancelModal = closeInbCancelModal

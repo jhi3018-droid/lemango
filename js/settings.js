@@ -481,6 +481,52 @@ function renderSettings() {
     </div>`
   }
 
+  // 입고 유형 관리 카드 (POS, 시스템 관리자 grade 4+) — 매장 관리 카드 미러
+  let inboundTypeSection = ''
+  if (isTopAdmin) {
+    const _itList = (typeof _inboundTypes !== 'undefined' ? _inboundTypes : [])
+      .map((t, i) => ({ t, i }))
+      .sort((a, b) => (a.t.order || 0) - (b.t.order || 0))
+    const itListHtml = _itList.map(({ t, i }) => `
+      <div class="set-item store-item${t.active ? '' : ' store-item-inactive'}" id="inbTypeItem_${i}">
+        <div class="set-item-view">
+          <span class="set-item-label" style="font-weight:600">${esc(t.name)}</span>
+          <span class="store-id-tag" title="유형 ID (수정 불가)">${esc(t.id)}</span>
+          ${t.active ? '' : '<span class="store-inactive-badge">비활성</span>'}
+          <button class="set-item-action store-toggle-btn" onclick="toggleInboundTypeActive(${i})" title="${t.active ? '비활성화' : '활성화'}">${t.active ? '&#128309;' : '&#9898;'}</button>
+          <button class="set-item-action set-item-edit" onclick="editInboundTypeSetting(${i})" title="이름 수정">&#9998;</button>
+          <button class="set-item-action set-item-del" onclick="removeInboundTypeSetting(${i})" title="삭제">&#10005;</button>
+        </div>
+        <div class="set-item-editrow" style="display:none">
+          <input type="text" class="set-edit-input" value="${esc(t.name)}" data-field="val" style="flex:1" />
+          <button class="set-edit-save" onclick="saveInboundTypeEdit(${i})">저장</button>
+          <button class="set-edit-cancel" onclick="renderSettings()">취소</button>
+        </div>
+      </div>`).join('') || '<div class="set-empty">항목 없음</div>'
+
+    const itCard = `<div class="set-card set-card-wide">
+      <div class="set-card-header">
+        <span class="set-card-title">입고 유형 목록</span>
+        <span class="set-card-count">${_itList.length}</span>
+      </div>
+      <div class="set-list set-list-scroll">${itListHtml}</div>
+      <div class="set-add-row">
+        <input type="text" id="setInbTypeName" placeholder="유형명 (예: 반품입고)" class="set-add-input" style="flex:1"
+          onkeydown="if(event.key==='Enter')addInboundTypeSetting()" />
+        <button class="btn btn-new set-add-btn" onclick="addInboundTypeSetting()">+ 추가</button>
+      </div>
+    </div>`
+
+    inboundTypeSection = `<div class="set-section">
+      <button class="set-section-btn" onclick="toggleSetSection(this)">
+        <span>📥 입고 유형 관리</span><span class="set-section-arrow">▼</span>
+      </button>
+      <div class="set-section-body">
+        <div class="set-grid">${itCard}</div>
+      </div>
+    </div>`
+  }
+
   // 출퇴근 허용 IP 카드 (시스템 관리자/대표이사 grade 4+)
   let ipSection = ''
   if (isTopAdmin) {
@@ -608,6 +654,8 @@ function renderSettings() {
     ${deptSection}
 
     ${storeSection}
+
+    ${inboundTypeSection}
 
     ${ipSection}
 
@@ -1330,6 +1378,85 @@ async function removeStoreSetting(idx) {
   renderSettings()
   showToast('삭제됐습니다.', 'success')
   logActivity('setting', '매장', `매장 삭제: ${store.name} (${store.id})`)
+}
+
+// ===== 입고 유형 CRUD (매장 관리 미러) =====
+function addInboundTypeSetting() {
+  const name = document.getElementById('setInbTypeName')?.value.trim()
+  if (!name) { showToast('유형명을 입력해주세요.', 'warning'); return }
+  if ((_inboundTypes || []).some(t => t.name === name)) { showToast(`"${name}"은 이미 존재합니다.`, 'error'); return }
+  const id = generateInboundTypeId()
+  const nextOrder = _inboundTypes.length ? Math.max(..._inboundTypes.map(t => t.order || 0)) + 1 : 1
+  _inboundTypes.push({ id, name, active: true, order: nextOrder })
+  saveInboundTypes()
+  populateAllSelects()
+  renderSettings()
+  showToast(`"${name}" (${id}) 추가됐습니다.`, 'success')
+  logActivity('setting', '입고유형', `입고유형 추가: ${name} (${id})`)
+}
+
+function editInboundTypeSetting(idx) {
+  const el = document.getElementById('inbTypeItem_' + idx)
+  if (!el) return
+  el.querySelector('.set-item-view').style.display = 'none'
+  el.querySelector('.set-item-editrow').style.display = ''
+  el.querySelector('.set-edit-input')?.focus()
+}
+
+function saveInboundTypeEdit(idx) {
+  const el = document.getElementById('inbTypeItem_' + idx)
+  if (!el) return
+  const t = _inboundTypes[idx]
+  if (!t) return
+  const newName = el.querySelector('[data-field="val"]')?.value.trim()
+  const oldName = t.name
+  if (!newName) { showToast('유형명을 입력해주세요.', 'warning'); return }
+  if (newName === oldName) { renderSettings(); return }
+  if ((_inboundTypes || []).some((x, i) => i !== idx && x.name === newName)) { showToast(`"${newName}"은 이미 존재합니다.`, 'error'); return }
+  // ID 불변 — 이름만 수정 (기존 storeInbound 레코드의 라벨 스냅샷은 감사상 유지됨)
+  t.name = newName
+  saveInboundTypes()
+  populateAllSelects()
+  renderSettings()
+  showToast(`"${oldName}" → "${newName}" 변경됐습니다.`, 'success')
+  logActivity('setting', '입고유형', `입고유형 수정: ${oldName} → ${newName} (${t.id})`)
+}
+
+function toggleInboundTypeActive(idx) {
+  const t = _inboundTypes[idx]
+  if (!t) return
+  t.active = !t.active
+  saveInboundTypes()
+  populateAllSelects()
+  renderSettings()
+  showToast(`"${t.name}" ${t.active ? '활성화' : '비활성화'}됐습니다.`, 'success')
+  logActivity('setting', '입고유형', `입고유형 ${t.active ? '활성화' : '비활성화'}: ${t.name} (${t.id})`)
+}
+
+async function removeInboundTypeSetting(idx) {
+  const t = _inboundTypes[idx]
+  if (!t) return
+  // 삭제 가드: 이 유형(name)을 쓰는 입고 이력이 있으면 hard-delete 금지 → soft-disable 유도
+  let hasData = false
+  try { hasData = (typeof inboundTypeHasData === 'function') ? await inboundTypeHasData(t.name) : false }
+  catch (e) { hasData = true }
+  if (hasData) {
+    showToast(`"${t.name}"은 입고 기록이 있어 삭제할 수 없습니다. 비활성화만 가능합니다.`, 'error')
+    if (t.active && await korConfirm(`"${t.name}"을 비활성화하시겠습니까?`)) {
+      t.active = false
+      saveInboundTypes(); populateAllSelects(); renderSettings()
+      showToast(`"${t.name}" 비활성화됐습니다.`, 'success')
+      logActivity('setting', '입고유형', `입고유형 비활성화(삭제 대체): ${t.name} (${t.id})`)
+    }
+    return
+  }
+  if (!await korConfirm(`"${t.name}" 입고 유형을 완전히 삭제하시겠습니까?\n\n삭제 대신 비활성화를 권장합니다.`, '삭제', '취소')) return
+  _inboundTypes.splice(idx, 1)
+  saveInboundTypes()
+  populateAllSelects()
+  renderSettings()
+  showToast('삭제됐습니다.', 'success')
+  logActivity('setting', '입고유형', `입고유형 삭제: ${t.name} (${t.id})`)
 }
 
 // ===== 분류코드 CRUD (인라인 에디트) =====

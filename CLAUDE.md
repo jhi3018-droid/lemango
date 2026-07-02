@@ -3645,6 +3645,15 @@ Established the reference style that every dashboard-opened srm-modal should fol
 - **검증**: `node -c` 통과, rules brace 46/46, 역반영 increment 전용·sizeLocations 불변, 트랜잭션 reads-before-writes, 2c 확정 경로 무영향, 매출 공식 무영향. code-reviewer 🟢
 - **정책 충족**: 🔴 감사 로그(WHO/WHEN/WHAT/REASON) — 입고취소 = 사유 필수 + 자체 레코드(원본에 취소필드) + logActivity. **판매취소/환불/강제차감**은 향후 단계에서 동일 패턴 적용 예정
 
+#### 입고 물류 강화 3종 — 입고 유형 + 유형 설정 + 유형/상태 필터 + 로케이션 정규화 (🟢) ⚠️규칙 포함
+- 입고 시스템 WMS급 강화 3종. 2c 확정/취소 트랜잭션은 **가산 필드(inboundType)만** 추가(구조 불변). `firebase deploy --only firestore:rules,hosting`
+- **Item 1 — 입고 유형 설정** (`_inboundTypes`, `_stores` 1a 패턴 완전 미러): `{id,name,active,order}` 객체 배열, localStorage `lemango_inbound_types_v1` + `sharedData/inboundTypes`(Firestore) 이중, DEFAULT=신규입고/조정입고/이관입고. 6 touchpoint(선언·payload·initApp로드·realtime case·saveInboundTypes·generateInboundTypeId) + `getActiveInboundTypes`/`inboundTypeHasData`(삭제가드). **"입고취소"는 유형 아님 — 별도 cancelled 상태**. 설정 "📥 입고 유형 관리" 카드(grade≥4, 매장카드 미러: add/edit/toggle/guarded-delete). 규칙 `sharedData/inboundTypes` admin-write(generic 에서 docId 제외 — OR-union 안전, stores 패턴). brace 47/47
+- **Item 2 — 확정 시 유형 선택**: 스캔 창 최종확정 옆 `#inbType` 드롭다운(활성 유형, 기본 첫 활성=신규입고). 확정 시 `inboundType`(**라벨 스냅샷** — rename 돼도 원본 이력 보존) 각 storeInbound 라인에 **가산 저장**(inboundNo/memo 와 동일 패턴, 2c 원자 경로 불변). 취소는 유형 안 바꿈. 구 레코드(유형 없음)=display '신규입고'
+- **Item 3a — 이력 유형/상태 필터**: 이력 창에 유형(전체+활성) + 상태(전체/정상만/취소만) 드롭다운. **클라이언트 메모리 필터**(`_inbHistApplyFilters`) — Firestore 쿼리는 storeId+dateKey range 그대로(인덱스 안전, 유형/상태를 where 에 넣지 않음). 요약 "표시 N건 · 총 M개(취소 제외)". 유형 컬럼 추가(10컬럼). 엑셀에 입고유형 컬럼 추가(+기존 상태/취소사유), 필터 반영(`_inbHistView`)
+- **Item 3b — 로케이션 정규화** (`normalizeLocation`, core.js): trim + 내부공백 제거 + 영문 대문자화(한글/숫자/하이픈 보존). choke point 3곳 적용 — 스캔 커밋(`commitInbEntry`), staging 인라인 편집(`onInbListLoc`), 확정 배치(`_inbAddCodeToBatch` 방어). 검증: `" aa-01 "→"AA-01"`, `"AA -01"→"AA-01"`, `"AA-AA-01-03"` 유지, `"가나-01"` 유지. 구 데이터 마이그레이션 안 함(신규 쓰기만)
+- **변경 6파일**: `js/core.js`(_inboundTypes 설정+normalizeLocation), `js/settings.js`(유형 관리 카드+CRUD), `js/store.js`(확정 유형 가산+정규화+이력 필터/유형컬럼/엑셀), `index.html`(유형 드롭다운+이력 필터/컬럼), `firestore.rules`(sharedData/inboundTypes), `style.css`, `CLAUDE.md`
+- **검증**: `node -c` 5파일 통과, rules 47/47, normalizeLocation 케이스 통과, 2c 확정/취소 스톡경로 increment 전용 불변(가산 필드만), 쿼리 인덱스 불변(유형/상태 메모리 필터), 매출 공식 무영향. code-reviewer 🟢
+
 ---
 
 ## 다음 작업 후보 (미구현)
