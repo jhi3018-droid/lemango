@@ -3518,8 +3518,30 @@ Established the reference style that every dashboard-opened srm-modal should fol
 
 ---
 
+### 2026-07-02
+
+#### POS Phase 2b — 입고 스캔 화면 (커서 상태머신 + 4대 차단규칙 + staging 리스트) (🔒 재고 쓰기 없음)
+- **Phase 2 의 스캔 화면 단계.** 바코드 스캔 → 수량 → 로케이션 확인 → 입고 리스트(staging)에 누적. **재고 쓰기 절대 없음 — 항목은 in-memory `_inbList` + localStorage draft 에만 쌓임.** 원자적 확정(재고+입고이력)은 2c. `firebase deploy --only hosting`(규칙 변경 없음, 소유주 수동)
+- **변경 파일 3개**: `js/store.js`(+426, 2b 섹션 + `_storeSubPanelHtml` inbound case + `renderStoreTab`/`switchStoreTab` 트리거 2줄), `style.css`(+76, `.inb-*`), `CLAUDE.md`. index.html/main.js 변경 없음(스캔 화면은 매장 탭 패널 내부에서 store.js 가 렌더 — 모달 아님)
+- **⚠️ 설계 정정 (STOP 조건 확인)**: 설계문서 `docs/pos-phase2-design.md §3.3` 은 **dual-commit**(빈 바코드 Enter OR 로케이션 Enter)이었으나, 작업지시서에서 소유주가 **로케이션 Enter 단독**으로 정정(위치를 매번 눈으로 확인해야 함 → 빈 바코드 Enter 커밋 명시적 거부). 본 구현은 **정정본(로케이션 Enter 단독)**을 따름 — 소유주가 지시서에서 이미 판정한 사안이라 중단 없이 진행, 보고서에 플래그. 설계문서 §3.3 은 향후 정정본으로 업데이트 권장
+- **커서 상태머신 (CRITICAL, mouse-free)**: 기본 포커스 = `#inbBarcode`. 모든 경로(스캔/등록/차단/팝업닫기/삭제/Rule1~4/조회)가 끝에 `_inbFocusBarcode()`(또는 Rule3 시 로케이션 포커스)로 마무리. USB 스캐너(키보드 웨지)로 마우스 없이 전 과정 운영
+- **등록 트리거 = 로케이션 필드 Enter 단독** (`onInbLocationKey`→`commitInbEntry`). 빈 바코드 Enter 는 커밋 아님 — 진행 항목 있으면 로케이션으로 안내(포커스 이동)만
+- **4대 차단 규칙**: (1) 미등록 바코드 `findByBarcode` null → 토스트+클리어+refocus (2) 진행 중 다른 상품/사이즈 → "현재 상품을 먼저 완료하세요"(진행 항목 불변) (3) 로케이션 빈값 커밋 → "로케이션을 입력하세요"+포커스 로케이션 (4) 스캔 시점 리스트 중복 → 즉시 korConfirm 팝업([추가]=해당 행 qty+1 / [취소]) → **위치 충돌 구조적 불가**(중복은 위치 입력 전에 잡힘)
+- **수량**: 같은 바코드 재스캔 → qty++ (Rule2 미발동, 현재 필드값 기준 증가로 타이핑 존중) / 직접 편집 가능. `_inbParseQty` 엄격 파싱(순수 양의 정수만 — 0/음수/소수/지수표기/문자 거부)
+- **기존정보 표시**: 스캔 시 해당 사이즈 기존 재고(`getStoreStock`) + 이미지(`getThumbUrl`+폴백) + 로케이션 프리필(`getStoreStockLocation`, 2a)
+- **staging 리스트**: (code,size) 키 유니크(Rule4 보장), 컬럼 품번|사이즈|수량|로케이션|수정/삭제. 수량/로케이션 인라인 편집(빈 로케이션 거부) + 행 삭제
+- **localStorage draft (CRITICAL)**: `lemango_inbound_draft_{storeId}` 매장별 저장(`{v:1, items:[]}`). 모든 리스트 변경 시 저장 → **새로고침/재렌더 생존**. 로드 시 try/catch + 버전 체크 + 행 sanitize(손상 시 초기화, 화면 벽돌 방지) + quota 경고 1회. 매장 전환 시 해당 매장 draft 로드(교차오염 없음). ⚠️ **5분 폴링은 이미 실시간 sync 로 대체됨**(main.js:323, `setupRealtimeSync`) — sync 는 매장 탭 DOM 을 건드리지 않음. 진행 중(미커밋) 항목은 draft 에 저장 안 됨(커밋 전) → 재렌더/새로고침 시 폐기(staging 리스트만 복원), 매장 전환 시 "진행 중이던 항목은 초기화되었습니다" 토스트
+- **실전 위험 대응 (addendum)**: IME 한글 — `compositionstart/end`+`isComposing` 로 조합 중 Enter 무시, 스캔값 sanitize(`[^0-9A-Za-z]` 제거)+한글 감지 시 "한/영 키를 확인하세요" 전용 토스트(일반 미등록 아님) / 스캐너 이중발사(CR+LF) — 60ms 디바운스(의도적 재스캔 ~150ms+ 는 통과) / 포커스 스틸 — `visibilitychange`(다른 창 복귀 시 refocus, `offsetParent!==null` 가드), korConfirm 후 refocus
+- **권한**: `resolveActiveStore()` null(office/미배정) → "입고 불가" 게이트. staff=본인 매장, admin=스위처 매장 (조회가 아닌 작업 화면 — 본인 매장+관리자)
+- **🔒 최종 확정 버튼 = 스텁**: 클릭 시 "2c에서 구현" 토스트만, 재고 쓰기 없음. 버튼 옆 "(2c에서 활성화)" 태그. grep 확인 — 2b 코드에 `writeStoreStock`/`setStoreStockLocation`/`storeStock` write 0건(store.js 430-438 batch.set 은 기존 1e 업로드, 미변경)
+- **검증**: `node -c` store.js 통과, 수량 파서 단위 테스트(1e3/0/-2/2.5/abc→거부, 3/10→허용), 한글 정규식 테스트(ㅕ891/가나→감지), inline `display:none` 미사용(`.inb-hidden` CSS 클래스), 매출 공식·1a~2a 무영향. code-reviewer 🟢
+- **다음: 2c** — 최종 확정 원자적 반영(storeStock 재고 increment + sizeLocations overwrite + storeInbound 이력 기록, 문서당 단일 merge-set) + 2d 입고 이력 뷰
+
+---
+
 ## 다음 작업 후보 (미구현)
-- [ ] POS Phase 2 (입고 스캔 — 바코드 스캔 매장 입고)
+- [x] POS Phase 2b (입고 스캔 화면 + staging 리스트 + draft) — 2026-07-02 완료 (재고 쓰기 없음)
+- [ ] POS Phase 2c (최종 확정 원자적 반영: storeStock increment + sizeLocations + storeInbound 이력) / 2d (입고 이력 뷰)
 - [ ] POS Phase 3~6 (판매 → 취소/환불 → 할인·보충·로케이션 → 통합 재고 뷰)
 - [ ] 면세점 주문 업로드 포맷
 - [ ] 인쇄/PDF 출력
