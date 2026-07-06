@@ -209,6 +209,7 @@ window.forceUploadAll = async function() {
     depts: typeof _depts !== 'undefined' ? _depts : [],
     stores: typeof _stores !== 'undefined' ? _stores : [],
     inboundTypes: typeof _inboundTypes !== 'undefined' ? _inboundTypes : [],
+    storeDiscounts: typeof _storeDiscounts !== 'undefined' ? _storeDiscounts : [],
     planItems: State.planItems || [],
     planPhases: typeof _planPhases !== 'undefined' ? _planPhases : null,
     designCodes: typeof _designCodes !== 'undefined' ? _designCodes : [],
@@ -297,6 +298,10 @@ async function _fsReloadSharedSettings() {
     if (Array.isArray(fsData.inboundTypes) && typeof _inboundTypes !== 'undefined') {
       _inboundTypes.length = 0; fsData.inboundTypes.forEach(t => _inboundTypes.push(t))
       localStorage.setItem('lemango_inbound_types_v1', JSON.stringify(_inboundTypes))
+    }
+    if (Array.isArray(fsData.storeDiscounts) && typeof _storeDiscounts !== 'undefined') {
+      _storeDiscounts.length = 0; fsData.storeDiscounts.forEach(r => _storeDiscounts.push(r))
+      localStorage.setItem('lemango_store_discounts_v1', JSON.stringify(_storeDiscounts))
     }
     if (Array.isArray(fsData.planPhases)) {
       _planPhases = fsData.planPhases
@@ -586,6 +591,14 @@ window._onSharedDataChanged = function(docId, data) {
             if (tab === 'settings' && typeof renderSettings === 'function') renderSettings()
           }
           console.log('[RealtimeSync] 입고 유형 동기화')
+          break
+        case 'storeDiscounts':
+          if (typeof _storeDiscounts !== 'undefined') {
+            _storeDiscounts.length = 0; (parsed || []).forEach(r => _storeDiscounts.push(r))
+            localStorage.setItem('lemango_store_discounts_v1', JSON.stringify(_storeDiscounts))
+            if (tab === 'settings' && typeof renderSettings === 'function') renderSettings()
+          }
+          console.log('[RealtimeSync] 매장 할인 동기화')
           break
         case 'workCategories':
           _workCategories.length = 0
@@ -1329,6 +1342,50 @@ function getActiveInboundTypes() {
   return (_inboundTypes || []).filter(t => t && t.active).sort((a, b) => (a.order || 0) - (b.order || 0))
 }
 
+// ===== 매장 할인 규칙 (POS Phase 5-1) — condition×benefit 프레임워크(설계 pos-phase5-discount-design.md) =====
+// _storeDiscounts: [{ id, name, active, condition{type,productCode…}, benefit{type,value|price}, period{start,end}, storeScope, priority, order }]
+//   5-1 = condition.type:'product' + benefit.type:'percent'|'fixed'. 스키마는 5-2~5-4(category/brand/total/qty/combo · amount/nplus/bundle) 확장 대비 — 타입만 추가.
+//   inboundTypes/stores 패턴 미러(메모리 var + localStorage + _fsSync + onSnapshot). DEFAULT=빈 배열.
+let _storeDiscounts = (() => {
+  try { const s = localStorage.getItem('lemango_store_discounts_v1'); return s ? JSON.parse(s) : [] } catch { return [] }
+})()
+
+async function saveStoreDiscounts() {
+  localStorage.setItem('lemango_store_discounts_v1', JSON.stringify(_storeDiscounts))
+  try {
+    await _fsSync('storeDiscounts', _storeDiscounts)
+    if (!window._lastSharedSaveTime) window._lastSharedSaveTime = {}
+    window._lastSharedSaveTime['storeDiscounts'] = Date.now()
+  } catch (e) { _onSaveFailed('saveStoreDiscounts', e) }
+}
+
+// 안정적 규칙 ID: sd + (최대 접미사 + 1). soft-disable 포함 → 재사용 금지.
+function generateDiscountId() {
+  let maxN = 0
+  ;(_storeDiscounts || []).forEach(r => { const m = /^sd(\d+)$/.exec(r.id || ''); if (m) { const n = parseInt(m[1], 10); if (n > maxN) maxN = n } })
+  return 'sd' + (maxN + 1)
+}
+
+// 판매 엔진용 필터 — 활성 + 기간(KST 오늘 포함) + 매장(storeScope) 통과 규칙만.
+//   period.start/end 는 KST dateKey(YYYY-MM-DD, inclusive), 빈값=제한 없음. storeScope='all' | storeId | [storeId…].
+//   ⚠️ kstDateKey 는 store.js(나중 로드) 정의 → 호출 시점(판매 중)엔 존재. typeof 가드.
+function getActiveDiscounts(store, dateKey) {
+  const today = dateKey || ((typeof kstDateKey === 'function') ? kstDateKey() : '')
+  return (_storeDiscounts || []).filter(r => {
+    if (!r || r.active === false) return false
+    const p = r.period || {}
+    if (p.start && today && today < p.start) return false
+    if (p.end && today && today > p.end) return false
+    const sc = r.storeScope
+    if (sc && sc !== 'all') {
+      if (Array.isArray(sc)) { if (store && sc.indexOf(store) < 0) return false }
+      else if (sc !== store) return false
+    }
+    return true
+  })
+}
+window.getActiveDiscounts = getActiveDiscounts
+
 // 삭제 가드 프로브 — 해당 유형(name)을 쓰는 storeInbound 가 있는지. 있으면 hard-delete 금지 → soft-disable 유도.
 async function inboundTypeHasData(typeName) {
   if (!db || !typeName) return false
@@ -1366,6 +1423,8 @@ window.normalizeLocation = normalizeLocation
 
 // 매장 재고 인메모리 인덱스: { [storeId]: { [productCode]: sizesObj } }
 let _storeStockIndex = {}
+// POS Phase 6c — 불량재고 인덱스 {store:{code:{size:qty}}}. _storeStockIndex(정상)과 완전 분리 — 판매/1f 정상재고 math 에 절대 안 섞임.
+let _storeDefectIndex = {}
 // 매장 위치(로케이션) 인메모리 인덱스 — 재고 인덱스와 별개 병렬 맵 (POS Phase 2a).
 // { [storeId]: { [productCode]: { [size]: '위치라벨' } } }. 재고 읽기(getStoreStock/1f)에 영향 없음.
 let _storeLocIndex = {}
@@ -1449,6 +1508,7 @@ async function loadStoreStock(storeId) {
       productCode: d.productCode || '',
       storeId: d.storeId || storeId,
       sizes: Object.assign(_emptyStoreSizes(), d.sizes || {}),
+      defectSizes: Object.assign(_emptyStoreSizes(), d.defectSizes || {}),   // POS Phase 6c — 불량재고(판매불가) 병렬 버킷. 절대 sizes 와 합산 안 함
       sizeLocations: d.sizeLocations || {},   // POS Phase 2a — 기존 whole-doc location(미사용) 대체
       updatedAt: d.updatedAt || ''
     })
@@ -1464,13 +1524,16 @@ async function buildStoreStockIndex(storeId) {
   const rows = await loadStoreStock(storeId)
   const map = {}
   const locMap = {}
+  const defMap = {}   // POS Phase 6c — 불량 인덱스(정상과 분리)
   rows.forEach(r => {
     if (!r.productCode) return
     map[r.productCode] = r.sizes
     locMap[r.productCode] = r.sizeLocations || {}
+    defMap[r.productCode] = r.defectSizes || {}
   })
   _storeStockIndex[storeId] = map
   _storeLocIndex[storeId] = locMap
+  _storeDefectIndex[storeId] = defMap
   return map
 }
 
@@ -1488,6 +1551,13 @@ function getStoreStockLocation(storeId, code, size) {
   const locs = (m && m[code]) ? m[code] : null
   return (locs && locs[size]) ? String(locs[size]) : ''
 }
+
+// POS Phase 6c — 불량재고 조회. getStoreStock 미러(0채운 복사본). ⚠️ 정상재고(sizes)와 별개 버킷 — 판매 불가.
+function getStoreDefect(storeId, code) {
+  const m = _storeDefectIndex[storeId]
+  return Object.assign(_emptyStoreSizes(), (m && m[code]) ? m[code] : {})
+}
+window.getStoreDefect = getStoreDefect
 
 window.storeStockDocId = storeStockDocId
 window.writeStoreStock = writeStoreStock

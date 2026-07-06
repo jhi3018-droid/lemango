@@ -2599,12 +2599,22 @@
      명시적 닫기 전용: ESC/백드롭 닫기 없음(main.js 에서 cancel preventDefault). 재고 쓰기 없음(2c 스텁). -->
 <dialog id="inboundScanModal" class="srm-modal inb-modal" style="width:92vw;max-width:1400px;height:90vh;max-height:90vh;padding:0;overflow:hidden;border-radius:12px">
   <div class="srm-header modal-header inb-modal-header" style="cursor:move">
-    <span class="inb-modal-title">📥 입고 스캔 <span id="inbStoreLabel" class="inb-modal-store"></span></span>
+    <span class="inb-modal-title"><span id="inbModalTitleText">📥 입고 스캔</span> <span id="inbStoreLabel" class="inb-modal-store"></span> <span id="inbDirModeBadge" class="inb-dir-mode-badge inb-hidden">반출 모드 — 재고 차감</span></span>
     <button class="modal-close" onclick="closeInboundScanModal()">×</button>
   </div>
   <div class="inb-modal-body">
     <div id="inbGate" class="inb-hidden"></div>
     <div id="inbScreen" class="inb-screen inb-hidden">
+      <!-- 6b: 작업 방향 토글 (정상입고 / 정상반출). 반출 = 재고 차감(음수 movement). 기본 = 정상입고. -->
+      <div class="inb-dir-bar">
+        <span class="inb-dir-label">작업 방향</span>
+        <div class="inb-dir-toggle" role="group" aria-label="작업 방향 선택">
+          <button type="button" id="inbDirIn" class="inb-dir-btn inb-dir-active" onclick="inbSetDirection('inbound')">📥 정상입고</button>
+          <button type="button" id="inbDirOut" class="inb-dir-btn" onclick="inbSetDirection('outbound')">📤 정상반출</button>
+          <button type="button" id="inbDirDefOut" class="inb-dir-btn" onclick="inbSetDirection('defect-outbound')">🚫 불량반출</button>
+        </div>
+        <span class="inb-dir-hint" id="inbDirHint">스캔한 상품이 매장 재고에 <strong>추가</strong>됩니다</span>
+      </div>
       <div class="inb-top">
         <!-- LEFT: 작업 흐름 (바코드 → 수량 → 로케이션) -->
         <div class="inb-left">
@@ -2634,7 +2644,7 @@
         </div>
       </div>
       <div class="inb-list-section">
-        <div class="inb-list-head">입고 리스트 <span class="inb-list-count-badge"><span id="inbListCount">0</span>건<span id="inbListTotalWrap" class="inb-hidden"> · 총 <span id="inbListTotal" class="inb-list-total-num">0</span>개</span></span></div>
+        <div class="inb-list-head"><span id="inbListHeadText">입고 리스트</span> <span class="inb-list-count-badge"><span id="inbListCount">0</span>건<span id="inbListTotalWrap" class="inb-hidden"> · 총 <span id="inbListTotal" class="inb-list-total-num">0</span>개</span></span></div>
         <div class="inb-list-wrap">
           <table class="data-table inb-list-table">
             <thead><tr><th>품번</th><th class="inb-c" style="width:72px">사이즈</th><th style="width:100px">수량</th><th style="width:180px">로케이션</th><th class="inb-c" style="width:80px">수정/삭제</th></tr></thead>
@@ -2642,8 +2652,8 @@
           </table>
         </div>
         <div class="inb-list-footer">
-          <span class="inb-confirm-note">✅ 최종 확정 시 매장 재고에 즉시 반영 + 입고 이력 기록</span>
-          <label class="inb-type-label">입고 유형 <select id="inbType" class="inb-type-select"></select></label>
+          <span class="inb-confirm-note" id="inbConfirmNote">✅ 최종 확정 시 매장 재고에 즉시 반영 + 입고 이력 기록</span>
+          <label class="inb-type-label" id="inbTypeLabel">입고 유형 <select id="inbType" class="inb-type-select"></select></label>
           <input id="inbMemo" class="inb-memo-input" type="text" autocomplete="off" maxlength="200" placeholder="메모 (선택) — 예: 오전 택배 2박스">
           <div class="inb-footer-btns">
             <button class="btn btn-outline" onclick="closeInboundScanModal()">닫기</button>
@@ -2685,6 +2695,22 @@
   </div>
 </dialog>
 
+<!-- 판매 최종 확정 사전 확인 창 (POS Phase 3c) — 합계/결제/음수경고. [확정](기본 포커스, Enter)/[취소]. -->
+<dialog id="saleConfirmModal" class="srm-modal" style="width:440px;max-width:92vw;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header" style="cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">판매 확정</span>
+  </div>
+  <div class="sale-confirm-body">
+    <div id="saleConfirmSummary"></div>
+    <div id="saleConfirmWarn"></div>
+    <div class="sale-confirm-btns">
+      <button class="btn btn-outline" onclick="closeSaleConfirmDialog()">취소</button>
+      <button class="btn btn-new" id="saleConfirmOkBtn" onclick="saleConfirmProceed()">확정</button>
+    </div>
+    <p class="sale-confirm-hint">확정하면 재고가 즉시 차감되고 매출 원장에 기록됩니다 (되돌리려면 판매취소)</p>
+  </div>
+</dialog>
+
 <!-- 판매 품번 조회 창 (판매 화면 → 조회 버튼) — 입고 조회와 병렬. 바코드 등록 사이즈만 → 판매 라인 추가. ESC 닫힘. -->
 <dialog id="saleLookupModal" class="srm-modal inb-lookup-modal" style="width:640px;max-width:94vw;max-height:82vh;padding:0;overflow:hidden;border-radius:12px">
   <div class="srm-header modal-header" style="cursor:move">
@@ -2716,7 +2742,7 @@
 <!-- 입고 내역 뷰 (POS Phase 2d) — 날짜별 storeInbound 조회. 읽기 전용, 전 직원 개방. ESC 닫힘(뷰어). -->
 <dialog id="inbHistoryModal" class="srm-modal" style="width:840px;max-width:95vw;max-height:85vh;padding:0;overflow:hidden;border-radius:12px">
   <div class="srm-header modal-header" style="cursor:move">
-    <span style="font-size:15px;font-weight:700;color:#fff">📋 입고 내역</span>
+    <span style="font-size:15px;font-weight:700;color:#fff">📋 입출고 내역</span>
     <button class="modal-close" onclick="closeInbHistoryModal()">×</button>
   </div>
   <div class="inbhist-body">
@@ -2732,9 +2758,58 @@
     </div>
     <div class="inbhist-table-wrap">
       <table class="data-table inbhist-table">
-        <thead><tr><th style="width:110px">입고번호</th><th style="width:80px">일시</th><th>품번</th><th style="width:46px">사이즈</th><th style="width:44px">수량</th><th style="width:104px">로케이션</th><th style="width:80px">작업자</th><th style="width:120px">메모</th><th style="width:74px">유형</th><th style="width:60px">취소</th></tr></thead>
+        <thead><tr><th style="width:120px">번호</th><th style="width:80px">일시</th><th>품번</th><th style="width:46px">사이즈</th><th style="width:52px" title="정상재고 증감">증감</th><th style="width:56px" title="불량재고 증감">불량증감</th><th style="width:100px">로케이션</th><th style="width:76px">작업자</th><th style="width:116px">사유/메모</th><th style="width:84px">유형</th><th style="width:56px">취소</th></tr></thead>
         <tbody id="inbHistBody"></tbody>
       </table>
+    </div>
+  </div>
+</dialog>
+
+<!-- 품목 이동 원장 (POS Phase 6d) — 품번+기간별 전 이동(입고/판매/취소/반출/조정/불량) 통합 타임라인 + 잔여 + 장부↔실재고 대조. 조회=전 직원. -->
+<dialog id="ledgerModal" class="srm-modal" style="width:980px;max-width:96vw;max-height:88vh;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header" style="cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">📊 품목 이동 원장 <span id="ledgerTitleCode" class="inb-modal-store"></span></span>
+    <button class="modal-close" onclick="closeLedger()">×</button>
+  </div>
+  <div class="ledger-body">
+    <div class="ledger-controls">
+      <label class="inbhist-ctl">품번 <input type="text" id="ledgerSearch" class="inbhist-store" autocomplete="off" placeholder="품번/상품명 검색" oninput="_ledgerRenderPick()" style="width:200px"></label>
+      <div id="ledgerPick" class="ledger-pick inb-hidden"></div>
+      <label class="inbhist-ctl">매장 <select id="ledgerStore" class="inbhist-store" onchange="_ledgerReload()"></select></label>
+      <label class="inbhist-ctl">시작일 <input type="date" id="ledgerStart" class="inbhist-date" onchange="_ledgerReload()"></label>
+      <label class="inbhist-ctl">마지막일 <input type="date" id="ledgerEnd" class="inbhist-date" onchange="_ledgerReload()"></label>
+      <button class="btn btn-outline" onclick="_ledgerReload()">↻ 조회</button>
+      <button class="btn btn-outline" id="ledgerBaseRangeBtn" onclick="_ledgerSetBaseRange()">기준일~오늘</button>
+      <button class="btn btn-outline" id="ledgerExportBtn" onclick="downloadLedger()">📤 엑셀</button>
+    </div>
+    <div id="ledgerRecon" class="ledger-recon"></div>
+    <div class="ledger-note">읽기 전용 · 이동(입고/반출/조정/불량)은 품번 인덱스, 판매/취소는 기간 스캔(비용 ∝ 매장 기간 판매량). 넓은 기간은 느릴 수 있습니다.</div>
+    <div class="ledger-table-wrap">
+      <table class="data-table inbhist-table ledger-table">
+        <thead><tr>
+          <th style="width:112px">일시</th><th style="width:84px">유형</th><th style="width:44px">사이즈</th>
+          <th style="width:56px" title="정상재고 증감">증감</th><th style="width:56px" title="불량재고 증감">불량</th>
+          <th style="width:64px" title="정상재고 누계(기준 이후 절대치)">누계</th>
+          <th style="width:120px">번호</th><th style="width:74px">작업자</th><th>사유/메모</th>
+        </tr></thead>
+        <tbody id="ledgerBody"></tbody>
+      </table>
+    </div>
+  </div>
+</dialog>
+
+<!-- 기준 재고 설정 확인 (POS Phase 6d) — 관리자 전용, 현재 재고를 대조 기준점(baseline) 이동으로 기록. -->
+<dialog id="baselineConfirmModal" class="srm-modal" style="width:480px;max-width:92vw;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header" style="cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">🧭 기준 재고 설정</span>
+    <button class="modal-close" onclick="closeBaselineConfirm()">×</button>
+  </div>
+  <div class="inbcancel-body">
+    <div class="inbcancel-summary" id="baselineSummary"></div>
+    <div class="inbcancel-warn">현재 매장 재고(정상/불량)를 <strong>대조 기준점</strong>으로 기록합니다. 재고는 바뀌지 않습니다. 이후 이동과 합산해 장부=실재고 대조가 가능해집니다. 다시 실행하면 <strong>새 기준이 이전 기준을 대체</strong>합니다.</div>
+    <div class="inbcancel-btns">
+      <button class="btn btn-outline" onclick="closeBaselineConfirm()">닫기</button>
+      <button class="btn btn-new" id="baselineConfirmBtn" onclick="confirmBaselineSnapshot()">기준 설정 실행</button>
     </div>
   </div>
 </dialog>
@@ -2753,6 +2828,135 @@
     <div class="inbcancel-btns">
       <button class="btn btn-outline" onclick="closeInbCancelModal()">닫기</button>
       <button class="btn inbcancel-exec-btn" id="inbCancelConfirmBtn" onclick="confirmInbCancel()">취소 실행</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- 재고수정 / 실사 (POS Phase 6a) — 품번 조회(전 사이즈) + ±증감 + 사유 필수. 명시적 닫기 전용(ESC/백드롭 없음, main.js). -->
+<dialog id="adjustModal" class="srm-modal inb-modal" style="width:92vw;max-width:1200px;height:90vh;max-height:90vh;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header inb-modal-header" style="cursor:move">
+    <span class="inb-modal-title">🛠 재고수정 / 실사 <span id="adjStoreLabel" class="inb-modal-store"></span></span>
+    <button class="modal-close" onclick="closeAdjustModal()">×</button>
+  </div>
+  <div class="inb-modal-body">
+    <div id="adjGate" class="inb-hidden"></div>
+    <div id="adjScreen" class="inb-screen inb-hidden">
+      <div class="adj-top">
+        <div class="adj-search-col">
+          <div class="inb-field">
+            <label class="inb-label">품번 조회 <span class="inb-label-hint">품번/상품명 검색 → 사이즈 선택 (전 사이즈, 바코드 무관)</span></label>
+            <input id="adjSearch" class="inb-input" type="text" autocomplete="off" placeholder="품번 또는 상품명 검색" oninput="renderAdjLookup()">
+          </div>
+          <div id="adjLookupResults" class="inb-lookup-results adj-lookup-results"></div>
+          <div id="adjSizePicker" class="inb-lookup-sizes adj-size-picker inb-hidden"></div>
+        </div>
+        <div class="adj-banner-col">
+          <div id="adjBanner" class="inb-banner" aria-live="assertive"></div>
+        </div>
+      </div>
+      <div class="inb-list-section adj-list-section">
+        <div class="inb-list-head">재고수정 리스트 <span class="inb-list-count-badge"><span id="adjListCount">0</span>건 · 증가 <span id="adjTotalInc" class="inb-list-total-num">+0</span> · 감소 <span id="adjTotalDec" class="inb-list-total-num">0</span></span></div>
+        <div class="inb-list-wrap">
+          <table class="data-table inb-list-table adj-list-table">
+            <thead><tr><th>품번</th><th class="inb-c" style="width:56px">사이즈</th><th style="width:130px">유형</th><th style="width:62px">정상</th><th style="width:56px">불량</th><th style="width:88px">증감/수량</th><th style="width:118px">반영후</th><th style="width:150px">로케이션</th><th class="inb-c" style="width:52px">삭제</th></tr></thead>
+            <tbody id="adjListBody"></tbody>
+          </table>
+        </div>
+        <div class="inb-list-footer">
+          <span class="inb-confirm-note">✅ 확정 시 즉시 반영 + 이동 원장 기록 · 재고조정(±) / 정상→불량 / 불량→정상 혼합 세션 가능</span>
+          <div class="inb-footer-btns">
+            <button class="btn btn-outline" onclick="closeAdjustModal()">닫기</button>
+            <button class="btn btn-new inb-confirm-btn" id="adjConfirmBtn" onclick="adjFinalConfirm()">최종 확정</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</dialog>
+<!-- 재고수정 사유 확인 (POS Phase 6a) — 사유 필수. 파괴 버튼 비-기본포커스(사유에 포커스). -->
+<dialog id="adjConfirmModal" class="srm-modal" style="width:460px;max-width:92vw;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header" style="cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">재고수정 확정</span>
+    <button class="modal-close" onclick="closeAdjConfirmDialog()">×</button>
+  </div>
+  <div class="svoid-body">
+    <div class="svoid-summary" id="adjConfirmSummary"></div>
+    <label class="svoid-reason-label">조정 사유 <span class="svoid-req">* 필수</span></label>
+    <textarea id="adjReason" class="svoid-reason" rows="2" maxlength="200" placeholder="사유를 입력하세요 — 예: 실사 조정 / 파손 폐기 / 오등록 정정"></textarea>
+    <label class="svoid-reason-label">메모 <span style="font-weight:400;color:var(--text-muted)">(선택)</span></label>
+    <textarea id="adjMemo" class="svoid-reason" rows="1" maxlength="200" placeholder="메모 (선택)"></textarea>
+    <div class="svoid-warn">⚠️ 선택 수량만큼 매장 재고가 즉시 증감되고 이 수정은 이동 원장에 기록됩니다</div>
+    <div class="svoid-btns">
+      <button class="btn btn-outline" onclick="closeAdjConfirmDialog()">닫기</button>
+      <button class="btn svoid-exec-btn" onclick="adjConfirmProceed()">확정</button>
+    </div>
+  </div>
+</dialog>
+<!-- 재고수정 창 닫기 확인 (staged 항목 있을 때) -->
+<dialog id="adjCloseConfirmModal" class="srm-modal" style="width:460px;max-width:92vw;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header" style="cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">재고수정 닫기</span>
+  </div>
+  <div class="inb-closeconf-body">
+    <p class="inb-closeconf-msg">재고수정 리스트에 <strong id="adjCloseConfirmCount">0</strong>건이 남아 있습니다.<br>어떻게 하시겠습니까?</p>
+    <div class="inb-closeconf-btns">
+      <button class="btn btn-outline" id="adjCloseCancelBtn" onclick="adjCloseCancelChoice()">취소</button>
+      <button class="btn btn-new" onclick="adjCloseKeep()">보존하고 닫기</button>
+      <button class="btn inb-closeconf-discard" onclick="adjCloseDiscard()">삭제하고 닫기</button>
+    </div>
+    <p class="inb-closeconf-hint">보존: 다시 열면 리스트 복원 · 삭제: 임시저장까지 지움 (되돌릴 수 없음)</p>
+  </div>
+</dialog>
+
+<!-- (POS Phase 3e) 매출 조회 UI 는 🏬 매장 → '매출 조회' 서브탭 패널로 승격됨 (모달 제거). 영수증 상세만 모달 유지. -->
+
+<!-- 영수증 상세 (POS Phase 3d/3e) — 라인/합계/취소상태 + [판매 취소](3e 실동작). 품번 click → 공용 상품 상세. -->
+<dialog id="saleReceiptModal" class="srm-modal" style="width:640px;max-width:94vw;max-height:86vh;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header" style="cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">🧾 영수증 상세</span>
+    <button class="modal-close" onclick="closeSaleReceipt()">×</button>
+  </div>
+  <div class="shist-rc-body">
+    <div id="shReceiptHead"></div>
+    <div class="shist-rc-lines-wrap">
+      <table class="data-table shist-rc-table">
+        <thead><tr><th>품번</th><th>상품명</th><th style="width:52px">사이즈</th><th style="width:44px">수량</th><th style="width:74px">단가</th><th style="width:80px">할인단가</th><th style="width:84px">판매가</th></tr></thead>
+        <tbody id="shReceiptLines"></tbody>
+      </table>
+    </div>
+    <div class="shist-rc-totals" id="shReceiptTotals"></div>
+    <div id="shReceiptVoid"></div>
+    <div class="shist-rc-btns">
+      <button class="btn btn-outline" onclick="closeSaleReceipt()">닫기</button>
+      <button class="btn shist-void-btn" id="shVoidBtn" onclick="requestSaleVoid()">판매 취소</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- 판매 취소 (부분취소) — 라인/수량 선택 + 재고 복원(+qty) + 사유 필수. 파괴적 버튼엔 기본 포커스 안 둠(사유에 포커스). -->
+<dialog id="saleVoidModal" class="srm-modal" style="width:600px;max-width:94vw;max-height:88vh;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header" style="cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">판매 취소 (부분 취소 가능)</span>
+    <button class="modal-close" onclick="closeSaleVoidModal()">×</button>
+  </div>
+  <div class="svoid-body">
+    <div class="svoid-summary" id="svSummary"></div>
+    <div class="svoid-lines-wrap">
+      <table class="data-table svoid-table">
+        <thead><tr><th>품번</th><th style="width:52px">사이즈</th><th style="width:52px">판매</th><th style="width:64px">이미취소</th><th style="width:52px">남은</th><th style="width:76px">취소수량</th></tr></thead>
+        <tbody id="svLinesBody"></tbody>
+      </table>
+    </div>
+    <div class="svoid-actions-row">
+      <button class="btn btn-outline btn-sm" onclick="svVoidAll()">전체 취소 (남은 전량)</button>
+      <span class="svoid-livetotal" id="svLiveTotal">이번 취소 ₩0 · 0개</span>
+    </div>
+    <label class="svoid-reason-label">취소 사유 <span class="svoid-req">* 필수</span></label>
+    <textarea id="svReason" class="svoid-reason" rows="2" maxlength="200" placeholder="사유를 입력하세요 — 예: 오결제 / 부분반품 / 고객 변심"></textarea>
+    <div class="svoid-warn">⚠️ 선택 수량만큼 매장 재고가 복원(+)되고 이 취소는 기록에 남습니다 (원본 판매는 삭제되지 않음)</div>
+    <div class="svoid-btns">
+      <button class="btn btn-outline" onclick="closeSaleVoidModal()">닫기</button>
+      <button class="btn svoid-exec-btn" id="svConfirmBtn" onclick="confirmSaleVoid()">취소 실행</button>
     </div>
   </div>
 </dialog>

@@ -25,6 +25,15 @@
       ]
     },
     {
+      "collectionGroup": "storeInbound",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "productCode", "order": "ASCENDING" },
+        { "fieldPath": "dateKey", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "storeSales",
       "queryScope": "COLLECTION",
       "fields": [

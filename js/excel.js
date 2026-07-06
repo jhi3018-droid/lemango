@@ -483,13 +483,20 @@ function downloadExcel(type) {
     _downloadPlanFull(data)
     return
   } else if (type === 'stock') {
-    headers = ['품번','상품명','브랜드','판매가',...SIZES,'합계']
-    rows = data.map(p => [
-      p.productCode, p.nameKr, p.brand, p.salePrice,
-      ...SIZES.map(sz => p.stock?.[sz]||0),
-      getTotalStock(p)
-    ])
-    sheetName = '재고조회'
+    // 바코드 관리용 LONG 포맷 — (상품 × 사이즈) 1행 + 바코드 컬럼(미등록=공란 → 등록현황 가시화) + 수량.
+    // ⚠️ 앞 3열(품번|사이즈|바코드)은 바코드 일괄 업로드 파서(r[0]/r[1]/r[2], index 기반)와 호환 →
+    //    다운로드 → 바코드 채움 → 재업로드 라운드트립 성립. 상품명/브랜드/판매가/수량은 업로더가 무시(참고 열).
+    headers = ['품번','사이즈','바코드','상품명','브랜드','판매가','수량']
+    rows = []
+    data.forEach(p => {
+      SIZES.forEach(sz => {
+        rows.push([
+          p.productCode, sz, (p.barcodes && p.barcodes[sz]) ? p.barcodes[sz] : '',
+          p.nameKr, p.brand, p.salePrice, (p.stock && p.stock[sz]) || 0
+        ])
+      })
+    })
+    sheetName = '바코드관리'
   } else {
     headers = ['품번','상품명','브랜드','판매가',..._platforms,'합계']
     rows = data.map(p => [

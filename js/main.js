@@ -64,11 +64,22 @@ async function initApp() {
   //    백드롭 클릭 닫기 리스너도 등록하지 않음 → 백드롭 클릭으로도 안 닫힘. (스캔 세션 우발 종료 방지)
   const _inbScanModal = document.getElementById('inboundScanModal')
   if (_inbScanModal) _inbScanModal.addEventListener('cancel', e => e.preventDefault())
+  // 재고수정 창(6a) = 입고 스캔과 동일 정책: 명시적 닫기 전용(ESC/백드롭 차단, modalCloseMap 미등록).
+  makeDraggableResizable(document.getElementById('adjustModal'), 720, 480)
+  const _adjModal = document.getElementById('adjustModal')
+  if (_adjModal) _adjModal.addEventListener('cancel', e => e.preventDefault())
+  makeDraggableResizable(document.getElementById('adjConfirmModal'), 380, 220)
+  makeDraggableResizable(document.getElementById('adjCloseConfirmModal'), 340, 180)
   // 품번 조회 창 = 빠른 서브 다이얼로그 → ESC 로 닫힘(작업 창과 별개). 닫힐 때 커서 복귀는 store.js 에서 처리.
   makeDraggableResizable(document.getElementById('inbLookupModal'), 420, 320)
   makeDraggableResizable(document.getElementById('inbCloseConfirmModal'), 340, 180)
   makeDraggableResizable(document.getElementById('inbHistoryModal'), 560, 360)
+  makeDraggableResizable(document.getElementById('ledgerModal'), 620, 400)            // 6d 품목 이동 원장
+  makeDraggableResizable(document.getElementById('baselineConfirmModal'), 380, 220)   // 6d 기준 재고 설정
   makeDraggableResizable(document.getElementById('saleLookupModal'), 420, 320)
+  makeDraggableResizable(document.getElementById('saleConfirmModal'), 380, 200)
+  makeDraggableResizable(document.getElementById('saleReceiptModal'), 480, 320)
+  makeDraggableResizable(document.getElementById('saleVoidModal'), 460, 300)
   makeDraggableResizable(document.getElementById('inbCancelModal'), 360, 240)
   makeDraggableResizable(document.getElementById('downloadFormatModal'), 400, 300)
   makeDraggableResizable(document.getElementById('downloadFormatEditorModal'), 600, 400)
