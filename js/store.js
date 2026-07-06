@@ -285,11 +285,13 @@ function _discDefaultScope() {
 
 // 5-2: 조건 종류별 허용 혜택 옵션. 총액(cartTotal)=%/정액 · 그 외(상품/브랜드/카테고리)=%/특정가.
 function _discBenefitOptions(ctype, curType) {
-  const opts = (ctype === 'cartTotal')
+  const opts = (ctype === 'cartTotal' || ctype === 'combo')
     ? [['percent', '％ 할인'], ['amount', '정액(−원)']]
     : (ctype === 'qty')
       ? [['nplus', 'N+M 증정'], ['secondHalf', 'n번째 %할인']]   // 5-3
-      : [['percent', '％ 할인'], ['fixed', '특정가']]
+      : (ctype === 'bundle')
+        ? [['bundlePrice', '고정가(원)']]   // 5-4
+        : [['percent', '％ 할인'], ['fixed', '특정가']]
   return opts.map(([v, l]) => `<option value="${v}"${v === curType ? ' selected' : ''}>${l}</option>`).join('')
 }
 
@@ -298,7 +300,7 @@ function _discCondToggle(sel) {
   const fs = sel && sel.closest ? sel.closest('.disc-fieldset') : null
   if (!fs) return
   const ct = sel.value || 'product'
-  fs.classList.remove('disc-ct-product', 'disc-ct-brand', 'disc-ct-category', 'disc-ct-cartTotal', 'disc-ct-qty')
+  fs.classList.remove('disc-ct-product', 'disc-ct-brand', 'disc-ct-category', 'disc-ct-cartTotal', 'disc-ct-qty', 'disc-ct-combo', 'disc-ct-bundle')
   fs.classList.add('disc-ct-' + ct)
   const bsel = fs.querySelector('.disc-btype')
   if (bsel) { const cur = bsel.value; bsel.innerHTML = _discBenefitOptions(ct, cur) }   // fixed↔amount 비호환 시 첫 옵션(percent) 자동 선택
@@ -331,6 +333,7 @@ function renderStoreDiscountPanel() {
     else if (c.type === 'category') cond = '카테고리 ' + esc(c.category || '')
     else if (c.type === 'cartTotal') cond = '🛒 총액 ≥ ₩' + Number(c.minTotal || 0).toLocaleString()
     else if (c.type === 'qty') cond = '🎁 수량 ' + (c.scope === 'product' ? '상품' : c.scope === 'brand' ? '브랜드' : '카테고리') + ' ' + esc(c.ref || '')
+    else if (c.type === 'combo' || c.type === 'bundle') cond = (c.type === 'bundle' ? '🎁 번들 ' : '🎁 콤보 ') + (Array.isArray(c.items) ? c.items.map(m => esc((m.scope === 'product' ? '' : (m.scope + ':')) + (m.ref || ''))).join('+') : '') + ((c.eachQty || 1) > 1 ? ' ×' + c.eachQty : '')
     else cond = esc(c.type || '')
     let ben
     if (b.type === 'percent') ben = Number(b.value || 0) + '%'
@@ -338,6 +341,7 @@ function renderStoreDiscountPanel() {
     else if (b.type === 'amount') ben = '정액 −₩' + Number(b.minus || 0).toLocaleString()
     else if (b.type === 'nplus') ben = Number(b.buy || 0) + '+' + Number(b.free || 0) + ' 증정(최저가 무료)'
     else if (b.type === 'secondHalf') ben = Number(b.nth || 0) + '번째 ' + Number(b.value || 0) + '% (최저가)'
+    else if (b.type === 'bundlePrice') ben = '고정가 ₩' + Number(b.price || 0).toLocaleString()
     else ben = esc(b.type || '')
     const per = (p.start || p.end) ? ((p.start || '~') + ' ~ ' + (p.end || '~')) : '상시'
     const scope = (!r.storeScope || r.storeScope === 'all') ? '전 매장' : (Array.isArray(r.storeScope) ? r.storeScope.map(x => esc(_storeNameById(x))).join(',') : esc(_storeNameById(r.storeScope)))
@@ -352,9 +356,13 @@ function renderStoreDiscountPanel() {
     let bval, bval2 = ''
     if (ct === 'qty') {
       if (b.type === 'secondHalf') { bval = b.nth; bval2 = b.value } else { bval = b.buy; bval2 = b.free }
-    } else { bval = (b.type === 'fixed') ? b.price : (b.type === 'amount') ? b.minus : b.value }
+    } else if (ct === 'bundle') { bval = b.price }
+    else if (ct === 'combo') { bval = (b.type === 'amount') ? b.minus : b.value }
+    else { bval = (b.type === 'fixed') ? b.price : (b.type === 'amount') ? b.minus : b.value }
     const qscope = (ct === 'qty') ? (c.scope || 'product') : 'product'
     const qref = (ct === 'qty') ? (c.ref || '') : ''
+    const membersStr = (ct === 'combo' || ct === 'bundle') && Array.isArray(c.items) ? c.items.map(m => (m.scope || 'product') + ':' + (m.ref || '')).join(',') : ''
+    const eachQtyV = (ct === 'combo' || ct === 'bundle') ? String(c.eachQty || 1) : ''
     const scope = (r && r.storeScope) || 'all'
     return `<div class="disc-fieldset disc-ct-${esc(ct)}">
       <input type="text" class="set-edit-input disc-f-name" value="${esc((r && r.name) || '')}" placeholder="규칙명" style="flex:1 1 120px" />
@@ -364,6 +372,8 @@ function renderStoreDiscountPanel() {
         <option value="category"${ct === 'category' ? ' selected' : ''}>카테고리</option>
         <option value="cartTotal"${ct === 'cartTotal' ? ' selected' : ''}>총액(카트)</option>
         <option value="qty"${ct === 'qty' ? ' selected' : ''}>수량(N+1·반값)</option>
+        <option value="combo"${ct === 'combo' ? ' selected' : ''}>콤보</option>
+        <option value="bundle"${ct === 'bundle' ? ' selected' : ''}>번들(고정가)</option>
       </select>
       <input type="text" class="set-edit-input disc-cv disc-cv-product disc-f-code" list="discProdList" value="${esc(c.productCode || '')}" placeholder="품번" style="flex:1 1 120px" />
       <select class="set-edit-input disc-cv disc-cv-brand disc-f-brand" style="flex:0 0 120px">${brandOpts(c.brand || '')}</select>
@@ -375,6 +385,8 @@ function renderStoreDiscountPanel() {
         <option value="category"${qscope === 'category' ? ' selected' : ''}>카테고리</option>
       </select>
       <input type="text" class="set-edit-input disc-cv disc-cv-qty disc-f-qref" list="discProdList" value="${esc(qref)}" placeholder="품번/브랜드/카테고리" style="flex:1 1 120px" title="수량 promo 대상(품번 또는 브랜드/카테고리 값)" />
+      <input type="text" class="set-edit-input disc-cv disc-cv-cb disc-f-members" value="${esc(membersStr)}" placeholder="멤버: scope:ref, 콤마 (예: product:ABC,category:bikini)" style="flex:2 1 240px" title="콤보/번들 멤버 — scope:ref 콤마구분(scope=product/brand/category), 2개 이상" />
+      <input type="number" class="set-edit-input disc-cv disc-cv-cb disc-f-eachqty" value="${esc(eachQtyV)}" placeholder="각 N개" min="1" style="flex:0 0 76px" title="멤버당 필요 수량(기본1)" />
       <select class="set-edit-input disc-f-btype disc-btype" style="flex:0 0 116px" title="혜택 종류">${_discBenefitOptions(ct, b.type || 'percent')}</select>
       <input type="number" class="set-edit-input disc-f-bval" value="${esc(String(bval ?? ''))}" placeholder="값(%/원/N)" min="0" style="flex:0 0 96px" title="%/원, 또는 N+M 의 N(구매수)·n번째의 n" />
       <input type="number" class="set-edit-input disc-bval2 disc-f-bval2" value="${esc(String(bval2 ?? ''))}" placeholder="M/할인%" min="0" style="flex:0 0 90px" title="N+M 의 M(무료수, 기본1) 또는 n번째 할인율%(기본50)" />
@@ -487,6 +499,41 @@ function _discReadFields(el, prefix) {
       return { ok: true, rule: { name, condition, benefit: { type: 'secondHalf', nth, value }, period: { start, end }, storeScope: scope } }
     }
     return { ok: false, msg: '수량 혜택 종류가 올바르지 않습니다.' }
+  } else if (ctype === 'combo' || ctype === 'bundle') {
+    // 5-4: 멤버 파싱 — "scope:ref" 콤마 구분, 2개 이상. 각 존재 검증.
+    const tokens = (g('members')?.value || '').split(',').map(t => t.trim()).filter(Boolean)
+    if (tokens.length < 2) return { ok: false, msg: '콤보/번들은 멤버가 2개 이상이어야 합니다 (형식: scope:ref, 콤마 구분).' }
+    const items = []
+    for (const t of tokens) {
+      const idx = t.indexOf(':'); if (idx < 0) return { ok: false, msg: `멤버 형식 오류 — "scope:ref" 필요: "${t}"` }
+      const sc = t.slice(0, idx).trim(), rf = t.slice(idx + 1).trim()
+      if (!(sc === 'product' || sc === 'brand' || sc === 'category')) return { ok: false, msg: `멤버 scope 는 product/brand/category: "${t}"` }
+      if (!rf) return { ok: false, msg: `멤버 값(ref) 누락: "${t}"` }
+      if (sc === 'product') { if (!((typeof _ssvFindProduct === 'function') && _ssvFindProduct(rf))) return { ok: false, msg: `품번 "${rf}"을(를) 찾을 수 없습니다.` } }
+      else { const ex = (State.allProducts || []).some(p => p && !p.deleted && (sc === 'brand' ? String(p.brand || '') === rf : String(p.type || '') === rf)); if (!ex) return { ok: false, msg: `${sc === 'brand' ? '브랜드' : '카테고리'} "${rf}"을(를) 찾을 수 없습니다.` } }
+      items.push({ scope: sc, ref: rf })
+    }
+    const eachQty = Math.max(1, parseInt((g('eachqty')?.value || '1').trim(), 10) || 1)
+    const condition = { type: ctype, items, eachQty }
+    if (ctype === 'combo') {
+      if (!(btype === 'percent' || btype === 'amount')) return { ok: false, msg: '콤보 혜택은 ％ 또는 정액만 가능합니다.' }
+      if (!/^\d+$/.test(bvalRaw)) return { ok: false, msg: '혜택 값은 0 이상 정수여야 합니다.' }
+      const bv = parseInt(bvalRaw, 10)
+      let benefit
+      if (btype === 'percent') { if (bv < 1 || bv > 100) return { ok: false, msg: '％ 할인은 1~100 사이여야 합니다.' }; benefit = { type: 'percent', value: bv } }
+      else { if (bv < 1) return { ok: false, msg: '정액 할인은 1원 이상이어야 합니다.' }; benefit = { type: 'amount', minus: bv } }
+      if (start && end && start > end) return { ok: false, msg: '시작일이 종료일보다 늦습니다.' }
+      return { ok: true, rule: { name, condition, benefit, period: { start, end }, storeScope: scope } }
+    } else {   // bundle — 고정가
+      if (!/^\d+$/.test(bvalRaw)) return { ok: false, msg: '번들 고정가는 0 이상 정수여야 합니다.' }
+      const price = parseInt(bvalRaw, 10)
+      if (!(price > 0)) return { ok: false, msg: '번들 고정가는 1 이상이어야 합니다.' }
+      if (start && end && start > end) return { ok: false, msg: '시작일이 종료일보다 늦습니다.' }   // 🔴 warn 반환 전에 검증(역전 기간 저장 방지)
+      // product 멤버들의 정상가 합(×eachQty) 대비 경고 — 고정가가 합 이상이면 할인 없음(설정 오류)
+      const sumList = items.reduce((a, m) => { if (m.scope === 'product') { const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(m.ref) : null; return a + (p ? Math.max(0, Math.floor(Number(p.salePrice) || 0)) : 0) * eachQty } return a }, 0)
+      if (sumList > 0 && price >= sumList) return { ok: false, warn: `번들 고정가(₩${price.toLocaleString()})가 멤버 정상가 합(₩${sumList.toLocaleString()}) 이상 — 할인이 없습니다. 그래도 저장할까요?`, rule: { name, condition, benefit: { type: 'bundlePrice', price }, period: { start, end }, storeScope: scope } }
+      return { ok: true, rule: { name, condition, benefit: { type: 'bundlePrice', price }, period: { start, end }, storeScope: scope } }
+    }
   } else return { ok: false, msg: '조건 종류가 올바르지 않습니다.' }
   // ── 혜택 (조건별 허용: 총액=%/정액 · 그 외=%/특정가) ──
   const isCart = (ctype === 'cartTotal')
@@ -2463,9 +2510,12 @@ function _buildSaleLine(raw) {
     if (cd > 0) line.cartDiscount = cd
   }
   // 5-3: split 라인 식별자(additive). lineId 있으면 부분취소/집계/취소UI 가 (품번,사이즈) 대신 이걸로 라인 독립 식별 → 무료/유료 split 구분.
-  //   lineNote(무료/반값) = 표시 전용. lineId 없는 라인(레거시/비-split)=기존 (품번,사이즈) 키(byte-identical).
+  //   lineNote(무료/반값/콤보/번들) = 표시 전용. lineId 없는 라인(레거시/비-split)=기존 (품번,사이즈) 키(byte-identical).
   if (raw && raw.lineId) line.lineId = String(raw.lineId)
   if (raw && raw.lineNote) line.lineNote = String(raw.lineNote)
+  // 5-4: 번들 인스턴스 식별(additive) → 취소 시 whole-bundle-void 정책(같은 instanceId 전부 함께 취소). cbDiscount=콤보/번들 per-unit 몫(표시/귀속).
+  if (raw && raw.bundleInstanceId) line.bundleInstanceId = String(raw.bundleInstanceId)
+  if (raw && raw.cbDiscount != null) { let cd = Math.max(0, Math.floor(Number(raw.cbDiscount) || 0)); if (cd > unitDiscount) cd = unitDiscount; if (cd > 0) line.cbDiscount = cd }
   return line
 }
 
@@ -2790,7 +2840,8 @@ function _saleApplyDiscounts() {
     // 수량/카트 파생값은 매 평가마다 재계산 → 우선 제거(재평가 idempotent).
     delete l.cartDiscount; delete l.cartRuleId; delete l.cartRuleName
     delete l._qtyFree; delete l._qtyHalf; delete l._qtyHalfVal; delete l._qtyRuleId; delete l._qtyRuleName
-    if (l.discountSource === 'manual-override') return   // 수동 잠금(라인+수량+카트 모두 제외)
+    delete l._cbUnits; delete l._bundleGroups   // 5-4 콤보/번들 파생값도 매 평가 재계산
+    if (l.discountSource === 'manual-override') return   // 수동 잠금(라인+수량+콤보/번들+카트 모두 제외)
     const up = Math.max(0, Math.floor(Number(l.unitPrice) || 0))
     let best = null, bestDisc = 0
     rules.forEach(r => {
@@ -2808,9 +2859,11 @@ function _saleApplyDiscounts() {
   })
   // ── Pass 1.5: 수량(5-3) — N+1/두번째반값. 부모 라인에 무료/반값 유닛 수 breakdown(_qty*) 기록(라인할인 후 최저가 유닛 선택).
   _saleApplyQtyDiscounts(rules)
-  // ── effective(split) 라인 빌드 — 부모 → 정상/반값/무료 분할(각 균일 unitDiscount, split 시 lineId). 총계/표시/카트/확정 소스.
+  // ── Pass 1.7: 콤보/번들(5-4) — 조합 조건(멤버 전부 present). 미claimed 유닛으로 인스턴스 형성 → per-unit 분배 → _bundleGroups.
+  _saleApplyComboBundle(rules)
+  // ── effective(split) 라인 빌드 — 부모 → 정상/반값/무료/콤보/번들 분할(각 균일 unitDiscount, split 시 lineId). 총계/표시/카트/확정 소스.
   _saleEffLines = _buildEffectiveLines()
-  // ── Pass 2: 카트 레벨 (cartTotal). 수량 적용 후 effective 라인 소계 ≥ minTotal → 최대 절감 1개를 effective 라인에 분배.
+  // ── Pass 2: 카트 레벨 (cartTotal). 수량/콤보/번들 적용 후 effective 라인 소계 ≥ minTotal → 최대 절감 1개 분배(콤보/번들 라인 제외).
   _saleApplyCartDiscounts(rules, _saleEffLines)
 }
 
@@ -2875,9 +2928,80 @@ function _saleApplyQtyDiscounts(rules) {
   })
 }
 
-// effective(split) 라인 빌드 — 부모 _saleList → 정상(paid)/반값(half)/무료(free) 서브라인(각 균일 unitDiscount).
+// Pass 1.7 — 콤보/번들(5-4). 조건 combo/bundle = items[{scope,ref}] 멤버 전부 present(각 eachQty). 미claimed 유닛(수량promo 제외)으로 인스턴스 형성.
+//   🔴 멤버 유닛=최저가 예약(5-3 일관). 인스턴스 반복(제한 멤버 floor). combo=%/정액 · bundle=고정가(S−price). per-unit 분배(비례 floor+잔액 최고가).
+//   부모 라인에 _bundleGroups(instanceId+share 그룹) 기록 → _buildEffectiveLines 가 서브라인 분할. bundle 은 instanceId 태그(전체취소 정책).
+function _saleApplyComboBundle(rules) {
+  const cb = (rules || []).filter(r => r && r.condition && (r.condition.type === 'combo' || r.condition.type === 'bundle'))
+    .slice().sort((a, b) => ((Number(a.priority) || 0) - (Number(b.priority) || 0)) || String(a.id || '').localeCompare(String(b.id || '')))
+  if (!cb.length) return
+  const cI = v => Math.max(0, Math.floor(Number(v) || 0))
+  const priceOf = i => { const l = _saleList[i]; const up = cI(l.unitPrice); return up - Math.min(cI(l.unitDiscount), up) }   // 라인할인 후 단가
+  // 라인별 가용 유닛 수(manual-override·수량promo(free/half) 제외) — 콤보/번들 claim 대상
+  const avail = _saleList.map(l => {
+    if (l.discountSource === 'manual-override') return 0
+    const qty = Math.max(1, cI(l.qty)); const used = cI(l._qtyFree) + cI(l._qtyHalf); return Math.max(0, qty - used)
+  })
+  let instCounter = 0
+  cb.forEach(rule => {
+    const cond = rule.condition || {}, members = Array.isArray(cond.items) ? cond.items : []
+    if (members.length < 2) return
+    const eachQty = Math.max(1, cI(cond.eachQty) || 1)
+    const b = rule.benefit || {}
+    let guard = 0
+    while (guard++ < 10000) {
+      // 한 인스턴스 형성 — 멤버별 eachQty 최저가 예약(temp; 멤버 간 유닛 중복 방지). 하나라도 부족하면 종료.
+      const temp = avail.slice(); const reserved = []; let ok = true
+      for (const m of members) {
+        const us = []
+        _saleList.forEach((l, i) => { for (let u = 0; u < temp[i]; u++) if (_qtyMatch(m, l.productCode)) us.push({ i, price: priceOf(i) }) })
+        us.sort((a, b2) => a.price - b2.price)
+        if (us.length < eachQty) { ok = false; break }
+        for (let k = 0; k < eachQty; k++) { reserved.push(us[k].i); temp[us[k].i]-- }
+      }
+      if (!ok) break
+      // 인스턴스 확정 — 소계 S(예약 유닛 판매가) → 할인 disc
+      const units = reserved.map(i => ({ i, price: priceOf(i) }))
+      const S = units.reduce((a, u) => a + u.price, 0)
+      let disc = 0
+      if (cond.type === 'combo') {
+        if (b.type === 'percent') { const pct = Math.max(0, Math.min(100, Number(b.value) || 0)); disc = Math.min(S, Math.floor(S * pct / 100)) }
+        else if (b.type === 'amount') { disc = Math.min(S, cI(b.minus)) }
+      } else { const price = cI(b.price); disc = (S > price) ? (S - price) : 0 }   // bundle: S≤price=설정오류(할인0, settings 경고)
+      if (disc <= 0) break   // 유닛 미claim(avail 미commit) → 무한루프 방지 + 의미없는 인스턴스 skip
+      // per-unit 분배(price 비례 floor + 잔액 최고가, share ≤ price 클램프=판매가 음수 방지)
+      const totalPrice = units.reduce((a, u) => a + u.price, 0) || 1
+      let acc = 0
+      units.forEach(u => { u.share = Math.min(u.price, Math.floor(disc * u.price / totalPrice)); acc += u.share })
+      let rem = disc - acc
+      const byPrice = units.slice().sort((a, b2) => b2.price - a.price)
+      for (let k = 0; k < byPrice.length && rem > 0; k++) { if (byPrice[k].share < byPrice[k].price) { byPrice[k].share++; rem-- } }
+      const instanceId = String(rule.id) + '#' + instCounter; instCounter++
+      units.forEach(u => { const l = _saleList[u.i]; if (!l._cbUnits) l._cbUnits = []; l._cbUnits.push({ instanceId, ruleId: rule.id, ruleName: rule.name || '', kind: cond.type, share: u.share }) })
+      for (let i = 0; i < avail.length; i++) avail[i] = temp[i]   // commit(유닛 소진)
+    }
+  })
+  // 부모 라인별 _cbUnits → _bundleGroups (instanceId+share 그룹핑 → 균일 unitDiscount 서브라인)
+  _saleList.forEach(l => {
+    if (!l._cbUnits || !l._cbUnits.length) return
+    const up = cI(l.unitPrice); const lud = Math.min(cI(l.unitDiscount), up)
+    const groups = {}
+    l._cbUnits.forEach(u => {
+      const key = u.instanceId + '|' + u.share
+      const g = groups[key] || (groups[key] = { qty: 0, share: u.share, instanceId: u.instanceId, ruleId: u.ruleId, ruleName: u.ruleName, kind: u.kind })
+      g.qty++
+    })
+    l._bundleGroups = Object.keys(groups).map(k => {
+      const g = groups[k]; let ud = lud + g.share; if (ud > up) ud = up
+      return { qty: g.qty, unitDiscount: ud, bundleShare: g.share, instanceId: g.instanceId, ruleId: g.ruleId, ruleName: g.ruleName, kind: g.kind, note: g.kind === 'bundle' ? '번들' : '콤보' }
+    })
+    if (l.discountSource !== 'manual-override') l.discountSource = 'store-discount'
+  })
+}
+
+// effective(split) 라인 빌드 — 부모 _saleList → 정상(paid)/반값(half)/무료(free)/콤보/번들 서브라인(각 균일 unitDiscount).
 //   split(서브라인 ≥2) 시에만 lineId 부여(`{code}#{size}#{n}`) → 부분취소 라인 독립 식별. 단일 서브라인=lineId 없음(레거시/비-split=byte-identical void).
-//   🔴 재고=전체 qty(무료 포함) — free 유닛도 qty 로 확정 라인에 남아 차감됨.
+//   🔴 재고=전체 qty(무료 포함) — free 유닛도 qty 로 확정 라인에 남아 차감됨. bundle 서브라인=bundleInstanceId 태그(전체취소).
 function _buildEffectiveLines() {
   const out = []
   _saleList.forEach((l, i) => {
@@ -2886,13 +3010,17 @@ function _buildEffectiveLines() {
     const qty = Math.max(1, Math.floor(Number(l.qty) || 1))
     let free = Math.max(0, Math.min(qty, Math.floor(Number(l._qtyFree) || 0)))
     let half = Math.max(0, Math.min(qty - free, Math.floor(Number(l._qtyHalf) || 0)))
-    const paid = qty - free - half
+    const cbGroups = Array.isArray(l._bundleGroups) ? l._bundleGroups : []
+    const cbQty = cbGroups.reduce((a, g) => a + Math.max(0, Math.floor(Number(g.qty) || 0)), 0)
+    const paid = Math.max(0, qty - free - half - cbQty)
     const postLine = up - lud
     const halfVal = Math.max(0, Math.min(100, Math.floor(Number(l._qtyHalfVal) || 0)))
     const parts = []
     if (paid > 0) parts.push({ qty: paid, unitDiscount: lud, rid: l.appliedRuleId, rname: l.appliedRuleName, kind: 'paid' })
     if (half > 0) { let hud = up - Math.floor(postLine * (100 - halfVal) / 100); if (hud > up) hud = up; parts.push({ qty: half, unitDiscount: hud, rid: l._qtyRuleId, rname: l._qtyRuleName, kind: 'half', note: '반값' }) }
     if (free > 0) parts.push({ qty: free, unitDiscount: up, rid: l._qtyRuleId, rname: l._qtyRuleName, kind: 'free', note: '무료' })
+    // 5-4: 콤보/번들 서브라인(각 균일 unitDiscount). bundle=instanceId 태그(전체취소). cb 유닛은 카트 제외(_cbKind).
+    cbGroups.forEach(g => { if (g && g.qty > 0) parts.push({ qty: Math.floor(g.qty), unitDiscount: g.unitDiscount, rid: g.ruleId, rname: g.ruleName, kind: g.kind === 'bundle' ? 'bundle' : 'combo', note: g.note, instanceId: g.kind === 'bundle' ? g.instanceId : '', cbShare: g.bundleShare }) })
     const split = parts.length > 1
     parts.forEach((p, n) => {
       const eff = {
@@ -2903,6 +3031,8 @@ function _buildEffectiveLines() {
       }
       if (p.rid) { eff.appliedRuleId = p.rid; eff.appliedRuleName = p.rname || '' }
       if (p.note) eff.lineNote = p.note
+      if (p.kind === 'combo' || p.kind === 'bundle') { eff._cbKind = p.kind; if (p.cbShare > 0) eff.cbDiscount = p.cbShare }
+      if (p.kind === 'bundle' && p.instanceId) eff.bundleInstanceId = p.instanceId
       if (split) eff.lineId = String(l.productCode) + '#' + String(l.size) + '#' + n
       out.push(eff)
     })
@@ -2926,6 +3056,7 @@ function _saleApplyCartDiscounts(rules, lines) {
   const q = []
   src.forEach((l) => {
     if (l.discountSource === 'manual-override') return
+    if (l._cbKind) return   // 5-4: 콤보/번들 유닛은 결합 promo 종결 → 카트 제외(중복할인 방지, 번들 고정가 보존)
     const up = Math.max(0, Math.floor(Number(l.unitPrice) || 0))
     let ud = Math.max(0, Math.floor(Number(l.unitDiscount) || 0)); if (ud > up) ud = up
     const qty = Math.max(1, Math.floor(Number(l.qty) || 1))
@@ -3088,6 +3219,12 @@ function _saleRenderList() {
         if (free) parts.push(`${free}개 무료`)
         if (half) parts.push(`${half}개 ${Math.floor(Number(l._qtyHalfVal) || 50)}%`)
         chips.push(`<span class="sale-line-promo-chip sale-line-qty-chip">🎁 ${esc(l._qtyRuleName)} (${parts.join(', ')})</span>`)
+      }
+      // 5-4: 콤보/번들 칩
+      const cbGroups = Array.isArray(l._bundleGroups) ? l._bundleGroups : []
+      if (cbGroups.length) {
+        const g0 = cbGroups[0]
+        chips.push(`<span class="sale-line-promo-chip sale-line-cb-chip">🎁 ${esc(g0.ruleName || '')}${g0.kind === 'bundle' ? ' (번들)' : ' (콤보)'}</span>`)
       }
       if (eff.cartName) chips.push(`<span class="sale-line-promo-chip sale-line-cart-chip">🛒 ${esc(eff.cartName)}</span>`)
       if (chips.length) discBadge = `<div class="sale-line-promo">${chips.join(' ')}</div>`
@@ -3896,6 +4033,7 @@ function requestSaleVoid() {
     <div class="svoid-amt">판매 ₩${(Number(tt.total) || 0).toLocaleString()} · 수량 ${Number(tt.qtyTotal) || 0}개 · 남은 <strong>${agg.remainingQty}개(₩${agg.remainingTotal.toLocaleString()})</strong></div>`
   const bodyEl = document.getElementById('svLinesBody')
   const lines = Array.isArray(sale.lines) ? sale.lines : []
+  let hasBundle = false
   if (bodyEl) bodyEl.innerHTML = lines.map((l, i) => {
     const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(l.productCode) : null
     const nm = p ? (p.nameKr || p.nameEn || '') : ''
@@ -3903,19 +4041,23 @@ function requestSaleVoid() {
     const vQ = agg.voidedByKey[_lineIdOf(l)] || 0   // 🔴 5-3: split 라인 독립 집계(lineId)
     const remQ = soldQ - vQ
     const lid = (l.lineId != null && l.lineId !== '') ? String(l.lineId) : ''
-    const note = l.lineNote ? ` <span class="svoid-note">${esc(l.lineNote)}</span>` : ''   // 무료/반값 라벨
-    const input = remQ > 0
-      ? `<input type="number" class="svoid-qty-input" min="0" max="${remQ}" step="1" value="0" data-i="${i}" data-code="${esc(l.productCode)}" data-size="${esc(l.size)}" data-lineid="${esc(lid)}" oninput="onSvQtyInput(this)">`
-      : '<span class="svoid-done">취소 완료</span>'
-    return `<tr${remQ <= 0 ? ' class="svoid-row-done"' : ''}>
+    const iid = (l.bundleInstanceId != null && l.bundleInstanceId !== '') ? String(l.bundleInstanceId) : ''   // 🔴 5-4: 번들 인스턴스
+    if (iid) hasBundle = true
+    const note = l.lineNote ? ` <span class="svoid-note">${esc(l.lineNote)}</span>` : ''   // 무료/반값/콤보/번들 라벨
+    // 🔴 5-4 번들 = whole-instance-void-only: 부분 qty 입력 차단, "번들 전체" 체크박스만(같은 instanceId 함께 취소).
+    let control
+    if (remQ <= 0) control = '<span class="svoid-done">취소 완료</span>'
+    else if (iid) control = `<label class="svoid-bundle-lbl"><input type="checkbox" class="svoid-bundle-chk" data-instance="${esc(iid)}" data-code="${esc(l.productCode)}" data-size="${esc(l.size)}" data-lineid="${esc(lid)}" data-rem="${remQ}" onchange="onSvBundleToggle(this)"> 번들 전체</label>`
+    else control = `<input type="number" class="svoid-qty-input" min="0" max="${remQ}" step="1" value="0" data-i="${i}" data-code="${esc(l.productCode)}" data-size="${esc(l.size)}" data-lineid="${esc(lid)}" oninput="onSvQtyInput(this)">`
+    return `<tr${remQ <= 0 ? ' class="svoid-row-done"' : (iid ? ' class="svoid-row-bundle"' : '')}>
       <td>${esc(l.productCode)}${note}${nm ? `<div class="svoid-nm">${esc(nm)}</div>` : ''}</td>
       <td style="text-align:center">${esc(l.size)}</td>
       <td style="text-align:right">${soldQ}</td>
       <td style="text-align:right">${vQ}</td>
       <td style="text-align:right;font-weight:700">${remQ}</td>
-      <td style="text-align:center">${input}</td>
+      <td style="text-align:center">${control}</td>
     </tr>`
-  }).join('')
+  }).join('') + (hasBundle ? '<tr class="svoid-bundle-hint-row"><td colspan="6" class="svoid-bundle-hint">🎁 번들 상품은 부분 취소 불가 — 같은 번들 전체 단위로만 취소됩니다(재고 전량 복원).</td></tr>' : '')
   const reasonEl = document.getElementById('svReason'); if (reasonEl) reasonEl.value = ''
   _svUpdateLiveTotal()
   modal.showModal()
@@ -3933,18 +4075,34 @@ function onSvQtyInput(el) {
   if (String(n) !== String(el.value)) el.value = String(n)
   _svUpdateLiveTotal()
 }
-// 전체 취소(남은 전량) 편의 버튼
+// 전체 취소(남은 전량) 편의 버튼 — 일반 라인 max + 번들 체크박스 전부 체크
 function svVoidAll() {
   document.querySelectorAll('#svLinesBody .svoid-qty-input').forEach(el => { el.value = el.max })
+  document.querySelectorAll('#svLinesBody .svoid-bundle-chk').forEach(el => { el.checked = true })
   _svUpdateLiveTotal()
 }
-// 선택 수집 [{productCode,size,lineId?,voidQty}] — 5-3: split 라인은 data-lineid 로 독립 식별
+// 🔴 5-4: 번들 체크박스 토글 → 같은 instanceId 의 모든 체크박스 동기(전체 단위 취소만 허용)
+function onSvBundleToggle(el) {
+  const iid = el.getAttribute('data-instance')
+  document.querySelectorAll('#svLinesBody .svoid-bundle-chk').forEach(c => { if (c.getAttribute('data-instance') === iid) c.checked = el.checked })
+  _svUpdateLiveTotal()
+}
+// 선택 수집 [{productCode,size,lineId?,voidQty}] — 5-3: split 라인 data-lineid 독립 식별. 5-4: 체크된 번들=남은 전량.
 function _svCollectSelections() {
   const sels = []
   document.querySelectorAll('#svLinesBody .svoid-qty-input').forEach(el => {
     const q = Math.floor(Number(el.value) || 0)
     if (q >= 1) {
       const sel = { productCode: el.getAttribute('data-code'), size: el.getAttribute('data-size'), voidQty: q }
+      const lid = el.getAttribute('data-lineid'); if (lid) sel.lineId = lid
+      sels.push(sel)
+    }
+  })
+  document.querySelectorAll('#svLinesBody .svoid-bundle-chk').forEach(el => {   // 🔴 5-4: 체크된 번들 라인 = 남은 전량 취소
+    if (!el.checked) return
+    const rem = Math.max(0, Math.floor(Number(el.getAttribute('data-rem')) || 0))
+    if (rem >= 1) {
+      const sel = { productCode: el.getAttribute('data-code'), size: el.getAttribute('data-size'), voidQty: rem }
       const lid = el.getAttribute('data-lineid'); if (lid) sel.lineId = lid
       sels.push(sel)
     }
@@ -4178,6 +4336,7 @@ window.closeSaleVoidModal = closeSaleVoidModal
 window.confirmSaleVoid = confirmSaleVoid
 window.onSvQtyInput = onSvQtyInput
 window.svVoidAll = svVoidAll
+window.onSvBundleToggle = onSvBundleToggle
 window.downloadSalesHistory = downloadSalesHistory
 
 // =============================================

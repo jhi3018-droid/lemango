@@ -6038,13 +6038,20 @@ td[data-editable]:hover { background: #FAEEDA; }
 .disc-ct-brand .disc-cv-brand,
 .disc-ct-category .disc-cv-category,
 .disc-ct-cartTotal .disc-cv-cartTotal,
-.disc-ct-qty .disc-cv-qty { display: block; }
+.disc-ct-qty .disc-cv-qty,
+.disc-ct-combo .disc-cv-cb,
+.disc-ct-bundle .disc-cv-cb { display: block; }
 /* 5-3: 수량 promo 2번째 혜택 값(무료수 M / 할인율%) — qty 조건일 때만 노출 */
 .disc-bval2 { display: none; }
 .disc-ct-qty .disc-bval2 { display: block; }
 /* 5-3: 판매 라인 수량 promo 칩(🎁) + 취소 모달 무료/반값 라벨 */
 .sale-line-qty-chip { color: #7a4fa0; }
 .svoid-note { display: inline-block; font-size: 11px; font-weight: 700; color: #7a4fa0; background: #f1eaf8; border-radius: 4px; padding: 0 5px; }
+/* 5-4: 콤보/번들 칩 + 번들 전체취소 UI */
+.sale-line-cb-chip { color: #b06a1f; }
+.svoid-row-bundle { background: #fff6ea; }
+.svoid-bundle-lbl { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; color: #b06a1f; white-space: nowrap; cursor: pointer; }
+.svoid-bundle-hint-row td.svoid-bundle-hint { font-size: 11.5px; color: #b06a1f; background: #fff6ea; padding: 6px 10px; }
 /* 5-2: 판매 라인/요약 카트(총액) 행사 칩 — 라인 행사(🏷)와 시각 구분 */
 .sale-line-promo-chip { display: inline-block; margin-right: 4px; }
 .sale-line-cart-chip { color: #2f6f8f; }
