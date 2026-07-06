@@ -287,16 +287,18 @@ function _discDefaultScope() {
 function _discBenefitOptions(ctype, curType) {
   const opts = (ctype === 'cartTotal')
     ? [['percent', '％ 할인'], ['amount', '정액(−원)']]
-    : [['percent', '％ 할인'], ['fixed', '특정가']]
+    : (ctype === 'qty')
+      ? [['nplus', 'N+M 증정'], ['secondHalf', 'n번째 %할인']]   // 5-3
+      : [['percent', '％ 할인'], ['fixed', '특정가']]
   return opts.map(([v, l]) => `<option value="${v}"${v === curType ? ' selected' : ''}>${l}</option>`).join('')
 }
 
-// 5-2: 조건 종류 변경 → 해당 조건 입력만 노출(CSS .disc-ct-*) + 혜택 옵션 재구성(총액=%/정액, 그 외=%/특정가).
+// 5-2/5-3: 조건 종류 변경 → 해당 조건 입력만 노출(CSS .disc-ct-*) + 혜택 옵션 재구성(총액=%/정액 · 수량=N+M/n번째 · 그 외=%/특정가).
 function _discCondToggle(sel) {
   const fs = sel && sel.closest ? sel.closest('.disc-fieldset') : null
   if (!fs) return
   const ct = sel.value || 'product'
-  fs.classList.remove('disc-ct-product', 'disc-ct-brand', 'disc-ct-category', 'disc-ct-cartTotal')
+  fs.classList.remove('disc-ct-product', 'disc-ct-brand', 'disc-ct-category', 'disc-ct-cartTotal', 'disc-ct-qty')
   fs.classList.add('disc-ct-' + ct)
   const bsel = fs.querySelector('.disc-btype')
   if (bsel) { const cur = bsel.value; bsel.innerHTML = _discBenefitOptions(ct, cur) }   // fixed↔amount 비호환 시 첫 옵션(percent) 자동 선택
@@ -328,11 +330,14 @@ function renderStoreDiscountPanel() {
     else if (c.type === 'brand') cond = '브랜드 ' + esc(c.brand || '')
     else if (c.type === 'category') cond = '카테고리 ' + esc(c.category || '')
     else if (c.type === 'cartTotal') cond = '🛒 총액 ≥ ₩' + Number(c.minTotal || 0).toLocaleString()
+    else if (c.type === 'qty') cond = '🎁 수량 ' + (c.scope === 'product' ? '상품' : c.scope === 'brand' ? '브랜드' : '카테고리') + ' ' + esc(c.ref || '')
     else cond = esc(c.type || '')
     let ben
     if (b.type === 'percent') ben = Number(b.value || 0) + '%'
     else if (b.type === 'fixed') ben = '특정가 ₩' + Number(b.price || 0).toLocaleString()
     else if (b.type === 'amount') ben = '정액 −₩' + Number(b.minus || 0).toLocaleString()
+    else if (b.type === 'nplus') ben = Number(b.buy || 0) + '+' + Number(b.free || 0) + ' 증정(최저가 무료)'
+    else if (b.type === 'secondHalf') ben = Number(b.nth || 0) + '번째 ' + Number(b.value || 0) + '% (최저가)'
     else ben = esc(b.type || '')
     const per = (p.start || p.end) ? ((p.start || '~') + ' ~ ' + (p.end || '~')) : '상시'
     const scope = (!r.storeScope || r.storeScope === 'all') ? '전 매장' : (Array.isArray(r.storeScope) ? r.storeScope.map(x => esc(_storeNameById(x))).join(',') : esc(_storeNameById(r.storeScope)))
@@ -343,22 +348,36 @@ function renderStoreDiscountPanel() {
   const editFields = (r) => {
     const c = (r && r.condition) || {}, b = (r && r.benefit) || {}
     const ct = c.type || 'product'
-    const bval = (b.type === 'fixed') ? b.price : (b.type === 'amount') ? b.minus : b.value
+    // 혜택 값: 비-qty = 단일(%/원). qty = bval(buy/nth) + bval2(free/value).
+    let bval, bval2 = ''
+    if (ct === 'qty') {
+      if (b.type === 'secondHalf') { bval = b.nth; bval2 = b.value } else { bval = b.buy; bval2 = b.free }
+    } else { bval = (b.type === 'fixed') ? b.price : (b.type === 'amount') ? b.minus : b.value }
+    const qscope = (ct === 'qty') ? (c.scope || 'product') : 'product'
+    const qref = (ct === 'qty') ? (c.ref || '') : ''
     const scope = (r && r.storeScope) || 'all'
     return `<div class="disc-fieldset disc-ct-${esc(ct)}">
       <input type="text" class="set-edit-input disc-f-name" value="${esc((r && r.name) || '')}" placeholder="규칙명" style="flex:1 1 120px" />
-      <select class="set-edit-input disc-f-ctype disc-ctype" onchange="_discCondToggle(this)" style="flex:0 0 92px" title="할인 조건 종류">
+      <select class="set-edit-input disc-f-ctype disc-ctype" onchange="_discCondToggle(this)" style="flex:0 0 100px" title="할인 조건 종류">
         <option value="product"${ct === 'product' ? ' selected' : ''}>상품</option>
         <option value="brand"${ct === 'brand' ? ' selected' : ''}>브랜드</option>
         <option value="category"${ct === 'category' ? ' selected' : ''}>카테고리</option>
         <option value="cartTotal"${ct === 'cartTotal' ? ' selected' : ''}>총액(카트)</option>
+        <option value="qty"${ct === 'qty' ? ' selected' : ''}>수량(N+1·반값)</option>
       </select>
       <input type="text" class="set-edit-input disc-cv disc-cv-product disc-f-code" list="discProdList" value="${esc(c.productCode || '')}" placeholder="품번" style="flex:1 1 120px" />
       <select class="set-edit-input disc-cv disc-cv-brand disc-f-brand" style="flex:0 0 120px">${brandOpts(c.brand || '')}</select>
       <select class="set-edit-input disc-cv disc-cv-category disc-f-category" style="flex:0 0 120px">${catOpts(c.category || '')}</select>
       <input type="number" class="set-edit-input disc-cv disc-cv-cartTotal disc-f-mintotal" value="${esc(ct === 'cartTotal' ? String(c.minTotal ?? '') : '')}" placeholder="총액 ≥ 원" min="1" style="flex:0 0 120px" title="이 금액 이상이면 카트 할인" />
-      <select class="set-edit-input disc-f-btype disc-btype" style="flex:0 0 106px" title="혜택 종류">${_discBenefitOptions(ct, b.type || 'percent')}</select>
-      <input type="number" class="set-edit-input disc-f-bval" value="${esc(String(bval ?? ''))}" placeholder="값(%/원)" min="0" style="flex:0 0 96px" />
+      <select class="set-edit-input disc-cv disc-cv-qty disc-f-qscope" style="flex:0 0 96px" title="수량 promo 범위">
+        <option value="product"${qscope === 'product' ? ' selected' : ''}>상품</option>
+        <option value="brand"${qscope === 'brand' ? ' selected' : ''}>브랜드</option>
+        <option value="category"${qscope === 'category' ? ' selected' : ''}>카테고리</option>
+      </select>
+      <input type="text" class="set-edit-input disc-cv disc-cv-qty disc-f-qref" list="discProdList" value="${esc(qref)}" placeholder="품번/브랜드/카테고리" style="flex:1 1 120px" title="수량 promo 대상(품번 또는 브랜드/카테고리 값)" />
+      <select class="set-edit-input disc-f-btype disc-btype" style="flex:0 0 116px" title="혜택 종류">${_discBenefitOptions(ct, b.type || 'percent')}</select>
+      <input type="number" class="set-edit-input disc-f-bval" value="${esc(String(bval ?? ''))}" placeholder="값(%/원/N)" min="0" style="flex:0 0 96px" title="%/원, 또는 N+M 의 N(구매수)·n번째의 n" />
+      <input type="number" class="set-edit-input disc-bval2 disc-f-bval2" value="${esc(String(bval2 ?? ''))}" placeholder="M/할인%" min="0" style="flex:0 0 90px" title="N+M 의 M(무료수, 기본1) 또는 n번째 할인율%(기본50)" />
       <input type="date" class="set-edit-input disc-f-start" value="${esc((r && r.period && r.period.start) || '')}" style="flex:0 0 138px" title="시작일(비우면 상시)" />
       <input type="date" class="set-edit-input disc-f-end" value="${esc((r && r.period && r.period.end) || '')}" style="flex:0 0 138px" title="종료일(비우면 상시)" />
       <select class="set-edit-input disc-f-scope" style="flex:0 0 110px">${storeOptsAll.replace('value="' + scope + '"', 'value="' + scope + '" selected')}</select>
@@ -438,6 +457,36 @@ function _discReadFields(el, prefix) {
     const mt = parseInt((g('mintotal')?.value || '').trim(), 10)
     if (!(mt > 0)) return { ok: false, msg: '총액 조건(최소 금액)은 1 이상 정수여야 합니다.' }
     condition = { type: 'cartTotal', minTotal: mt }
+  } else if (ctype === 'qty') {
+    // 5-3: 수량 promo — scope(product/brand/category) + ref. 대상 존재 검증.
+    const qscope = (g('qscope')?.value || 'product')
+    const qref = (g('qref')?.value || '').trim()
+    if (!qref) return { ok: false, msg: '수량 promo 대상(품번/브랜드/카테고리)을 입력하세요.' }
+    if (qscope === 'product') {
+      if (!((typeof _ssvFindProduct === 'function') && _ssvFindProduct(qref))) return { ok: false, msg: `품번 "${qref}"을(를) 찾을 수 없습니다.` }
+    } else {
+      const exists = (State.allProducts || []).some(p => p && !p.deleted && (qscope === 'brand' ? String(p.brand || '') === qref : String(p.type || '') === qref))
+      if (!exists) return { ok: false, msg: `${qscope === 'brand' ? '브랜드' : '카테고리'} "${qref}"을(를) 찾을 수 없습니다.` }
+    }
+    condition = { type: 'qty', scope: qscope, ref: qref }
+    // 수량 혜택 (nplus / secondHalf) — bval + bval2
+    const bval2Raw = (g('bval2')?.value || '').trim()
+    if (!/^\d+$/.test(bvalRaw)) return { ok: false, msg: '혜택 값(N 또는 n)은 정수여야 합니다.' }
+    const nval = parseInt(bvalRaw, 10)
+    if (btype === 'nplus') {
+      const buy = nval, free = bval2Raw ? parseInt(bval2Raw, 10) : 1
+      if (!(buy >= 1)) return { ok: false, msg: 'N+M 증정: 구매수 N 은 1 이상이어야 합니다.' }
+      if (!(free >= 1)) return { ok: false, msg: 'N+M 증정: 무료수 M 은 1 이상이어야 합니다.' }
+      if (start && end && start > end) return { ok: false, msg: '시작일이 종료일보다 늦습니다.' }
+      return { ok: true, rule: { name, condition, benefit: { type: 'nplus', buy, free }, period: { start, end }, storeScope: scope } }
+    } else if (btype === 'secondHalf') {
+      const nth = nval, value = bval2Raw ? parseInt(bval2Raw, 10) : 50
+      if (!(nth >= 2)) return { ok: false, msg: 'n번째 할인: n 은 2 이상이어야 합니다.' }
+      if (!(value >= 1 && value <= 100)) return { ok: false, msg: '할인율은 1~100 사이여야 합니다.' }
+      if (start && end && start > end) return { ok: false, msg: '시작일이 종료일보다 늦습니다.' }
+      return { ok: true, rule: { name, condition, benefit: { type: 'secondHalf', nth, value }, period: { start, end }, storeScope: scope } }
+    }
+    return { ok: false, msg: '수량 혜택 종류가 올바르지 않습니다.' }
   } else return { ok: false, msg: '조건 종류가 올바르지 않습니다.' }
   // ── 혜택 (조건별 허용: 총액=%/정액 · 그 외=%/특정가) ──
   const isCart = (ctype === 'cartTotal')
@@ -2413,6 +2462,10 @@ function _buildSaleLine(raw) {
     let cd = Math.max(0, Math.floor(Number(raw.cartDiscount) || 0)); if (cd > unitDiscount) cd = unitDiscount
     if (cd > 0) line.cartDiscount = cd
   }
+  // 5-3: split 라인 식별자(additive). lineId 있으면 부분취소/집계/취소UI 가 (품번,사이즈) 대신 이걸로 라인 독립 식별 → 무료/유료 split 구분.
+  //   lineNote(무료/반값) = 표시 전용. lineId 없는 라인(레거시/비-split)=기존 (품번,사이즈) 키(byte-identical).
+  if (raw && raw.lineId) line.lineId = String(raw.lineId)
+  if (raw && raw.lineNote) line.lineNote = String(raw.lineNote)
   return line
 }
 
@@ -2492,25 +2545,33 @@ function voidSeqId(saleDocId, seq) { return 'void_' + String(saleDocId || '') + 
 // 라인 식별 키 (품번+사이즈). 누적 취소수량 집계용.
 function _lineKey(code, size) { return String(code == null ? '' : code) + '' + String(size == null ? '' : size) }
 
+// 5-3: 라인 식별 키. lineId(split 라인) 있으면 그걸로, 없으면 (품번,사이즈)(레거시/비-split=byte-identical).
+//   부분취소/집계/취소UI/트랜잭션 누적상한이 이 키로 라인 독립 식별 → 같은 (품번,사이즈) split(무료/유료)도 구분.
+function _lineIdOf(l) { return (l && l.lineId != null && l.lineId !== '') ? String(l.lineId) : _lineKey(l && l.productCode, l && l.size) }
+function _selKey(s) { return (s && s.lineId != null && s.lineId !== '') ? String(s.lineId) : _lineKey(s && s.productCode, s && s.size) }
+
 // 부분취소 문서 생성자 — 원본 판매 + 선택(라인별 취소수량) → 취소 라인/합계 재계산(원본 단가로, per-unit 정확).
-//   selections: [{ productCode, size, voidQty }]. 원본 lines 에서 단가/할인단가 조회(클라 값 불신).
+//   selections: [{ productCode, size, lineId?, voidQty }]. 원본 lines 에서 단가/할인단가 조회(클라 값 불신). lineId 로 split 라인 독립 식별.
 function buildPartialVoidDoc(saleDoc, saleDocId, selections, opts) {
   saleDoc = saleDoc || {}; opts = opts || {}
   const byKey = {}
-  ;(saleDoc.lines || []).forEach(l => { byKey[_lineKey(l.productCode, l.size)] = l })
+  ;(saleDoc.lines || []).forEach(l => { byKey[_lineIdOf(l)] = l })
   const lines = []
   ;(selections || []).forEach(s => {
     const vq = Math.max(0, Math.floor(Number(s.voidQty) || 0))
     if (vq < 1) return
-    const sl = byKey[_lineKey(s.productCode, s.size)]
+    const sl = byKey[_selKey(s)]
     if (!sl) return
     const unitPrice = Math.max(0, Math.floor(Number(sl.unitPrice) || 0))
     let unitDiscount = Math.max(0, Math.floor(Number(sl.unitDiscount) || 0)); if (unitDiscount > unitPrice) unitDiscount = unitPrice
     const lineNormal = unitPrice * vq, lineDiscount = unitDiscount * vq
-    lines.push({
+    const vl = {
       productCode: String(sl.productCode || ''), size: String(sl.size || ''),
       qty: vq, unitPrice, unitDiscount, lineNormal, lineDiscount, lineTotal: lineNormal - lineDiscount
-    })
+    }
+    if (sl.lineId != null && sl.lineId !== '') vl.lineId = String(sl.lineId)   // void 라인도 lineId 보존 → voidedByKey 집계가 split 별로 정확
+    if (sl.lineNote) vl.lineNote = String(sl.lineNote)
+    lines.push(vl)
   })
   const totals = {
     total: lines.reduce((a, l) => a + l.lineTotal, 0),
@@ -2551,7 +2612,8 @@ window.voidSeqId = voidSeqId
 // 🔒 재고/원장 쓰기 없음. 입고 스캔과 병렬 코드(파이프라인 공유 안 함). 순수 헬퍼만 재사용(findByBarcode/_ssvFindProduct/_inbBarcodedSizes/_inbParseQty/getStoreStock/getThumbUrl).
 
 let _saleStore = ''         // 현재 판매 매장
-let _saleList = []          // 판매 라인 [{productCode,size,qty,unitPrice,unitDiscount,discountSource}]
+let _saleList = []          // 판매 라인(편집 가능 부모) [{productCode,size,qty,unitPrice,unitDiscount,discountSource, _qtyFree?,_qtyHalf?,_qtyHalfVal?,_qtyRuleId?,_qtyRuleName?}]
+let _saleEffLines = []      // 5-3: 엔진 파생 effective(split) 라인 — 총계/표시/카트/확정 소스. 매 평가마다 재구성(부모 → 정상/반값/무료 분할, split 시 lineId 부여)
 let _saleCardKey = null     // 마지막 스캔 (카드 표시용)
 let _saleComposing = false  // IME 조합 중
 let _saleLastEnterTime = 0  // 스캐너 이중발사 디바운스
@@ -2620,7 +2682,7 @@ function renderSaleScreen() {
   if (!gate || !screen) return
   const store = (typeof resolveActiveStore === 'function') ? resolveActiveStore() : ''
   if (!store) {   // 판매 = 작업 → office/미배정 차단
-    _saleStore = ''; _saleList = []
+    _saleStore = ''; _saleList = []; _saleEffLines = []   // 5-3: 게이트 시 파생 라인도 리셋(대칭)
     screen.classList.add('inb-hidden'); gate.classList.remove('inb-hidden')
     gate.innerHTML = `<div class="store-placeholder"><div class="store-placeholder-icon">🚫</div><div class="store-placeholder-title">판매 불가</div><div class="store-placeholder-desc">배정된 매장이 없습니다 — 관리자에게 문의하세요.</div></div>`
     return
@@ -2723,11 +2785,12 @@ function _ruleUnitDiscount(rule, unitPrice) {
 function _saleApplyDiscounts() {
   const store = _saleStore
   const rules = (typeof getActiveDiscounts === 'function') ? getActiveDiscounts(store) : []
-  // ── Pass 1: 라인 레벨 (product/brand/category × percent/fixed). unitDiscount=라인할인만(카트 폴딩 전 baseline).
+  // ── Pass 1: 라인 레벨 (product/brand/category × percent/fixed). unitDiscount=라인할인만(수량/카트 폴딩 전 baseline).
   _saleList.forEach(l => {
-    // 카트 태그/포션은 매 평가마다 재계산 → 우선 제거(재평가 idempotent). unitDiscount 는 pass1 이 라인할인으로 재설정.
+    // 수량/카트 파생값은 매 평가마다 재계산 → 우선 제거(재평가 idempotent).
     delete l.cartDiscount; delete l.cartRuleId; delete l.cartRuleName
-    if (l.discountSource === 'manual-override') return   // 수동 잠금(라인+카트 모두 제외)
+    delete l._qtyFree; delete l._qtyHalf; delete l._qtyHalfVal; delete l._qtyRuleId; delete l._qtyRuleName
+    if (l.discountSource === 'manual-override') return   // 수동 잠금(라인+수량+카트 모두 제외)
     const up = Math.max(0, Math.floor(Number(l.unitPrice) || 0))
     let best = null, bestDisc = 0
     rules.forEach(r => {
@@ -2738,13 +2801,113 @@ function _saleApplyDiscounts() {
     if (best && bestDisc > 0) {
       l.unitDiscount = bestDisc; l.discountSource = 'store-discount'
       l.appliedRuleId = best.id; l.appliedRuleName = best.name
-    } else if (l.discountSource === 'store-discount') {   // 더 이상 매칭 안 됨 → 자동할인 해제(카트가 pass2 에서 다시 채울 수 있음)
+    } else if (l.discountSource === 'store-discount') {   // 더 이상 매칭 안 됨 → 자동할인 해제(수량/카트가 다시 채울 수 있음)
       l.unitDiscount = 0; l.discountSource = 'manual'
       delete l.appliedRuleId; delete l.appliedRuleName
     }
   })
-  // ── Pass 2: 카트 레벨 (cartTotal). 라인할인 후 소계 ≥ minTotal → 최대 절감 1개를 라인들에 분배(unitDiscount 폴딩).
-  _saleApplyCartDiscounts(rules)
+  // ── Pass 1.5: 수량(5-3) — N+1/두번째반값. 부모 라인에 무료/반값 유닛 수 breakdown(_qty*) 기록(라인할인 후 최저가 유닛 선택).
+  _saleApplyQtyDiscounts(rules)
+  // ── effective(split) 라인 빌드 — 부모 → 정상/반값/무료 분할(각 균일 unitDiscount, split 시 lineId). 총계/표시/카트/확정 소스.
+  _saleEffLines = _buildEffectiveLines()
+  // ── Pass 2: 카트 레벨 (cartTotal). 수량 적용 후 effective 라인 소계 ≥ minTotal → 최대 절감 1개를 effective 라인에 분배.
+  _saleApplyCartDiscounts(rules, _saleEffLines)
+}
+
+// 수량 규칙 scope 매칭 — product(품번)/brand(상품 brand)/category(상품 type).
+function _qtyMatch(cond, code) {
+  const scope = cond && cond.scope, ref = cond && cond.ref
+  if (scope === 'product') return String(ref || '') === String(code || '')
+  if (scope === 'brand' || scope === 'category') {
+    const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(code) : null
+    if (!p) return false
+    return scope === 'brand' ? String(p.brand || '') === String(ref || '') : String(p.type || '') === String(ref || '')
+  }
+  return false
+}
+
+// Pass 1.5 — 수량 promo(N+1 nplus / 두번째반값 secondHalf). v1=최대 절감 1개(no-stack, 카트레벨 미러). 🔴 무료/할인 유닛=최저가(오너 확정).
+//   자격 유닛=manual-override 제외 · scope 매칭 · 라인할인 후 단가(postLine). 부모 라인에 _qtyFree/_qtyHalf/_qtyHalfVal/_qtyRule* tally.
+function _saleApplyQtyDiscounts(rules) {
+  const qtyRules = (rules || []).filter(r => r && r.condition && r.condition.type === 'qty')
+  if (!qtyRules.length) return
+  let best = null, bestSave = 0, bestPlan = null
+  qtyRules.forEach(r => {
+    const units = []
+    _saleList.forEach((l, i) => {
+      if (l.discountSource === 'manual-override') return
+      if (!_qtyMatch(r.condition, l.productCode)) return
+      const up = Math.max(0, Math.floor(Number(l.unitPrice) || 0))
+      let ud = Math.max(0, Math.floor(Number(l.unitDiscount) || 0)); if (ud > up) ud = up
+      const price = up - ud   // 라인할인 후 단가(수량 promo 는 이 위에 얹힘 — 파이프라인 line→quantity)
+      const qty = Math.max(1, Math.floor(Number(l.qty) || 1))
+      for (let u = 0; u < qty; u++) units.push({ i, price })
+    })
+    if (units.length < 2) return
+    units.sort((a, b) => a.price - b.price)   // 🔴 최저가 우선(무료/할인 대상)
+    const b = r.benefit || {}
+    let plan = null, save = 0
+    if (b.type === 'nplus') {
+      const buy = Math.max(1, Math.floor(Number(b.buy) || 0)), free = Math.max(1, Math.floor(Number(b.free) || 0))
+      const cycle = buy + free
+      const freeCount = Math.floor(units.length / cycle) * free
+      if (freeCount > 0) { const chosen = units.slice(0, freeCount); save = chosen.reduce((a, u) => a + u.price, 0); plan = { kind: 'free', chosen } }
+    } else if (b.type === 'secondHalf') {
+      const nth = Math.max(2, Math.floor(Number(b.nth) || 0)), val = Math.max(1, Math.min(100, Math.floor(Number(b.value) || 0)))
+      const cnt = Math.floor(units.length / nth)
+      if (cnt > 0) { const chosen = units.slice(0, cnt); save = chosen.reduce((a, u) => a + Math.floor(u.price * val / 100), 0); plan = { kind: 'half', chosen, val } }
+    }
+    if (plan && save > 0 && (save > bestSave || (save === bestSave && best && (Number(r.priority) || 0) < (Number(best.priority) || 0)))) {
+      best = r; bestSave = save; bestPlan = plan
+    }
+  })
+  if (!best || !bestPlan) return
+  bestPlan.chosen.forEach(u => {
+    const l = _saleList[u.i]; if (!l) return
+    if (bestPlan.kind === 'free') l._qtyFree = (l._qtyFree || 0) + 1
+    else { l._qtyHalf = (l._qtyHalf || 0) + 1; l._qtyHalfVal = bestPlan.val }
+  })
+  _saleList.forEach(l => {
+    if ((l._qtyFree || 0) > 0 || (l._qtyHalf || 0) > 0) {
+      l._qtyRuleId = best.id; l._qtyRuleName = best.name || ''
+      if (l.discountSource !== 'manual-override') l.discountSource = 'store-discount'
+    }
+  })
+}
+
+// effective(split) 라인 빌드 — 부모 _saleList → 정상(paid)/반값(half)/무료(free) 서브라인(각 균일 unitDiscount).
+//   split(서브라인 ≥2) 시에만 lineId 부여(`{code}#{size}#{n}`) → 부분취소 라인 독립 식별. 단일 서브라인=lineId 없음(레거시/비-split=byte-identical void).
+//   🔴 재고=전체 qty(무료 포함) — free 유닛도 qty 로 확정 라인에 남아 차감됨.
+function _buildEffectiveLines() {
+  const out = []
+  _saleList.forEach((l, i) => {
+    const up = Math.max(0, Math.floor(Number(l.unitPrice) || 0))
+    let lud = Math.max(0, Math.floor(Number(l.unitDiscount) || 0)); if (lud > up) lud = up   // 라인할인 per-unit
+    const qty = Math.max(1, Math.floor(Number(l.qty) || 1))
+    let free = Math.max(0, Math.min(qty, Math.floor(Number(l._qtyFree) || 0)))
+    let half = Math.max(0, Math.min(qty - free, Math.floor(Number(l._qtyHalf) || 0)))
+    const paid = qty - free - half
+    const postLine = up - lud
+    const halfVal = Math.max(0, Math.min(100, Math.floor(Number(l._qtyHalfVal) || 0)))
+    const parts = []
+    if (paid > 0) parts.push({ qty: paid, unitDiscount: lud, rid: l.appliedRuleId, rname: l.appliedRuleName, kind: 'paid' })
+    if (half > 0) { let hud = up - Math.floor(postLine * (100 - halfVal) / 100); if (hud > up) hud = up; parts.push({ qty: half, unitDiscount: hud, rid: l._qtyRuleId, rname: l._qtyRuleName, kind: 'half', note: '반값' }) }
+    if (free > 0) parts.push({ qty: free, unitDiscount: up, rid: l._qtyRuleId, rname: l._qtyRuleName, kind: 'free', note: '무료' })
+    const split = parts.length > 1
+    parts.forEach((p, n) => {
+      const eff = {
+        productCode: l.productCode, size: l.size, qty: p.qty,
+        unitPrice: up, unitDiscount: p.unitDiscount,
+        discountSource: p.kind === 'paid' ? l.discountSource : 'store-discount',
+        _parentIdx: i, _kind: p.kind
+      }
+      if (p.rid) { eff.appliedRuleId = p.rid; eff.appliedRuleName = p.rname || '' }
+      if (p.note) eff.lineNote = p.note
+      if (split) eff.lineId = String(l.productCode) + '#' + String(l.size) + '#' + n
+      out.push(eff)
+    })
+  })
+  return out
 }
 
 // 카트 규칙의 총 절감(정수 KRW). amount=정액 min(소계,minus) · percent=floor(소계×%). (cartTotal 전용 — 라인 fixed 와 분리)
@@ -2758,15 +2921,16 @@ function _cartRuleSaving(rule, cartSubtotal) {
 
 // Pass 2 — 카트레벨(cartTotal) 평가 + 분배. 자격 라인=manual-override 제외(Q3 확장: 수동잠금은 자격·분배 모두 제외).
 //   라인+카트 across-level 병존(브랜드 15% 라인도 소계에 포함되고 카트 분배 몫도 받음 — 작업지시 확정). no-stack within cart level.
-function _saleApplyCartDiscounts(rules) {
+function _saleApplyCartDiscounts(rules, lines) {
+  const src = lines || _saleEffLines || []
   const q = []
-  _saleList.forEach((l) => {
+  src.forEach((l) => {
     if (l.discountSource === 'manual-override') return
     const up = Math.max(0, Math.floor(Number(l.unitPrice) || 0))
     let ud = Math.max(0, Math.floor(Number(l.unitDiscount) || 0)); if (ud > up) ud = up
     const qty = Math.max(1, Math.floor(Number(l.qty) || 1))
-    const unit = up - ud                 // 라인할인 후 단위 판매가
-    const lineTotal = unit * qty         // 라인 판매가
+    const unit = up - ud                 // 라인/수량 할인 후 단위 판매가
+    const lineTotal = unit * qty         // 라인 판매가 (무료 라인=0 → 카트 자격 제외)
     if (lineTotal <= 0) return
     q.push({ l, up, ud, qty, unit, lineTotal })
   })
@@ -2877,7 +3041,22 @@ function _saleRenderCard(code, size) {
     : '<div class="inb-card-noimg">이미지 없음</div>'
 }
 
-// 판매 리스트 렌더 (파생값 항상 재계산, 정수 KRW). mockup: 정상가=단가×수량, 할인가=할인단가×수량, 판매가=정상가−할인가.
+// 부모 라인 i 의 effective(split) 집계 — 금액(정상/할인/판매)·paid 단위할인(입력값)·카트 행사명.
+function _saleParentEff(i) {
+  let lineNormal = 0, lineDiscount = 0, lineTotal = 0, paidUd = 0, hasPaid = false, cartName = ''
+  ;(_saleEffLines || []).forEach(e => {
+    if (e._parentIdx !== i) return
+    const up = Math.max(0, Math.floor(Number(e.unitPrice) || 0))
+    let ud = Math.max(0, Math.floor(Number(e.unitDiscount) || 0)); if (ud > up) ud = up
+    const q = Math.max(1, Math.floor(Number(e.qty) || 1))
+    lineNormal += up * q; lineDiscount += ud * q; lineTotal += (up - ud) * q
+    if (e._kind === 'paid') { paidUd = ud; hasPaid = true }
+    if (e.cartRuleName && !cartName) cartName = e.cartRuleName
+  })
+  return { lineNormal, lineDiscount, lineTotal, paidUd, hasPaid, cartName }
+}
+
+// 판매 리스트 렌더 — 부모 라인당 1행(편집), 금액=effective 집계(수량/카트 반영), 수량 promo=배지. 🔴 split 실물은 판매 doc/영수증에 표기.
 function _saleRenderList() {
   const body = document.getElementById('saleListBody')
   const countEl = document.getElementById('saleListCount')
@@ -2886,29 +3065,39 @@ function _saleRenderList() {
   if (!_saleList.length) { body.innerHTML = '<tr><td colspan="10" class="inbhist-empty">스캔한 상품이 여기에 쌓입니다</td></tr>'; _saleUpdateTotals(); return }
   body.innerHTML = _saleList.map((l, i) => {
     const unitPrice = Math.max(0, Math.floor(Number(l.unitPrice) || 0))
-    let unitDiscount = Math.max(0, Math.floor(Number(l.unitDiscount) || 0)); if (unitDiscount > unitPrice) unitDiscount = unitPrice
     const qty = Math.max(1, Math.floor(Number(l.qty) || 1))
-    const lineNormal = unitPrice * qty, lineDiscount = unitDiscount * qty, lineTotal = lineNormal - lineDiscount
+    const eff = _saleParentEff(i)
+    // 입력 표시용 단위할인 = paid 라인 unitDiscount(라인+카트, 수동 잠금 시 그 값). 편집=수동 잠금(promo 해제).
+    let inputUd = eff.hasPaid ? eff.paidUd : Math.max(0, Math.floor(Number(l.unitDiscount) || 0))
+    if (inputUd > unitPrice) inputUd = unitPrice
+    const lineNormal = unitPrice * qty, lineDiscount = eff.lineDiscount, lineTotal = eff.lineTotal
     const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(l.productCode) : null
     const nm = p ? (p.nameKr || p.nameEn || '') : ''
-    // 가격 변경 표시(draft 복원): 라인 단가 ≠ 현재 상품 판매가 → 노란 힌트. 자동 갱신 안 함(견적 스냅샷 보존, 확정은 스냅샷대로).
     const curPrice = p ? Math.max(0, Math.floor(Number(p.salePrice) || 0)) : null
     const staleHint = (curPrice != null && curPrice !== unitPrice)
       ? `<div class="sale-line-stale">⚠ 가격 변경됨: 현재 ₩${curPrice.toLocaleString()}</div>` : ''
-    // 5-1/5-2: 적용 할인 표시 — 자동(라인 행사명 🏷 + 카트 행사명 🛒) / 수동 잠금(수동 배지)
+    // 적용 할인 표시 — 라인 행사(🏷) + 수량 promo(🎁 무료/반값) + 카트 행사(🛒) / 수동 잠금(수동)
     let discBadge = ''
-    if (l.discountSource === 'store-discount') {
+    if (l.discountSource === 'manual-override') discBadge = `<div class="sale-line-manual">수동</div>`
+    else {
       const chips = []
       if (l.appliedRuleName) chips.push(`<span class="sale-line-promo-chip">🏷 ${esc(l.appliedRuleName)}</span>`)
-      if (l.cartRuleName) chips.push(`<span class="sale-line-promo-chip sale-line-cart-chip">🛒 ${esc(l.cartRuleName)}</span>`)
+      const free = Math.max(0, Math.floor(Number(l._qtyFree) || 0)), half = Math.max(0, Math.floor(Number(l._qtyHalf) || 0))
+      if (l._qtyRuleName && (free || half)) {
+        const parts = []
+        if (free) parts.push(`${free}개 무료`)
+        if (half) parts.push(`${half}개 ${Math.floor(Number(l._qtyHalfVal) || 50)}%`)
+        chips.push(`<span class="sale-line-promo-chip sale-line-qty-chip">🎁 ${esc(l._qtyRuleName)} (${parts.join(', ')})</span>`)
+      }
+      if (eff.cartName) chips.push(`<span class="sale-line-promo-chip sale-line-cart-chip">🛒 ${esc(eff.cartName)}</span>`)
       if (chips.length) discBadge = `<div class="sale-line-promo">${chips.join(' ')}</div>`
-    } else if (l.discountSource === 'manual-override') discBadge = `<div class="sale-line-manual">수동</div>`
+    }
     return `<tr>
       <td class="inb-c">${i + 1}</td>
       <td><span class="code-link" onclick="openStoreProductDetail('${esc(l.productCode)}', '${esc(_saleStore)}')">${esc(l.productCode)}</span>${nm ? `<div class="sale-line-name">${esc(nm)}</div>` : ''}${discBadge}${staleHint}</td>
       <td class="inb-c">${esc(l.size)}</td>
       <td style="text-align:right">${unitPrice.toLocaleString()}</td>
-      <td><input type="number" class="sale-line-input" min="0" step="1" value="${unitDiscount}" onchange="onSaleLineDiscount(${i}, this)"></td>
+      <td><input type="number" class="sale-line-input" min="0" step="1" value="${inputUd}" onchange="onSaleLineDiscount(${i}, this)"></td>
       <td style="text-align:right">${lineNormal.toLocaleString()}</td>
       <td style="text-align:right">${lineDiscount.toLocaleString()}</td>
       <td style="text-align:right;font-weight:700">${lineTotal.toLocaleString()}</td>
@@ -2919,10 +3108,10 @@ function _saleRenderList() {
   _saleUpdateTotals()
 }
 
-// 합계 실시간 (합계=Σ판매가, 할인합계=Σ할인가, 수량합계=Σ수량). 정수.
+// 합계 실시간 (합계=Σ판매가, 할인합계=Σ할인가, 수량합계=Σ수량). 정수. 🔴 5-3: effective(split) 라인 기준(수량 promo 반영).
 function _saleUpdateTotals() {
   let sum = 0, disc = 0, qty = 0
-  _saleList.forEach(l => {
+  ;(_saleEffLines || []).forEach(l => {
     const up = Math.max(0, Math.floor(Number(l.unitPrice) || 0))
     let ud = Math.max(0, Math.floor(Number(l.unitDiscount) || 0)); if (ud > up) ud = up
     const q = Math.max(1, Math.floor(Number(l.qty) || 1))
@@ -2940,7 +3129,7 @@ function _saleUpdateTotals() {
 function _saleRenderPromos() {
   const el = document.getElementById('saleAppliedPromos'); if (!el) return
   const map = {}
-  _saleList.forEach(l => {
+  ;(_saleEffLines || []).forEach(l => {   // 🔴 5-3: effective 라인 — 라인/수량 promo(appliedRuleId) + 카트(cartRuleId) 자동 분리 귀속
     if (l.discountSource !== 'store-discount') return
     const up = Math.max(0, Math.floor(Number(l.unitPrice) || 0))
     let ud = Math.max(0, Math.floor(Number(l.unitDiscount) || 0)); if (ud > up) ud = up
@@ -3105,6 +3294,7 @@ function _saleSuccessCleanup(store, saleNo, total, alreadyLanded) {
   const totalQty = _saleList.reduce((s, l) => s + Math.max(1, Math.floor(Number(l.qty) || 1)), 0)
   const lineCount = _saleList.length
   _saleList = []
+  _saleEffLines = []   // 🔴 5-3: 총계/적용행사 footer 가 직전 판매 stale effLines 표시하지 않도록 리셋(_saleUpdateTotals/_saleRenderPromos 가 effLines 순회)
   _salePendingSaleNo = ''
   try { localStorage.removeItem(_saleDraftKey(store)) } catch (e) {}
   const payEl = document.getElementById('salePayMethod'); if (payEl) payEl.value = '카드'   // 결제수단 기본 복귀
@@ -3154,14 +3344,18 @@ async function saleConfirmProceed() {
       : ((typeof _currentUserName !== 'undefined' && _currentUserName) || '')
     const payEl = document.getElementById('salePayMethod')
     const phoneEl = document.getElementById('salePhone')
+    // 5-3: 확정 직전 재평가 → effective(split) 라인 최신화. 판매 doc = effective 라인(정상/반값/무료 split, lineId).
+    //   🔴 재고는 아래에서 (code,size)별 qty 합산 = 전체 qty(무료 유닛 포함) → 무료 상품도 물리적으로 나가므로 정상 차감.
+    _saleApplyDiscounts()
+    const effLines = (_saleEffLines && _saleEffLines.length) ? _saleEffLines : _buildEffectiveLines()
     const saleDoc = buildSaleDoc({
-      saleNo, storeId: store, lines: _saleList,
+      saleNo, storeId: store, lines: effLines,
       payMethod: payEl ? payEl.value : '카드',
       customerPhone: phoneEl ? phoneEl.value : '',
       workerUid: uid, workerName
     })
 
-    // 코드별 사이즈 차감 합산 (같은 코드+사이즈 라인 방어적 합산). op 수 = 코드수 + 1(판매 doc).
+    // 코드별 사이즈 차감 합산 (split 라인도 같은 코드+사이즈로 합산 → 전체 qty 차감; 무료 유닛 포함). op 수 = 코드수 + 1(판매 doc).
     const codeSizeQty = {}
     saleDoc.lines.forEach(l => {
       codeSizeQty[l.productCode] = codeSizeQty[l.productCode] || {}
@@ -3325,11 +3519,11 @@ function _shVoidOrigId(v) {
 // 판매 + 그 취소 문서들 → 집계. 라인별 누적 취소수량, 취소 합계/할인/수량, 남은 금액/수량, 상태.
 function _shComputeAgg(saleDoc, voidDocs) {
   const soldByKey = {}
-  ;(saleDoc.lines || []).forEach(l => { const k = _lineKey(l.productCode, l.size); soldByKey[k] = (soldByKey[k] || 0) + (Number(l.qty) || 0) })
+  ;(saleDoc.lines || []).forEach(l => { const k = _lineIdOf(l); soldByKey[k] = (soldByKey[k] || 0) + (Number(l.qty) || 0) })
   const voidedByKey = {}
   let voidedTotal = 0, voidedDiscount = 0, voidedQty = 0
   ;(voidDocs || []).forEach(v => {
-    ;(v.lines || []).forEach(l => { const k = _lineKey(l.productCode, l.size); voidedByKey[k] = (voidedByKey[k] || 0) + (Number(l.qty) || 0) })
+    ;(v.lines || []).forEach(l => { const k = _lineIdOf(l); voidedByKey[k] = (voidedByKey[k] || 0) + (Number(l.qty) || 0) })
     const t = v.totals || {}
     voidedTotal += Number(t.total) || 0; voidedDiscount += Number(t.discountTotal) || 0; voidedQty += Number(t.qtyTotal) || 0
   })
@@ -3617,13 +3811,14 @@ function openSaleReceipt(id, kind) {
     const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(l.productCode) : null
     const nm = p ? (p.nameKr || p.nameEn || '') : ''
     const soldQ = Number(l.qty) || 0
-    const vQ = (!isVoidDoc && agg) ? (agg.voidedByKey[_lineKey(l.productCode, l.size)] || 0) : 0
+    const vQ = (!isVoidDoc && agg) ? (agg.voidedByKey[_lineIdOf(l)] || 0) : 0   // 🔴 5-3: split 라인 lineId 키
     const remQ = soldQ - vQ
+    const note = l.lineNote ? ` <span class="svoid-note">${esc(l.lineNote)}</span>` : ''
     const qtyCell = isVoidDoc
       ? `<td style="text-align:right">${soldQ}</td>`
       : `<td style="text-align:right">${soldQ}${vQ > 0 ? ` <span class="shist-rc-vq">-${vQ}</span> <span class="shist-rc-rem">남은 ${remQ}</span>` : ''}</td>`
     return `<tr${(!isVoidDoc && remQ <= 0) ? ' class="shist-cancelled-row"' : ''}>
-      <td><span class="code-link" onclick="openStoreProductDetail('${esc(l.productCode)}','${esc(d.storeId || '')}')">${esc(l.productCode)}</span></td>
+      <td><span class="code-link" onclick="openStoreProductDetail('${esc(l.productCode)}','${esc(d.storeId || '')}')">${esc(l.productCode)}</span>${note}</td>
       <td>${esc(nm)}</td>
       <td style="text-align:center">${esc(l.size || '')}</td>
       ${qtyCell}
@@ -3705,13 +3900,15 @@ function requestSaleVoid() {
     const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(l.productCode) : null
     const nm = p ? (p.nameKr || p.nameEn || '') : ''
     const soldQ = Number(l.qty) || 0
-    const vQ = agg.voidedByKey[_lineKey(l.productCode, l.size)] || 0
+    const vQ = agg.voidedByKey[_lineIdOf(l)] || 0   // 🔴 5-3: split 라인 독립 집계(lineId)
     const remQ = soldQ - vQ
+    const lid = (l.lineId != null && l.lineId !== '') ? String(l.lineId) : ''
+    const note = l.lineNote ? ` <span class="svoid-note">${esc(l.lineNote)}</span>` : ''   // 무료/반값 라벨
     const input = remQ > 0
-      ? `<input type="number" class="svoid-qty-input" min="0" max="${remQ}" step="1" value="0" data-i="${i}" data-code="${esc(l.productCode)}" data-size="${esc(l.size)}" oninput="onSvQtyInput(this)">`
+      ? `<input type="number" class="svoid-qty-input" min="0" max="${remQ}" step="1" value="0" data-i="${i}" data-code="${esc(l.productCode)}" data-size="${esc(l.size)}" data-lineid="${esc(lid)}" oninput="onSvQtyInput(this)">`
       : '<span class="svoid-done">취소 완료</span>'
     return `<tr${remQ <= 0 ? ' class="svoid-row-done"' : ''}>
-      <td>${esc(l.productCode)}${nm ? `<div class="svoid-nm">${esc(nm)}</div>` : ''}</td>
+      <td>${esc(l.productCode)}${note}${nm ? `<div class="svoid-nm">${esc(nm)}</div>` : ''}</td>
       <td style="text-align:center">${esc(l.size)}</td>
       <td style="text-align:right">${soldQ}</td>
       <td style="text-align:right">${vQ}</td>
@@ -3741,12 +3938,16 @@ function svVoidAll() {
   document.querySelectorAll('#svLinesBody .svoid-qty-input').forEach(el => { el.value = el.max })
   _svUpdateLiveTotal()
 }
-// 선택 수집 [{productCode,size,voidQty}]
+// 선택 수집 [{productCode,size,lineId?,voidQty}] — 5-3: split 라인은 data-lineid 로 독립 식별
 function _svCollectSelections() {
   const sels = []
   document.querySelectorAll('#svLinesBody .svoid-qty-input').forEach(el => {
     const q = Math.floor(Number(el.value) || 0)
-    if (q >= 1) sels.push({ productCode: el.getAttribute('data-code'), size: el.getAttribute('data-size'), voidQty: q })
+    if (q >= 1) {
+      const sel = { productCode: el.getAttribute('data-code'), size: el.getAttribute('data-size'), voidQty: q }
+      const lid = el.getAttribute('data-lineid'); if (lid) sel.lineId = lid
+      sels.push(sel)
+    }
   })
   return sels
 }
@@ -3754,10 +3955,10 @@ function _svCollectSelections() {
 function _svUpdateLiveTotal() {
   const el = document.getElementById('svLiveTotal'); if (!el) return
   const sale = _svTarget || {}
-  const byKey = {}; (sale.lines || []).forEach(l => { byKey[_lineKey(l.productCode, l.size)] = l })
+  const byKey = {}; (sale.lines || []).forEach(l => { byKey[_lineIdOf(l)] = l })
   let amt = 0, qty = 0
   _svCollectSelections().forEach(s => {
-    const l = byKey[_lineKey(s.productCode, s.size)]
+    const l = byKey[_selKey(s)]
     if (!l) return
     const up = Math.max(0, Math.floor(Number(l.unitPrice) || 0))
     let ud = Math.max(0, Math.floor(Number(l.unitDiscount) || 0)); if (ud > up) ud = up
@@ -3813,10 +4014,10 @@ async function confirmSaleVoid() {
   if (!_svCanVoid(sale)) { showToast('본인 매장 판매만 취소할 수 있습니다', 'warning'); return }
   if (!db) { showToast('서버 연결 없음 — 잠시 후 다시 시도하세요', 'warning'); return }
   if (typeof navigator !== 'undefined' && navigator.onLine === false) { showToast('오프라인 상태 — 연결 확인 후 취소하세요', 'warning'); return }
-  // 클라 사전 상한 검증(서버 트랜잭션이 authoritative)
+  // 클라 사전 상한 검증(서버 트랜잭션이 authoritative). 🔴 5-3: split 라인 lineId 키로 독립 상한.
   const agg0 = _shAgg[sale._id] || _shComputeAgg(sale, [])
   for (const s of sels) {
-    const k = _lineKey(s.productCode, s.size)
+    const k = _selKey(s)
     const remain = (agg0.soldByKey[k] || 0) - (agg0.voidedByKey[k] || 0)
     if (s.voidQty > remain) { showToast(s.productCode + ' ' + s.size + ': 남은 수량(' + remain + ') 초과', 'warning'); return }
   }
@@ -3843,7 +4044,7 @@ async function confirmSaleVoid() {
       if (!saleSnap.exists) throw new Error('SALE_NOT_FOUND')
       const sd = saleSnap.data() || {}
       const soldByKey = {}
-      ;(sd.lines || []).forEach(l => { const k = _lineKey(l.productCode, l.size); soldByKey[k] = (soldByKey[k] || 0) + (Number(l.qty) || 0) })
+      ;(sd.lines || []).forEach(l => { const k = _lineIdOf(l); soldByKey[k] = (soldByKey[k] || 0) + (Number(l.qty) || 0) })   // 🔴 5-3: lineId 키
       const existing = []
       // 레거시 전량취소 id (구 3e) 도 포함
       const legacySnap = await tx.get(db.collection('storeSales').doc(voidDocId(sale._id)))
@@ -3862,9 +4063,9 @@ async function confirmSaleVoid() {
       if (existing.some(v => v.clientToken && v.clientToken === token)) return { already: true }
       // 누적 상한 재검증 (authoritative)
       const voidedByKey = {}
-      existing.forEach(v => (v.lines || []).forEach(l => { const k = _lineKey(l.productCode, l.size); voidedByKey[k] = (voidedByKey[k] || 0) + (Number(l.qty) || 0) }))
+      existing.forEach(v => (v.lines || []).forEach(l => { const k = _lineIdOf(l); voidedByKey[k] = (voidedByKey[k] || 0) + (Number(l.qty) || 0) }))   // 🔴 5-3: lineId 키
       for (const s of sels) {
-        const k = _lineKey(s.productCode, s.size)
+        const k = _selKey(s)
         if ((voidedByKey[k] || 0) + s.voidQty > (soldByKey[k] || 0)) throw new Error('EXCEEDS_REMAINING')
       }
       const soldQtyTotal = Number(sd.totals && sd.totals.qtyTotal) || 0

@@ -6037,7 +6037,14 @@ td[data-editable]:hover { background: #FAEEDA; }
 .disc-ct-product .disc-cv-product,
 .disc-ct-brand .disc-cv-brand,
 .disc-ct-category .disc-cv-category,
-.disc-ct-cartTotal .disc-cv-cartTotal { display: block; }
+.disc-ct-cartTotal .disc-cv-cartTotal,
+.disc-ct-qty .disc-cv-qty { display: block; }
+/* 5-3: 수량 promo 2번째 혜택 값(무료수 M / 할인율%) — qty 조건일 때만 노출 */
+.disc-bval2 { display: none; }
+.disc-ct-qty .disc-bval2 { display: block; }
+/* 5-3: 판매 라인 수량 promo 칩(🎁) + 취소 모달 무료/반값 라벨 */
+.sale-line-qty-chip { color: #7a4fa0; }
+.svoid-note { display: inline-block; font-size: 11px; font-weight: 700; color: #7a4fa0; background: #f1eaf8; border-radius: 4px; padding: 0 5px; }
 /* 5-2: 판매 라인/요약 카트(총액) 행사 칩 — 라인 행사(🏷)와 시각 구분 */
 .sale-line-promo-chip { display: inline-block; margin-right: 4px; }
 .sale-line-cart-chip { color: #2f6f8f; }
