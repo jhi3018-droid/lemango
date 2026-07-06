@@ -527,70 +527,9 @@ function renderSettings() {
     </div>`
   }
 
-  // 매장 할인 관리 카드 (POS Phase 5-1, 시스템 관리자 grade 4+) — condition×benefit(5-1=상품별 %/특정가 + 기간)
-  let discountSection = ''
-  if (isTopAdmin) {
-    const _sdList = (typeof _storeDiscounts !== 'undefined' ? _storeDiscounts : [])
-      .map((r, i) => ({ r, i })).sort((a, b) => (a.r.order || 0) - (b.r.order || 0))
-    const activeStores = (typeof getActiveStores === 'function') ? getActiveStores() : []
-    const storeOptsAll = '<option value="all">전 매장</option>' + activeStores.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')
-    const prodDatalist = `<datalist id="discProdList">` + (State.allProducts || []).filter(p => p && !p.deleted).slice(0, 2000)
-      .map(p => `<option value="${esc(p.productCode)}">${esc(p.nameKr || p.nameEn || '')}</option>`).join('') + `</datalist>`
-    const sumOf = (r) => {
-      const c = r.condition || {}, b = r.benefit || {}, p = r.period || {}
-      const prod = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(c.productCode) : null
-      const cond = c.type === 'product' ? (esc(c.productCode || '') + (prod ? ' · ' + esc(prod.nameKr || prod.nameEn || '') : '')) : esc(c.type || '')
-      const ben = b.type === 'percent' ? (Number(b.value || 0) + '%') : (b.type === 'fixed' ? ('특정가 ₩' + Number(b.price || 0).toLocaleString()) : esc(b.type || ''))
-      const per = (p.start || p.end) ? ((p.start || '~') + ' ~ ' + (p.end || '~')) : '상시'
-      const scope = (!r.storeScope || r.storeScope === 'all') ? '전 매장' : (Array.isArray(r.storeScope) ? r.storeScope.map(x => esc(_storeNameById(x))).join(',') : esc(_storeNameById(r.storeScope)))
-      return `<span class="disc-sum-cond">${cond}</span> · <span class="disc-sum-ben">${ben}</span> · ${esc(per)} · ${scope}`
-    }
-    const editFields = (r) => `
-      <input type="text" class="set-edit-input disc-f-name" value="${esc((r && r.name) || '')}" placeholder="규칙명" style="flex:1 1 140px" />
-      <input type="text" class="set-edit-input disc-f-code" list="discProdList" value="${esc((r && r.condition && r.condition.productCode) || '')}" placeholder="품번" style="flex:1 1 140px" />
-      <select class="set-edit-input disc-f-btype" style="flex:0 0 90px">
-        <option value="percent"${(r && r.benefit && r.benefit.type === 'fixed') ? '' : ' selected'}>％ 할인</option>
-        <option value="fixed"${(r && r.benefit && r.benefit.type === 'fixed') ? ' selected' : ''}>특정가</option>
-      </select>
-      <input type="number" class="set-edit-input disc-f-bval" value="${esc(String((r && r.benefit && (r.benefit.type === 'fixed' ? r.benefit.price : r.benefit.value)) ?? ''))}" placeholder="값(% 또는 원)" min="0" style="flex:0 0 110px" />
-      <input type="date" class="set-edit-input disc-f-start" value="${esc((r && r.period && r.period.start) || '')}" style="flex:0 0 140px" title="시작일(비우면 상시)" />
-      <input type="date" class="set-edit-input disc-f-end" value="${esc((r && r.period && r.period.end) || '')}" style="flex:0 0 140px" title="종료일(비우면 상시)" />
-      <select class="set-edit-input disc-f-scope" style="flex:0 0 110px">${storeOptsAll.replace('value="' + ((r && r.storeScope) || 'all') + '"', 'value="' + ((r && r.storeScope) || 'all') + '" selected')}</select>`
-    const sdListHtml = _sdList.map(({ r, i }) => `
-      <div class="set-item store-item${r.active === false ? ' store-item-inactive' : ''}" id="discItem_${i}">
-        <div class="set-item-view">
-          <span class="set-item-label" style="font-weight:600">${esc(r.name || '(이름없음)')}</span>
-          <span class="store-id-tag" title="규칙 ID (수정 불가)">${esc(r.id)}</span>
-          ${r.active === false ? '<span class="store-inactive-badge">비활성</span>' : ''}
-          <span class="disc-summary">${sumOf(r)}</span>
-          <button class="set-item-action store-toggle-btn" onclick="toggleStoreDiscountActive(${i})" title="${r.active === false ? '활성화' : '비활성화'}">${r.active === false ? '&#9898;' : '&#128309;'}</button>
-          <button class="set-item-action set-item-edit" onclick="editStoreDiscount(${i})" title="수정">&#9998;</button>
-          <button class="set-item-action set-item-del" onclick="removeStoreDiscount(${i})" title="삭제">&#10005;</button>
-        </div>
-        <div class="set-item-editrow disc-editrow" style="display:none;flex-wrap:wrap;gap:6px">
-          ${editFields(r)}
-          <button class="set-edit-save" onclick="saveStoreDiscountEdit(${i})">저장</button>
-          <button class="set-edit-cancel" onclick="renderSettings()">취소</button>
-        </div>
-      </div>`).join('') || '<div class="set-empty">할인 규칙 없음</div>'
-
-    const sdCard = `<div class="set-card set-card-wide">
-      <div class="set-card-header"><span class="set-card-title">매장 할인 규칙</span><span class="set-card-count">${_sdList.length}</span></div>
-      <div class="set-list set-list-scroll">${sdListHtml}</div>
-      <div class="set-add-row disc-add-row" style="flex-wrap:wrap;gap:6px">
-        ${editFields(null).split('disc-f-').join('disc-add-')}
-        <button class="btn btn-new set-add-btn" onclick="addStoreDiscount()">+ 규칙 추가</button>
-      </div>
-      ${prodDatalist}
-      <div class="disc-help">5-1: 상품별 %/특정가 + 기간 자동. 판매 스캔 시 자동 적용(가장 유리한 1개). 특정가=이 값으로 판매(할인단가=단가−특정가).</div>
-    </div>`
-    discountSection = `<div class="set-section">
-      <button class="set-section-btn" onclick="toggleSetSection(this)">
-        <span>🏷 매장 할인 관리</span><span class="set-section-arrow">▼</span>
-      </button>
-      <div class="set-section-body"><div class="set-grid">${sdCard}</div></div>
-    </div>`
-  }
+  // 매장 할인 관리 UI 는 🏬 매장 → '매장 할인 상품 관리' 서브탭으로 이전됨 (store.js renderStoreDiscountPanel).
+  //   이전 이유: 할인은 매장별(storeScope) 가능 → 매장 컨텍스트(resolveActiveStore)와 함께 두는 것이 자연스러움(매출 조회 승격과 동일 논리).
+  //   규칙 모델/엔진(_saleApplyDiscounts)/판매경로/Firestore 규칙 전부 5-1 그대로 — UI 위치만 변경.
 
   // 출퇴근 허용 IP 카드 (시스템 관리자/대표이사 grade 4+)
   let ipSection = ''
@@ -721,8 +660,6 @@ function renderSettings() {
     ${storeSection}
 
     ${inboundTypeSection}
-
-    ${discountSection}
 
     ${ipSection}
 
@@ -1526,93 +1463,10 @@ async function removeInboundTypeSetting(idx) {
   logActivity('setting', '입고유형', `입고유형 삭제: ${t.name} (${t.id})`)
 }
 
-// ===== 매장 할인 규칙 CRUD (POS Phase 5-1) =====
-// 필드 파서 — 컨테이너(el) 안의 disc-{prefix}-* 입력값 → 규칙 조각. 검증 후 반환 { ok, rule|msg }.
-function _discReadFields(el, prefix) {
-  const g = (suffix) => el.querySelector('.disc-' + prefix + '-' + suffix)
-  const name = (g('name')?.value || '').trim()
-  const code = (g('code')?.value || '').trim()
-  const btype = (g('btype')?.value || 'percent')
-  const bvalRaw = (g('bval')?.value || '').trim()
-  const start = (g('start')?.value || '').trim()
-  const end = (g('end')?.value || '').trim()
-  const scope = (g('scope')?.value || 'all')
-  if (!name) return { ok: false, msg: '규칙명을 입력하세요.' }
-  if (!code) return { ok: false, msg: '품번을 입력하세요.' }
-  const prod = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(code) : null
-  if (!prod) return { ok: false, msg: `품번 "${code}"을(를) 찾을 수 없습니다.` }
-  if (!/^\d+$/.test(bvalRaw)) return { ok: false, msg: '혜택 값은 0 이상 정수여야 합니다.' }
-  const bval = parseInt(bvalRaw, 10)
-  let benefit
-  if (btype === 'percent') {
-    if (bval < 1 || bval > 100) return { ok: false, msg: '％ 할인은 1~100 사이여야 합니다.' }
-    benefit = { type: 'percent', value: bval }
-  } else {
-    const listPrice = Math.max(0, Math.floor(Number(prod.salePrice) || 0))
-    if (bval > listPrice) return { ok: false, warn: `특정가(₩${bval.toLocaleString()})가 정상가(₩${listPrice.toLocaleString()})보다 높습니다. 그래도 저장할까요?`, benefit: { type: 'fixed', price: bval }, name, code, start, end, scope }
-    benefit = { type: 'fixed', price: bval }
-  }
-  if (start && end && start > end) return { ok: false, msg: '시작일이 종료일보다 늦습니다.' }
-  return { ok: true, rule: { name, condition: { type: 'product', productCode: code }, benefit, period: { start, end }, storeScope: scope } }
-}
-
-async function addStoreDiscount() {
-  const el = document.querySelector('.disc-add-row')
-  if (!el) return
-  let res = _discReadFields(el, 'add')
-  if (!res.ok && res.warn) { if (!await korConfirm(res.warn, '저장', '취소')) return; res = { ok: true, rule: { name: res.name, condition: { type: 'product', productCode: res.code }, benefit: res.benefit, period: { start: res.start, end: res.end }, storeScope: res.scope } } }
-  if (!res.ok) { showToast(res.msg, 'warning'); return }
-  const id = generateDiscountId()
-  const nextOrder = _storeDiscounts.length ? Math.max(..._storeDiscounts.map(r => r.order || 0)) + 1 : 1
-  _storeDiscounts.push(Object.assign({ id, active: true, order: nextOrder }, res.rule))
-  saveStoreDiscounts(); renderSettings()
-  showToast(`할인 규칙 "${res.rule.name}" (${id}) 추가됐습니다.`, 'success')
-  logActivity('setting', '매장할인', `할인규칙 추가: ${res.rule.name} (${id})`)
-}
-
-function editStoreDiscount(idx) {
-  const el = document.getElementById('discItem_' + idx); if (!el) return
-  el.querySelector('.set-item-view').style.display = 'none'
-  el.querySelector('.set-item-editrow').style.display = 'flex'
-  el.querySelector('.disc-f-name')?.focus()
-}
-
-async function saveStoreDiscountEdit(idx) {
-  const el = document.getElementById('discItem_' + idx); if (!el) return
-  const cur = _storeDiscounts[idx]; if (!cur) return
-  let res = _discReadFields(el, 'f')
-  if (!res.ok && res.warn) { if (!await korConfirm(res.warn, '저장', '취소')) return; res = { ok: true, rule: { name: res.name, condition: { type: 'product', productCode: res.code }, benefit: res.benefit, period: { start: res.start, end: res.end }, storeScope: res.scope } } }
-  if (!res.ok) { showToast(res.msg, 'warning'); return }
-  // ID/order 불변, 나머지 교체 (과거 판매는 이미 적용값을 스냅샷 → 수정해도 이력 불변)
-  Object.assign(cur, res.rule)
-  saveStoreDiscounts(); renderSettings()
-  showToast(`할인 규칙 "${cur.name}" 수정됐습니다.`, 'success')
-  logActivity('setting', '매장할인', `할인규칙 수정: ${cur.name} (${cur.id})`)
-}
-
-function toggleStoreDiscountActive(idx) {
-  const r = _storeDiscounts[idx]; if (!r) return
-  r.active = (r.active === false)
-  saveStoreDiscounts(); renderSettings()
-  showToast(`"${r.name}" ${r.active ? '활성화' : '비활성화'}됐습니다.`, 'success')
-  logActivity('setting', '매장할인', `할인규칙 ${r.active ? '활성화' : '비활성화'}: ${r.name} (${r.id})`)
-}
-
-async function removeStoreDiscount(idx) {
-  const r = _storeDiscounts[idx]; if (!r) return
-  // 과거 판매는 적용값을 라인에 스냅샷 저장 → 규칙 삭제는 향후 적용만 중단(이력 안전). hard-delete OK.
-  if (!await korConfirm(`할인 규칙 "${r.name}"을(를) 삭제하시겠습니까?\n\n과거 판매 기록은 영향받지 않습니다(적용값이 이미 저장됨). 향후 적용만 중단됩니다.`, '삭제', '취소')) return
-  _storeDiscounts.splice(idx, 1)
-  saveStoreDiscounts(); renderSettings()
-  showToast('할인 규칙이 삭제됐습니다.', 'success')
-  logActivity('setting', '매장할인', `할인규칙 삭제: ${r.name} (${r.id})`)
-}
-
-window.addStoreDiscount = addStoreDiscount
-window.editStoreDiscount = editStoreDiscount
-window.saveStoreDiscountEdit = saveStoreDiscountEdit
-window.toggleStoreDiscountActive = toggleStoreDiscountActive
-window.removeStoreDiscount = removeStoreDiscount
+// ===== 매장 할인 규칙 CRUD → js/store.js 로 이전 (매장 → '매장 할인 상품 관리' 서브탭) =====
+//   _discReadFields / addStoreDiscount / editStoreDiscount / saveStoreDiscountEdit /
+//   toggleStoreDiscountActive / removeStoreDiscount 는 store.js 에서 renderStoreDiscountPanel 과 함께 정의.
+//   데이터층(_storeDiscounts / saveStoreDiscounts / generateDiscountId / getActiveDiscounts)은 core.js 그대로.
 
 // ===== 분류코드 CRUD (인라인 에디트) =====
 function addClassCodeSetting() {

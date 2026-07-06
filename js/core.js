@@ -597,6 +597,8 @@ window._onSharedDataChanged = function(docId, data) {
             _storeDiscounts.length = 0; (parsed || []).forEach(r => _storeDiscounts.push(r))
             localStorage.setItem('lemango_store_discounts_v1', JSON.stringify(_storeDiscounts))
             if (tab === 'settings' && typeof renderSettings === 'function') renderSettings()
+            // 5-1 할인 관리 UI 이전: 매장 탭 '매장 할인 상품 관리' 서브탭이 열려 있으면 재렌더(패널 없으면 no-op)
+            if (typeof renderStoreDiscountPanel === 'function') renderStoreDiscountPanel()
           }
           console.log('[RealtimeSync] 매장 할인 동기화')
           break

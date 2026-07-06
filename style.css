@@ -6023,6 +6023,13 @@ td[data-editable]:hover { background: #FAEEDA; }
 .disc-sum-ben { color: #2f8f5f; font-weight: 700; }
 .disc-help { font-size: 11px; color: var(--text-muted); margin-top: 8px; }
 .disc-editrow .set-edit-input, .disc-add-row .set-edit-input { font-size: 12px; }
+/* 매장 → '매장 할인 상품 관리' 서브탭 (5-1 UI 이전 — settings set-* 클래스 재사용) */
+.store-disc-panel { padding: 4px 2px; }
+.disc-editrow, .disc-add-row { flex-wrap: wrap; gap: 6px; }
+/* 편집행 표시/숨김 = 클래스 토글(인라인 display:none 미사용). 특이도 up(.disc-item .disc-editrow=0,2,0)로 .set-item-editrow(0,1,0) 이김 → 소스순서 무관 */
+.disc-item .disc-editrow { display: none; }
+.disc-item.disc-editing .disc-editrow { display: flex; }
+.disc-item.disc-editing .set-item-view { display: none; }
 
 /* 판매 최종 확정 사전 확인 다이얼로그 (POS Phase 3c) */
 .sale-confirm-body { padding: 18px 22px 20px; }
