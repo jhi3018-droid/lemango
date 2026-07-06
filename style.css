@@ -6030,6 +6030,18 @@ td[data-editable]:hover { background: #FAEEDA; }
 .disc-item .disc-editrow { display: none; }
 .disc-item.disc-editing .disc-editrow { display: flex; }
 .disc-item.disc-editing .set-item-view { display: none; }
+/* 5-2: 조건 종류별 동적 입력 토글. fieldset=display:contents 로 자식들이 편집행 flex 에 직접 흐름.
+   .disc-cv(조건값)는 기본 숨김, .disc-ct-{type} 선택 시 해당 것만 노출(특이도 0,2,0 > 0,1,0 → 소스순서 무관). */
+.disc-fieldset { display: contents; }
+.disc-cv { display: none; }
+.disc-ct-product .disc-cv-product,
+.disc-ct-brand .disc-cv-brand,
+.disc-ct-category .disc-cv-category,
+.disc-ct-cartTotal .disc-cv-cartTotal { display: block; }
+/* 5-2: 판매 라인/요약 카트(총액) 행사 칩 — 라인 행사(🏷)와 시각 구분 */
+.sale-line-promo-chip { display: inline-block; margin-right: 4px; }
+.sale-line-cart-chip { color: #2f6f8f; }
+.sale-promo-chip-cart { background: #e7eff7; color: #2f6f8f; }
 
 /* 판매 최종 확정 사전 확인 다이얼로그 (POS Phase 3c) */
 .sale-confirm-body { padding: 18px 22px 20px; }
