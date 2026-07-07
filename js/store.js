@@ -5414,10 +5414,11 @@ async function _roComputeSuggestions(store) {
   try { if (typeof buildStoreStockIndex === 'function') await buildStoreStockIndex(store) } catch (e) {}
   const rows = []
   Object.keys(net).forEach(k => {
-    const e = net[k]; if (e.qty <= 0) return   // 순판매 양수만 제안
+    const e = net[k]; if (e.qty <= 0) return   // 순판매 양수만
+    const stock = (typeof getStoreStock === 'function') ? Number(getStoreStock(store, e.code)[e.size] || 0) : 0
+    if (stock > 0) return   // ⓑ 재고 있으면 제안 제외 — 추천=품절 알림(재고≤0, 음수(oversold) 포함). 개별추가는 재고 무관(불변)
     const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(e.code) : null
     const name = p ? (p.nameKr || p.nameEn || '') : ''
-    const stock = (typeof getStoreStock === 'function') ? Number(getStoreStock(store, e.code)[e.size] || 0) : 0
     rows.push({ code: e.code, name, size: e.size, net: e.qty, stock, pending: pending[k] || 0, suggest: e.qty })
   })
   rows.sort((a, b) => (b.net - a.net) || String(a.code).localeCompare(String(b.code)) || (SIZES.indexOf(a.size) - SIZES.indexOf(b.size)))
@@ -5438,10 +5439,11 @@ async function roSuggestReload() {
     body.innerHTML = '<tr><td colspan="' + COLS + '" class="inbhist-empty">추천 계산 실패: ' + esc(e && e.message || '') + '</td></tr>'; return
   }
   _roSuggest = res
-  if (info) info.innerHTML = res.anchorRo
+  if (info) info.innerHTML = (res.anchorRo
     ? ('기준: 마지막 발주 <strong>' + esc(res.anchorRo) + '</strong> 이후 순판매 · ' + esc(res.start) + ' ~ ' + esc(kstDateKey()))
-    : ('기준: 최근 7일 순판매 · ' + esc(res.start) + ' ~ ' + esc(kstDateKey()) + ' <span class="ro-info-note">(이전 발주 없음)</span>')
-  if (!res.rows.length) { body.innerHTML = '<tr><td colspan="' + COLS + '" class="inbhist-empty">해당 기간 순판매가 없습니다 — [개별 추가]로 담으세요</td></tr>'; return }
+    : ('기준: 최근 7일 순판매 · ' + esc(res.start) + ' ~ ' + esc(kstDateKey()) + ' <span class="ro-info-note">(이전 발주 없음)</span>'))
+    + ' <span class="ro-info-note">· 품절(재고≤0)만 표시</span>'
+  if (!res.rows.length) { body.innerHTML = '<tr><td colspan="' + COLS + '" class="inbhist-empty">판매됐고 재고가 없는(품절) 항목이 없습니다 — 필요 시 [개별 추가]로 담으세요</td></tr>'; return }
   body.innerHTML = res.rows.map((r, i) =>
     '<tr>'
     + '<td class="inbhist-no ro-code-cell" onclick="openStoreProductDetail(\'' + esc(r.code) + '\',\'' + esc(store) + '\')" title="상품 상세">' + esc(r.code) + ' <span class="ro-stage-name">' + esc(r.name) + '</span></td>'
@@ -5456,6 +5458,13 @@ async function roSuggestReload() {
 }
 function onRoSuggestQty(i, el) { const r = _roSuggest.rows[i]; if (!r) return; let v = Math.floor(Number(el.value) || 0); if (v < 1) { v = 1; el.value = '1' } r.suggest = v }
 function roAddSuggest(i) { const r = _roSuggest.rows[i]; if (!r) return; _roStageAdd(r.code, r.size, r.suggest) }
+// 전체 담기 — 현재 표시된 추천 전부를 (편집된) 제안수량으로 staging 에 추가(_roStageAdd merge). 개별 [담기] 반복 대체.
+function roAddAllSuggest() {
+  const rows = (_roSuggest && Array.isArray(_roSuggest.rows)) ? _roSuggest.rows : []
+  if (!rows.length) { showToast('담을 추천이 없습니다', 'warning'); return }
+  rows.forEach(r => _roStageAdd(r.code, r.size, r.suggest, true))   // silent — merge 시맨틱은 _roStageAdd 가 처리(중복 합산)
+  showToast(rows.length + '건 담기 완료 — 발주 목록에서 수량 조정 가능', 'success')
+}
 
 // ── 개별 추가 (품번/상품명 조회 → 전 사이즈 선택 → 담기). 주문은 바코드 비의존 → 전 상품·전 사이즈 대상. ──
 function renderRoManualResults() {
@@ -5464,7 +5473,8 @@ function renderRoManualResults() {
   const q = String((document.getElementById('roManualSearch') || {}).value || '').trim().toLowerCase()
   if (!q) { out.innerHTML = '<div class="inb-lookup-hint">품번 또는 상품명을 입력하세요</div>'; return }
   const list = (State.allProducts || []).filter(p => {
-    if (!p || p.deleted) return false   // 발주는 바코드 무관(전 상품) — 판매 조회와 의도적 차이
+    if (!p || p.deleted) return false
+    if ((typeof _inbBarcodedSizes === 'function' ? _inbBarcodedSizes(p) : []).length === 0) return false   // 바코드 등록 사이즈 있는 상품만(판매 lookup 미러) — 주문=판매 가능 사이즈만
     const c = (p.productCode || '').toLowerCase(), nk = (p.nameKr || '').toLowerCase(), ne = (p.nameEn || '').toLowerCase()
     return c.indexOf(q) >= 0 || nk.indexOf(q) >= 0 || ne.indexOf(q) >= 0
   })
@@ -5485,22 +5495,24 @@ function selectRoManualProduct(code) {
   const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(code) : null
   const name = p ? esc(p.nameKr || p.nameEn || '') : ''
   const stockMap = (typeof getStoreStock === 'function') ? getStoreStock(_roStore, code) : {}
-  sizes.innerHTML = '<div class="inb-lookup-sizes-head">' + esc(code) + ' <span class="inb-lookup-sizes-name">' + name + '</span> — 사이즈 선택(전 사이즈)</div><div class="inb-size-grid">'
-    + SIZES.map(sz => { const st = Number(stockMap[sz] || 0); return '<button class="inb-size-btn" onclick="chooseRoManualSize(\'' + esc(sz) + '\')"><span class="inb-size-lbl">' + esc(sz) + '</span><span class="inb-size-stock">재고 ' + st + '</span></button>' }).join('')
+  const bc = p ? (typeof _inbBarcodedSizes === 'function' ? _inbBarcodedSizes(p) : []) : []   // 바코드 등록 사이즈만(판매/입고와 동일 실사이즈 소스, p.barcodes 실시간)
+  if (!bc.length) { sizes.innerHTML = '<div class="inb-lookup-hint">이 상품은 등록된 바코드 사이즈가 없습니다</div>'; sizes.classList.remove('inb-hidden'); return }
+  sizes.innerHTML = '<div class="inb-lookup-sizes-head">' + esc(code) + ' <span class="inb-lookup-sizes-name">' + name + '</span> — 사이즈 선택</div><div class="inb-size-grid">'
+    + bc.map(sz => { const st = Number(stockMap[sz] || 0); return '<button class="inb-size-btn" onclick="chooseRoManualSize(\'' + esc(sz) + '\')"><span class="inb-size-lbl">' + esc(sz) + '</span><span class="inb-size-stock">재고 ' + st + '</span></button>' }).join('')
     + '</div>'
   sizes.classList.remove('inb-hidden')
 }
 function chooseRoManualSize(size) { const code = _roManualCode; if (!code || !size) return; _roStageAdd(code, size, 1) }
 
 // ── staging (담은 목록) — 추천/개별 공용. 같은 (품번,사이즈) 담으면 수량 합산(merge). ──
-function _roStageAdd(code, size, qty) {
+function _roStageAdd(code, size, qty, silent) {
   code = String(code || ''); size = String(size || ''); qty = Math.max(1, Math.floor(Number(qty) || 1))
   if (!code || !size) return
   const ex = _roList.find(l => l.productCode === code && l.size === size)
   if (ex) { ex.requestQty = Math.max(1, Math.floor(Number(ex.requestQty) || 1)) + qty }
   else { const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(code) : null; _roList.push({ productCode: code, productName: (p ? (p.nameKr || p.nameEn || '') : ''), size, requestQty: qty }) }
   _roSaveDraft(); _roRenderStaging()
-  showToast(code + ' ' + size + ' · ' + qty + '개 담김', '')
+  if (!silent) showToast(code + ' ' + size + ' · ' + qty + '개 담김', '')   // 전체 담기(bulk)는 요약 토스트만 → silent
 }
 function _roRenderStaging() {
   const body = document.getElementById('roStageBody'); if (!body) return
@@ -5775,6 +5787,7 @@ window.roSwitchTab = roSwitchTab
 window.roSuggestReload = roSuggestReload
 window.onRoSuggestQty = onRoSuggestQty
 window.roAddSuggest = roAddSuggest
+window.roAddAllSuggest = roAddAllSuggest
 window.renderRoManualResults = renderRoManualResults
 window.selectRoManualProduct = selectRoManualProduct
 window.chooseRoManualSize = chooseRoManualSize
