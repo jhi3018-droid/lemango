@@ -6277,3 +6277,20 @@ td[data-editable]:hover { background: #FAEEDA; }
 .lg-checked-at { color: var(--text-light); font-weight: 400; font-size: 11px; }
 .lg-check-na { color: var(--text-light); }
 .lg-check-btn { padding: 3px 12px; }
+
+/* =============================================
+   매장 테이블 auto-fit (B1) — 클리핑 없이 컬럼 자동 맞춤 + 가로 스크롤
+   🔴 전역 .data-table(style.css:539) 미변경 — 매장 전용 클래스만(.ssv-table / .inbhist-table[=매출조회·물류·입출고·품목원장·발주 공용 베이스]).
+   상품조회/재고/매출/신규기획/휴지통 메인 탭은 .data-table(table-layout:fixed + 영속 colWidths) 그대로 → 무영향.
+   ============================================= */
+.ssv-table, .inbhist-table {
+  table-layout: auto;   /* fixed → auto: 컬럼이 내용에 맞게 커짐 → 상품명/품번 클리핑 제거 */
+  width: auto;          /* width:100% 강제 해제 → 내용 넘치면 테이블이 컨테이너보다 넓어짐 */
+  min-width: 100%;      /* 좁은 패널에선 꽉 채우고, 넓은 내용은 그 이상으로 grow → 래퍼가 가로 스크롤 */
+}
+/* 헤더 라벨: 전역 .data-table thead th 의 overflow:hidden/ellipsis 해제(auto 폭이라 잘릴 일 없음) */
+.ssv-table thead th, .inbhist-table thead th { overflow: visible; text-overflow: clip; }
+/* 본문 셀: 한 줄 유지(줄바꿈으로 행 높이 폭증 방지) → 넘치면 가로 스크롤로 전량 노출(nothing cut) */
+.ssv-table td, .inbhist-table td { white-space: nowrap; }
+/* 품목원장 래퍼는 overflow-y 만 있었음(style.css:5811) → 가로 스크롤 보강 */
+.ledger-table-wrap { overflow-x: auto; }
