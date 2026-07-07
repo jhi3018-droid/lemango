@@ -992,6 +992,8 @@ async function clonePlanItem(no) {
   cloned.productCode = ''
   cloned.confirmed = false
   cloned.confirmedAt = ''
+  delete cloned.confirmedBy         // 복제본은 미확정 → 확정자 스탬프 제거(원본 확정자 표시 방지)
+  delete cloned.confirmedByName
   if (typeof stampCreated === 'function') stampCreated(cloned)
   State.planItems.push(cloned)
   savePlanItems().catch(e => console.error(e))
@@ -1429,23 +1431,9 @@ async function savePlanDetailEdit() {
   } catch(e) {}
 }
 
-async function confirmPlanToProduct() {
-  const item = State.planItems.find(p => p.no === _editingPlanNo)
-  if (!item) return
-
-  if (!item.productCode || !item.productCode.trim()) {
-    showToast('품번이 없습니다. 먼저 품번을 생성/입력 후 저장해주세요.', 'warning')
-    return
-  }
-
-  if (State.allProducts.some(p => p.productCode === item.productCode)) {
-    showToast(`품번 "${item.productCode}"은 이미 상품조회에 존재합니다.`, 'warning')
-    return
-  }
-
-  if (!await korConfirm(`신규기획 항목을 상품조회로 이전합니다.\n품번: ${item.productCode}\n상품명: ${item.nameKr || '(없음)'}\n\n계속하시겠습니까?`)) return
-
-  // 플랜 아이템 → 상품 객체 생성 (기획 필드 전체 복사)
+// 기획 항목 → 상품 객체 빌드 (단일/일괄 확정 공용 — 동일 산출 보장). stampCreated/_stampConfirmedBy/push 는 호출부에서.
+//   ⚠️ no = State.allProducts.length + 1 (호출 시점 길이 기준) → 일괄은 build→push 를 항목마다 순차 반복해야 no 연속.
+function _buildProductFromPlan(item) {
   const salesInit = {}
   _platforms.forEach(pl => { salesInit[pl] = 0 })
 
@@ -1454,6 +1442,8 @@ async function confirmPlanToProduct() {
   delete cloned.schedule
   delete cloned.confirmed
   delete cloned.confirmedAt
+  delete cloned.confirmedBy         // 확정 스탬프(신규)도 클론에서 제거 → 상품엔 확정 시점 값으로 재스탬프
+  delete cloned.confirmedByName
   delete cloned.createdBy
   delete cloned.createdByName
   delete cloned.createdAt
@@ -1461,7 +1451,7 @@ async function confirmPlanToProduct() {
   delete cloned.lastModifiedByName
   delete cloned.lastModifiedAt
 
-  const newProduct = {
+  return {
     ...cloned,
     no:            State.allProducts.length + 1,
     productCode:   item.productCode,
@@ -1490,11 +1480,42 @@ async function confirmPlanToProduct() {
       ? [{ confirmedAt: new Date().toISOString().slice(0, 10), schedule: JSON.parse(JSON.stringify(item.schedule)) }]
       : []
   }
+}
 
+// 확정자 기록(추적성, owner decision #4) — 상품 + 소스 기획 항목 양쪽에 스탬프.
+//   confirmedAt = UTC ISO instant(정렬/불변 안전 — 표시는 kstFormat). createdBy(제작자)와 별개로 "누가 확정했나" 추적.
+function _stampConfirmedBy(obj) {
+  const user = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth().currentUser : null
+  obj.confirmedBy = (user && user.uid) || ''
+  obj.confirmedByName = (typeof formatUserName === 'function') ? formatUserName(_currentUserName, _currentUserPosition) : (_currentUserName || '')
+  obj.confirmedAt = new Date().toISOString()
+  return obj
+}
+
+async function confirmPlanToProduct() {
+  const item = State.planItems.find(p => p.no === _editingPlanNo)
+  if (!item) return
+
+  if (!item.productCode || !item.productCode.trim()) {
+    showToast('품번이 없습니다. 먼저 품번을 생성/입력 후 저장해주세요.', 'warning')
+    return
+  }
+
+  if (State.allProducts.some(p => p.productCode === item.productCode)) {
+    showToast(`품번 "${item.productCode}"은 이미 상품조회에 존재합니다.`, 'warning')
+    return
+  }
+
+  if (!await korConfirm(`신규기획 항목을 상품조회로 이전합니다.\n품번: ${item.productCode}\n상품명: ${item.nameKr || '(없음)'}\n\n계속하시겠습니까?`)) return
+
+  // 플랜 아이템 → 상품 객체 생성 (공용 빌더 — 일괄 확정과 동일 산출)
+  const newProduct = _buildProductFromPlan(item)
   stampCreated(newProduct)
+  _stampConfirmedBy(newProduct)          // 확정자 기록(추적성) — 단일 확정도 스탬프
   State.allProducts.push(newProduct)
   item.confirmed = true
   stampModified(item)
+  _stampConfirmedBy(item)                // 소스 기획 항목에도 확정자 기록
   savePlanItems().catch(e => console.error(e))
 
   // 상품조회/재고관리/매출현황/대시보드 일괄 갱신 (sales.filtered 누락 버그 수정)
@@ -1919,4 +1940,131 @@ function applyBulkSchedule() {
   clearPlanSelection()
   renderPlanTable()
   if (typeof renderDashCalendar === 'function') renderDashCalendar()
+}
+
+// ===== 상품 일괄 확정 (bulk product confirm) =====
+// 선택된 미확정(pending) 기획 항목을 상품으로 일괄 확정. applyBulkSchedule 패턴 + 원자 저장.
+//   ① 검증 패스(품번 없음 / 이미 존재 / 배치 내 중복) → toConfirm / skipped 분할
+//   ② 단일 확인 다이얼로그(count + skip preview) — N개 개별 korConfirm 아님
+//   🔴 ③ 원자 저장: in-memory 반영 → 단일 db.batch(products chunks + meta + planItems, 전부 sharedData) → 실패 시 in-memory 롤백.
+//      단일 확정의 fire-and-forget 이중 write(orphan 상품 위험)를 일괄 경로에서 제거 — half-applied 상태 구조적 불가.
+//   확정자 스탬프(confirmedBy/Name/At)로 추적성. navigation 없음(탭 전환/모달 X) — 요약 후 목록 재필터(확정분 pending 필터에서 이탈).
+let _bulkConfirmInFlight = false
+async function applyBulkConfirm() {
+  if (_bulkConfirmInFlight) return
+  const selected = State.planItems.filter(p => _planSelected.has(p.no))
+  if (!selected.length) { showToast('상품을 먼저 선택해주세요.', 'warning'); return }
+  const alreadyConfirmed = selected.filter(p => p.confirmed).length
+  const pending = selected.filter(p => !p.confirmed)
+
+  // ── 검증 패스: 유효/제외 분할 (품번 없음 / 이미 존재 / 배치 내 중복) ──
+  const existingCodes = new Set(State.allProducts.map(p => p.productCode))
+  const batchCodes = new Set()
+  const toConfirm = [], skipped = []
+  pending.forEach(item => {
+    const code = (item.productCode || '').trim()
+    if (!code) { skipped.push({ item, reason: '품번 없음' }); return }
+    if (existingCodes.has(code)) { skipped.push({ item, reason: '이미 존재하는 품번' }); return }
+    if (batchCodes.has(code)) { skipped.push({ item, reason: '중복 품번(배치 내)' }); return }
+    batchCodes.add(code)
+    toConfirm.push(item)
+  })
+  const _label = it => it.productCode || it.sampleNo || '(무품번)'
+  const _skipLines = (arr, n) => arr.slice(0, n).map(s => `· ${_label(s.item)} — ${s.reason}`).join('\n') + (arr.length > n ? `\n…외 ${arr.length - n}건` : '')
+
+  if (!toConfirm.length) {
+    // 확정 가능 0건 — 사유별 집계 토스트(정보). korConfirm 빈-취소버튼 회피.
+    const byReason = {}
+    skipped.forEach(s => { byReason[s.reason] = (byReason[s.reason] || 0) + 1 })
+    const parts = Object.keys(byReason).map(r => `${r} ${byReason[r]}건`)
+    if (alreadyConfirmed) parts.push(`이미확정 ${alreadyConfirmed}건`)
+    showToast(`확정 가능한 항목이 없습니다${parts.length ? ` (${parts.join(' · ')})` : ''}`, 'warning')
+    return
+  }
+
+  // ── 단일 확인 다이얼로그 (count + skip preview) ──
+  let msg = `선택 ${selected.length}건 중 ${toConfirm.length}건을 상품으로 확정합니다.`
+  if (alreadyConfirmed) msg += `\n(이미 확정된 ${alreadyConfirmed}건 제외)`
+  if (skipped.length) msg += `\n\n제외 ${skipped.length}건:\n${_skipLines(skipped, 8)}`
+  msg += `\n\n계속하시겠습니까?`
+  if (!await korConfirm(msg, `${toConfirm.length}건 확정`, '취소')) return
+
+  if (!db) { showToast('서버 연결 없음 — 잠시 후 다시 시도하세요', 'warning'); return }
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) { showToast('오프라인 상태 — 연결 확인 후 확정하세요', 'warning'); return }
+
+  _bulkConfirmInFlight = true
+  try {
+    // 롤백 스냅샷 — 상품 push 이전 길이 + 소스 기획 항목의 변경 필드 (apply 루프 이전 캡처)
+    const origLen = State.allProducts.length
+    const planSnap = toConfirm.map(it => ({
+      it,
+      confirmed: it.confirmed,
+      hadCB: ('confirmedBy' in it), confirmedBy: it.confirmedBy,
+      hadCBN: ('confirmedByName' in it), confirmedByName: it.confirmedByName,
+      hadCA: ('confirmedAt' in it), confirmedAt: it.confirmedAt,
+      lastModifiedBy: it.lastModifiedBy, lastModifiedByName: it.lastModifiedByName, lastModifiedAt: it.lastModifiedAt
+    }))
+    const rollback = () => {
+      State.allProducts.length = origLen   // 끝에서 truncate — push 한 신규 상품 제거(단일스레드라 안전; 부분 apply 도 안전)
+      planSnap.forEach(s => {
+        s.it.confirmed = s.confirmed
+        s.it.lastModifiedBy = s.lastModifiedBy; s.it.lastModifiedByName = s.lastModifiedByName; s.it.lastModifiedAt = s.lastModifiedAt
+        if (s.hadCB) s.it.confirmedBy = s.confirmedBy; else delete s.it.confirmedBy
+        if (s.hadCBN) s.it.confirmedByName = s.confirmedByName; else delete s.it.confirmedByName
+        if (s.hadCA) s.it.confirmedAt = s.confirmedAt; else delete s.it.confirmedAt
+      })
+    }
+
+    const created = []
+    // 🔴 apply(in-memory) + 원자 batch 저장 전체를 하나의 try 로 감쌈 → build/직렬화/commit 어느 단계 예외든 rollback (half-applied 구조적 방지)
+    try {
+      // in-memory 반영 (단일 확정과 동일 빌드 — build→push 순차 반복으로 no 연속)
+      toConfirm.forEach(item => {
+        const np = _buildProductFromPlan(item)
+        stampCreated(np)
+        _stampConfirmedBy(np)
+        State.allProducts.push(np)
+        item.confirmed = true
+        stampModified(item)
+        _stampConfirmedBy(item)
+        created.push(np)
+      })
+
+      // 단일 원자 batch: products 청크 전체 + meta + planItems (전부 sharedData 문서 → 한 커밋으로 원자)
+      const nowIso = new Date().toISOString()
+      const all = State.allProducts
+      const chunks = Math.ceil(all.length / _FS_PRODUCT_CHUNK)
+      if (chunks + 2 > 450) { rollback(); renderPlanTable(); showToast('상품 수가 너무 많아 한 번에 저장할 수 없습니다 — 나눠서 확정하세요', 'warning'); return }
+      const batch = db.batch()
+      for (let i = 0; i < chunks; i++) {
+        const slice = all.slice(i * _FS_PRODUCT_CHUNK, (i + 1) * _FS_PRODUCT_CHUNK)
+        batch.set(db.collection('sharedData').doc('products_' + i), { data: JSON.stringify(slice), updatedAt: nowIso })
+      }
+      batch.set(db.collection('sharedData').doc('products_meta'), { chunks, total: all.length, updatedAt: nowIso })
+      batch.set(db.collection('sharedData').doc('planItems'), { data: JSON.stringify(State.planItems), updatedAt: nowIso })
+      await batch.commit()
+    } catch (e) {
+      console.error('applyBulkConfirm 저장 실패:', e && e.message)
+      rollback()                    // 🔴 build/직렬화/commit 어느 예외든 in-memory 완전 원복 → half-applied 없음
+      renderPlanTable()
+      showToast('저장 실패 — 반영되지 않았습니다. 네트워크 확인 후 다시 시도하세요.', 'error')
+      return
+    }
+
+    // 성공: localStorage/타임스탬프 동기화(자기 에코 억제 — savePlanItems/saveProducts 미러)
+    try { localStorage.setItem('lemango_plan_items_v1', JSON.stringify(State.planItems)) } catch (e) {}
+    window._lastProductSaveTime = Date.now()
+    if (!window._lastSharedSaveTime) window._lastSharedSaveTime = {}
+    window._lastSharedSaveTime['planItems'] = Date.now()
+
+    // 후처리 (1회): 상품 뷰 갱신 ONCE, 선택 해제 + 목록 재필터(확정분 pending 필터 이탈), 로그/이력, 요약
+    refreshAllProductViews()
+    _planSelected.clear()
+    if (typeof searchPlan === 'function') searchPlan(); else renderPlanTable()
+    logActivity('create', '신규기획', `상품 일괄 확정 — ${created.length}건 (제외 ${skipped.length}건)`)
+    created.forEach(np => { try { if (typeof addProductHistory === 'function') addProductHistory(np.productCode, '기획이전', '기획→상품 일괄확정') } catch (e) {} })
+    showToast(`${created.length}건 상품 확정 완료${skipped.length ? ` · ${skipped.length}건 제외` : ''}${alreadyConfirmed ? ` · 이미확정 ${alreadyConfirmed}건` : ''}`, 'success')
+  } finally {
+    _bulkConfirmInFlight = false
+  }
 }
