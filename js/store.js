@@ -998,6 +998,7 @@ async function renderStoreStockView() {
         <tbody>${rows}</tbody>
       </table>
     </div>`
+  if (typeof makeStoreColumnsResizable === 'function') makeStoreColumnsResizable(body.querySelector('.ssv-table'), 'ssv')   // B2 컬럼 리사이즈
 }
 
 // ── 공유 상품 상세 모달 — 이미지 + 상품명 + 정상가 + 사이즈별 재고·로케이션 (매장별, 읽기 전용) ──
@@ -2062,6 +2063,7 @@ async function _inbHistoryLoad() {
   rows.sort((a, b) => String(b.confirmedAt || '').localeCompare(String(a.confirmedAt || '')))   // 최신 위 (DESC, 기간 전체)
   _inbHistRows = rows
   _inbHistApplyFilters()   // 유형/상태 클라이언트 필터 + 렌더 + 요약 + export
+  if (typeof makeStoreColumnsResizable === 'function') { const t = document.getElementById('inbHistBody'); if (t) makeStoreColumnsResizable(t.closest('table'), 'inbhist') }   // B2 컬럼 리사이즈
 }
 
 // 유형/상태 클라이언트 필터 적용 + 테이블/요약/엑셀버튼 렌더 (재조회 없음 — 쿼리는 storeId+dateKey range 로 고정, 인덱스 안전)
@@ -3697,6 +3699,7 @@ function renderSalesHistoryPanel() {
   const phoneEl = document.getElementById('shPhone'); if (phoneEl) phoneEl.value = ''
   _shSetMode('range')
   _shLoad()
+  if (typeof makeStoreColumnsResizable === 'function') { const t = document.getElementById('shBody'); if (t) makeStoreColumnsResizable(t.closest('table'), 'shist') }   // B2 컬럼 리사이즈
 }
 
 // 모드 전환 (기간 조회 ↔ 번호 검색). 표시 토글 = inb-hidden 클래스(인라인 display:none 금지 정책 준수).
@@ -5041,6 +5044,7 @@ async function _ledgerReload() {
   _ldgRenderTable()
   _ldgRenderRecon()
   _ldgUpdateExportBtn()
+  if (typeof makeStoreColumnsResizable === 'function') { const t = document.getElementById('ledgerBody'); if (t) makeStoreColumnsResizable(t.closest('table'), 'ledger') }   // B2 컬럼 리사이즈
 }
 
 function _ldgRenderTable() {
@@ -5851,6 +5855,7 @@ function renderLogisticsTab() {
       <div class="inb-confirm-note">확인✓/발송✓ 는 진행 표시(누가·언제)일 뿐 재고를 변동하지 않습니다. 되돌릴 수 없습니다(단방향). 발송 처리 시 매장의 발주 취소가 막힙니다.</div>
     </div>`
   _lgLoad()
+  if (typeof makeStoreColumnsResizable === 'function') makeStoreColumnsResizable(body.querySelector('.lg-table'), 'lg')   // B2 컬럼 리사이즈
 }
 
 // 조회 — dateKey 범위(전 매장, 단일필드 auto 인덱스). 상태/매장은 클라 필터(_lgApplyFilters). createdAt DESC.

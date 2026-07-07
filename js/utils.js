@@ -827,6 +827,69 @@ function initTableFeatures(tableId, tabKey, renderFnName) {
 }
 
 // =============================================
+// ===== 매장 테이블 컬럼 리사이즈 (B2) — 독립 헬퍼 =====
+// =============================================
+// initTableFeatures 의 리사이즈 로직(utils.js:798)만 추출한 standalone. 🔴 initTableFeatures 는 매장 테이블에 호출 금지
+//   (헤더 재구성 + sort/filter 가 State[tabKey]/data-key 전제 → 매장 커스텀 헤더 파괴). 이 헬퍼는 핸들 div 만 append(비파괴).
+// B1 auto-fit 이 기본 → 저장 폭 있으면 적용+fixed / 첫 드래그 시 현재 폭 seed 후 fixed 로 전환(다른 컬럼 안 흔들림).
+// 폭 저장 = localStorage lemango_store_colw_{key}(컬럼 index 기준) → 메인 탭 State[tabKey].colWidths 와 완전 무충돌.
+// ⚠️ 매장 th 는 position:sticky(=positioned) → col-resize-handle(absolute)의 containing block 역할. th.position 을 절대 건드리지 말 것(sticky 깨짐).
+function _storeColWKey(key) { return 'lemango_store_colw_' + (key || '') }
+function _loadStoreColW(key) {
+  try { const raw = localStorage.getItem(_storeColWKey(key)); if (!raw) return null; const o = JSON.parse(raw); return (o && typeof o === 'object') ? o : null }
+  catch (e) { return null }
+}
+function _saveStoreColW(key, obj) { try { localStorage.setItem(_storeColWKey(key), JSON.stringify(obj || {})) } catch (e) {} }
+
+function makeStoreColumnsResizable(tableEl, key) {
+  if (!tableEl) return
+  const ths = Array.from(tableEl.querySelectorAll('thead th'))
+  if (!ths.length) return
+
+  // 현재 렌더 폭을 전부 읽어(read-all-first) 고정 → mid-loop reflow 방지
+  const lockCurrentWidths = () => {
+    const ws = ths.map(th => th.getBoundingClientRect().width)
+    let sum = 0
+    ths.forEach((th, i) => { th.style.width = ws[i] + 'px'; sum += ws[i] })
+    tableEl.style.tableLayout = 'fixed'; tableEl.style.width = sum + 'px'; tableEl.style.minWidth = '0'
+  }
+
+  // 1) 저장 폭 재적용 → fixed 고정(폭 유지). 없으면 B1 auto 그대로.
+  const saved = _loadStoreColW(key)
+  if (saved && Object.keys(saved).length) {
+    let sum = 0
+    ths.forEach((th, i) => { const w = Number(saved[i]); const px = (w > 0) ? w : th.getBoundingClientRect().width; th.style.width = px + 'px'; sum += px })
+    tableEl.style.tableLayout = 'fixed'; tableEl.style.width = sum + 'px'; tableEl.style.minWidth = '0'
+  }
+
+  // 2) 핸들 부착(idempotent — 이미 있으면 스킵). th.position 미변경(sticky 보존).
+  ths.forEach(th => {
+    if (th.querySelector('.col-resize-handle')) return
+    const handle = document.createElement('div')
+    handle.className = 'col-resize-handle'
+    th.appendChild(handle)
+    let startX, startW
+    handle.addEventListener('mousedown', e => {
+      e.preventDefault(); e.stopPropagation()
+      if (tableEl.style.tableLayout !== 'fixed') lockCurrentWidths()   // 첫 드래그: 현재 폭 seed 후 fixed 전환(점프 방지)
+      startX = e.clientX; startW = th.getBoundingClientRect().width
+      handle.classList.add('col-resizing'); document.body.classList.add('col-resize-active')
+      const onMove = ev => { th.style.width = Math.max(40, startW + (ev.clientX - startX)) + 'px' }
+      const onUp = () => {
+        handle.classList.remove('col-resizing'); document.body.classList.remove('col-resize-active')
+        document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp)
+        const widths = {}; let sum = 0
+        ths.forEach((t, j) => { const w = t.getBoundingClientRect().width; widths[j] = Math.round(w); sum += w })
+        tableEl.style.width = sum + 'px'; tableEl.style.minWidth = '0'
+        if (sum > 0) _saveStoreColW(key, widths)   // 컬럼 폭 index 기준 영속(store-scoped). sum>0 가드=드래그 중 재렌더로 th detach 시 0폭 저장 방지
+      }
+      document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp)
+    })
+  })
+}
+window.makeStoreColumnsResizable = makeStoreColumnsResizable
+
+// =============================================
 // ===== 공통 컬럼 드래그 관리 =====
 // =============================================
 
