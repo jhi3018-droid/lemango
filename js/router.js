@@ -139,10 +139,9 @@ function applyTabState() {
   // 탭 바 재렌더
   renderTabBar()
 
-  // 설정/행사/물류 탭은 열 때마다 렌더 (물류=모니터링 뷰 → 열 때마다 최신 발주 재조회)
+  // 설정/행사 탭은 열 때마다 렌더
   if (State.activeTab === 'settings') renderSettings()
   if (State.activeTab === 'event') renderEventTable()
-  if (State.activeTab === 'logistics' && typeof renderLogisticsTab === 'function') renderLogisticsTab()
 
   // 실시간 동기화로 dirty 표시된 product/stock/sales 탭은 전환 시 재렌더(보이는 화면이라 측정 정상)
   // → 타 세션 변경분이 이미 열린 재고/매출 탭에 반영. 플래그 없으면 재렌더 안 함(DOM/스크롤 보존)
@@ -161,7 +160,7 @@ const _renderedTabs = new Set()
 function triggerTabRender(tab) {
   // 데이터가 아직 로드 안 됐으면 스킵 (init에서 일괄 렌더)
   // dashboard, board, members는 allProducts 불필요
-  if (!State.allProducts.length && !['dashboard', 'board', 'orgchart', 'mypage', 'hradmin', 'store', 'logistics'].includes(tab)) return
+  if (!State.allProducts.length && !['dashboard', 'board', 'orgchart', 'mypage', 'hradmin', 'store'].includes(tab)) return
   if (_renderedTabs.has(tab)) return
   _renderedTabs.add(tab)
 
@@ -194,7 +193,6 @@ function triggerTabRender(tab) {
     case 'hradmin':   if (typeof renderHrAdminTab === 'function') renderHrAdminTab(); break
     case 'trash':     if (typeof renderTrashTab === 'function') renderTrashTab(); break
     case 'store':     if (typeof renderStoreTab === 'function') renderStoreTab(); break
-    case 'logistics': if (typeof renderLogisticsTab === 'function') renderLogisticsTab(); break
   }
   // 첫 렌더 시 dirty 플래그 해제 → applyTabState의 중복 재렌더 방지
   if (State[tab]) State[tab].needsRerender = false

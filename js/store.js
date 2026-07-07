@@ -13,6 +13,7 @@ const STORE_SUBS = [
   { key: 'sales',     label: '매출 조회' },   // 3e: 조회 전 직원 개방(작업 게이트 없음) — 판매와 재고현황 사이
   { key: 'stock',     label: '매장별 재고현황' },
   { key: 'discount',  label: '매장 할인 상품 관리' },
+  { key: 'logistics', label: '물류 발주 확인' },   // R2 물류 뷰(07-07 top-level 탭에서 이전) — 전 매장 발주 조회 + 확인✓/발송✓
   { key: 'location',  label: '로케이션' },
 ]
 
@@ -197,6 +198,15 @@ function _storeSubPanelHtml(sub) {
       </div>
     </div>`
   }
+  if (sub.key === 'logistics') {
+    // R2 물류 발주 확인 뷰 (07-07 top-level 탭에서 서브탭으로 이전). 조회=전 승인직원(v1).
+    // 본문은 renderLogisticsTab() 이 온디맨드로 #logisticsBody 를 채움(discount 서브탭 패턴 미러).
+    return `<div class="store-panel${shown ? '' : ' store-panel-hidden'}" id="storePanel_logistics">
+      <div id="logisticsBody">
+        <div class="store-placeholder"><div class="store-placeholder-desc">불러오는 중…</div></div>
+      </div>
+    </div>`
+  }
   return `<div class="store-panel${shown ? '' : ' store-panel-hidden'}" id="storePanel_${sub.key}">
     <div class="store-placeholder">
       <div class="store-placeholder-icon">🚧</div>
@@ -233,6 +243,7 @@ function renderStoreTab() {
   else if (_storeActiveSub === 'sale') renderSaleScreen()
   else if (_storeActiveSub === 'sales') renderSalesHistoryPanel()
   else if (_storeActiveSub === 'discount') renderStoreDiscountPanel()
+  else if (_storeActiveSub === 'logistics') renderLogisticsTab()
 }
 
 // 서브탭 전환 (패널 표시 토글 + 활성 버튼)
@@ -249,6 +260,7 @@ function switchStoreTab(sub) {
   else if (sub === 'sale') renderSaleScreen()   // 판매 화면 전환 시 로드 + 커서 세팅
   else if (sub === 'sales') renderSalesHistoryPanel()   // 매출 조회 전환 시 초기화 + 자동 조회
   else if (sub === 'discount') renderStoreDiscountPanel()   // 매장 할인 관리 전환 시 렌더(관리=grade≥4)
+  else if (sub === 'logistics') renderLogisticsTab()   // 물류 발주 확인 전환 시 온디맨드 로드
 }
 
 // 관리자 매장 스위처 setter — _storeViewOverride 설정 후 재렌더
@@ -5794,15 +5806,15 @@ let _lgView = []            // 매장/상태 필터 적용(엑셀 대상)
 let _lgCtx = { start: '', end: '' }
 let _lgCheckInFlight = false
 
+// 물류 발주 확인 뷰 렌더 — 매장 서브탭(#logisticsBody) 온디맨드(07-07 top-level 탭에서 서브탭으로 이전). _lg* 로직/규칙/데이터 무변경.
 function renderLogisticsTab() {
-  const page = document.getElementById('logisticsPage'); if (!page) return
+  const body = document.getElementById('logisticsBody'); if (!body) return
   if ((!window._allUsers || window._allUsers.length === 0) && typeof loadAllUsers === 'function') { try { loadAllUsers() } catch (e) {} }   // 이름 해소용
   const active = (typeof getActiveStores === 'function') ? getActiveStores() : []
   const storeOpts = '<option value="">전체 매장</option>' + active.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')
   const today = kstDateKey()
   const start = _ldgAddDays(today, -30)
-  page.innerHTML = `
-    <div class="store-header"><h2 class="store-title">🚚 물류 — 보충 발주 확인</h2></div>
+  body.innerHTML = `
     <div class="lg-panel">
       <div class="lg-controls">
         <label class="inbhist-ctl">시작일 <input type="date" id="lgStart" class="inbhist-date" value="${esc(start)}" onchange="_lgLoad()"></label>
