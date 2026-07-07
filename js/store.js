@@ -5779,3 +5779,218 @@ window.downloadRoOrders = downloadRoOrders
 window.requestRoCancel = requestRoCancel
 window.closeRoCancelModal = closeRoCancelModal
 window.confirmRoCancel = confirmRoCancel
+
+// =============================================
+// ===== 물류 발주 확인 뷰 (POS R2) — 전 매장 발주 조회 + 확인✓/발송✓ 표시체크 =====
+// =============================================
+// 🔴 READ 뷰 + 표시전용 진행 체크. 재고 무접촉(storeStock/storeInbound/storeSales write 0건 — grep 검증).
+//   확인✓/발송✓ = R1 예약 필드(confirmChecked/By/At · shipChecked/By/At)를 field-restricted update 로 false→true 단방향 세팅.
+//   규칙(R1 예약, 무변경): 승인자 전원 · 각 체크 3필드만 hasOnly · setter==uid · status=='requested' 일 때만. 취소된 발주엔 체크 불가.
+//   조회=dateKey 범위(전 매장, 단일필드 auto 인덱스) + 클라 매장/상태 필터 → (status,dateKey) 복합인덱스는 예약(미사용, 향후 서버필터용).
+//   ⚠️ shipChecked=true → R1 추천 요청중(A2)에서 제외 + 매장 취소경로 봉쇄(R1 코드 무변경, lifecycle 신호). 이름=confirmCheckedBy(uid)→_allUsers 해소(규칙이 name 필드 불허).
+
+let _lgOrders = []          // 조회 결과(raw, 전 매장)
+let _lgView = []            // 매장/상태 필터 적용(엑셀 대상)
+let _lgCtx = { start: '', end: '' }
+let _lgCheckInFlight = false
+
+function renderLogisticsTab() {
+  const page = document.getElementById('logisticsPage'); if (!page) return
+  if ((!window._allUsers || window._allUsers.length === 0) && typeof loadAllUsers === 'function') { try { loadAllUsers() } catch (e) {} }   // 이름 해소용
+  const active = (typeof getActiveStores === 'function') ? getActiveStores() : []
+  const storeOpts = '<option value="">전체 매장</option>' + active.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')
+  const today = kstDateKey()
+  const start = _ldgAddDays(today, -30)
+  page.innerHTML = `
+    <div class="store-header"><h2 class="store-title">🚚 물류 — 보충 발주 확인</h2></div>
+    <div class="lg-panel">
+      <div class="lg-controls">
+        <label class="inbhist-ctl">시작일 <input type="date" id="lgStart" class="inbhist-date" value="${esc(start)}" onchange="_lgLoad()"></label>
+        <label class="inbhist-ctl">마지막일 <input type="date" id="lgEnd" class="inbhist-date" value="${esc(today)}" onchange="_lgLoad()"></label>
+        <label class="inbhist-ctl">매장 <select id="lgStore" class="inbhist-store" onchange="_lgApplyFilters()">${storeOpts}</select></label>
+        <label class="inbhist-ctl">상태 <select id="lgStatus" class="inbhist-store" onchange="_lgApplyFilters()"><option value="all">전체</option><option value="requested">요청됨</option><option value="cancelled">취소</option></select></label>
+        <button class="btn btn-outline" onclick="_lgLoad()">↻ 새로고침</button>
+        <button class="btn btn-outline" id="lgExportBtn" onclick="downloadLgOrders()">📤 엑셀 다운로드</button>
+        <span class="inbhist-summary inb-list-count-badge" id="lgSummary"></span>
+      </div>
+      <div class="lg-table-wrap">
+        <table class="data-table inbhist-table lg-table">
+          <thead><tr>
+            <th style="width:196px">발주번호</th><th style="width:92px">일시</th><th style="width:84px">매장</th>
+            <th style="width:104px">건수/수량</th><th style="width:64px">상태</th>
+            <th style="width:148px">확인✓</th><th style="width:148px">발송✓</th><th>메모</th>
+          </tr></thead>
+          <tbody id="lgBody"></tbody>
+        </table>
+      </div>
+      <div class="inb-confirm-note">확인✓/발송✓ 는 진행 표시(누가·언제)일 뿐 재고를 변동하지 않습니다. 되돌릴 수 없습니다(단방향). 발송 처리 시 매장의 발주 취소가 막힙니다.</div>
+    </div>`
+  _lgLoad()
+}
+
+// 조회 — dateKey 범위(전 매장, 단일필드 auto 인덱스). 상태/매장은 클라 필터(_lgApplyFilters). createdAt DESC.
+async function _lgLoad() {
+  const body = document.getElementById('lgBody'); if (!body) return
+  const COLS = 8
+  const setEmpty = m => { body.innerHTML = `<tr><td colspan="${COLS}" class="inbhist-empty">${esc(m)}</td></tr>`; _lgOrders = []; _lgView = []; const b = document.getElementById('lgExportBtn'); if (b) b.disabled = true; const s = document.getElementById('lgSummary'); if (s) s.textContent = '' }
+  const startEl = document.getElementById('lgStart'), endEl = document.getElementById('lgEnd')
+  let start = (startEl || {}).value || '', end = (endEl || {}).value || ''
+  if (!start || !end) { setEmpty('기간을 선택하세요'); return }
+  if (start > end) { const t = start; start = end; end = t; if (startEl) startEl.value = start; if (endEl) endEl.value = end }
+  if (!db) { setEmpty('서버 연결 없음'); return }
+  _lgCtx = { start, end }
+  setEmpty('불러오는 중…')
+  const q = db.collection('replenishOrders').where('dateKey', '>=', start).where('dateKey', '<=', end)
+  let snap = null
+  try { snap = await q.get({ source: 'server' }) }
+  catch (e) { if (_shIndexBuilding(e)) { setEmpty('인덱스 준비 중 — 잠시 후 다시 시도하세요'); return } try { snap = await q.get() } catch (e2) { setEmpty('불러오기 실패: ' + (e2 && e2.message || '')); return } }
+  const rows = []; snap.forEach(d => rows.push(Object.assign({ _id: d.id }, d.data() || {})))
+  rows.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))   // 최신 위(DESC)
+  _lgOrders = rows
+  _lgApplyFilters()
+}
+
+// 클라 필터(매장/상태) + 렌더 — 재조회 없음(dateKey 쿼리는 고정).
+function _lgApplyFilters() {
+  const body = document.getElementById('lgBody'); if (!body) return
+  const COLS = 8
+  const storeF = (document.getElementById('lgStore') || {}).value || ''
+  const statusF = (document.getElementById('lgStatus') || {}).value || 'all'
+  const view = (_lgOrders || []).filter(o => {
+    if (storeF && o.storeId !== storeF) return false
+    const st = String(o.status || 'requested')
+    if (statusF === 'requested' && st !== 'requested') return false
+    if (statusF === 'cancelled' && st !== 'cancelled') return false
+    return true
+  })
+  _lgView = view
+  const b = document.getElementById('lgExportBtn'); if (b) b.disabled = !view.length
+  const sm = document.getElementById('lgSummary')
+  if (!view.length) { body.innerHTML = `<tr><td colspan="${COLS}" class="inbhist-empty">해당 조건의 발주가 없습니다</td></tr>`; if (sm) sm.textContent = ''; return }
+  body.innerHTML = view.map(o => _lgRenderRow(o)).join('')
+  if (sm) { const req = view.filter(o => o.status !== 'cancelled').length; sm.innerHTML = `발주 <strong>${view.length}</strong>건 (요청 ${req})` }
+}
+
+// uid → 표시 이름 (규칙이 name 필드를 불허 → 클라에서 _allUsers 로 해소). 없으면 uid 축약.
+function _lgResolveName(uid) {
+  if (!uid) return '―'
+  const u = (Array.isArray(window._allUsers) ? window._allUsers : []).find(x => x.uid === uid)
+  if (u) return (typeof formatUserName === 'function') ? formatUserName(u.name, u.position) : (u.name || uid)
+  return String(uid).slice(0, 6) + '…'
+}
+
+// 확인/발송 셀 — 체크됨(이름·시각, 최종) / 요청상태(클릭 버튼) / 그 외(— 체크 불가).
+function _lgCheckCell(o, kind) {
+  const checked = kind === 'confirm' ? o.confirmChecked === true : o.shipChecked === true
+  const by = kind === 'confirm' ? o.confirmCheckedBy : o.shipCheckedBy
+  const at = kind === 'confirm' ? o.confirmCheckedAt : o.shipCheckedAt
+  const label = kind === 'confirm' ? '확인' : '발송'
+  if (checked) {
+    const nm = _lgResolveName(by)
+    return `<span class="lg-checked" title="${esc(label)}: ${esc(nm)} ${esc(_inbHistDateTime(at, 'full'))}">✓ ${esc(nm)}<br><span class="lg-checked-at">${esc(_inbHistDateTime(at, 'md'))}</span></span>`
+  }
+  if (String(o.status || '') !== 'requested') return '<span class="lg-check-na">—</span>'   // 취소 등 → 규칙도 차단
+  return `<button class="btn btn-outline btn-sm lg-check-btn" onclick="lgCheck('${esc(o._id)}','${kind}')">${esc(label)} 체크</button>`
+}
+
+function _lgRenderRow(o) {
+  const st = String(o.status || 'requested')
+  const t = _inbHistDateTime(o.createdAt, 'md')
+  const tot = o.totals || {}
+  const statusCell = st === 'cancelled' ? '<span class="shist-badge shist-badge-void">취소</span>' : '<span class="shist-badge shist-badge-ok">요청됨</span>'
+  return `<tr class="${st === 'cancelled' ? 'shist-cancelled-row' : ''}">
+    <td class="inbhist-no lg-ro-cell" onclick="openLgDetail('${esc(o._id)}')" title="상세">${esc(o.roNo || o._id)}</td>
+    <td class="inbhist-time">${esc(t)}</td>
+    <td style="text-align:center">${esc(_storeNameById(o.storeId) || o.storeId || '')}</td>
+    <td style="text-align:center">${(Number(tot.lineCount) || 0)}건 / ${(Number(tot.qtyTotal) || 0)}개</td>
+    <td style="text-align:center">${statusCell}</td>
+    <td style="text-align:center">${_lgCheckCell(o, 'confirm')}</td>
+    <td style="text-align:center">${_lgCheckCell(o, 'ship')}</td>
+    <td class="inbhist-memo">${esc(o.memo || '')}</td>
+  </tr>`
+}
+
+// 🔴 확인✓/발송✓ 처리 — field-restricted update(3필드만, false→true 단방향, setter==uid, status==requested). 재고 무접촉.
+async function lgCheck(roNo, kind) {
+  if (_lgCheckInFlight) return
+  const o = (_lgOrders || []).find(x => x._id === roNo)
+  if (!o) { showToast('발주를 찾을 수 없습니다', 'warning'); return }
+  if (String(o.status || '') !== 'requested') { showToast('요청 상태 발주만 체크할 수 있습니다', 'warning'); return }
+  const already = kind === 'confirm' ? o.confirmChecked === true : o.shipChecked === true
+  if (already) return   // one-way — 이미 체크됨, no-op
+  const isShip = kind === 'ship'
+  const msg = isShip
+    ? '이 발주를 \'발송\' 처리하시겠습니까?\n발송 처리 시 매장의 발주 취소가 불가능해집니다.\n(되돌릴 수 없음)'
+    : '이 발주를 \'확인\' 처리하시겠습니까?\n(되돌릴 수 없음)'
+  if (!await korConfirm(msg, (isShip ? '발송' : '확인') + ' 처리', '취소')) return
+  if (!db) { showToast('서버 연결 없음 — 잠시 후 다시 시도하세요', 'warning'); return }
+  try {
+    _lgCheckInFlight = true
+    const uid = (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) ? firebase.auth().currentUser.uid : ''
+    const nowIso = new Date().toISOString()
+    const patch = isShip
+      ? { shipChecked: true, shipCheckedBy: uid, shipCheckedAt: nowIso }
+      : { confirmChecked: true, confirmCheckedBy: uid, confirmCheckedAt: nowIso }
+    await db.collection('replenishOrders').doc(roNo).update(patch)   // 규칙 (b) 분기 — 3필드/단방향/setter/요청상태 서버 강제
+    if (typeof logActivity === 'function') logActivity(isShip ? 'replenish-ship' : 'replenish-check', '보충발주', _storeNameById(o.storeId) + '(' + o.storeId + '): ' + (o.roNo || roNo) + ' ' + (isShip ? '발송' : '확인') + ' 처리')
+    showToast((isShip ? '발송' : '확인') + ' 처리 완료 · ' + (o.roNo || roNo), 'success')
+    _lgLoad()   // 재조회 → 실제 상태(체크/이름/시각) 반영
+  } catch (e) {
+    const denied = e && (e.code === 'permission-denied' || /permission/i.test(String(e.message || '')))
+    // race(동시 체크) / 상태변화 → 서버가 거부 → 실제 상태 재조회로 반영(첫 체크가 승리)
+    showToast(denied ? '이미 처리되었거나 체크할 수 없는 상태입니다' : ('체크 실패 — 다시 시도하세요' + (e && e.message ? ' (' + e.message + ')' : '')), denied ? 'warning' : 'error')
+    _lgLoad()
+  } finally { _lgCheckInFlight = false }
+}
+
+// 상세 모달 — R1 roDetailModal 재사용(뷰어). 품번 click → 공용 상품 상세.
+function openLgDetail(roNo) {
+  const o = (_lgOrders || []).find(x => x._id === roNo); if (!o) return
+  const modal = document.getElementById('roDetailModal'); if (!modal) return
+  const st = String(o.status || 'requested')
+  const confTxt = o.confirmChecked ? (' · 확인✓ ' + esc(_lgResolveName(o.confirmCheckedBy)) + ' ' + esc(_inbHistDateTime(o.confirmCheckedAt, 'md'))) : ''
+  const shipTxt = o.shipChecked ? (' · 발송✓ ' + esc(_lgResolveName(o.shipCheckedBy)) + ' ' + esc(_inbHistDateTime(o.shipCheckedAt, 'md'))) : ''
+  const head = document.getElementById('roDetailHead')
+  if (head) head.innerHTML = '<div class="ro-detail-no">' + esc(o.roNo || o._id) + '</div>'
+    + '<div class="ro-detail-meta">' + esc(_inbHistDateTime(o.createdAt, 'full')) + ' · ' + esc(_storeNameById(o.storeId) || o.storeId) + ' · ' + (st === 'cancelled' ? '취소' : '요청됨') + confTxt + shipTxt + '</div>'
+    + (o.memo ? ('<div class="ro-detail-memo">메모: ' + esc(o.memo) + '</div>') : '')
+    + (st === 'cancelled' && o.cancelledReason ? ('<div class="ro-detail-memo">취소사유: ' + esc(o.cancelledReason) + '</div>') : '')
+  const body = document.getElementById('roDetailBody')
+  if (body) body.innerHTML = (Array.isArray(o.lines) ? o.lines : []).map(l => {
+    const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(l.productCode) : null
+    const nm = esc(l.productName || (p ? (p.nameKr || p.nameEn || '') : ''))
+    return '<tr><td class="inbhist-no ro-code-cell" onclick="openStoreProductDetail(\'' + esc(l.productCode) + '\',\'' + esc(o.storeId) + '\')" title="상품 상세">' + esc(l.productCode) + '</td><td>' + nm + '</td><td style="text-align:center">' + esc(l.size) + '</td><td style="text-align:right">' + Math.max(0, Math.floor(Number(l.requestQty) || 0)) + '</td></tr>'
+  }).join('') || '<tr><td colspan="4" class="inbhist-empty">라인 없음</td></tr>'
+  modal.showModal(); if (typeof centerModal === 'function') centerModal(modal)
+}
+
+function downloadLgOrders() {
+  if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
+  if (!_lgView || !_lgView.length) { showToast('내보낼 발주가 없습니다', 'warning'); return }
+  const header = ['발주번호', '일시', '매장', '상태', '확인', '발송', '품번', '상품명', '사이즈', '요청수량', '메모']
+  const aoa = [header]
+  _lgView.forEach(o => {
+    const when = _inbHistDateTime(o.createdAt, 'full'); const storeName = _storeNameById(o.storeId) || o.storeId || ''
+    const st = o.status === 'cancelled' ? '취소' : '요청됨'
+    const conf = o.confirmChecked ? ('Y ' + _lgResolveName(o.confirmCheckedBy) + ' ' + _inbHistDateTime(o.confirmCheckedAt, 'md')) : ''
+    const ship = o.shipChecked ? ('Y ' + _lgResolveName(o.shipCheckedBy) + ' ' + _inbHistDateTime(o.shipCheckedAt, 'md')) : ''
+    const lines = Array.isArray(o.lines) ? o.lines : []
+    if (!lines.length) { aoa.push([o.roNo || o._id, when, storeName, st, conf, ship, '', '', '', 0, o.memo || '']); return }
+    lines.forEach(l => {
+      const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(l.productCode) : null
+      const nm = p ? (p.nameKr || p.nameEn || '') : ''
+      aoa.push([o.roNo || o._id, when, storeName, st, conf, ship, l.productCode || '', nm, l.size || '', Math.max(0, Math.floor(Number(l.requestQty) || 0)), o.memo || ''])
+    })
+  })
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  ws['!cols'] = [{ wch: 22 }, { wch: 17 }, { wch: 10 }, { wch: 7 }, { wch: 22 }, { wch: 22 }, { wch: 16 }, { wch: 22 }, { wch: 7 }, { wch: 9 }, { wch: 20 }]
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '발주현황')
+  XLSX.writeFile(wb, '발주현황_' + (_lgCtx.start || '') + '~' + (_lgCtx.end || '') + '.xlsx')
+}
+
+window.renderLogisticsTab = renderLogisticsTab
+window._lgLoad = _lgLoad
+window._lgApplyFilters = _lgApplyFilters
+window.lgCheck = lgCheck
+window.openLgDetail = openLgDetail
+window.downloadLgOrders = downloadLgOrders

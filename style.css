@@ -6261,3 +6261,19 @@ td[data-editable]:hover { background: #FAEEDA; }
 .ro-detail-no { font-size: 16px; font-weight: 700; color: var(--primary); }
 .ro-detail-meta { font-size: 13px; color: var(--text-light); margin-top: 3px; }
 .ro-detail-memo { font-size: 13px; color: var(--text); margin-top: 6px; }
+
+/* =============================================
+   물류 발주 확인 뷰 (POS R2)
+   ============================================= */
+.lg-panel { padding: 4px 4px 0; }
+.lg-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.lg-table-wrap { max-height: calc(100vh - 260px); overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+.lg-table { margin: 0; font-size: 14px; width: 100%; }
+.lg-table thead th { position: sticky; top: 0; z-index: 2; background: var(--primary); color: #fff; padding: 9px 12px; text-align: left; }
+.lg-table td { padding: 7px 12px; }
+.lg-ro-cell { cursor: pointer; }
+.lg-ro-cell:hover { text-decoration: underline; }
+.lg-checked { display: inline-block; color: var(--success); font-weight: 700; font-size: 13px; line-height: 1.25; }
+.lg-checked-at { color: var(--text-light); font-weight: 400; font-size: 11px; }
+.lg-check-na { color: var(--text-light); }
+.lg-check-btn { padding: 3px 12px; }
