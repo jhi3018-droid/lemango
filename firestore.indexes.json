@@ -40,6 +40,22 @@
         { "fieldPath": "storeId", "order": "ASCENDING" },
         { "fieldPath": "dateKey", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "replenishOrders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "dateKey", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "replenishOrders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "dateKey", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

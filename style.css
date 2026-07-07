@@ -6198,3 +6198,64 @@ td[data-editable]:hover { background: #FAEEDA; }
 .inbcancel-exec-btn { background: #fff; border: 1px solid var(--danger); color: var(--danger); }
 .inbcancel-exec-btn:hover { background: var(--danger); color: #fff; }
 .inbcancel-exec-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* =============================================
+   매장 보충 발주 (POS R1) — 추천/개별 탭 · staging · 내 발주
+   ============================================= */
+.ro-modal-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.ro-screen { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ro-screen.inb-hidden { display: none; }
+#roGate { padding: 24px; }
+/* 탭 바 (store-subtab 미러) */
+.ro-tabs { display: flex; gap: 4px; padding: 0 20px; border-bottom: 2px solid var(--border); background: var(--bg); flex-shrink: 0; }
+.ro-tab { appearance: none; background: none; border: none; border-bottom: 3px solid transparent; padding: 13px 20px; font-size: 15px; font-weight: 600; color: var(--text-light); cursor: pointer; margin-bottom: -2px; transition: color .15s, border-color .15s; }
+.ro-tab:hover { color: var(--primary); }
+.ro-tab-active { color: var(--accent); border-bottom-color: var(--accent); }
+.ro-tabbody { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding: 16px 20px 0; }
+.ro-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ro-panel.ro-panel-hidden { display: none; }
+.ro-panel-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; flex-shrink: 0; }
+.ro-suggest-info { font-size: 13px; color: var(--text-light); flex: 1; }
+.ro-suggest-info strong { color: var(--primary); }
+.ro-info-note { color: var(--text-light); font-weight: 400; }
+.ro-table-wrap { flex: 1; min-height: 120px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+.ro-table-wrap table { margin: 0; font-size: 14px; width: 100%; }
+.ro-table-wrap thead th { position: sticky; top: 0; z-index: 2; background: var(--primary); color: #fff; padding: 9px 12px; text-align: left; }
+.ro-table-wrap td { padding: 7px 12px; }
+.ro-code-cell { cursor: pointer; }
+.ro-code-cell:hover { text-decoration: underline; }
+.ro-stage-name { color: var(--text-light); font-size: 12px; margin-left: 4px; }
+.ro-qty-input { width: 76px; text-align: right; padding: 4px 8px; -moz-appearance: textfield; }
+.ro-qty-input::-webkit-outer-spin-button, .ro-qty-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.ro-pending { display: inline-block; min-width: 22px; padding: 1px 7px; border-radius: 10px; background: #fff3d6; color: #a9791a; font-weight: 700; font-size: 13px; }
+/* 개별 추가 */
+.ro-manual-search { width: 100%; margin-bottom: 12px; }
+.ro-manual-results { max-height: 46%; overflow: auto; }
+.ro-manual-sizes { margin-top: 12px; }
+/* staging */
+.ro-staging { flex-shrink: 0; border-top: 2px solid var(--border); background: var(--bg); padding: 12px 20px 14px; display: flex; flex-direction: column; gap: 8px; }
+.ro-staging.inb-hidden { display: none; }
+.ro-stage-head { font-size: 15px; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 8px; }
+.ro-stage-wrap { max-height: 168px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.ro-stage-table { margin: 0; font-size: 14px; width: 100%; }
+.ro-stage-table thead th { position: sticky; top: 0; z-index: 2; background: var(--primary); color: #fff; padding: 8px 12px; text-align: left; }
+.ro-stage-table td { padding: 6px 12px; }
+.ro-stage-footer { display: flex; align-items: center; gap: 12px; }
+.ro-memo-input { flex: 1; }
+.ro-footer-btns { display: flex; gap: 10px; }
+.ro-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* 내 발주 */
+.ro-my-controls { gap: 8px; }
+.ro-check { display: inline-block; font-size: 12px; color: var(--text-light); padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; }
+.ro-check-on { color: var(--success); border-color: var(--success); font-weight: 700; }
+.ro-cancel-btn { padding: 3px 10px; }
+/* 발주 확정 다이얼로그 라인 목록 */
+.ro-confirm-list { max-height: 180px; overflow: auto; margin: 10px 0; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--bg); }
+.ro-confirm-line { font-size: 13px; padding: 3px 0; color: var(--primary); }
+.ro-confirm-line span { display: inline-block; min-width: 34px; text-align: center; color: var(--accent); font-weight: 700; }
+/* 발주 상세 */
+.ro-detail-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 16px 20px; gap: 12px; overflow: hidden; }
+.ro-detail-head { flex-shrink: 0; }
+.ro-detail-no { font-size: 16px; font-weight: 700; color: var(--primary); }
+.ro-detail-meta { font-size: 13px; color: var(--text-light); margin-top: 3px; }
+.ro-detail-memo { font-size: 13px; color: var(--text); margin-top: 6px; }

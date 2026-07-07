@@ -67,6 +67,38 @@
   - 사은품 판별: C열(주문번호)에 `_사은품` 포함 OR D열(자체코드)에 `사은품` 포함. 사은품 H=0, I는 본품과 중복기재 → 포함 시 과대계상.
   - 검증값(2026-01): 26,607,452 + 1,035,000 = **27,642,452**.
 
+## 1.5 🏆 품질 기준 (QUALITY BAR — 전 작업 예외 없음)
+1. **고치기 전에 진단.** 버그: 실제 데이터/로그/코드를 **먼저** 읽고, 근거(file:line, 실제 doc 값)와 함께 root cause를 명시한 **후** 수정. 추측-패치 금지.
+2. **STOP-and-report 트리거**(작업 중단 → Claude.ai 보고, 절대 임의 진행 금지):
+   - 승인된 설계 문서의 스키마/메커니즘에서 벗어나는 모든 이탈
+   - 작업 중 예상치 못한 firestore.rules / index / 데이터모델 변경 필요
+   - 아키텍처 충돌 발견(예: split-line vs void-keying) — **코드 쓰기 전** 중단
+   - 작업지시의 보장(atomicity, exactly-once, byte-unchanged)을 충족 못할 때
+3. **code-reviewer 게이트 필수**(🟢/🟡/🔴). 리뷰어는 해당 작업의 "critical properties"(작업지시가 명명)를 **명시적으로 검증**해야 함. 블로커 발견 = 수정 + 재리뷰 후 보고.
+4. **정직한 보고.** 한계를 있는 그대로 명시(예: "규칙은 X 강제 불가 — 트랜잭션이 authoritative", "기준 없음 = 대조 불가"). 가짜 대조 금지, trade-off 은폐 금지. 범위 밖이어도 발견한 기존 버그는 follow-up으로 플래그.
+5. **검증 = 주장이 아니라 증거.** before/after 값, tight-loop 유니크 테스트, 재시도 드릴, 더블클릭 테스트, rules-simulator 매트릭스(admin/own-store/office/forged), grep 증명(예: stock write 0건), byte-unchanged diff. **모든 보고서에 검증 TABLE 포함.**
+
+## 1.6 🔒 MONEY/STOCK-CRITICAL 패턴 (하우스 불변식 — 재사용, 재발명 금지)
+- **Anchor 원칙**: 신규 기능은 기존 검증 프리미티브를 건드리지 말고 **폴딩(fold-in)**. 예: 모든 할인 타입 = per-line `unitDiscount` 로 해소(3c/3e byte-unchanged, 5-1→5-4); 모든 재고 이동 = storeInbound 원장 doc(moveType/stockDelta/defectDelta). 신규 설계 시 먼저 물을 것: "어떤 기존 프리미티브가 이걸 흡수하나?"
+- **Exactly-once writes**: 결정적 doc id(= 업무번호: saleNo/adjNo/OUT-no/roNo) + update-denied(또는 field-restricted) 규칙 ⇒ 재시도의 재-set이 update로 평가 ⇒ 배치 전체 거부 ⇒ 이중반영 없음. pending 번호를 draft에 영속(pendingSaleNo 패턴); permission-denied 시 server read로 판별(exists = 이미 착지 → 성공 처리).
+- **Atomicity**: 논리적 세션 1개 = 배치 1개. 상쇄 세션은 **절대 청크 금지**(부분반영이 손상). 상한 초과 → "나눠 진행" 메시지로 차단. 청크는 절대-SET origin(예: baseline 스냅샷)에서만 안전 — 차이를 알 것.
+- **누적 상한(race)**(부분취소 패턴): 열거가능 결정적 id(`{base}_{seq}`)를 runTransaction 내 tx.get으로 read(트랜잭션 내 쿼리 불가); Firestore는 미존재-doc read도 충돌 추적 ⇒ 동시 초과반영 abort. 모호-재시도 멱등성=clientToken.
+- **부호/듀얼-델타 역전**: 취소는 `increment(−stockDelta)` + `increment(−defectDelta)` 제네릭 역전(레거시 폴백 −qty). 전 이동타입 취소 로직 1개.
+- **KST 산술만**: `_kstParts/kstDateKey/kstStamp/kstFormat`(UTC+9 산술). Intl/Asia-Seoul/로컬시간 경로 절대 금지. instant는 UTC ISO 저장; dateKey/번호/표시는 KST 유틸로 파생.
+- **정수 KRW만.** % → 유닛별 floor; 분배액 → 비례 floor + 잔액은 최고가 라인. 합계는 **정확**해야 함(시뮬레이션으로 검증).
+- **규칙 공예**: OR-union(most-specific-wins 아님); office-staff `!= ''` 가드; 레거시 doc은 `Map.get(field, default)`; field-restricted update = `diff().affectedKeys().hasOnly([...])` + 상태전이 조건; 규칙은 배열 내부/cross-doc 합 검증 불가(그곳은 트랜잭션이 authoritative — 명시할 것).
+- **레거시 호환**: 스키마 확장은 폴백 헬퍼 접근자(`_mv*` 패턴)로 읽어 구 doc이 byte-identical 동작. 신규 필드는 additive; 구 레코드는 '-'/기본값 표시.
+- **음수 재고 = 경고만, 차단 아님**(실물이 진실). 무료/번들 유닛도 재고 전량 **차감**(물리 반출; 판매가 0은 돈만 영향).
+
+## 1.7 📤 보고 & GIT 규율
+- 보고서: 영문, 리포트 마커(📋 작업 결과 / REPORT START…END), 섹션에 검증 table + 결정 로그 + 한글 테스트 체크리스트 + 정확한 배포 명령 포함. **청크로 붙여넣기**(소유주 클라이언트가 긴 붙여넣기 truncate; 표는 스크린샷이 효과적).
+- 배포 명령은 변경 표면별 정확히: hosting-only vs `--only firestore:rules,...` vs `--only firestore:indexes,...`; 인덱스 빌드 시간 명시; 하드 새로고침 명시.
+- Git: 선택적 스테이징(`git add js/ index.html style.css firebase.json firestore.rules firestore.indexes.json docs/ CLAUDE.md`; harness .claude/.firebase 제외). **완료 작업마다 커밋** — 여러 shipped 기능을 커밋 없이 누적 금지. worktree 브랜치 작업 시: 보고서에 브랜치+커밋 명시 + main-merge가 배포 선행임을 REMIND.
+- CLAUDE.md는 매 작업 갱신(claude-md-history skill), 컴팩트 유지(규칙 verbatim, 이력은 1줄 changelog).
+
+## 1.8 🧭 작업지시 계약 (WORK-ORDER CONTRACT — 결여 시 플래그)
+적절한 작업지시는 다음을 명명한다: scope 경계(X ONLY), 리뷰어가 검증할 critical properties, STOP 조건, 배포 표면, 검증 체크리스트, 보고 형식. 들어온 지시에 critical-properties 목록 또는 scope 경계가 없으면, 명백한 것 이상으로 코딩하기 전에 (보고서로) **질문**할 것.
+
 ---
 
 # 2. 아키텍처 불변식 & 데이터 모델 (Architecture Invariants & Data Models)
@@ -119,6 +151,7 @@
 - **storeSales sale doc**: `{ type:'sale', saleNo(SL-...), storeId, lines[{productCode,size,qty,unitPrice,unitDiscount,lineNormal,lineDiscount,lineTotal,discountSource, appliedRuleId?,appliedRuleName?(5-1 스냅샷), cartDiscount?,cartRuleId?,cartRuleName?(5-2 카트몫·per-unit), lineId?,lineNote?(5-3 split 식별·무료/반값/콤보/번들 라벨), bundleInstanceId?,cbDiscount?(5-4 번들 인스턴스·콤보/번들 몫) — 전부 additive}], totals{total,discountTotal,qtyTotal}, appliedDiscounts:[{ruleId,name,level('line'|'cart'),saving,qty}](분석용), payMethod, customerPhone, workerUid, workerName, soldAt, dateKey }` — **discountSource: 'manual' | 'store-discount'(자동) | 'manual-override'(수동 잠금)**. 판매가=정상가−할인가 불변(모든 할인=unitDiscount 만 채움 → 3c/3e/부분취소 math 무변경). 🔴 **5-3 split**: 부모 라인이 정상/무료/반값 서브라인으로 분할될 때 `lineId`(`{code}#{size}#{n}`) 로 라인 독립 식별 — 부분취소/집계/취소UI/누적상한이 `_lineIdOf(l)=lineId||(code,size)` 로 키잉(레거시/비-split=byte-identical). **무료 유닛(unitDiscount=unitPrice, 판매가0)도 재고 차감**(물리적 반출).
 - **storeSales void doc**: `{ type:'void', originalSaleId, originalSaleNo, storeId, lines, totals, voidReason, voidedBy, voidedByName, voidedAt, dateKey, customerPhone }`
   - customerPhone: 공홈 적립금 대사 전용(회원관리 아님). 선택 입력, 숫자만 저장('010-1234-5678'→'01012345678'), 일반 이력=마스킹, 폰검색=전체(equality→단일필드 auto 인덱스).
+- **replenishOrders doc (R1, 발주=요청 문서)**: `replenishOrders/{roNo}` — `{ roNo(RO-YYYYMMDD-HHMMSS-<8자>), storeId, storeName(스냅샷), lines:[{productCode, productName(스냅샷), size, requestQty(int≥1)}], totals{lineCount,qtyTotal}, memo, status('requested'|'cancelled'), confirmChecked/By/At(R2 확인✓ 예약), shipChecked/By/At(R2 발송✓ 예약), cancelledBy/At/Reason(취소 시), createdByUid/Name, createdAt(UTC ISO), dateKey(KST) }` — 🔴 **storeStock/storeInbound/storeSales 절대 무접촉**(요청 원장). doc id=roNo 결정적 → 재제출 set=update 평가→규칙 거부→**중복발주 불가(exactly-once)**. **checks=false→true 단방향**(R2 진행 마커, 되돌리기 없음). **요청중(pending) 정의=status'requested'&&shipChecked==false** 합(발송되면 이탈=lifecycle). **인덱스**: (storeId,dateKey)=내 발주 조회 · (status,dateKey)=R2 크로스매장 예약. append-only(delete:false), 취소/체크만 field-restricted update.
 - **_stores config**: `[{id(st1,st2..), name, active, order, location}]` — localStorage `lemango_stores_v1` + `sharedData/stores`(admin write). 기본 부산점(st1)/성남점(st2). `generateStoreId`=soft-disabled 포함 최대 접미사+1. 삭제 가드 `storeHasData`(재고/매출 있으면 hard-delete 거부→비활성화). `getActiveStores()`.
 - **_inboundTypes config**: `[{id, name, active, order}]` — localStorage `lemango_inbound_types_v1` + `sharedData/inboundTypes`(admin write). DEFAULT 신규입고/조정입고/이관입고. `getActiveInboundTypes`/`inboundTypeHasData`. **"입고취소"는 유형 아님 — 별도 cancelled 상태.**
 - **_storeDiscounts config (5-1~5-4, ✅ Phase 5 완료)**: `[{id(sd1..), name, active, condition, benefit, period{start,end}(KST·빈값=상시), storeScope('all'|storeId), priority, order}]` — localStorage `lemango_store_discounts_v1` + `sharedData/storeDiscounts`(admin write, OR-union). `getActiveDiscounts`(활성+기간+매장, **condition-agnostic**). **condition**: `product{productCode}`(5-1) · `brand{brand}`·`category{category}`(5-2 상품 brand/**type**) · `cartTotal{minTotal}`(5-2 카트) · `qty{scope,ref}`(5-3 수량) · `combo{items[{scope,ref}],eachQty}`·`bundle{items,eachQty}`(5-4 조합). **benefit**: `percent{value}`·`fixed{price}`(라인) · `amount{minus}`(카트/콤보) · `nplus{buy,free}`·`secondHalf{nth,value}`(5-3) · `bundlePrice{price}`(5-4 고정가). 엔진 `_saleApplyDiscounts`=**파이프라인 line→quantity→combo/bundle→cart**: pass1 라인·**pass1.5 수량**(`_saleApplyQtyDiscounts`)·**pass1.7 콤보/번들**(`_saleApplyComboBundle`: 미claimed 유닛으로 인스턴스 형성=멤버별 floor(avail/eachQty) 최저가 예약, combo=%/정액·bundle=S−price 정확 분배, 부모 `_bundleGroups`)·effective 라인 빌드·pass2 카트(콤보/번들 라인 제외). 🔴 **effective(split) 라인**(`_saleEffLines`): 부모→정상/반값/무료/콤보/번들 서브라인(각 균일 unitDiscount), split 시 **lineId**(`{code}#{size}#{n}`). 🔴 **모든 할인=unitDiscount 폴딩(별도 머니필드 없음)→3c/buildSaleDoc/부분취소 byte-unchanged**. 🔴 **무료/번들 유닛도 재고 차감**(확정=effective code/size별 qty 합산=전체). 🔴 **번들=whole-instance-void-only**(bundleInstanceId 태그; 취소모달이 번들 멤버 부분취소 차단·"번들 전체 취소" 체크박스만→같은 instanceId 전 라인 남은전량 원자 취소; 트랜잭션은 무변경=UI 제약). **콤보(%)=부분취소 per-unit 스냅샷 허용**(고정가 아님). cartDiscount/cbDiscount/lineId/lineNote/bundleInstanceId=표시·귀속 전용 additive. 라인+수량+콤보/번들 across-level(콤보/번들 유닛은 카트 제외), 각 레벨 no-stack, manual-override 전부 제외. 스냅샷=취소 시 재계산 없음. **관리 UI=`🏬 매장→'매장 할인 상품 관리'` 서브탭**(조회 전 직원·관리 grade≥4; 콤보/번들 멤버=`scope:ref` 콤마 입력). 규칙/인덱스 무변경.
@@ -204,6 +237,7 @@
 - **강제 재고 차감** — Phase 3 이후 (사유+로그 필수, 방침 확정).
 - **이관(매장간)** — 입고유형에 '이관입고'만 있음, 실제 이관 흐름 미구현.
 - **Phase 4 환불/부분환불**, **Phase 5 로케이션 탭**(placeholder). **매장 할인**: 설계 `docs/pos-phase5-discount-design.md`(condition×benefit) + **✅ Phase 5 매장 할인 완료** — 5-1 상품별 %/특정가 · 5-2 카테고리/브랜드 + 총액(카트분배) · 5-3 N+1/두번째반값(수량, split-line+lineId, 최저가 무료) · **5-4 콤보/번들(조합, 인스턴스 형성, 번들 고정가 정확분배, whole-bundle-void-only)**. 전부 unitDiscount 폴딩 → 3c/부분취소 byte-unchanged.
+- **보충 발주 R2 (물류 뷰)** — R1(발주 생성)만 완료. R2=크로스매장 발주 뷰(전 승인직원 v1) + 발주 단위 확인✓/발송✓ 표시체크(who/when, 수량/재고 무접촉). 체크 필드·규칙·(status,dateKey) 인덱스 R1에서 예약 → R2=hosting-only. 정식 마감(closure)/부분발송/거절/최소재고(min-stock)=v2. ⚠️ **크로스탭 동시 발주 확정**=서로 다른 roNo 중복 doc 가능(순차 안전, request-only=재고 무영향, `_reservedCodes` 크로스탭 한계와 동류).
 - **적립금 지급표시 / 거스름돈 계산 / 분할결제**(payMethod 단일값) — 추후 옵션.
 - **activityLogs 무제한 증가** — retention(예: 90일) 정책 미도입.
 - **레거시 Firestore 백업**(`backups/{type}/items/`) — 복원만, 신규는 Storage `backups/{type}/{date}.json`. 수동 정리 대기.
@@ -260,7 +294,7 @@ docs/ pos-phase1~3-design.md · **pos-phase6-design.md**(재고수정/반출/불
 
 ## 5.5 모달 목록 (핵심)
 `imageModal, detailModal(openDetailModal, readOnly opt), registerModal, stockRegisterModal, outgoingModal, barcodeUploadModal, salesUploadModal(카페24/사방넷/면세점), gonghomPreviewModal, sabangnetPreviewModal, planDetailModal, planDeleteConfirmModal, productDeleteConfirmModal, eventRegisterModal, planScheduleModal, workRegisterModal, workDetailModal, weeklyReportModal, dashDayModal, dashInfoModal, signupModal, memberEditModal, memberAddModal, memberProfileModal, bulkScheduleModal, personalScheduleModal, activityDetailModal`.
-POS: `storeStockUploadModal, storeStockDetailModal(공용 상품 상세 openStoreProductDetail), inboundScanModal(ESC 차단·명시적 닫기 · **6b/6c 방향 토글 정상입고/정상반출/불량반출**), inbLookupModal, inbCloseConfirmModal, inbHistoryModal(→입출고 내역), inbCancelModal, ledgerModal(6d 품목 이동 원장·대조), baselineConfirmModal(6d 기준재고), saleLookupModal, saleConfirmModal(3c 사전확인), saleReceiptModal(3d 영수증), saleVoidModal(3e 판매취소), adjustModal(6a 재고수정·ESC 차단·명시적 닫기 · **6c op 정상↔불량 전환**), adjConfirmModal(6a 사유), adjCloseConfirmModal(6a 닫기확인)`. **매출 조회(3e)=`🏬 매장→매출 조회` 서브탭 패널**(모달 아님; salesHistoryModal 제거됨). **매장 할인 관리(5-1)=`🏬 매장→매장 할인 상품 관리` 서브탭 패널**(모달 아님, `renderStoreDiscountPanel`; 07-06 설정 카드에서 이전).
+POS: `storeStockUploadModal, storeStockDetailModal(공용 상품 상세 openStoreProductDetail), inboundScanModal(ESC 차단·명시적 닫기 · **6b/6c 방향 토글 정상입고/정상반출/불량반출**), inbLookupModal, inbCloseConfirmModal, inbHistoryModal(→입출고 내역), inbCancelModal, ledgerModal(6d 품목 이동 원장·대조), baselineConfirmModal(6d 기준재고), saleLookupModal, saleConfirmModal(3c 사전확인), saleReceiptModal(3d 영수증), saleVoidModal(3e 판매취소), adjustModal(6a 재고수정·ESC 차단·명시적 닫기 · **6c op 정상↔불량 전환**), adjConfirmModal(6a 사유), adjCloseConfirmModal(6a 닫기확인), replenishModal(R1 보충 발주 창·ESC 차단·명시적 닫기·추천/개별/내발주 3탭), roConfirmModal(R1 확정), roCloseConfirmModal(R1 3지선다), roCancelModal(R1 발주취소 사유), roDetailModal(R1 발주 상세)`. **매출 조회(3e)=`🏬 매장→매출 조회` 서브탭 패널**(모달 아님; salesHistoryModal 제거됨). **매장 할인 관리(5-1)=`🏬 매장→매장 할인 상품 관리` 서브탭 패널**(모달 아님, `renderStoreDiscountPanel`; 07-06 설정 카드에서 이전).
 > 모든 `.srm-modal`은 `makeDraggableResizable()` 적용. 수정모드 모달은 `safeCloseModal(modal, isEditing, closeFn)`로 종료 확인. `korConfirm()` = `<dialog>` 한글 확인.
 
 ## 5.6 카페24 주문 업로드 (매출 공식은 1.4)
@@ -335,6 +369,7 @@ POS: `storeStockUploadModal, storeStockDetailModal(공용 상품 상세 openStor
 - 06-24: 사이즈 규격 비키니 상/하의 4종(11부위 67컬럼) + 컵/허리 4종(15부위 91컬럼) — 각 core.js 1파일. 사이즈규격 input 숫자 스피너 제거(CSS).
 
 ## 2026-06-30 ~ 07-02 (POS)
+- 07-07: **POS 보충 발주 R1 — 매장 발주 생성(추천 + 개별추가)**(🟢) — 신규 `replenishOrders` 컬렉션(요청 문서). 🔴 **재고 무접촉**(storeStock/storeInbound/storeSales write 0건, grep 검증 — storeSales 는 추천 계산용 읽기 전용 스캔만). 보충대상조회 허브 버튼 → 명시적-닫기 발주 창(ESC/백드롭 차단, staging 3지선다, 작업게이트=본인매장+관리자·office 게이트). **① 추천**(`_roComputeSuggestions`): 마지막 **미취소** 발주 createdAt 이후(없으면 7일) 순판매(sales−voids) per (품번,사이즈) — storeSales 기간스캔[3a 인덱스]+클라 라인필터+ts≥anchor 정밀 · 컬럼 순판매/현재재고/**요청중(=status'requested'&&!shipChecked, A2 무한누적 방지)**/제안수량(편집) → 담기. **② 개별추가**: 품번 조회(바코드 무관 **전 상품·전 사이즈**) → 담기. 공용 staging(동일 code+size 합산) + 메모 + draft(`lemango_replenish_draft_{store}`, pendingRoNo 동결). 🔴 **exactly-once 확정**: doc id=roNo(`RO-`+kstStamp+8자접미, 단일 now) 결정적 · 단일 `.set()`(create 의도) → 재시도 set=update 평가 → replenishOrders update 규칙(취소/체크 한정) 거부 → 중복발주 불가 · 프리플라이트+15s 타임아웃+denied 서버존재조회 판별(3c 미러) · `_roInFlight` 동기 가드. **내 발주**: 기간조회(storeId,dateKey 신규 인덱스)+상세 모달+엑셀+**취소**(status'requested'&&미발송 · 사유 필수 · field-restricted update[status/cancelledBy/At/Reason 4필드] · 1회성). **규칙**: replenishOrders read=승인자 · create=본인매장/관리자+shape(requested·체크 false) · update=(a)취소[요청·미발송 게이트, 4필드 hasOnly, cancelledBy==uid, 사유필수] (b)R2 확인✓/발송✓[요청상태·false→true 단방향·각 3필드 hasOnly·setter==uid] · delete=false · Map.get 방어. **R2(물류 뷰·발송 처리)=DEFERRED**(체크 필드/규칙/인덱스 예약 → R2 hosting-only). 규칙+인덱스 배포 필요 → `--only firestore:rules,firestore:indexes,hosting`. 매출공식·재고차감·3c/3e/6a~6d·5-x 무손. 설계문서 `pos-replenish-design.md` 부재(작업지시+오너조정 self-contained → 지시서 authoritative 로 진행). code-reviewer 🟢(4대 속성 PASS · 리뷰 후 roNo 단일-now·체크분기 status 가드 2건 반영).
 - 06-30: **POS Phase 0**(바코드 업로드 하드닝: 13자리 검증/유니크/raw:false + 역인덱스 buildBarcodeIndex/findByBarcode). 캐시 무효화(firebase.json Cache-Control) + 바코드 저장 하드닝(saveProducts 반환값). 바코드 대소문자 무시 + 미등록 복사 + 불완전 행 경고.
 - 07-01: POS Phase 1 설계 문서. **Phase 1a**(매장 config `_stores`) → **1b**(사용자 storeId + resolveActiveStore) → **1c**(매장 탭 shell store.js + 서브내비 + 관리자 스위처) → **1d**(storeStock per-doc 모델 + FieldValue.increment 헬퍼 + Firestore 규칙, SIZES 확정, OR-union 정정) → **1e**(재고 엑셀 SET/ADD, 이중 식별) → **1f**(매장별 재고현황 뷰 + 상세 모달). Phase 2 설계 문서. **2a**(sizeLocations 데이터층, 재고 코어 불변). **✅ Phase 1 완료**.
 - 07-02: **Phase 2b**(입고 스캔 화면: 커서 상태머신 + 4대 차단규칙 + staging + localStorage draft + IME/디바운스, 재고 쓰기 없음) → **2b-r**(서브메뉴 6→4, 허브 창 재하우징 inboundScanModal, UX 재설계, 품번조회 inbLookupModal, 5종 폴리시, 입고 오류 배너 버그 수정) → **2c**(최종 확정 원자적 배치: storeStock increment + sizeLocations overwrite + storeInbound 이력, double-confirm 가드, 청크 코드 경계, 규칙+인덱스) → **2d**(입고 내역 날짜별 조회). **✅ Phase 2 완료**. 입고 이력 업그레이드(기간조회/입고번호 IN-.../메모/엑셀). **입고 취소**(runTransaction 역반영 increment(-qty) + 사유 필수 클라+서버 + 취소필드 field-restricted update, 코드베이스 첫 트랜잭션). 입고 물류 강화(_inboundTypes 유형 설정 + 확정 시 유형 스냅샷 + 유형/상태 필터 + normalizeLocation).

@@ -109,6 +109,60 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // replenishOrders — 매장 보충 발주(요청) 원장 (POS R1). 발주 = 요청 문서 → 🔴 재고 무접촉(storeStock/storeInbound/storeSales 전혀 안 건드림).
+    //   doc id = roNo(결정적) → 재제출 set 은 기존 doc 'update' 로 평가 → 아래 update 규칙(취소/체크 한정) 에 걸려 거부 → exactly-once(중복 발주 구조적 불가).
+    //   read  : 승인자 전원 (물류 뷰 R2 = 전 직원 v1 · 본인 발주 조회 포함 — 권한 방침)
+    //   create: 관리자(전 매장) OR 본인 배정 매장(storeId 일치, 비어있지 않을 때) + shape(status='requested', 두 체크 false). (storeStock/storeSales 와 동일 게이트)
+    //           ⚠️ 규칙은 lines[] 배열 내부/합계를 검증 못 함 → 라인 내용은 클라(buildReplenishDoc) 가 authoritative(정직한 한계).
+    //   update: (a) 발주 취소 — 관리자 OR 본인 매장, resource.status=='requested' && shipChecked==false 일 때만(발송되면 취소 불가), 취소 4필드만, 새 status='cancelled', cancelledBy==본인, 사유 필수.
+    //           (b) 진행 체크(R2 확인✓/발송✓) — 승인자 전원(물류), 각 체크 3필드만, false→true 단방향(정직한 진행 마커 — 되돌리기 불가), setter==본인.
+    //   delete: 전면 금지 (감사 보존). ⚠️ .get(k,default) — 미존재 필드 직접 접근은 규칙에서 에러→거부되므로 필수(레거시/부분 문서 방어).
+    match /replenishOrders/{docId} {
+      allow read: if isApproved();
+      allow create: if isApproved()
+        && (isAdmin() ||
+            (request.resource.data.storeId != '' &&
+             request.resource.data.storeId == userDoc(request.auth.uid).storeId))
+        && request.resource.data.status == 'requested'
+        && request.resource.data.confirmChecked == false
+        && request.resource.data.shipChecked == false;
+      allow update: if isApproved() && (
+        // (a) 발주 취소 — 미발송(shipChecked==false) & 요청 상태일 때만. 취소 필드만 변경. 1회성(취소된 건 status!='requested' 라 재진입 불가).
+        (
+          (isAdmin() ||
+           (resource.data.storeId != '' &&
+            resource.data.storeId == userDoc(request.auth.uid).storeId))
+          && resource.data.get('status', '') == 'requested'
+          && resource.data.get('shipChecked', false) == false
+          && request.resource.data.status == 'cancelled'
+          && request.resource.data.cancelledBy == request.auth.uid          // 감사 무결성: 취소자 위조 방지
+          && request.resource.data.cancelledReason is string
+          && request.resource.data.cancelledReason.size() > 0               // 사유 서버 강제(빈값 불가)
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['status','cancelledBy','cancelledAt','cancelledReason'])
+        ) ||
+        // (b-1) 확인 체크(R2) — 요청 상태에서만, false→true 단방향, 확인 3필드만, setter==본인. (되돌리기 없음 = 정직한 진행 마커; 취소된 발주엔 체크 불가)
+        (
+          resource.data.get('status', '') == 'requested'
+          && resource.data.get('confirmChecked', false) == false
+          && request.resource.data.confirmChecked == true
+          && request.resource.data.confirmCheckedBy == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['confirmChecked','confirmCheckedBy','confirmCheckedAt'])
+        ) ||
+        // (b-2) 발송 체크(R2) — 요청 상태에서만, false→true 단방향, 발송 3필드만, setter==본인. shipChecked=true 되면 (a) 취소 경로 봉쇄(요청중 lifecycle 종료).
+        (
+          resource.data.get('status', '') == 'requested'
+          && resource.data.get('shipChecked', false) == false
+          && request.resource.data.shipChecked == true
+          && request.resource.data.shipCheckedBy == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['shipChecked','shipCheckedBy','shipCheckedAt'])
+        )
+      );
+      allow delete: if false;
+    }
+
     // notifications
     match /notifications/{docId} {
       allow read, write: if isApproved();

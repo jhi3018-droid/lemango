@@ -2724,17 +2724,149 @@
   </div>
 </dialog>
 
-<!-- 보충대상조회 placeholder 창 (Phase 5) -->
-<dialog id="replenishModal" class="srm-modal" style="width:560px;max-width:92vw;max-height:70vh;padding:0;overflow:hidden;border-radius:10px">
-  <div class="srm-header modal-header" style="cursor:move">
-    <span style="font-size:15px;font-weight:700;color:#fff">📋 보충대상조회</span>
+<!-- 매장 보충 발주 창 (POS R1) — 추천 + 개별추가 → staging → 확정. 재고 무접촉(요청 문서). 명시적-닫기-전용(ESC/백드롭 차단). -->
+<dialog id="replenishModal" class="srm-modal ro-modal" style="width:92vw;max-width:1200px;height:90vh;max-height:90vh;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header ro-modal-header" style="cursor:move">
+    <span class="inb-modal-title">📋 보충 발주 <span id="roStoreLabel" class="inb-modal-store"></span></span>
     <button class="modal-close" onclick="closeReplenishModal()">×</button>
   </div>
-  <div style="padding:18px">
-    <div class="store-placeholder">
-      <div class="store-placeholder-icon">🚧</div>
-      <div class="store-placeholder-title">보충대상조회</div>
-      <div class="store-placeholder-desc">준비중입니다 (Phase 5)</div>
+  <div class="ro-modal-body">
+    <div id="roGate" class="inb-hidden"></div>
+    <div id="roScreen" class="ro-screen inb-hidden">
+      <div class="ro-tabs">
+        <button type="button" id="roTab_suggest" class="ro-tab ro-tab-active" onclick="roSwitchTab('suggest')">💡 추천</button>
+        <button type="button" id="roTab_manual" class="ro-tab" onclick="roSwitchTab('manual')">➕ 개별 추가</button>
+        <button type="button" id="roTab_orders" class="ro-tab" onclick="roSwitchTab('orders')">📦 내 발주</button>
+      </div>
+      <div class="ro-tabbody">
+        <!-- 추천 -->
+        <div id="roPanel_suggest" class="ro-panel">
+          <div class="ro-panel-head">
+            <div class="ro-suggest-info" id="roSuggestInfo"></div>
+            <button class="btn btn-outline btn-sm" onclick="roSuggestReload()">↻ 다시 계산</button>
+          </div>
+          <div class="ro-table-wrap">
+            <table class="data-table inbhist-table ro-suggest-table">
+              <thead><tr>
+                <th>품번 / 상품명</th><th class="inb-c" style="width:56px">사이즈</th>
+                <th style="width:88px">기간판매(순)</th><th style="width:78px">현재재고</th><th style="width:78px">요청중</th>
+                <th style="width:96px">제안수량</th><th class="inb-c" style="width:64px">담기</th>
+              </tr></thead>
+              <tbody id="roSuggestBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <!-- 개별 추가 -->
+        <div id="roPanel_manual" class="ro-panel ro-panel-hidden">
+          <input id="roManualSearch" class="inb-input ro-manual-search" type="text" autocomplete="off" placeholder="품번 또는 상품명 검색 (바코드 무관 · 전 상품)" oninput="renderRoManualResults()">
+          <div id="roManualResults" class="inb-lookup-results ro-manual-results"></div>
+          <div id="roManualSizes" class="inb-lookup-sizes ro-manual-sizes inb-hidden"></div>
+        </div>
+        <!-- 내 발주 -->
+        <div id="roPanel_orders" class="ro-panel ro-panel-hidden">
+          <div class="ro-panel-head ro-my-controls">
+            <label class="inbhist-ctl">시작일 <input type="date" id="roMyStart" class="inbhist-date" onchange="roLoadMyOrders()"></label>
+            <label class="inbhist-ctl">마지막일 <input type="date" id="roMyEnd" class="inbhist-date" onchange="roLoadMyOrders()"></label>
+            <button class="btn btn-outline" onclick="roLoadMyOrders()">↻ 새로고침</button>
+            <button class="btn btn-outline" id="roMyExportBtn" onclick="downloadRoOrders()">📤 엑셀 다운로드</button>
+            <span class="inbhist-summary inb-list-count-badge" id="roMySummary"></span>
+          </div>
+          <div class="ro-table-wrap">
+            <table class="data-table inbhist-table ro-my-table">
+              <thead><tr>
+                <th style="width:200px">발주번호</th><th style="width:100px">일시</th><th style="width:110px">건수/수량</th>
+                <th style="width:72px">상태</th><th style="width:120px">확인/발송</th><th>메모</th><th class="inb-c" style="width:64px">취소</th>
+              </tr></thead>
+              <tbody id="roMyBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <!-- staging (추천/개별 공용) -->
+      <div id="roStagingSection" class="ro-staging">
+        <div class="ro-stage-head">발주 목록 <span class="inb-list-count-badge"><span id="roStageCount">0</span>건 · 총 <span id="roStageTotal" class="inb-list-total-num">0</span>개</span></div>
+        <div class="ro-stage-wrap">
+          <table class="data-table ro-stage-table">
+            <thead><tr><th>품번 / 상품명</th><th class="inb-c" style="width:72px">사이즈</th><th style="width:110px">수량</th><th class="inb-c" style="width:56px">삭제</th></tr></thead>
+            <tbody id="roStageBody"></tbody>
+          </table>
+        </div>
+        <div class="ro-stage-footer">
+          <input id="roMemo" class="inb-memo-input ro-memo-input" type="text" autocomplete="off" maxlength="200" placeholder="발주 메모 (선택)" oninput="onRoMemoInput()">
+          <div class="ro-footer-btns">
+            <button class="btn btn-outline" onclick="closeReplenishModal()">닫기</button>
+            <button class="btn btn-new ro-submit-btn" id="roSubmitBtn" onclick="roSubmit()" disabled>발주 확정</button>
+          </div>
+        </div>
+        <div class="inb-confirm-note">발주 확정 = 물류에 보충 요청 전송 (재고는 변동 없음 — 물류가 발송·입고 처리)</div>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<!-- 발주 확정 사전 확인 창 (R1) — 요약 + 라인 목록. [확정](기본 포커스)/[취소]. -->
+<dialog id="roConfirmModal" class="srm-modal" style="width:460px;max-width:92vw;max-height:80vh;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header" style="cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">발주 확정</span>
+  </div>
+  <div class="sale-confirm-body">
+    <div id="roConfirmSummary"></div>
+    <div id="roConfirmList" class="ro-confirm-list"></div>
+    <div class="sale-confirm-btns">
+      <button class="btn btn-outline" onclick="closeRoConfirmDialog()">취소</button>
+      <button class="btn btn-new" id="roConfirmOkBtn" onclick="roConfirmProceed()">확정</button>
+    </div>
+    <p class="sale-confirm-hint">확정하면 물류에 보충 요청이 전송됩니다 (재고 변동 없음 · 취소는 [내 발주]에서)</p>
+  </div>
+</dialog>
+
+<!-- 발주 창 닫기 확인 (staging 있을 때) — 3지선다. ESC=취소(창 유지). -->
+<dialog id="roCloseConfirmModal" class="srm-modal" style="width:460px;max-width:92vw;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header" style="cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">발주 창 닫기</span>
+  </div>
+  <div class="inb-closeconf-body">
+    <p class="inb-closeconf-msg">발주 목록에 <strong id="roCloseConfirmCount">0</strong>건이 남아 있습니다.<br>어떻게 하시겠습니까?</p>
+    <div class="inb-closeconf-btns">
+      <button class="btn btn-outline" id="roCloseCancelBtn" onclick="roCloseCancelChoice()">취소</button>
+      <button class="btn btn-new" onclick="roCloseKeep()">보존하고 닫기</button>
+      <button class="btn inb-closeconf-discard" onclick="roCloseDiscard()">삭제하고 닫기</button>
+    </div>
+    <p class="inb-closeconf-hint">보존: 다시 열면 목록 복원 · 삭제: 임시저장까지 지움 (되돌릴 수 없음)</p>
+  </div>
+</dialog>
+
+<!-- 발주 취소 사유 입력 (R1) — 사유 필수. status=='requested' && 미발송일 때만. -->
+<dialog id="roCancelModal" class="srm-modal" style="width:440px;max-width:92vw;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header" style="cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">발주 취소</span>
+    <button class="modal-close" onclick="closeRoCancelModal()">×</button>
+  </div>
+  <div class="inbcancel-body">
+    <div class="inbcancel-summary">취소 대상: <strong id="roCancelInfo"></strong></div>
+    <label class="inbcancel-reason-label">취소 사유 <span class="inbcancel-req">* 필수</span></label>
+    <textarea id="roCancelReason" class="inbcancel-reason" rows="3" maxlength="200" placeholder="취소 사유를 입력하세요 — 예: 중복 발주 / 수량 착오"></textarea>
+    <div class="inbcancel-warn">⚠️ 취소하면 되돌릴 수 없습니다. 발송(발송✓) 이후에는 취소할 수 없습니다.</div>
+    <div class="inbcancel-btns">
+      <button class="btn btn-outline" onclick="closeRoCancelModal()">닫기</button>
+      <button class="btn inbcancel-exec-btn" onclick="confirmRoCancel()">발주 취소</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- 발주 상세 (라인 목록) — 읽기 전용. ESC 닫힘(뷰어). -->
+<dialog id="roDetailModal" class="srm-modal" style="width:640px;max-width:94vw;max-height:82vh;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header" style="cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">📦 발주 상세</span>
+    <button class="modal-close" onclick="closeRoDetail()">×</button>
+  </div>
+  <div class="ro-detail-body">
+    <div id="roDetailHead" class="ro-detail-head"></div>
+    <div class="ro-table-wrap">
+      <table class="data-table inbhist-table">
+        <thead><tr><th style="width:150px">품번</th><th>상품명</th><th class="inb-c" style="width:64px">사이즈</th><th style="width:88px">요청수량</th></tr></thead>
+        <tbody id="roDetailBody"></tbody>
+      </table>
     </div>
   </div>
 </dialog>

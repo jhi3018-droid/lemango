@@ -7,7 +7,7 @@
 //   - 작업 화면(판매/취소/차감)은 본인 매장 직원+관리자 → 각 패널 내부에서 게이트(향후 단계)
 
 // 서브 화면 정의 (소유주 확정 순서). 2b-r: 6→4 축소.
-//   입고 스캔 → 재고현황 툴바 버튼(window), 보충대상조회 → 재고현황 툴바 버튼(placeholder window)
+//   입고 스캔 → 재고현황 툴바 버튼(window), 보충대상조회 → 재고현황 툴바 버튼(보충 발주 window, R1)
 const STORE_SUBS = [
   { key: 'sale',      label: '판매' },
   { key: 'sales',     label: '매출 조회' },   // 3e: 조회 전 직원 개방(작업 게이트 없음) — 판매와 재고현황 사이
@@ -1956,15 +1956,8 @@ function inbCloseKeep() { _closeInbCloseConfirm(); _doCloseInbScan(false) }     
 function inbCloseDiscard() { _closeInbCloseConfirm(); _doCloseInbScan(true) }      // 삭제하고 닫기 (draft 삭제)
 function inbCloseCancelChoice() { _closeInbCloseConfirm(); _inbFocusBarcode() }    // 취소 → 창 유지, 커서 복귀
 
-// 보충대상조회 — Phase 5 placeholder 창 (조회 → 전 직원)
-function openReplenishModal() {
-  const modal = document.getElementById('replenishModal')
-  if (modal) { modal.showModal(); if (typeof centerModal === 'function') centerModal(modal) }
-}
-function closeReplenishModal() {
-  const modal = document.getElementById('replenishModal')
-  if (modal) modal.close()
-}
+// 보충대상조회(발주) — 실제 구현은 파일 하단 "매장 보충 발주 (POS R1)" 섹션.
+//   openReplenishModal/closeReplenishModal + 전 R1 함수/exports 는 거기서 정의(함수 선언 hoisting).
 
 // ── 입고 내역 뷰 (POS Phase 2d) — 날짜별 storeInbound 조회 (읽기 전용). 전 직원 개방(권한 방침) ──
 // 2c 복합인덱스(storeId, dateKey) 사용. 쓰기 없음. ESC 로 닫히는 일반 뷰어(작업 창 아님).
@@ -2404,8 +2397,6 @@ window.closeInboundScanModal = closeInboundScanModal
 window.inbCloseKeep = inbCloseKeep
 window.inbCloseDiscard = inbCloseDiscard
 window.inbCloseCancelChoice = inbCloseCancelChoice
-window.openReplenishModal = openReplenishModal
-window.closeReplenishModal = closeReplenishModal
 window.openInbHistoryModal = openInbHistoryModal
 window.closeInbHistoryModal = closeInbHistoryModal
 window._inbHistoryLoad = _inbHistoryLoad
@@ -5206,3 +5197,585 @@ window.downloadLedger = downloadLedger
 window.openBaselineConfirm = openBaselineConfirm
 window.closeBaselineConfirm = closeBaselineConfirm
 window.confirmBaselineSnapshot = confirmBaselineSnapshot
+
+// =============================================
+// ===== 매장 보충 발주 (POS R1) — 추천 + 개별추가, 요청 문서(재고 무접촉) =====
+// =============================================
+// 🔴 발주 = 요청(request) 문서. storeStock/storeInbound/storeSales 를 절대 건드리지 않음(재고 무접촉, grep 검증 대상).
+//   ① 추천: 마지막 (미취소) 발주 이후 순판매(sales−voids) 집계 → 제안 → 담기 → 확정.  ② 개별추가: 품번 조회(전 사이즈) → 담기 → 확정.
+//   exactly-once: doc id = roNo(결정적). 재제출 set 은 기존 doc 'update' 로 평가 → replenishOrders update 규칙(취소/체크 한정) 거부 → 중복 발주 구조적 불가.
+//     pendingRoNo 를 draft 에 동결(3c pendingSaleNo 미러) → 크래시/리로드 후 재시도 멱등. permission-denied → 서버 존재조회로 착지 판별.
+//   R2(물류)용 확인✓/발송✓ 체크 필드는 예약(create 시 false) — R2 는 hosting-only(규칙 이미 정의).
+//   ⚠️ 규칙은 lines[] 내부를 검증 못 함 → buildReplenishDoc 이 라인 shape authoritative(정직한 한계).
+
+let _roStore = ''            // 현재 발주 매장
+let _roList = []             // staging(담은 항목) [{ productCode, productName(snapshot), size, requestQty }]
+let _roActiveTab = 'suggest' // 'suggest' | 'manual' | 'orders'
+let _roInFlight = false       // 확정 재진입 가드
+let _pendingRoNo = ''         // 이 세션의 결정적 발주번호(RO-…) — 첫 확정 1회 생성·draft 영속, 성공 시 소거(멱등)
+let _roSuggest = { rows: [], start: '', anchorRo: '', anchorTs: '' }
+let _roManualCode = ''
+let _roMyOrders = []          // 내 발주 조회 결과(raw)
+let _roMyView = []            // 엑셀 export 대상(현재 표시 = 조회 결과)
+let _roMyCtx = { store: '', start: '', end: '' }
+let _roCancelTarget = ''
+let _roCancelInFlight = false
+
+// 발주번호 = RO-YYYYMMDD-HHMMSS-<8자 접미사>(KST, generateSaleNo 강도 — 동일-초 다중단말 충돌 방지).
+//   단일 now 로 stamp·suffix 산출(초·ms 일관 — generateSaleNo 미러). KST 산술 유틸만(Intl 비의존).
+function generateRoNo() { const now = new Date(); return 'RO-' + kstStamp(now) + '-' + _saleNoSuffix(now) }
+
+// 발주 문서 생성자 — shape 강제(requestQty 정수≥1, totals 재계산, status='requested', 체크 false). 재고/DB 쓰기 없음.
+function buildReplenishDoc(opts) {
+  opts = opts || {}
+  const lines = (Array.isArray(opts.lines) ? opts.lines : []).map(l => {
+    const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(l.productCode) : null
+    return {
+      productCode: String((l && l.productCode) || ''),
+      productName: String(((l && l.productName != null) ? l.productName : (p ? (p.nameKr || p.nameEn || '') : '')) || ''),
+      size: String((l && l.size) || ''),
+      requestQty: Math.max(1, Math.floor(Number(l && l.requestQty) || 0))
+    }
+  }).filter(l => l.productCode && l.size)
+  const totals = { lineCount: lines.length, qtyTotal: lines.reduce((s, l) => s + l.requestQty, 0) }
+  return {
+    roNo: String(opts.roNo || generateRoNo()),
+    storeId: String(opts.storeId || ''),
+    storeName: String(opts.storeName || _storeNameById(opts.storeId) || ''),
+    lines: lines,
+    totals: totals,
+    memo: String(opts.memo || ''),
+    status: 'requested',
+    confirmChecked: false, confirmCheckedBy: '', confirmCheckedAt: '',   // R2 확인✓ 예약(표시 전용)
+    shipChecked: false, shipCheckedBy: '', shipCheckedAt: '',            // R2 발송✓ 예약(표시 전용)
+    createdByUid: String(opts.createdByUid || ''),
+    createdByName: String(opts.createdByName || ''),
+    createdAt: opts.createdAt || new Date().toISOString(),   // UTC instant — 표시는 kstFormat 로 KST
+    dateKey: opts.dateKey || kstDateKey()                    // 🔴 KST 귀속일(산술 KST)
+  }
+}
+
+// ── draft (매장별, 손상 안전, pendingRoNo 포함) ──
+function _roDraftKey(store) { return 'lemango_replenish_draft_' + (store || _roStore || '') }
+function _roSaveDraft() {
+  if (!_roStore) return
+  const memoEl = document.getElementById('roMemo')
+  try {
+    localStorage.setItem(_roDraftKey(_roStore), JSON.stringify({
+      v: 1, items: _roList, memo: memoEl ? memoEl.value : '',
+      pendingRoNo: _pendingRoNo || ''   // exactly-once: 재시도 멱등을 위해 발주번호도 draft 에 동결
+    }))
+  } catch (e) { console.warn('발주 draft 저장 실패:', e && e.message) }
+}
+function _roLoadDraft(store) {
+  const EMPTY = { items: [], memo: '', pendingRoNo: '' }
+  let raw = null
+  try { raw = localStorage.getItem(_roDraftKey(store)) } catch (e) { return EMPTY }
+  if (!raw) return EMPTY
+  try {
+    const o = JSON.parse(raw)
+    if (!o || o.v !== 1) return EMPTY
+    const items = Array.isArray(o.items) ? o.items.filter(l => l && l.productCode && l.size).map(l => ({
+      productCode: String(l.productCode), productName: String(l.productName || ''), size: String(l.size),
+      requestQty: Math.max(1, Math.floor(Number(l.requestQty) || 1))
+    })) : []
+    return { items, memo: String(o.memo || ''), pendingRoNo: String(o.pendingRoNo || '') }
+  } catch (e) {
+    console.warn('발주 draft 파싱 실패 — 초기화:', e && e.message)
+    showToast('발주 임시저장 손상 — 초기화했습니다', 'warning')
+    try { localStorage.removeItem(_roDraftKey(store)) } catch (e2) {}
+    return EMPTY
+  }
+}
+
+// ── 창 열기/렌더 (작업 게이트 = 본인 매장 직원 + 관리자; office/미배정 = 게이트 화면) ──
+function openReplenishModal() {
+  const modal = document.getElementById('replenishModal'); if (!modal) return
+  if (!modal.open) { modal.showModal(); if (typeof centerModal === 'function') centerModal(modal) }
+  renderReplenishScreen()
+}
+function renderReplenishScreen() {
+  const gate = document.getElementById('roGate'), screen = document.getElementById('roScreen')
+  if (!gate || !screen) return
+  const store = (typeof resolveActiveStore === 'function') ? resolveActiveStore() : ''
+  if (!store) {   // 발주 = 작업 → office/미배정 차단(조회도 own-store 라 함께 게이트)
+    _roStore = ''; _roList = []
+    screen.classList.add('inb-hidden'); gate.classList.remove('inb-hidden')
+    gate.innerHTML = '<div class="store-placeholder"><div class="store-placeholder-icon">🚫</div><div class="store-placeholder-title">발주 불가</div><div class="store-placeholder-desc">배정된 매장이 없습니다 — 발주는 본인 매장 직원/관리자만 가능합니다.</div></div>'
+    return
+  }
+  gate.classList.add('inb-hidden'); gate.innerHTML = ''
+  screen.classList.remove('inb-hidden')
+  _roStore = store
+  const draft = _roLoadDraft(store)
+  _roList = draft.items
+  _pendingRoNo = draft.pendingRoNo || ''
+  const memoEl = document.getElementById('roMemo'); if (memoEl) memoEl.value = draft.memo || ''
+  const lbl = document.getElementById('roStoreLabel'); if (lbl) lbl.textContent = '발주 매장: ' + _storeNameById(store)
+  _roActiveTab = 'suggest'
+  roSwitchTab('suggest')
+  _roRenderStaging()
+}
+
+// 닫기 시도: staging 있으면 3지선다(보존/삭제/취소), 없으면 즉시 닫기. (입고 스캔 창 미러 — 명시적-닫기-전용)
+function closeReplenishModal() { if (_roList && _roList.length) { _openRoCloseConfirm(); return } _doCloseReplenish(false) }
+function _doCloseReplenish(clearDraft) {
+  if (clearDraft) { _roList = []; try { localStorage.removeItem(_roDraftKey(_roStore)) } catch (e) {}; _roRenderStaging() }
+  const modal = document.getElementById('replenishModal'); if (modal) modal.close()
+}
+function _openRoCloseConfirm() {
+  const m = document.getElementById('roCloseConfirmModal'); if (!m) { _doCloseReplenish(false); return }
+  const c = document.getElementById('roCloseConfirmCount'); if (c) c.textContent = String(_roList.length)
+  m.showModal(); if (typeof centerModal === 'function') centerModal(m)
+  const cb = document.getElementById('roCloseCancelBtn'); if (cb) setTimeout(() => cb.focus(), 30)   // 기본 포커스 = 취소(파괴적 아님)
+}
+function _closeRoCloseConfirm() { const m = document.getElementById('roCloseConfirmModal'); if (m) m.close() }
+function roCloseKeep() { _closeRoCloseConfirm(); _doCloseReplenish(false) }
+function roCloseDiscard() { _closeRoCloseConfirm(); _doCloseReplenish(true) }
+function roCloseCancelChoice() { _closeRoCloseConfirm() }
+
+// ── 탭 전환 (추천/개별/내 발주). staging 은 내 발주 탭에서 숨김. ──
+function roSwitchTab(tab) {
+  _roActiveTab = (tab === 'manual' || tab === 'orders') ? tab : 'suggest'
+  ;['suggest', 'manual', 'orders'].forEach(k => {
+    const p = document.getElementById('roPanel_' + k); if (p) p.classList.toggle('ro-panel-hidden', k !== _roActiveTab)
+    const b = document.getElementById('roTab_' + k); if (b) b.classList.toggle('ro-tab-active', k === _roActiveTab)
+  })
+  const stage = document.getElementById('roStagingSection'); if (stage) stage.classList.toggle('inb-hidden', _roActiveTab === 'orders')
+  if (_roActiveTab === 'suggest') roSuggestReload()
+  else if (_roActiveTab === 'manual') { renderRoManualResults(); const s = document.getElementById('roManualSearch'); if (s) setTimeout(() => s.focus(), 30) }
+  else if (_roActiveTab === 'orders') {
+    const s = document.getElementById('roMyStart'), en = document.getElementById('roMyEnd')   // 기본 = 최근 30일 ~ 오늘(비어있을 때만)
+    if (s && !s.value) s.value = _ldgAddDays(kstDateKey(), -30)
+    if (en && !en.value) en.value = kstDateKey()
+    roLoadMyOrders()
+  }
+}
+
+// ── 매장 발주 전체 조회(1회) — 추천 앵커(마지막 미취소 발주) + 요청중 수량 계산. where(storeId==) 단일필드 auto 인덱스. 비용 ∝ 매장 누적 발주수(소량). ──
+async function _roFetchStoreOrders(store) {
+  if (!db || !store) return []
+  const q = db.collection('replenishOrders').where('storeId', '==', store)
+  let snap = null
+  try { snap = await q.get({ source: 'server' }) } catch (e) { try { snap = await q.get() } catch (e2) { return [] } }
+  const out = []; snap.forEach(d => out.push(Object.assign({ _id: d.id }, d.data() || {}))); return out
+}
+
+// 🔴 추천 계산 — 순판매(sales−voids) per (품번,사이즈), 마지막 (미취소) 발주 createdAt 이후. 없으면 최근 7일.
+//   A1: 취소된 발주는 앵커가 되지 않음(실제 발주 안 나감). A2: 요청중 = status=='requested' && shipChecked==false 만(미발송) — 무한누적 방지.
+async function _roComputeSuggestions(store) {
+  const orders = await _roFetchStoreOrders(store)
+  // 앵커 = 가장 최근 '미취소' 발주 createdAt (A1)
+  let anchorTs = '', anchorRo = ''
+  orders.forEach(o => { if (o.status === 'cancelled') return; const t = String(o.createdAt || ''); if (t > anchorTs) { anchorTs = t; anchorRo = String(o.roNo || o._id || '') } })
+  // 요청중 수량 (A2): 미발송·요청상태 발주만 합산 → 발송✓ 되면 pending 에서 자동 이탈
+  const pending = {}
+  orders.forEach(o => {
+    if (o.status !== 'requested' || o.shipChecked === true) return
+    ;(Array.isArray(o.lines) ? o.lines : []).forEach(l => {
+      const k = String(l.productCode || '') + '#' + String(l.size || '')
+      pending[k] = (pending[k] || 0) + Math.max(0, Math.floor(Number(l.requestQty) || 0))
+    })
+  })
+  const today = kstDateKey()
+  const start = anchorTs ? kstDateKey(anchorTs) : _ldgAddDays(today, -7)
+  // storeSales 기간 스캔[3a 인덱스] + 클라 라인 필터. 정밀: anchorTs 있으면 이벤트 시각 ≥ anchorTs 만(같은 날 발주 이전 판매 제외).
+  const sq = db.collection('storeSales').where('storeId', '==', store).where('dateKey', '>=', start).where('dateKey', '<=', today)
+  let sSnap = null
+  try { sSnap = await sq.get({ source: 'server' }) }
+  catch (e) { if (_shIndexBuilding(e)) throw e; sSnap = await sq.get() }
+  const net = {}   // k -> { code, size, qty }
+  sSnap.forEach(d => {
+    const x = d.data() || {}
+    const isVoid = x.type === 'void'
+    if (x.type !== 'sale' && !isVoid) return
+    const ts = String((isVoid ? x.voidedAt : x.soldAt) || '')
+    if (anchorTs && ts && ts < anchorTs) return   // 마지막 발주 시각 이후만(정밀)
+    ;(Array.isArray(x.lines) ? x.lines : []).forEach(l => {
+      const q = Math.max(0, Math.floor(Number(l.qty) || 0)); if (!q) return
+      const code = String(l.productCode || ''), size = String(l.size || ''); if (!code || !size) return
+      const k = code + '#' + size
+      if (!net[k]) net[k] = { code, size, qty: 0 }
+      net[k].qty += (isVoid ? -q : q)   // 순판매 = 판매 − 취소
+    })
+  })
+  try { if (typeof buildStoreStockIndex === 'function') await buildStoreStockIndex(store) } catch (e) {}
+  const rows = []
+  Object.keys(net).forEach(k => {
+    const e = net[k]; if (e.qty <= 0) return   // 순판매 양수만 제안
+    const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(e.code) : null
+    const name = p ? (p.nameKr || p.nameEn || '') : ''
+    const stock = (typeof getStoreStock === 'function') ? Number(getStoreStock(store, e.code)[e.size] || 0) : 0
+    rows.push({ code: e.code, name, size: e.size, net: e.qty, stock, pending: pending[k] || 0, suggest: e.qty })
+  })
+  rows.sort((a, b) => (b.net - a.net) || String(a.code).localeCompare(String(b.code)) || (SIZES.indexOf(a.size) - SIZES.indexOf(b.size)))
+  return { rows, start, anchorRo, anchorTs }
+}
+
+async function roSuggestReload() {
+  const body = document.getElementById('roSuggestBody'), info = document.getElementById('roSuggestInfo')
+  if (!body) return
+  const COLS = 7
+  const store = _roStore
+  if (!store) { body.innerHTML = '<tr><td colspan="' + COLS + '" class="inbhist-empty">배정된 매장이 없습니다</td></tr>'; return }
+  body.innerHTML = '<tr><td colspan="' + COLS + '" class="inbhist-empty">추천 계산 중…</td></tr>'
+  let res = null
+  try { res = await _roComputeSuggestions(store) }
+  catch (e) {
+    if (_shIndexBuilding(e)) { body.innerHTML = '<tr><td colspan="' + COLS + '" class="inbhist-empty">인덱스 준비 중 — 잠시 후 다시 시도하세요</td></tr>'; return }
+    body.innerHTML = '<tr><td colspan="' + COLS + '" class="inbhist-empty">추천 계산 실패: ' + esc(e && e.message || '') + '</td></tr>'; return
+  }
+  _roSuggest = res
+  if (info) info.innerHTML = res.anchorRo
+    ? ('기준: 마지막 발주 <strong>' + esc(res.anchorRo) + '</strong> 이후 순판매 · ' + esc(res.start) + ' ~ ' + esc(kstDateKey()))
+    : ('기준: 최근 7일 순판매 · ' + esc(res.start) + ' ~ ' + esc(kstDateKey()) + ' <span class="ro-info-note">(이전 발주 없음)</span>')
+  if (!res.rows.length) { body.innerHTML = '<tr><td colspan="' + COLS + '" class="inbhist-empty">해당 기간 순판매가 없습니다 — [개별 추가]로 담으세요</td></tr>'; return }
+  body.innerHTML = res.rows.map((r, i) =>
+    '<tr>'
+    + '<td class="inbhist-no ro-code-cell" onclick="openStoreProductDetail(\'' + esc(r.code) + '\',\'' + esc(store) + '\')" title="상품 상세">' + esc(r.code) + ' <span class="ro-stage-name">' + esc(r.name) + '</span></td>'
+    + '<td style="text-align:center">' + esc(r.size) + '</td>'
+    + '<td style="text-align:right">' + r.net + '</td>'
+    + '<td style="text-align:right" class="' + (r.stock <= 0 ? 'ssv-neg' : '') + '">' + r.stock + '</td>'
+    + '<td style="text-align:right">' + (r.pending > 0 ? ('<span class="ro-pending" title="미발송 발주 기준">' + r.pending + '</span>') : '-') + '</td>'
+    + '<td style="text-align:right"><input class="inb-input ro-qty-input" type="number" min="1" step="1" value="' + r.suggest + '" onchange="onRoSuggestQty(' + i + ',this)"></td>'
+    + '<td style="text-align:center"><button class="btn btn-outline btn-sm" onclick="roAddSuggest(' + i + ')">담기</button></td>'
+    + '</tr>'
+  ).join('')
+}
+function onRoSuggestQty(i, el) { const r = _roSuggest.rows[i]; if (!r) return; let v = Math.floor(Number(el.value) || 0); if (v < 1) { v = 1; el.value = '1' } r.suggest = v }
+function roAddSuggest(i) { const r = _roSuggest.rows[i]; if (!r) return; _roStageAdd(r.code, r.size, r.suggest) }
+
+// ── 개별 추가 (품번/상품명 조회 → 전 사이즈 선택 → 담기). 주문은 바코드 비의존 → 전 상품·전 사이즈 대상. ──
+function renderRoManualResults() {
+  const out = document.getElementById('roManualResults'); if (!out) return
+  _roManualHideSizes()
+  const q = String((document.getElementById('roManualSearch') || {}).value || '').trim().toLowerCase()
+  if (!q) { out.innerHTML = '<div class="inb-lookup-hint">품번 또는 상품명을 입력하세요</div>'; return }
+  const list = (State.allProducts || []).filter(p => {
+    if (!p || p.deleted) return false   // 발주는 바코드 무관(전 상품) — 판매 조회와 의도적 차이
+    const c = (p.productCode || '').toLowerCase(), nk = (p.nameKr || '').toLowerCase(), ne = (p.nameEn || '').toLowerCase()
+    return c.indexOf(q) >= 0 || nk.indexOf(q) >= 0 || ne.indexOf(q) >= 0
+  })
+  if (!list.length) { out.innerHTML = '<div class="inb-lookup-hint">검색 결과가 없습니다</div>'; return }
+  const capped = list.slice(0, 60)
+  const more = list.length > 60 ? ('<div class="inb-lookup-hint">상위 60건만 표시 — 검색어를 더 입력하세요 (전체 ' + list.length + '건)</div>') : ''
+  out.innerHTML = capped.map(p => {
+    const name = esc(p.nameKr || p.nameEn || '')
+    const img = (typeof getThumbUrl === 'function') ? getThumbUrl(p) : ''
+    const thumb = img ? ('<img src="' + esc(img) + '" class="inb-lookup-thumb" onerror="this.style.visibility=\'hidden\'">') : '<span class="inb-lookup-thumb inb-lookup-thumb-none">—</span>'
+    return '<div class="inb-lookup-row" onclick="selectRoManualProduct(\'' + esc(p.productCode) + '\')">' + thumb + '<span class="inb-lookup-code">' + esc(p.productCode) + '</span><span class="inb-lookup-name">' + name + '</span></div>'
+  }).join('') + more
+}
+function _roManualHideSizes() { _roManualCode = ''; const z = document.getElementById('roManualSizes'); if (z) { z.classList.add('inb-hidden'); z.innerHTML = '' } }
+function selectRoManualProduct(code) {
+  _roManualCode = code
+  const sizes = document.getElementById('roManualSizes'); if (!sizes) return
+  const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(code) : null
+  const name = p ? esc(p.nameKr || p.nameEn || '') : ''
+  const stockMap = (typeof getStoreStock === 'function') ? getStoreStock(_roStore, code) : {}
+  sizes.innerHTML = '<div class="inb-lookup-sizes-head">' + esc(code) + ' <span class="inb-lookup-sizes-name">' + name + '</span> — 사이즈 선택(전 사이즈)</div><div class="inb-size-grid">'
+    + SIZES.map(sz => { const st = Number(stockMap[sz] || 0); return '<button class="inb-size-btn" onclick="chooseRoManualSize(\'' + esc(sz) + '\')"><span class="inb-size-lbl">' + esc(sz) + '</span><span class="inb-size-stock">재고 ' + st + '</span></button>' }).join('')
+    + '</div>'
+  sizes.classList.remove('inb-hidden')
+}
+function chooseRoManualSize(size) { const code = _roManualCode; if (!code || !size) return; _roStageAdd(code, size, 1) }
+
+// ── staging (담은 목록) — 추천/개별 공용. 같은 (품번,사이즈) 담으면 수량 합산(merge). ──
+function _roStageAdd(code, size, qty) {
+  code = String(code || ''); size = String(size || ''); qty = Math.max(1, Math.floor(Number(qty) || 1))
+  if (!code || !size) return
+  const ex = _roList.find(l => l.productCode === code && l.size === size)
+  if (ex) { ex.requestQty = Math.max(1, Math.floor(Number(ex.requestQty) || 1)) + qty }
+  else { const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(code) : null; _roList.push({ productCode: code, productName: (p ? (p.nameKr || p.nameEn || '') : ''), size, requestQty: qty }) }
+  _roSaveDraft(); _roRenderStaging()
+  showToast(code + ' ' + size + ' · ' + qty + '개 담김', '')
+}
+function _roRenderStaging() {
+  const body = document.getElementById('roStageBody'); if (!body) return
+  if (!_roList.length) { body.innerHTML = '<tr><td colspan="4" class="inbhist-empty">담은 항목이 없습니다 — [추천]/[개별 추가]에서 담으세요</td></tr>' }
+  else {
+    body.innerHTML = _roList.map((l, i) => {
+      const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(l.productCode) : null
+      const nm = esc(l.productName || (p ? (p.nameKr || p.nameEn || '') : ''))
+      return '<tr>'
+        + '<td class="inbhist-no ro-code-cell" onclick="openStoreProductDetail(\'' + esc(l.productCode) + '\',\'' + esc(_roStore) + '\')" title="상품 상세">' + esc(l.productCode) + ' <span class="ro-stage-name">' + nm + '</span></td>'
+        + '<td style="text-align:center">' + esc(l.size) + '</td>'
+        + '<td style="text-align:right"><input class="inb-input ro-qty-input" type="number" min="1" step="1" value="' + Math.max(1, Math.floor(Number(l.requestQty) || 1)) + '" onchange="onRoStageQty(' + i + ',this)"></td>'
+        + '<td class="inb-c"><button class="inb-del-btn" onclick="removeRoStage(' + i + ')">삭제</button></td>'
+        + '</tr>'
+    }).join('')
+  }
+  const qt = _roList.reduce((s, l) => s + Math.max(1, Math.floor(Number(l.requestQty) || 1)), 0)
+  const cnt = document.getElementById('roStageCount'); if (cnt) cnt.textContent = String(_roList.length)
+  const tot = document.getElementById('roStageTotal'); if (tot) tot.textContent = String(qt)
+  const btn = document.getElementById('roSubmitBtn'); if (btn) btn.disabled = !_roList.length
+}
+function onRoStageQty(i, el) { const l = _roList[i]; if (!l) return; let v = Math.floor(Number(el.value) || 0); if (v < 1) { v = 1; el.value = '1' } l.requestQty = v; _roSaveDraft(); _roRenderStaging() }
+function removeRoStage(i) { if (i < 0 || i >= _roList.length) return; _roList.splice(i, 1); _roSaveDraft(); _roRenderStaging() }
+function onRoMemoInput() { _roSaveDraft() }
+
+// ── 발주 확정 (exactly-once, 단일 doc set, 재고 무접촉) ──
+function _roSetSubmitBusy(busy) {
+  const btn = document.getElementById('roSubmitBtn'); if (!btn) return
+  btn.disabled = !!busy
+  if (busy) { if (btn.dataset.orig == null) btn.dataset.orig = btn.innerHTML; btn.textContent = '접수 중…' }
+  else if (btn.dataset.orig != null) { btn.innerHTML = btn.dataset.orig; delete btn.dataset.orig }
+}
+function _roReadDoc(roNo, ms) {
+  return new Promise(resolve => {
+    let s = false; const f = r => { if (s) return; s = true; clearTimeout(t); resolve(r) }
+    const t = setTimeout(() => f({ ok: false, exists: false, timeout: true }), ms || 5000)
+    try { db.collection('replenishOrders').doc(roNo).get({ source: 'server' }).then(sn => f({ ok: true, exists: !!(sn && sn.exists) })).catch(err => f({ ok: false, exists: false, error: err })) }
+    catch (e) { f({ ok: false, exists: false, error: e }) }
+  })
+}
+function _roCommitWithTimeout(p, ms) {
+  return new Promise(resolve => {
+    let s = false; const f = r => { if (s) return; s = true; clearTimeout(t); resolve(r) }
+    const t = setTimeout(() => f({ ok: false, timeout: true }), ms || 15000)
+    Promise.resolve(p).then(() => f({ ok: true })).catch(err => f({ ok: false, error: err }))
+  })
+}
+function roSubmit() {
+  if (_roInFlight) return
+  if (!_roList.length) { showToast('담은 항목이 없습니다', 'warning'); return }
+  const store = (typeof resolveActiveStore === 'function') ? resolveActiveStore() : ''
+  if (!store) { showToast('배정된 매장이 없습니다 — 발주 불가', 'warning'); return }
+  for (let i = 0; i < _roList.length; i++) {
+    const q = Math.floor(Number(_roList[i].requestQty) || 0)
+    if (!(Number.isInteger(q) && q >= 1)) { showToast(_roList[i].productCode + ' ' + _roList[i].size + ': 수량 오류(1 이상)', 'warning'); return }
+  }
+  _openRoConfirmDialog(store)
+}
+function _openRoConfirmDialog(store) {
+  const modal = document.getElementById('roConfirmModal'); if (!modal) { roConfirmProceed(); return }
+  if (modal.open) return
+  const n = _roList.length, qt = _roList.reduce((s, l) => s + Math.max(1, Math.floor(Number(l.requestQty) || 1)), 0)
+  const memoEl = document.getElementById('roMemo'); const memo = memoEl ? String(memoEl.value || '').trim() : ''
+  const sumEl = document.getElementById('roConfirmSummary')
+  if (sumEl) sumEl.innerHTML =
+    '<div class="sale-confirm-row"><span>발주 품목</span><strong>' + n + '건</strong></div>'
+    + '<div class="sale-confirm-row"><span>총 수량</span><strong>' + qt + '개</strong></div>'
+    + '<div class="sale-confirm-row"><span>매장</span><span>' + esc(_storeNameById(store)) + '</span></div>'
+    + '<div class="sale-confirm-row"><span>메모</span><span>' + (memo ? esc(memo) : '—') + '</span></div>'
+  const listEl = document.getElementById('roConfirmList')
+  if (listEl) listEl.innerHTML = _roList.map(l => '<div class="ro-confirm-line">' + esc(l.productCode) + ' <span>' + esc(l.size) + '</span> × ' + Math.max(1, Math.floor(Number(l.requestQty) || 1)) + '</div>').join('')
+  modal.showModal(); if (typeof centerModal === 'function') centerModal(modal)
+  const ok = document.getElementById('roConfirmOkBtn'); if (ok) setTimeout(() => ok.focus(), 30)
+}
+function closeRoConfirmDialog() { const m = document.getElementById('roConfirmModal'); if (m && m.open) m.close() }
+function _roSubmitSuccess(store, roNo, already, totals) {
+  const n = _roList.length, qt = _roList.reduce((s, l) => s + Math.max(1, Math.floor(Number(l.requestQty) || 1)), 0)
+  _roList = []; _pendingRoNo = ''
+  try { localStorage.removeItem(_roDraftKey(store)) } catch (e) {}
+  const memoEl = document.getElementById('roMemo'); if (memoEl) memoEl.value = ''
+  _roRenderStaging()
+  if (already) {
+    showToast('이미 접수된 발주입니다 · ' + roNo, 'success')
+    if (typeof logActivity === 'function') logActivity('replenish', '보충발주', _storeNameById(store) + '(' + store + '): 기접수 확인 · ' + roNo)
+  } else {
+    showToast('발주 완료 · ' + roNo + ' · ' + n + '건', 'success')
+    if (typeof logActivity === 'function') logActivity('replenish', '보충발주', _storeNameById(store) + '(' + store + '): ' + n + '건 총 ' + qt + '개 · ' + roNo)
+  }
+  if (_roActiveTab === 'suggest') roSuggestReload()   // 요청중 수량 반영
+}
+async function roConfirmProceed() {
+  closeRoConfirmDialog()
+  if (_roInFlight) return
+  const store = _roStore
+  if (!_roList.length) { showToast('담은 항목이 없습니다', 'warning'); return }
+  if (!store) { showToast('배정된 매장이 없습니다 — 발주 불가', 'warning'); return }
+  if (!db) { showToast('서버 연결 없음 — 잠시 후 다시 시도', 'warning'); return }
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) { showToast('오프라인 상태 — 연결 확인 후 확정하세요', 'warning'); return }
+  try {
+    _roInFlight = true                                // 첫 await 이전 동기 set(재진입 즉시 차단)
+    _roSetSubmitBusy(true)
+    if (!_pendingRoNo) { _pendingRoNo = generateRoNo(); _roSaveDraft() }   // 발주번호(=doc id) 1회 생성·draft 영속(멱등)
+    const roNo = _pendingRoNo
+    const pre = await _roReadDoc(roNo, 5000)           // 연결 프리플라이트 + 사전 착지 감지
+    if (!pre.ok) { showToast('오프라인 상태 — 연결 확인 후 확정하세요', 'warning'); return }
+    if (pre.exists) { _roSubmitSuccess(store, roNo, true); return }        // 이전 시도 실제 착지 → 성공 처리(중복 발주 없음)
+    const uid = (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) ? firebase.auth().currentUser.uid : ''
+    const workerName = (typeof formatUserName === 'function')
+      ? formatUserName(_currentUserName, (typeof _currentUserPosition !== 'undefined' ? _currentUserPosition : ''))
+      : ((typeof _currentUserName !== 'undefined' && _currentUserName) || '')
+    const memoEl = document.getElementById('roMemo')
+    const doc = buildReplenishDoc({ roNo, storeId: store, storeName: _storeNameById(store), lines: _roList, memo: memoEl ? memoEl.value : '', createdByUid: uid, createdByName: workerName })
+    // 🔴 단일 doc set(merge 아님 = create 의도). 재시도 시 doc 존재 → 'update' 평가 → replenishOrders update 규칙(취소/체크 한정) 거부 → 중복 발주 불가.
+    const res = await _roCommitWithTimeout(db.collection('replenishOrders').doc(roNo).set(doc), 15000)
+    if (res.ok) { _roSubmitSuccess(store, roNo, false, doc.totals); return }
+    if (res.timeout) { showToast('네트워크 불안정 — 반영 여부 확인 중입니다. 다시 확정을 누르면 안전하게 재시도됩니다', 'warning'); return }
+    const err = res.error
+    const denied = err && (err.code === 'permission-denied' || err.code === 7 || /permission/i.test(String(err.message || '')))
+    if (denied) {
+      const re = await _roReadDoc(roNo, 5000)          // 거부 판별: 이미 착지(재시도) vs 진짜 권한
+      if (re.ok && re.exists) { _roSubmitSuccess(store, roNo, true); return }
+      showToast('권한 오류로 발주가 저장되지 않았습니다 — 매장/권한을 확인하세요' + (err && err.message ? ' (' + err.message + ')' : ''), 'error'); return
+    }
+    showToast('발주 실패 — 다시 시도하세요' + (err && err.message ? ' (' + err.message + ')' : ''), 'error')
+  } catch (e) {
+    console.error('roConfirmProceed 예외:', e && e.message)
+    showToast('발주 실패 — 다시 시도하세요' + (e && e.message ? ' (' + e.message + ')' : ''), 'error')
+  } finally { _roInFlight = false; _roSetSubmitBusy(false) }
+}
+
+// ── 내 발주 (매장 발주 조회 · 취소 · 엑셀 · 상세) ──
+function _roCanCancel(o) {
+  const grade = (typeof _currentUserGrade !== 'undefined' && _currentUserGrade) ? _currentUserGrade : 1
+  if (grade >= 3) return true
+  return !!(o && o.storeId && (typeof _currentUserStoreId !== 'undefined') && o.storeId === _currentUserStoreId)
+}
+async function roLoadMyOrders() {
+  const body = document.getElementById('roMyBody'); if (!body) return
+  const COLS = 7
+  const setEmpty = msg => { body.innerHTML = '<tr><td colspan="' + COLS + '" class="inbhist-empty">' + esc(msg) + '</td></tr>'; _roMyOrders = []; _roMyView = []; const b = document.getElementById('roMyExportBtn'); if (b) b.disabled = true; const sm = document.getElementById('roMySummary'); if (sm) sm.textContent = '' }
+  const store = _roStore
+  if (!store) { setEmpty('배정된 매장이 없습니다'); return }
+  const startEl = document.getElementById('roMyStart'), endEl = document.getElementById('roMyEnd')
+  let start = (startEl || {}).value || '', end = (endEl || {}).value || ''
+  if (!start || !end) { setEmpty('기간을 선택하세요'); return }
+  if (start > end) { const t = start; start = end; end = t; if (startEl) startEl.value = start; if (endEl) endEl.value = end }
+  if (!db) { setEmpty('서버 연결 없음'); return }
+  _roMyCtx = { store, start, end }
+  setEmpty('불러오는 중…')
+  const q = db.collection('replenishOrders').where('storeId', '==', store).where('dateKey', '>=', start).where('dateKey', '<=', end)
+  let snap = null
+  try { snap = await q.get({ source: 'server' }) }
+  catch (e) {
+    if (_shIndexBuilding(e)) { setEmpty('인덱스 준비 중 — 잠시 후 다시 시도하세요'); return }
+    try { snap = await q.get() } catch (e2) { if (_shIndexBuilding(e2)) { setEmpty('인덱스 준비 중 — 잠시 후 다시 시도하세요'); return } setEmpty('불러오기 실패: ' + (e2 && e2.message || '')); return }
+  }
+  const rows = []; snap.forEach(d => rows.push(Object.assign({ _id: d.id }, d.data() || {})))
+  rows.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))   // 최신 위(DESC)
+  _roMyOrders = rows; _roMyView = rows
+  _roRenderMyOrders()
+}
+function _roRenderMyOrders() {
+  const body = document.getElementById('roMyBody'); if (!body) return
+  const COLS = 7
+  const b = document.getElementById('roMyExportBtn'); if (b) b.disabled = !(_roMyView && _roMyView.length)
+  const sm = document.getElementById('roMySummary')
+  if (!_roMyOrders.length) { body.innerHTML = '<tr><td colspan="' + COLS + '" class="inbhist-empty">해당 기간의 발주가 없습니다</td></tr>'; if (sm) sm.textContent = ''; return }
+  body.innerHTML = _roMyOrders.map(o => {
+    const t = _inbHistDateTime(o.createdAt, 'md')
+    const st = String(o.status || 'requested')
+    const statusCell = st === 'cancelled' ? '<span class="shist-badge shist-badge-void">취소</span>' : '<span class="shist-badge shist-badge-ok">요청됨</span>'
+    const conf = o.confirmChecked === true ? '<span class="ro-check ro-check-on" title="확인 ' + esc(_inbHistDateTime(o.confirmCheckedAt, 'md')) + '">확인✓</span>' : '<span class="ro-check">확인</span>'
+    const ship = o.shipChecked === true ? '<span class="ro-check ro-check-on" title="발송 ' + esc(_inbHistDateTime(o.shipCheckedAt, 'md')) + '">발송✓</span>' : '<span class="ro-check">발송</span>'
+    const tot = o.totals || {}
+    const canCancel = st === 'requested' && o.shipChecked !== true && _roCanCancel(o)
+    const cancelBtn = canCancel ? '<button class="btn btn-outline btn-sm ro-cancel-btn" onclick="event.stopPropagation();requestRoCancel(\'' + esc(o._id) + '\')">취소</button>' : ''
+    return '<tr class="' + (st === 'cancelled' ? 'shist-cancelled-row' : '') + '" onclick="openRoDetail(\'' + esc(o._id) + '\')" style="cursor:pointer">'
+      + '<td class="inbhist-no">' + esc(o.roNo || o._id) + '</td>'
+      + '<td class="inbhist-time">' + esc(t) + '</td>'
+      + '<td style="text-align:center">' + (Number(tot.lineCount) || 0) + '건 / ' + (Number(tot.qtyTotal) || 0) + '개</td>'
+      + '<td style="text-align:center">' + statusCell + '</td>'
+      + '<td style="text-align:center">' + conf + ' ' + ship + '</td>'
+      + '<td class="inbhist-memo">' + esc(o.memo || '') + '</td>'
+      + '<td style="text-align:center">' + cancelBtn + '</td>'
+      + '</tr>'
+  }).join('')
+  if (sm) { const active = _roMyOrders.filter(o => o.status !== 'cancelled').length; sm.innerHTML = '발주 <strong>' + _roMyOrders.length + '</strong>건 (유효 ' + active + ')' }
+}
+function openRoDetail(id) {
+  const o = _roMyOrders.find(x => x._id === id); if (!o) return
+  const modal = document.getElementById('roDetailModal'); if (!modal) return
+  const st = String(o.status || 'requested')
+  const head = document.getElementById('roDetailHead')
+  if (head) head.innerHTML = '<div class="ro-detail-no">' + esc(o.roNo || o._id) + '</div>'
+    + '<div class="ro-detail-meta">' + esc(_inbHistDateTime(o.createdAt, 'full')) + ' · ' + esc(_storeNameById(o.storeId) || o.storeId) + ' · ' + (st === 'cancelled' ? '취소' : '요청됨') + (o.confirmChecked ? ' · 확인✓' : '') + (o.shipChecked ? ' · 발송✓' : '') + '</div>'
+    + (o.memo ? ('<div class="ro-detail-memo">메모: ' + esc(o.memo) + '</div>') : '')
+    + (st === 'cancelled' && o.cancelledReason ? ('<div class="ro-detail-memo">취소사유: ' + esc(o.cancelledReason) + '</div>') : '')
+  const body = document.getElementById('roDetailBody')
+  if (body) body.innerHTML = (Array.isArray(o.lines) ? o.lines : []).map(l => {
+    const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(l.productCode) : null
+    const nm = esc(l.productName || (p ? (p.nameKr || p.nameEn || '') : ''))
+    return '<tr><td class="inbhist-no">' + esc(l.productCode) + '</td><td>' + nm + '</td><td style="text-align:center">' + esc(l.size) + '</td><td style="text-align:right">' + Math.max(0, Math.floor(Number(l.requestQty) || 0)) + '</td></tr>'
+  }).join('') || '<tr><td colspan="4" class="inbhist-empty">라인 없음</td></tr>'
+  modal.showModal(); if (typeof centerModal === 'function') centerModal(modal)
+}
+function closeRoDetail() { const m = document.getElementById('roDetailModal'); if (m) m.close() }
+function downloadRoOrders() {
+  if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
+  if (!_roMyView || !_roMyView.length) { showToast('내보낼 발주가 없습니다', 'warning'); return }
+  const header = ['발주번호', '일시', '매장', '상태', '확인', '발송', '품번', '상품명', '사이즈', '요청수량', '메모']
+  const aoa = [header]
+  _roMyView.forEach(o => {
+    const when = _inbHistDateTime(o.createdAt, 'full'); const storeName = _storeNameById(o.storeId) || o.storeId || ''
+    const st = o.status === 'cancelled' ? '취소' : '요청됨'; const conf = o.confirmChecked ? 'Y' : ''; const ship = o.shipChecked ? 'Y' : ''
+    const lines = Array.isArray(o.lines) ? o.lines : []
+    if (!lines.length) { aoa.push([o.roNo || o._id, when, storeName, st, conf, ship, '', '', '', 0, o.memo || '']); return }
+    lines.forEach(l => {
+      const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(l.productCode) : null
+      const nm = p ? (p.nameKr || p.nameEn || '') : ''
+      aoa.push([o.roNo || o._id, when, storeName, st, conf, ship, l.productCode || '', nm, l.size || '', Math.max(0, Math.floor(Number(l.requestQty) || 0)), o.memo || ''])
+    })
+  })
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  ws['!cols'] = [{ wch: 22 }, { wch: 17 }, { wch: 10 }, { wch: 7 }, { wch: 6 }, { wch: 6 }, { wch: 16 }, { wch: 22 }, { wch: 7 }, { wch: 9 }, { wch: 20 }]
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '보충발주')
+  XLSX.writeFile(wb, '보충발주_' + (_storeNameById(_roMyCtx.store) || _roMyCtx.store || '매장') + '_' + (_roMyCtx.start || '') + '~' + (_roMyCtx.end || '') + '.xlsx')
+}
+
+// 발주 취소 (본인 매장/관리자 · status=='requested' && 미발송 · 사유 필수 · 1회성). field-restricted update — 규칙 (a) 분기.
+function requestRoCancel(id) {
+  const o = _roMyOrders.find(x => x._id === id); if (!o) { showToast('발주를 찾을 수 없습니다', 'warning'); return }
+  if (String(o.status || '') !== 'requested' || o.shipChecked === true) { showToast('이미 발송/취소된 발주는 취소할 수 없습니다 (물류에 문의)', 'warning'); return }
+  if (!_roCanCancel(o)) { showToast('본인 매장 발주만 취소할 수 있습니다', 'warning'); return }
+  _roCancelTarget = id
+  const modal = document.getElementById('roCancelModal'); if (!modal) return
+  const info = document.getElementById('roCancelInfo'); if (info) info.textContent = (o.roNo || o._id) + ' · ' + (Number((o.totals || {}).qtyTotal) || 0) + '개'
+  const r = document.getElementById('roCancelReason'); if (r) r.value = ''
+  modal.showModal(); if (typeof centerModal === 'function') centerModal(modal)
+  if (r) setTimeout(() => r.focus(), 30)
+}
+function closeRoCancelModal() { const m = document.getElementById('roCancelModal'); if (m) m.close(); _roCancelTarget = '' }
+async function confirmRoCancel() {
+  const roNo = _roCancelTarget; if (!roNo) return
+  if (_roCancelInFlight) return
+  const reasonEl = document.getElementById('roCancelReason')
+  const reason = String(reasonEl ? reasonEl.value : '').trim()
+  if (!reason) { showToast('취소 사유를 입력하세요', 'warning'); if (reasonEl) reasonEl.focus(); return }
+  if (!db) { showToast('서버 연결 없음', 'warning'); return }
+  try {
+    _roCancelInFlight = true
+    const uid = (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) ? firebase.auth().currentUser.uid : ''
+    // 🔴 field-restricted update — 규칙 (a) 취소 분기가 취소 4필드만 허용 + shipChecked==false && status=='requested' 서버 강제.
+    await db.collection('replenishOrders').doc(roNo).update({
+      status: 'cancelled', cancelledBy: uid, cancelledAt: new Date().toISOString(), cancelledReason: reason
+    })
+    if (typeof logActivity === 'function') logActivity('replenish', '발주취소', _storeNameById(_roStore) + '(' + _roStore + '): ' + roNo + ' · ' + reason)
+    showToast('발주 취소 완료 · ' + roNo, 'success')
+    closeRoCancelModal()
+    roLoadMyOrders()
+  } catch (e) {
+    const denied = e && (e.code === 'permission-denied' || /permission/i.test(String(e.message || '')))
+    showToast(denied ? '취소할 수 없습니다 — 이미 발송/취소되었거나 권한이 없습니다' : ('취소 실패 — 다시 시도하세요' + (e && e.message ? ' (' + e.message + ')' : '')), 'error')
+  } finally { _roCancelInFlight = false }
+}
+
+window.openReplenishModal = openReplenishModal
+window.closeReplenishModal = closeReplenishModal
+window.roCloseKeep = roCloseKeep
+window.roCloseDiscard = roCloseDiscard
+window.roCloseCancelChoice = roCloseCancelChoice
+window.roSwitchTab = roSwitchTab
+window.roSuggestReload = roSuggestReload
+window.onRoSuggestQty = onRoSuggestQty
+window.roAddSuggest = roAddSuggest
+window.renderRoManualResults = renderRoManualResults
+window.selectRoManualProduct = selectRoManualProduct
+window.chooseRoManualSize = chooseRoManualSize
+window.onRoStageQty = onRoStageQty
+window.removeRoStage = removeRoStage
+window.onRoMemoInput = onRoMemoInput
+window.roSubmit = roSubmit
+window.roConfirmProceed = roConfirmProceed
+window.closeRoConfirmDialog = closeRoConfirmDialog
+window.roLoadMyOrders = roLoadMyOrders
+window.openRoDetail = openRoDetail
+window.closeRoDetail = closeRoDetail
+window.downloadRoOrders = downloadRoOrders
+window.requestRoCancel = requestRoCancel
+window.closeRoCancelModal = closeRoCancelModal
+window.confirmRoCancel = confirmRoCancel

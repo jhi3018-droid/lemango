@@ -58,7 +58,14 @@ async function initApp() {
   makeDraggableResizable(document.getElementById('storeStockUploadModal'), 560, 340)
   makeDraggableResizable(document.getElementById('storeStockDetailModal'), 380, 300)
   makeDraggableResizable(document.getElementById('inboundScanModal'), 720, 480)
-  makeDraggableResizable(document.getElementById('replenishModal'), 360, 200)
+  // 발주 창(R1) = 입고 스캔과 동일 정책: 명시적 닫기 전용(ESC/백드롭 차단, modalCloseMap 미등록 — staging 우발 종료 방지).
+  makeDraggableResizable(document.getElementById('replenishModal'), 720, 480)
+  const _roModal = document.getElementById('replenishModal')
+  if (_roModal) _roModal.addEventListener('cancel', e => e.preventDefault())
+  makeDraggableResizable(document.getElementById('roConfirmModal'), 380, 220)
+  makeDraggableResizable(document.getElementById('roCloseConfirmModal'), 340, 180)
+  makeDraggableResizable(document.getElementById('roCancelModal'), 380, 240)
+  makeDraggableResizable(document.getElementById('roDetailModal'), 440, 320)   // 발주 상세 = 서브 뷰어(ESC 닫힘)
   // 입고 스캔 창 = 명시적 닫기 전용 (2b-r). ESC(cancel) 를 무력화 → [닫기]/× 로만 닫힘.
   // ⚠️ modalCloseMap 에 넣지 않음(넣으면 ESC 로 닫힘). 대신 전용 cancel-preventDefault 리스너로 ESC 차단.
   //    백드롭 클릭 닫기 리스너도 등록하지 않음 → 백드롭 클릭으로도 안 닫힘. (스캔 세션 우발 종료 방지)
