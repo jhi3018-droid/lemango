@@ -736,6 +736,10 @@ function initTableFeatures(tableId, tabKey, renderFnName) {
 
   table.querySelectorAll('thead th').forEach(th => {
     if (th.colSpan > 1) return  // skip group headers
+    // 컨트롤 컬럼(예: 신규기획 전체선택 체크박스 #npCheckAll) 보존 — 아래 `th.innerHTML = inner`가
+    // th.textContent 로 헤더를 재구성하면서 <input>/<button>/<select> 등 인터랙티브 컨트롤을 파괴함.
+    // 이런 th 는 정렬/필터/리사이즈 대상이 아니므로(data-key 없음) 조기 반환해 원본 컨트롤을 그대로 둔다.
+    if (th.querySelector('input, button, select')) return
 
     const key = th.dataset.key
     const noSort = th.dataset.noSort != null
