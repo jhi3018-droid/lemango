@@ -684,7 +684,7 @@ function downloadSample(type) {
     if (typeof ExcelJS !== 'undefined' && ExcelJS && ExcelJS.Workbook) {
       downloadProductTemplate()
     } else {
-      showToast('드롭다운 양식 라이브러리(ExcelJS) 로드 실패 — 네트워크 확인 후 다시 시도하세요. 기본 양식으로 받습니다.', 'warning')
+      showToast('드롭다운 양식 라이브러리(ExcelJS) 로드 실패 — 네트워크 확인 후 다시 시도하세요. 기본 양식으로 받습니다.', 'warning')  // 폴백: 구 양식(드롭다운/코드목록 없음)
       _downloadProductSample()   // 폴백: 구 양식(드롭다운 없음). 업로드 파서는 무관.
     }
     return
@@ -725,29 +725,30 @@ function downloadSample(type) {
 // =============================================
 // ===== Phase 2 — 신규 상품등록 양식 (ExcelJS 인셀 드롭다운) =====
 // =============================================
-// 컬럼 총계 = 130 (비사이즈 36[+CAFE24/사방넷 URL 2열] + 사이즈규격 91[buildSizeSpecColumns] + 판매상태/생산상태/등록일 3).
-//   소유주 "134" 는 사이즈규격 블록 근사치 — 사이즈 컬럼은 buildSizeSpecColumns() 단일 소스가 authoritative(§2.7).
+// 컬럼 총계 = 127 (비사이즈 33[이미지URL 3열 제거·+CAFE24/사방넷 URL 2열] + 사이즈규격 91[buildSizeSpecColumns] + 판매상태/생산상태/등록일 3).
+//   사이즈 컬럼은 buildSizeSpecColumns() 단일 소스가 authoritative(§2.7).
 // 🔴 생성 전용(ExcelJS). SheetJS 는 모든 읽기/파싱/round-trip 유지. 업로드 검증/자동채움/품번차단 = Phase 3.
-// 드롭다운 라벨 = "이름(코드)" (시즌/단순 관리리스트는 값=코드). Phase 3 파서 계약(단일 규칙):
-//   extractCode(v) = /\(([^)]+)\)\s*$/ 매칭 시 그 안, 없으면 값 전체(trim). 디자인도 "…(1626)" 후행 코드로 통일.
-// 컬럼 순서 = 소유주 확정(134). 사이즈규격 블록 = buildSizeSpecColumns() 단일 소스(드리프트 방지, §2.7).
-// 🔴 CAFE24/사방넷 상세 URL = 신규 필드(cafe24DetailUrl/sabangDetailUrl), 제조국 뒤 배치(소유주 확인 요청).
+// 드롭다운(인라인=고정세트 / 범위참조=관리리스트) 라벨 = "이름(코드)" (시즌/단순 관리리스트는 값=코드). Phase 3 파서 계약(단일 규칙):
+//   extractCode(v) = /\(([^)]+)\)\s*$/ 매칭 시 그 안, 없으면 값 전체(trim).
+// 🔴 개정: 백스타일·색상코드=드롭다운 아님 → 자유입력(코드목록 시트에서 조회 후 코드 입력, Phase 3 색상명/백스타일명 자동).
+// 🔴 이미지URL 3열 제거(대표/자사몰/외부몰). CAFE24/사방넷 상세 URL = 신규 필드(cafe24DetailUrl/sabangDetailUrl), 제조국 뒤(소유주 확인 요청).
+// 🔴 코드목록 시트 = VISIBLE·사람이 읽는 참고(백스타일/색상 섹션 + 드롭다운 목록 I열~). 레이아웃 변경 시 rangeRef 동기 필수.
 function _prodTemplateDropdownValues() {
   const s = (typeof _settings !== 'undefined') ? _settings : {}
   const cc = (typeof _classCodes !== 'undefined' && Array.isArray(_classCodes)) ? _classCodes : []
   const dc = (typeof _designCodes !== 'undefined' && Array.isArray(_designCodes)) ? _designCodes : []
+  const cm = (typeof _colorMasters !== 'undefined' && Array.isArray(_colorMasters)) ? _colorMasters.filter(c => c && c.active !== false) : []
   const asStr = (arr) => (Array.isArray(arr) ? arr : []).map(String)
   const pairLabel = (arr) => (Array.isArray(arr) ? arr : []).map(x => Array.isArray(x) ? `${x[1]}(${x[0]})` : String(x))
   return {
-    // 고정 하드코딩 세트(index.html 옵션과 동일) — 인라인
+    // 고정 하드코딩 세트(index.html 옵션과 동일) — 인라인 드롭다운
     brand:  asStr(s.brands && s.brands.length ? s.brands : ['르망고', '르망고 느와']),
     class:  cc.map(([c, n]) => `${n}(${c})`),
     gender: [['W','여성'],['M','남성'],['G','걸즈'],['B','보이즈'],['N','공용'],['K','키즈']].map(([c,n]) => `${n}(${c})`),
     type:   [['ON','원피스'],['MO','모노키니'],['BK','비키니'],['BR','브리프'],['JM','재머'],['RG','래시가드'],['AL','애슬레저'],['GM','의류'],['SC','수영모'],['BG','가방'],['ET','기타']].map(([c,n]) => `${n}(${c})`),
     year:   [['1','2021'],['2','2022'],['3','2023'],['4','2024'],['5','2025'],['6','2026'],['7','2027'],['8','2028'],['9','2029'],['0','2030']].map(([c,y]) => `${y}(${c})`),
     season: ['1','2','3','4','5'],
-    // 관리형/긴 리스트 — 범위참조(코드목록 시트). LIVE 값(설정 편집 반영).
-    design: dc.map(([c, en, kr]) => `${en || ''} ${kr || ''}`.trim() + `(${c})`),
+    // 관리형 리스트 — 범위참조 드롭다운(코드목록 시트). LIVE 값(설정 편집 반영).
     legCut: pairLabel(s.legCuts),
     fabricType: asStr(s.fabricTypes),
     chestLine:  asStr(s.chestLines),
@@ -757,6 +758,9 @@ function _prodTemplateDropdownValues() {
     washMethod: asStr(s.washMethods),
     saleStatus: asStr(s.saleStatuses),
     productionStatus: asStr(s.productionStatuses),
+    // 참고 전용(드롭다운 아님, 코드목록 시트 섹션 — 백스타일/색상코드는 조회 후 코드 직접 입력). [코드,en/kr] 튜플.
+    _designRef: dc.map(([c, en, kr]) => [String(c), String(en || ''), String(kr || '')]),
+    _colorRef:  cm.map(c => [String(c.code || ''), String(c.nameKr || ''), String(c.nameEn || '')]),
   }
 }
 
@@ -766,42 +770,61 @@ async function downloadProductTemplate() {
   }
   try {
     const dd = _prodTemplateDropdownValues()
-    // 후행 관리/긴 리스트 = 범위참조. 고정 세트는 인라인(단, 250자 초과 시 자동 범위참조로 폴백).
-    const RANGE = ['design','legCut','fabricType','chestLine','transparency','lining','capRing','washMethod','saleStatus','productionStatus']
+    // 관리형 리스트 = 범위참조(코드목록 시트). 고정 세트는 인라인. (🔴 백스타일=자유입력 조회, 드롭다운 아님)
+    const RANGE = ['legCut','fabricType','chestLine','transparency','lining','capRing','washMethod','saleStatus','productionStatus']
 
-    // 컬럼 정의(소유주 확정 134 순서 + CAFE24/사방넷 URL 2열 = 제조국 뒤)
+    // 컬럼 정의(소유주 확정 순서). 🔴 개정: 이미지URL 3열 제거 · 백스타일/색상코드=자유입력(코드목록 조회) · CAFE24/사방넷 URL 2열=제조국 뒤.
     const sizeCols = (typeof buildSizeSpecColumns === 'function') ? buildSizeSpecColumns() : []
     const COLS = [
       { label:'NO' }, { label:'브랜드', dd:'brand', req:true }, { label:'품번', note:'시스템 자동생성 — 비워두세요' }, { label:'샘플번호', req:true },
-      { label:'상품명(한글)' }, { label:'상품명(영문)' }, { label:'색상(한글)' }, { label:'색상(영문)' }, { label:'색상코드' },
+      { label:'상품명(한글)' }, { label:'상품명(영문)' }, { label:'색상(한글)' }, { label:'색상(영문)' }, { label:'색상코드', note:'코드목록 시트 참고 — 코드 입력(Phase 3 색상명 자동)' },
       { label:'판매가' }, { label:'원가' },
       { label:'연도', dd:'year' }, { label:'시즌', dd:'season' }, { label:'분류', dd:'class' }, { label:'성별', dd:'gender' }, { label:'타입', dd:'type' },
-      { label:'백스타일', dd:'design' }, { label:'백스타일명', note:'백스타일 선택 시 영문명 자동(Phase 3)' },
+      { label:'백스타일', note:'코드목록 시트 참고 — 코드 입력(Phase 3 백스타일명 자동)' }, { label:'백스타일명', note:'백스타일 코드 입력 시 영문명 자동(Phase 3)' },
       { label:'레그컷', dd:'legCut' }, { label:'원단타입', dd:'fabricType' }, { label:'가슴선', dd:'chestLine' }, { label:'비침', dd:'transparency' }, { label:'안감', dd:'lining' }, { label:'캡고리', dd:'capRing' },
       { label:'소재' }, { label:'디자이너코멘트' }, { label:'세탁방법', dd:'washMethod' },
       { label:'모델착용사이즈' }, { label:'제조년월' }, { label:'제조사' }, { label:'제조국' },
       { label:'CAFE24 상세 URL' }, { label:'사방넷 상세 URL' },
-      { label:'대표이미지URL' }, { label:'이미지URL(자사몰)' }, { label:'이미지URL(외부몰)' },
       ...sizeCols.map(c => ({ label: c.label })),
       { label:'판매상태', dd:'saleStatus' }, { label:'생산상태', dd:'productionStatus' },
       { label:'등록일' },
     ]
 
+    const _navy = 'FF1A1A2E', _gold = 'FFC9A96E', _green = 'FF4CAF7D'   // 기존 팔레트(브랜드컬러)
     const wb = new ExcelJS.Workbook()
     const ws = wb.addWorksheet('상품등록')
-    const codeSheet = wb.addWorksheet('코드목록', { state: 'veryHidden' })   // 범위참조 소스(숨김)
+    const codeSheet = wb.addWorksheet('코드목록')   // 🔴 A2: VISIBLE — 사용자가 백스타일/색상 코드를 여기서 찾아 입력
 
-    // 코드목록 시트: 범위참조 리스트마다 1열 — dd 이름 → {col letter, range}
+    // ── 코드목록 시트: 사람이 읽는 참고 시트(A2) — 백스타일/색상코드 섹션 + 드롭다운 목록(범위참조 소스) ──
+    const _csTitle = (cell, txt) => { cell.value = txt; cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 }; cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: _navy } }; cell.alignment = { vertical: 'middle' } }
+    const _csHdr = (cell, txt) => { cell.value = txt; cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 }; cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: _gold } }; cell.alignment = { horizontal: 'center' } }
+    // 안내 타이틀
+    codeSheet.mergeCells('A1:G1')
+    _csTitle(codeSheet.getCell('A1'), '📌 이 시트는 코드 참고용입니다 — 백스타일/색상코드는 여기서 찾아(Ctrl+F) 상품등록 시트에 코드를 입력하세요')
+    codeSheet.getRow(1).height = 24
+    // 백스타일(디자인번호) 섹션 A/B/C
+    codeSheet.mergeCells('A3:C3'); _csTitle(codeSheet.getCell('A3'), '■ 백스타일(디자인번호) — 코드를 상품등록 시트 백스타일 열에 입력')
+    _csHdr(codeSheet.getCell('A4'), '코드'); _csHdr(codeSheet.getCell('B4'), '영문명'); _csHdr(codeSheet.getCell('C4'), '한글명')
+    ;(dd._designRef || []).forEach(([c, en, kr], i) => { const r = 5 + i; codeSheet.getCell(r, 1).value = c; codeSheet.getCell(r, 2).value = en; codeSheet.getCell(r, 3).value = kr })
+    // 색상코드 섹션 E/F/G
+    codeSheet.mergeCells('E3:G3'); _csTitle(codeSheet.getCell('E3'), '■ 색상코드 — 코드를 상품등록 시트 색상코드 열에 입력')
+    _csHdr(codeSheet.getCell('E4'), '코드'); _csHdr(codeSheet.getCell('F4'), '색상명(한글)'); _csHdr(codeSheet.getCell('G4'), '색상명(영문)')
+    ;(dd._colorRef || []).forEach(([c, kr, en], i) => { const r = 5 + i; codeSheet.getCell(r, 5).value = c; codeSheet.getCell(r, 6).value = kr; codeSheet.getCell(r, 7).value = en })
+    // 관리형 드롭다운 목록(참고 + 범위참조 소스) — I열부터 각 리스트 1열. 🔴 dataValidation range 가 여기를 가리킴(레이아웃 변경 시 rangeRef 동기).
     const rangeRef = {}
-    let codeColIdx = 0
+    const RANGE_TITLE = { legCut: '레그컷', fabricType: '원단타입', chestLine: '가슴선', transparency: '비침', lining: '안감', capRing: '캡고리', washMethod: '세탁방법', saleStatus: '판매상태', productionStatus: '생산상태' }
+    let rcol = 9   // I열
     RANGE.forEach(name => {
       const vals = dd[name] || []
-      codeColIdx++
-      const colLetter = codeSheet.getColumn(codeColIdx).letter
-      codeSheet.getCell(1, codeColIdx).value = name   // 헤더(참고)
-      vals.forEach((v, i) => { codeSheet.getCell(i + 2, codeColIdx).value = v })
-      rangeRef[name] = vals.length ? `코드목록!$${colLetter}$2:$${colLetter}$${vals.length + 1}` : ''
+      const letter = codeSheet.getColumn(rcol).letter
+      _csHdr(codeSheet.getCell(4, rcol), RANGE_TITLE[name] || name)
+      vals.forEach((v, i) => { codeSheet.getCell(5 + i, rcol).value = v })
+      rangeRef[name] = vals.length ? `코드목록!$${letter}$5:$${letter}$${vals.length + 4}` : ''   // rows 5..(5+len-1)
+      rcol++
     })
+    codeSheet.mergeCells(3, 9, 3, Math.max(9, rcol - 1)); _csTitle(codeSheet.getCell(3, 9), '■ 드롭다운 목록 (상품등록 시트 드롭다운 소스)')
+    ;[16, 26, 26, 4, 16, 22, 22, 4].forEach((w, i) => { codeSheet.getColumn(i + 1).width = w })
+    for (let c = 9; c < rcol; c++) codeSheet.getColumn(c).width = 15
 
     // 헤더 행 + 스타일
     const headerRow = ws.getRow(1)
@@ -809,7 +832,8 @@ async function downloadProductTemplate() {
       const cell = ws.getCell(1, i + 1)
       cell.value = c.label
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 }
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: c.req ? 'FFC9A96E' : 'FF1A1A2E' } }   // 필수=골드, 그 외=네이비
+      // R3 헤더 색(기존 팔레트): 필수=골드 · 드롭다운=그린(목록에서 선택) · 그 외=네이비
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: c.req ? _gold : (c.dd ? _green : _navy) } }
       cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
       if (c.note) cell.note = c.note
       ws.getColumn(i + 1).width = c.label.length > 12 ? 18 : 12
