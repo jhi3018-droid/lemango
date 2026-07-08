@@ -6175,6 +6175,19 @@ td[data-editable]:hover { background: #FAEEDA; }
 .adj-row-neg td { background: rgba(224,82,82,0.05); }
 .adj-confirm-neg { margin-top: 6px; font-size: 12px; color: var(--warning); font-weight: 600; }
 .inb-size-btn-neg .inb-size-stock { color: var(--danger); }
+
+/* 위치 이동 (Location-Move) — 6a 재고수정 창 클래스 재사용 + 전용 셀 */
+.loc-new-input { width: 130px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; box-sizing: border-box; }
+.loc-new-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(201,169,110,0.2); }
+.loc-from { font-size: 13px; color: var(--text-secondary); font-family: monospace; }
+.loc-none { color: var(--text-muted); font-style: italic; font-family: inherit; }
+.loc-arrow-cell { text-align: center; color: var(--accent); font-weight: 700; }
+.loc-row-noop td { background: rgba(0,0,0,0.03); color: var(--text-muted); }
+.loc-noop-tag { font-size: 11px; color: var(--text-muted); margin-left: 4px; }
+.loc-assign-tag { font-size: 11px; color: var(--success); font-weight: 600; margin-left: 4px; }
+.loc-zero-tag { font-size: 11px; color: var(--warning); font-weight: 600; margin-left: 4px; }
+.loc-confirm-line { font-size: 12px; color: var(--primary); padding: 2px 0; border-top: 1px solid rgba(0,0,0,0.05); margin-top: 4px; }
+.loc-confirm-more { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 .inbcancel-mvtype { display: inline-block; font-size: 11px; font-weight: 700; color: var(--primary); background: rgba(26,26,46,0.08); border-radius: 4px; padding: 1px 6px; margin-right: 4px; }
 
 /* 공유 상품 상세 모달 — 사이즈별 재고·로케이션 표 (1f + 판매 공용) */

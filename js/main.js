@@ -77,6 +77,12 @@ async function initApp() {
   if (_adjModal) _adjModal.addEventListener('cancel', e => e.preventDefault())
   makeDraggableResizable(document.getElementById('adjConfirmModal'), 380, 220)
   makeDraggableResizable(document.getElementById('adjCloseConfirmModal'), 340, 180)
+  // 위치 이동 창 = 재고수정과 동일 정책: 명시적 닫기 전용(ESC/백드롭 차단, modalCloseMap 미등록).
+  makeDraggableResizable(document.getElementById('locMoveModal'), 720, 480)
+  const _locModal = document.getElementById('locMoveModal')
+  if (_locModal) _locModal.addEventListener('cancel', e => e.preventDefault())
+  makeDraggableResizable(document.getElementById('locConfirmModal'), 380, 220)
+  makeDraggableResizable(document.getElementById('locCloseConfirmModal'), 340, 180)
   // 품번 조회 창 = 빠른 서브 다이얼로그 → ESC 로 닫힘(작업 창과 별개). 닫힐 때 커서 복귀는 store.js 에서 처리.
   makeDraggableResizable(document.getElementById('inbLookupModal'), 420, 320)
   makeDraggableResizable(document.getElementById('inbCloseConfirmModal'), 340, 180)

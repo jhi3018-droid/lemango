@@ -68,6 +68,10 @@ function _storeSubPanelHtml(sub) {
     const adjustBtn = store
       ? `<button class="btn btn-new" onclick="openAdjustModal()">🛠 재고수정</button>`
       : `<button class="btn btn-new" disabled title="배정된 매장이 없습니다 — 재고수정 불가">🛠 재고수정</button>`
+    // 위치 이동 = 작업 → 본인 매장 직원 + 관리자만. 재고 수량 무변경(위치만). 재고수정과 동일 게이트.
+    const locMoveBtn = store
+      ? `<button class="btn btn-new" onclick="openLocMoveModal()">📍 위치 이동</button>`
+      : `<button class="btn btn-new" disabled title="배정된 매장이 없습니다 — 위치 이동 불가">📍 위치 이동</button>`
     // 입고 내역 = 조회 → 전 직원 개방(권한 방침). office 직원도 표시(매장 선택기 제공). (매출 조회는 3e 에서 전용 서브탭으로 승격)
     const historyBtn = `<button class="btn btn-outline" onclick="openInbHistoryModal()">📋 입출고 내역</button>`
     // 6d: 품목 이동 원장(조회 전 직원) + 기준 재고 설정(관리자 전용)
@@ -78,6 +82,7 @@ function _storeSubPanelHtml(sub) {
       <div class="store-panel-toolbar">
         ${scanBtn}
         ${adjustBtn}
+        ${locMoveBtn}
         ${historyBtn}
         ${ledgerBtn}
         ${replenishBtn}
@@ -2129,6 +2134,7 @@ function openInbHistoryModal() {
       + '<option value="__defect-in__">정상→불량</option>'             // 6c
       + '<option value="__defect-out__">불량→정상</option>'            // 6c
       + '<option value="__defect-outbound__">불량반출</option>'        // 6c
+      + '<option value="__location-move__">위치이동</option>'          // 위치 이동(재고 무변경)
   }
   const statusSel = document.getElementById('inbHistStatus'); if (statusSel) statusSel.value = 'all'
   modal.showModal()
@@ -2199,10 +2205,19 @@ function _mvTypeLabel(r) {                                                      
   if (mt === 'defect-in') return '정상→불량'       // 6c
   if (mt === 'defect-out') return '불량→정상'      // 6c
   if (mt === 'defect-outbound') return '불량반출'  // 6c
+  if (mt === 'location-move') return '위치이동'    // 위치 이동(재고 무변경)
   return (r && r.inboundType) || INB_LEGACY_TYPE
 }
-// 사유 표시: 재고수정·불량전환(전환은 사유 필수) = reason 우선 · 입고/반출 = memo
-function _mvNote(r) { return (_mvType(r) === 'adjust' || _mvIsDefect(r)) ? (r.reason || r.memo || '') : (r.memo || '') }
+// 사유/메모 표시: 재고수정·불량전환(전환은 사유 필수) = reason 우선 · 위치이동 = from→to (+메모) · 입고/반출 = memo
+function _mvNote(r) {
+  if (_mvType(r) === 'location-move') {   // 위치이동 = from→to 를 사유/메모 칸에 표시(재고증감 없음)
+    const fr = String((r && r.fromLocation) || '').trim() || '(없음)'
+    const to = String((r && r.toLocation) || '').trim() || '(없음)'
+    const memo = String((r && r.memo) || '').trim()
+    return fr + ' → ' + to + (memo ? ' · ' + memo : '')
+  }
+  return (_mvType(r) === 'adjust' || _mvIsDefect(r)) ? (r.reason || r.memo || '') : (r.memo || '')
+}
 function _inbHistApplyFilters() {
   const body = document.getElementById('inbHistBody')
   const sumEl = document.getElementById('inbHistSummary')
@@ -2211,7 +2226,7 @@ function _inbHistApplyFilters() {
   const typeF = (document.getElementById('inbHistType') || {}).value || ''
   const statusF = (document.getElementById('inbHistStatus') || {}).value || 'all'
   // moveType 기반 특수 필터(__x__) → 정확히 그 유형만. 일반 값 → 실제 입고유형(moveType 'inbound')만.
-  const MV_FILTERS = { '__adjust__': 'adjust', '__outbound__': 'outbound', '__defect-in__': 'defect-in', '__defect-out__': 'defect-out', '__defect-outbound__': 'defect-outbound' }
+  const MV_FILTERS = { '__adjust__': 'adjust', '__outbound__': 'outbound', '__defect-in__': 'defect-in', '__defect-out__': 'defect-out', '__defect-outbound__': 'defect-outbound', '__location-move__': 'location-move' }
   const rows = (_inbHistRows || []).filter(r => {
     if (_mvType(r) === 'baseline') return false   // 6d: 기준(baseline) 이동은 입출고 내역이 아님 → 품목 원장에서만 표시
     if (MV_FILTERS[typeF]) { if (_mvType(r) !== MV_FILTERS[typeF]) return false }
@@ -2240,12 +2255,16 @@ function _inbHistApplyFilters() {
   body.innerHTML = rows.map(r => {
     const cancelled = r.cancelled === true
     const rowCls = cancelled ? ' class="inbhist-cancelled-row"' : ''
-    const canCancel = (myGrade >= 3) || (myStore && myStore === r.storeId)
+    const isLocMove = _mvType(r) === 'location-move'   // 위치이동 = 재고 무변경 · 🔴 취소 불가(Q4)
+    // 🔴 위치이동은 취소 불가(옛 위치를 복원하지 못하는 반쪽 취소 방지) — 취소 버튼 대신 힌트
+    const canCancel = !isLocMove && ((myGrade >= 3) || (myStore && myStore === r.storeId))
     const actionCell = cancelled
       ? `<span class="inbhist-cancel-badge" title="${esc('취소: ' + (r.cancelledByName || '') + ' (' + _inbHistDateTime(r.cancelledAt, 'full') + ') · ' + (r.cancelReason || ''))}">취소됨</span>`
-      : (canCancel
-          ? `<button class="inbhist-cancel-btn" onclick="requestInbCancel('${esc(r._id)}')">취소</button>`
-          : '<span class="inbhist-noperm">-</span>')
+      : (isLocMove
+          ? '<span class="inbhist-noperm" title="위치이동은 취소 대신 반대로 다시 이동하세요">이동</span>'
+          : (canCancel
+              ? `<button class="inbhist-cancel-btn" onclick="requestInbCancel('${esc(r._id)}')">취소</button>`
+              : '<span class="inbhist-noperm">-</span>'))
     const sq = _mvSignedQty(r)
     const dq = _mvDefectDelta(r)   // 6c 불량증감
     return `<tr${rowCls}>
@@ -2253,7 +2272,7 @@ function _inbHistApplyFilters() {
       <td class="inbhist-time">${esc(_inbHistDateTime(r.confirmedAt, 'md'))}</td>
       <td>${esc(r.productCode || '')}</td>
       <td style="text-align:center">${esc(r.size || '')}</td>
-      <td style="text-align:right" class="${sq < 0 ? 'ssv-neg' : ''}">${sq > 0 ? '+' : ''}${sq}</td>
+      <td style="text-align:right" class="${sq < 0 ? 'ssv-neg' : ''}">${sq !== 0 ? (sq > 0 ? '+' : '') + sq : '-'}</td>
       <td style="text-align:right" class="${dq < 0 ? 'ssv-neg' : (dq > 0 ? 'spd-defect-has' : '')}">${dq !== 0 ? (dq > 0 ? '+' : '') + dq : '-'}</td>
       <td>${esc(r.location || '')}</td>
       <td>${esc(r.workerName || '')}</td>
@@ -2300,6 +2319,8 @@ function requestInbCancel(docId) {
   const row = (_inbHistRows || []).find(r => r._id === docId)
   if (!row) { showToast('내역을 찾을 수 없습니다', 'warning'); return }
   if (row.cancelled === true) { showToast('이미 취소된 내역입니다', 'warning'); _inbHistoryLoad(); return }
+  // 🔴 위치이동은 취소 불가(Q4) — 일반 취소는 옛 위치를 복원하지 못함(반쪽 취소). 되돌리려면 반대로 다시 이동.
+  if (_mvType(row) === 'location-move') { showToast('위치이동은 취소할 수 없습니다 — 반대로 다시 이동하세요', 'warning'); return }
   // 권한 방어(버튼 게이트 + 서버 규칙 외 추가) — 관리자 OR 본인 매장만
   const g = (typeof _currentUserGrade !== 'undefined' && _currentUserGrade) ? _currentUserGrade : 1
   const ms = (typeof _currentUserStoreId !== 'undefined' && _currentUserStoreId) ? _currentUserStoreId : ''
@@ -4937,6 +4958,384 @@ window.adjCloseDiscard = adjCloseDiscard
 window.adjCloseCancelChoice = adjCloseCancelChoice
 window.generateAdjNo = generateAdjNo
 
+// =============================================
+// ===== 위치 이동 (Location-Move) — 재고 무변경 + 이동 원장 기록 =====
+// =============================================
+// 6a(재고수정) 스테이징/조회/명시적-닫기/프리플라이트 패턴을 재사용하되, 🔴 재고 수량은 절대 변경하지 않음:
+//   확정 storeStock write = sizeLocations 만(merge-set) — sizes/defectSizes 키 자체를 넣지 않음 → 수량 변경 구조적 불가.
+//   이동 기록 = storeInbound moveType:'location-move' (stockDelta:0/defectDelta:0 + fromLocation/toLocation) → 6d 대조 무영향(0 기여).
+//   normalizeLocation 적용(유령 로케이션 방지, trim-only 고아 setStoreStockLocation 재사용 금지).
+//   exactly-once: 이동 doc id={locNo}_{seq} 결정적 → 재시도 set=update 평가 → storeInbound update 규칙(취소 5필드만) 거부 → 재반영 불가.
+//   Q4 non-cancellable: 위치이동 레코드는 취소 불가(입출고 내역/requestInbCancel 에서 게이트). 되돌리기 = 반대로 다시 이동.
+
+let _locStore = ''
+let _locList = []            // [{ code, size, fromLoc, newLoc }]
+let _locInFlight = false
+let _pendingLocNo = ''       // 결정적 위치이동 번호(LOC-…) — 첫 확정 1회 생성·draft 영속, 성공 시 소거
+let _locLookupCode = ''
+let _locBannerTimer = null
+
+function generateLocNo() { return 'LOC-' + kstStamp() + '-' + _saleNoSuffix() }
+
+function _locFocusSearch() { const el = document.getElementById('locSearch'); if (el) { el.focus(); if (el.select) el.select() } }
+function _locShowBanner(msg) {
+  const b = document.getElementById('locBanner')
+  if (!b) { showToast(msg, 'warning'); return }
+  b.innerHTML = `<div class="inb-banner-inner"><div class="inb-banner-icon">🚫</div><div class="inb-banner-msg">${esc(msg)}</div></div>`
+  b.classList.add('inb-banner-show')
+  if (_locBannerTimer) clearTimeout(_locBannerTimer)
+  _locBannerTimer = setTimeout(() => { b.classList.remove('inb-banner-show'); b.innerHTML = '' }, 2500)
+}
+
+// ── draft (매장별) ── {v:1, items:[…], pendingLocNo}
+function _locDraftKey(store) { return 'lemango_locmove_draft_' + (store || _locStore || '') }
+function _locSaveDraft() {
+  if (!_locStore) return
+  try { localStorage.setItem(_locDraftKey(_locStore), JSON.stringify({ v: 1, items: _locList, pendingLocNo: _pendingLocNo || '' })) }
+  catch (e) { console.warn('위치이동 draft 저장 실패:', e && e.message) }
+}
+function _locLoadDraft(store) {
+  const EMPTY = { items: [], pendingLocNo: '' }
+  let raw = null
+  try { raw = localStorage.getItem(_locDraftKey(store)) } catch (e) { return EMPTY }
+  if (!raw) return EMPTY
+  try {
+    const o = JSON.parse(raw)
+    if (!o || o.v !== 1) return EMPTY
+    const items = Array.isArray(o.items) ? o.items.filter(l => l && l.code && l.size).map(l => ({
+      code: String(l.code), size: String(l.size),
+      fromLoc: String(l.fromLoc || ''), newLoc: String(l.newLoc || '')
+    })) : []
+    return { items, pendingLocNo: String(o.pendingLocNo || '') }
+  } catch (e) {
+    console.warn('위치이동 draft 파싱 실패 — 초기화:', e && e.message)
+    try { localStorage.removeItem(_locDraftKey(store)) } catch (e2) {}
+    return EMPTY
+  }
+}
+
+// ── 창 열기/닫기 (명시적 닫기 전용 — ESC/백드롭 없음, main.js 등록) ──
+function openLocMoveModal() {
+  const store = (typeof resolveActiveStore === 'function') ? resolveActiveStore() : ''
+  if (!store) { showToast('배정된 매장이 없습니다 — 위치 이동 불가', 'warning'); return }
+  const modal = document.getElementById('locMoveModal')
+  if (!modal) return
+  modal.showModal()
+  if (typeof centerModal === 'function') centerModal(modal)
+  renderLocMoveScreen()
+}
+function closeLocMoveModal() {
+  if (_locList && _locList.length) { _openLocCloseConfirm(); return }
+  _doCloseLoc(false)
+}
+function _doCloseLoc(clearDraft) {
+  if (clearDraft) {
+    _locList = []; _pendingLocNo = ''
+    try { localStorage.removeItem(_locDraftKey(_locStore)) } catch (e) {}
+    _locRenderList()
+  }
+  const modal = document.getElementById('locMoveModal'); if (modal) modal.close()
+  if (!clearDraft && _locList && _locList.length) showToast('위치이동 리스트가 임시저장되어 있습니다', '')
+  if (typeof renderStoreStockView === 'function') renderStoreStockView()
+}
+function _openLocCloseConfirm() {
+  const m = document.getElementById('locCloseConfirmModal')
+  if (!m) { _doCloseLoc(false); return }
+  const cnt = document.getElementById('locCloseConfirmCount'); if (cnt) cnt.textContent = String(_locList.length)
+  m.showModal(); if (typeof centerModal === 'function') centerModal(m)
+  const c = document.getElementById('locCloseCancelBtn'); if (c) setTimeout(() => c.focus(), 30)
+}
+function _closeLocCloseConfirm() { const m = document.getElementById('locCloseConfirmModal'); if (m) m.close() }
+function locCloseKeep() { _closeLocCloseConfirm(); _doCloseLoc(false) }
+function locCloseDiscard() { _closeLocCloseConfirm(); _doCloseLoc(true) }
+function locCloseCancelChoice() { _closeLocCloseConfirm(); _locFocusSearch() }
+
+// ── 화면 렌더 (게이트 + draft) ──
+function renderLocMoveScreen() {
+  const gate = document.getElementById('locGate'), screen = document.getElementById('locScreen')
+  if (!gate || !screen) return
+  const store = (typeof resolveActiveStore === 'function') ? resolveActiveStore() : ''
+  if (!store) {
+    _locStore = ''; _locList = []
+    screen.classList.add('inb-hidden'); gate.classList.remove('inb-hidden')
+    gate.innerHTML = `<div class="store-placeholder"><div class="store-placeholder-icon">🚫</div><div class="store-placeholder-title">위치 이동 불가</div><div class="store-placeholder-desc">배정된 매장이 없습니다 — 관리자에게 문의하세요.</div></div>`
+    return
+  }
+  gate.classList.add('inb-hidden'); gate.innerHTML = ''
+  screen.classList.remove('inb-hidden')
+  _locStore = store
+  const draft = _locLoadDraft(store)
+  _locList = draft.items
+  _pendingLocNo = draft.pendingLocNo || ''
+  _locLookupCode = ''
+  if (typeof buildStoreStockIndex === 'function') buildStoreStockIndex(store).then(() => { if (_locStore === store) { _locHideSizes(); _locRenderList() } }).catch(() => {})
+  const lbl = document.getElementById('locStoreLabel'); if (lbl) lbl.textContent = _storeNameById(store)
+  const s = document.getElementById('locSearch'); if (s) s.value = ''
+  _locHideResults(); _locHideSizes(); _locRenderList()
+  _locFocusSearch()
+}
+
+// ── 품번 조회 (전 상품 · 바코드 무관 — 위치이동은 전 사이즈 대상) ──
+function _locHideResults() { const r = document.getElementById('locLookupResults'); if (r) r.innerHTML = '' }
+function _locHideSizes() { _locLookupCode = ''; const z = document.getElementById('locSizePicker'); if (z) { z.classList.add('inb-hidden'); z.innerHTML = '' } }
+function renderLocLookup() {
+  const out = document.getElementById('locLookupResults'); if (!out) return
+  _locHideSizes()
+  const q = String((document.getElementById('locSearch') || {}).value || '').trim().toLowerCase()
+  if (!q) { out.innerHTML = '<div class="inb-lookup-hint">품번 또는 상품명을 입력하세요</div>'; return }
+  const list = (State.allProducts || []).filter(p => {
+    if (!p || p.deleted) return false
+    const c = (p.productCode || '').toLowerCase(), nk = (p.nameKr || '').toLowerCase(), ne = (p.nameEn || '').toLowerCase()
+    return c.indexOf(q) >= 0 || nk.indexOf(q) >= 0 || ne.indexOf(q) >= 0
+  })
+  if (!list.length) { out.innerHTML = '<div class="inb-lookup-hint">검색 결과가 없습니다</div>'; return }
+  const capped = list.slice(0, 60)
+  const more = list.length > 60 ? `<div class="inb-lookup-hint">상위 60건만 표시 — 검색어를 더 입력하세요 (전체 ${list.length}건)</div>` : ''
+  out.innerHTML = capped.map(p => {
+    const name = esc(p.nameKr || p.nameEn || '')
+    const img = (typeof getThumbUrl === 'function') ? getThumbUrl(p) : ''
+    const thumb = img ? `<img src="${esc(img)}" class="inb-lookup-thumb" onerror="this.style.visibility='hidden'">` : '<span class="inb-lookup-thumb inb-lookup-thumb-none">—</span>'
+    return `<div class="inb-lookup-row" onclick="selectLocLookupProduct('${esc(p.productCode)}')">${thumb}<span class="inb-lookup-code">${esc(p.productCode)}</span><span class="inb-lookup-name">${name}</span></div>`
+  }).join('') + more
+}
+// 상품 선택 → 전 사이즈 버튼(현재 위치 + 재고 힌트). 위치이동은 전 사이즈 대상(실사와 동일).
+function selectLocLookupProduct(code) {
+  _locLookupCode = code
+  const z = document.getElementById('locSizePicker'); if (!z) return
+  const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(code) : null
+  const name = p ? esc(p.nameKr || p.nameEn || '') : ''
+  const stockMap = (typeof getStoreStock === 'function') ? getStoreStock(_locStore, code) : {}
+  const btns = SIZES.map(sz => {
+    const st = Number(stockMap[sz] || 0)
+    const loc = (typeof getStoreStockLocation === 'function') ? getStoreStockLocation(_locStore, code, sz) : ''
+    return `<button class="inb-size-btn${st < 0 ? ' inb-size-btn-neg' : ''}" onclick="chooseLocSize('${esc(sz)}')"><span class="inb-size-lbl">${esc(sz)}</span><span class="inb-size-stock">${loc ? esc(loc) : '위치없음'} · 재고 ${st}</span></button>`
+  }).join('')
+  z.innerHTML = `<div class="inb-lookup-sizes-head">${esc(code)} <span class="inb-lookup-sizes-name">${name}</span> — 위치 이동할 사이즈 선택 (전 사이즈)</div><div class="inb-size-grid">${btns}</div>`
+  z.classList.remove('inb-hidden')
+}
+function chooseLocSize(size) {
+  const code = _locLookupCode
+  if (!code || !size) return
+  _locBeginLine(code, size)
+}
+function _locBeginLine(code, size) {
+  if (!_locStore || !code || !size) return
+  const idx = _locList.findIndex(l => l.code === code && l.size === size)
+  if (idx >= 0) { _locRenderList(); showToast(code + ' ' + size + ' 은(는) 이미 리스트에 있습니다', ''); _locFocusNewLoc(idx); return }
+  const cur = (typeof getStoreStockLocation === 'function') ? getStoreStockLocation(_locStore, code, size) : ''
+  _locList.push({ code, size, fromLoc: cur || '', newLoc: cur || '' })   // 새 위치 = 현재 위치 프리필(편집)
+  _locSaveDraft()
+  _locRenderList()
+  showToast(code + ' ' + size + ' 추가 — 새 위치를 입력하세요', '')
+  _locFocusNewLoc(_locList.length - 1)
+}
+function _locFocusNewLoc(i) {
+  setTimeout(() => { const el = document.querySelector('.loc-new-input[data-i="' + i + '"]'); if (el) { el.focus(); if (el.select) el.select() } }, 30)
+}
+
+// ── 스테이징 리스트 렌더 ──
+function _locRenderList() {
+  const body = document.getElementById('locListBody'), countEl = document.getElementById('locListCount')
+  if (countEl) countEl.textContent = String(_locList.length)
+  if (!body) return
+  if (!_locList.length) { body.innerHTML = '<tr><td colspan="6" class="inbhist-empty">품번을 조회해 위치를 옮길 사이즈를 추가하세요</td></tr>'; _locUpdateTotals(); return }
+  const norm = (s) => (typeof normalizeLocation === 'function') ? normalizeLocation(s) : String(s || '').trim()
+  body.innerHTML = _locList.map((l, i) => {
+    const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(l.code) : null
+    const nm = p ? (p.nameKr || p.nameEn || '') : ''
+    const cur = (typeof getStoreStock === 'function') ? Number(getStoreStock(_locStore, l.code)[l.size] || 0) : 0
+    const fromN = norm(l.fromLoc), newN = norm(l.newLoc)
+    const isNoop = !newN || newN === fromN         // 새 위치 없음 또는 변화 없음 → 반영 제외
+    const assignFirst = !fromN && !!newN           // 최초 지정((없음)→new)
+    const rowCls = isNoop ? ' class="loc-row-noop"' : ''
+    const fromCell = fromN ? esc(l.fromLoc) : '<span class="loc-none">(위치 없음)</span>'
+    const note = isNoop ? '<span class="loc-noop-tag">변화 없음 · 제외</span>'
+      : (assignFirst ? '<span class="loc-assign-tag">최초 지정</span>' : (cur === 0 ? '<span class="loc-zero-tag">재고 0</span>' : ''))
+    return `<tr${rowCls}>
+      <td><span class="code-link" onclick="openStoreProductDetail('${esc(l.code)}','${esc(_locStore)}')">${esc(l.code)}</span>${nm ? `<div class="sale-line-name">${esc(nm)}</div>` : ''}</td>
+      <td class="inb-c">${esc(l.size)}</td>
+      <td class="loc-from">${fromCell}</td>
+      <td class="loc-arrow-cell">→</td>
+      <td><input type="text" class="loc-new-input" value="${esc(l.newLoc || '')}" placeholder="새 위치" data-i="${i}" onchange="onLocNewLoc(${i}, this)"> ${note}</td>
+      <td class="inb-c"><button class="inb-del-btn" onclick="removeLocRow(${i})">삭제</button></td>
+    </tr>`
+  }).join('')
+  _locUpdateTotals()
+}
+function _locUpdateTotals() {
+  const norm = (s) => (typeof normalizeLocation === 'function') ? normalizeLocation(s) : String(s || '').trim()
+  const act = _locList.filter(l => { const nn = norm(l.newLoc); return nn && nn !== norm(l.fromLoc) }).length
+  const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v }
+  set('locTotalAct', String(act))
+}
+function onLocNewLoc(i, el) {
+  if (i < 0 || i >= _locList.length) return
+  const loc = (typeof normalizeLocation === 'function') ? normalizeLocation(el.value) : String(el.value || '').trim()
+  _locList[i].newLoc = loc
+  _locSaveDraft(); _locRenderList()
+}
+function removeLocRow(i) {
+  if (i < 0 || i >= _locList.length) return
+  _locList.splice(i, 1); _locSaveDraft(); _locRenderList(); _locFocusSearch()
+}
+
+// ── 확정 ──
+function _locSetBusy(busy) {
+  const btn = document.getElementById('locConfirmBtn')
+  if (!btn) return
+  btn.disabled = !!busy
+  if (busy) { if (btn.dataset.orig == null) btn.dataset.orig = btn.innerHTML; btn.textContent = '반영 중…' }
+  else if (btn.dataset.orig != null) { btn.innerHTML = btn.dataset.orig; delete btn.dataset.orig }
+}
+// 반영 대상(actionable) 라인만 추출 — 새 위치 비어있지 않고 현재와 다른 라인(정규화 비교). no-op 은 제외(무의미한 이동 안 씀).
+function _locActionable() {
+  const norm = (s) => (typeof normalizeLocation === 'function') ? normalizeLocation(s) : String(s || '').trim()
+  return _locList
+    .map(l => ({ code: l.code, size: l.size, fromLocation: String(l.fromLoc || ''), toLocation: norm(l.newLoc) }))
+    .filter(l => l.code && l.size && l.toLocation && l.toLocation !== norm(l.fromLocation))
+}
+function _locValidate() {
+  if (!_locList.length) return { ok: false, msg: '이동할 항목이 없습니다' }
+  const store = (typeof resolveActiveStore === 'function') ? resolveActiveStore() : ''
+  if (!store) return { ok: false, msg: '배정된 매장이 없습니다 — 위치 이동 불가' }
+  const act = _locActionable()
+  if (!act.length) return { ok: false, msg: '변경할 위치가 없습니다 (새 위치가 비었거나 현재와 동일)' }
+  const codes = new Set(act.map(l => l.code))
+  if (codes.size + act.length > 450) return { ok: false, msg: '항목이 너무 많습니다 — 세션을 나눠 진행하세요' }
+  return { ok: true, store, act }
+}
+async function locFinalConfirm() {
+  if (_locInFlight) return
+  const v = _locValidate()
+  if (!v.ok) { _locShowBanner(v.msg); return }
+  // Q2: 재고 0 사이즈에 위치 지정 경고(진행 허용 — 차단 아님). 위치가 실물 입고보다 먼저 지정될 수 있음.
+  const zero = v.act.filter(l => { const st = (typeof getStoreStock === 'function') ? Number(getStoreStock(v.store, l.code)[l.size] || 0) : 0; return st === 0 })
+  if (zero.length && typeof korConfirm === 'function') {
+    const ok = await korConfirm('재고 0 사이즈에 위치를 지정하는 항목이 ' + zero.length + '건 있습니다.\n위치는 실물 입고보다 먼저 지정할 수 있습니다 — 그대로 진행할까요?', '진행', '취소')
+    if (!ok) { _locFocusSearch(); return }
+  }
+  _openLocConfirmDialog(v.store, v.act)
+}
+function _openLocConfirmDialog(store, act) {
+  const modal = document.getElementById('locConfirmModal')
+  if (!modal) { locConfirmProceed(); return }
+  if (modal.open) return
+  const preview = act.slice(0, 8).map(l => `<div class="loc-confirm-line"><strong>${esc(l.code)}</strong> <span class="inb-c">${esc(l.size)}</span> · ${esc(l.fromLocation || '(없음)')} → <strong>${esc(l.toLocation)}</strong></div>`).join('')
+  const moreN = act.length > 8 ? `<div class="loc-confirm-more">외 ${act.length - 8}건…</div>` : ''
+  const sumEl = document.getElementById('locConfirmSummary')
+  if (sumEl) sumEl.innerHTML = `<div class="svoid-amt">위치 이동 <strong>${act.length}</strong>건 (재고 수량 변경 없음)</div>${preview}${moreN}`
+  const memoEl = document.getElementById('locMemo'); if (memoEl) memoEl.value = ''
+  modal.showModal(); if (typeof centerModal === 'function') centerModal(modal)
+  const btn = document.getElementById('locConfirmProceedBtn'); if (btn) setTimeout(() => btn.focus(), 40)
+}
+function closeLocConfirmDialog() { const m = document.getElementById('locConfirmModal'); if (m && m.open) m.close(); _locFocusSearch() }
+function _locSuccessCleanup(store, locNo, count, already) {
+  _locList = []; _pendingLocNo = ''
+  try { localStorage.removeItem(_locDraftKey(store)) } catch (e) {}
+  _locHideSizes()
+  const s = document.getElementById('locSearch'); if (s) s.value = ''
+  _locHideResults(); _locRenderList()
+  Promise.resolve().then(() => { if (typeof buildStoreStockIndex === 'function') return buildStoreStockIndex(store) })
+    .then(() => { if (typeof renderStoreStockView === 'function') renderStoreStockView() }).catch(() => {})
+  if (already) showToast('이미 반영된 위치 이동입니다 (' + locNo + ')', 'warning')
+  else showToast('위치 이동 완료 · ' + locNo + ' · ' + count + '건', 'success')
+  _locFocusSearch()
+}
+// 실제 확정 — 프리플라이트 → 가드 → 단일 원자 배치(sizeLocations-only + 이동 doc 결정적 id).
+async function locConfirmProceed() {
+  closeLocConfirmDialog()
+  if (_locInFlight) return
+  const v = _locValidate()
+  if (!v.ok) { _locShowBanner(v.msg); return }
+  const store = v.store
+  const act = v.act
+  const memo = String((document.getElementById('locMemo') || {}).value || '').trim()
+  if (!db) { _locShowBanner('서버 연결 없음 — 잠시 후 다시 시도하세요'); return }
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) { _locShowBanner('오프라인 상태 — 연결 확인 후 확정하세요'); return }
+  try {
+    _locInFlight = true
+    _locSetBusy(true)
+    if (!_pendingLocNo) { _pendingLocNo = generateLocNo(); _locSaveDraft() }
+    const locNo = _pendingLocNo
+    const firstId = locNo + '_0001'
+    const pre = await _adjReadDoc(firstId, 5000)   // storeInbound doc read 재사용(6a)
+    if (!pre.ok) { _locShowBanner('오프라인 상태 — 연결 확인 후 확정하세요'); return }
+    if (pre.exists) { _locSuccessCleanup(store, locNo, act.length, true); return }   // 이전 시도 착지 → 성공 처리(재반영 없음)
+
+    const uid = (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) ? firebase.auth().currentUser.uid : ''
+    const workerName = (typeof formatUserName === 'function')
+      ? formatUserName(_currentUserName, (typeof _currentUserPosition !== 'undefined' ? _currentUserPosition : ''))
+      : ((typeof _currentUserName !== 'undefined' && _currentUserName) || '')
+    const nowIso = new Date().toISOString()
+    const dateKey = kstDateKey()
+    const batchId = dateKey + '_' + (uid || 'x') + '_' + Date.now()
+
+    // 코드별 그룹: sizeLocations 만 overwrite (🔴 sizes/defectSizes 키 없음 → 수량 변경 구조적 불가)
+    const byCode = {}
+    act.forEach(l => { (byCode[l.code] || (byCode[l.code] = {}))[l.size] = l.toLocation })
+
+    const batch = db.batch()
+    Object.keys(byCode).forEach(code => {
+      batch.set(db.collection('storeStock').doc(storeStockDocId(store, code)), {
+        storeId: store, productCode: code,
+        sizeLocations: byCode[code],   // ONLY locations — no sizes/defectSizes key
+        updatedAt: nowIso
+      }, { merge: true })
+    })
+    // 이동 원장 doc — 라인당 1, 결정적 id {locNo}_{seq}. moveType:'location-move', stockDelta:0/defectDelta:0 (재고 무영향).
+    act.forEach((l, i) => {
+      const seq = String(i + 1).padStart(4, '0')
+      batch.set(db.collection('storeInbound').doc(locNo + '_' + seq), {
+        storeId: store, productCode: l.code, size: l.size,
+        moveType: 'location-move', qty: 0, stockDelta: 0, defectDelta: 0,
+        fromLocation: l.fromLocation, toLocation: l.toLocation,
+        location: l.toLocation,   // 표시(입출고 내역 위치 컬럼)=이동 후 위치
+        inboundNo: locNo, inboundType: '위치이동', reason: '', memo: memo,
+        workerUid: uid, workerName: workerName, confirmedAt: nowIso, dateKey: dateKey, batchId: batchId
+      })
+    })
+
+    const res = await _saleCommitWithTimeout(batch, 15000)
+    if (res.ok) {
+      if (typeof logActivity === 'function') logActivity('location-move', '위치이동', _storeNameById(store) + '(' + store + '): ' + locNo + ' · ' + act.length + '건 · ' + act.slice(0, 5).map(l => l.code + ' ' + l.size + ' ' + (l.fromLocation || '(없음)') + '→' + l.toLocation).join(', '))
+      _locSuccessCleanup(store, locNo, act.length, false)
+      return
+    }
+    if (res.timeout) { _locShowBanner('네트워크 불안정 — 반영 여부 확인 중입니다. 다시 [최종 확정]을 누르면 안전하게 재시도됩니다'); return }
+    const err = res.error
+    const denied = err && (err.code === 'permission-denied' || err.code === 7 || /permission/i.test(String(err.message || '')))
+    if (denied) {
+      const re = await _adjReadDoc(firstId, 5000)
+      if (re.ok && re.exists) { _locSuccessCleanup(store, locNo, act.length, true); return }
+      _locShowBanner('권한 오류로 반영되지 않았습니다 — 매장/권한을 확인하세요' + (err && err.message ? ' (' + err.message + ')' : ''))
+      return
+    }
+    _locShowBanner('반영 실패 — 다시 시도하세요' + (err && err.message ? ' (' + err.message + ')' : ''))
+  } catch (e) {
+    console.error('locConfirmProceed 예외:', e && e.message)
+    _locShowBanner('반영 실패 — 다시 시도하세요' + (e && e.message ? ' (' + e.message + ')' : ''))
+  } finally {
+    _locInFlight = false
+    _locSetBusy(false)
+  }
+}
+
+window.openLocMoveModal = openLocMoveModal
+window.closeLocMoveModal = closeLocMoveModal
+window.renderLocMoveScreen = renderLocMoveScreen
+window.renderLocLookup = renderLocLookup
+window.selectLocLookupProduct = selectLocLookupProduct
+window.chooseLocSize = chooseLocSize
+window.onLocNewLoc = onLocNewLoc
+window.removeLocRow = removeLocRow
+window.locFinalConfirm = locFinalConfirm
+window.locConfirmProceed = locConfirmProceed
+window.closeLocConfirmDialog = closeLocConfirmDialog
+window.locCloseKeep = locCloseKeep
+window.locCloseDiscard = locCloseDiscard
+window.locCloseCancelChoice = locCloseCancelChoice
+window.generateLocNo = generateLocNo
+
 // ═══════════════════════════════════════════════════════════════
 // ===== POS Phase 6d — 품목 이동 원장(Unified Ledger) + 기준재고(baseline) + 대조(reconciliation) =====
 // ═══════════════════════════════════════════════════════════════
@@ -4965,6 +5364,7 @@ function _ldgTypeLabel(mt) {
     case 'defect-in': return '정상→불량'
     case 'defect-out': return '불량→정상'
     case 'adjust': return '재고수정'
+    case 'location-move': return '위치이동'
     case 'baseline': return '기준'
     default: return ''   // inbound/레거시 → inboundType 라벨을 행에서 사용
   }

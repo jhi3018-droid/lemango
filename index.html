@@ -3042,6 +3042,80 @@
   </div>
 </dialog>
 
+<!-- 위치 이동 (Location-Move) — 재고 수량 무변경, 위치만 이동 + 이동 원장 기록. 6a 재고수정 창 패턴 미러(명시적 닫기 전용). -->
+<dialog id="locMoveModal" class="srm-modal inb-modal" style="width:92vw;max-width:1100px;height:90vh;max-height:90vh;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header inb-modal-header" style="cursor:move">
+    <span class="inb-modal-title">📍 위치 이동 <span id="locStoreLabel" class="inb-modal-store"></span></span>
+    <button class="modal-close" onclick="closeLocMoveModal()">×</button>
+  </div>
+  <div class="inb-modal-body">
+    <div id="locGate" class="inb-hidden"></div>
+    <div id="locScreen" class="inb-screen inb-hidden">
+      <div class="adj-top">
+        <div class="adj-search-col">
+          <div class="inb-field">
+            <label class="inb-label">품번 조회 <span class="inb-label-hint">품번/상품명 검색 → 사이즈 선택 (전 사이즈, 바코드 무관) · 재고 수량은 변하지 않습니다</span></label>
+            <input id="locSearch" class="inb-input" type="text" autocomplete="off" placeholder="품번 또는 상품명 검색" oninput="renderLocLookup()">
+          </div>
+          <div id="locLookupResults" class="inb-lookup-results adj-lookup-results"></div>
+          <div id="locSizePicker" class="inb-lookup-sizes adj-size-picker inb-hidden"></div>
+        </div>
+        <div class="adj-banner-col">
+          <div id="locBanner" class="inb-banner" aria-live="assertive"></div>
+        </div>
+      </div>
+      <div class="inb-list-section adj-list-section">
+        <div class="inb-list-head">위치이동 리스트 <span class="inb-list-count-badge"><span id="locListCount">0</span>건 · 반영대상 <span id="locTotalAct" class="inb-list-total-num">0</span></span></div>
+        <div class="inb-list-wrap">
+          <table class="data-table inb-list-table adj-list-table">
+            <thead><tr><th>품번</th><th class="inb-c" style="width:56px">사이즈</th><th style="width:140px">현재 위치</th><th class="inb-c" style="width:36px"></th><th style="width:220px">새 위치</th><th class="inb-c" style="width:52px">삭제</th></tr></thead>
+            <tbody id="locListBody"></tbody>
+          </table>
+        </div>
+        <div class="inb-list-footer">
+          <span class="inb-confirm-note">📍 재고 수량은 변하지 않습니다 — 위치(로케이션)만 이동하며 이동 원장에 기록됩니다 · 새 위치가 현재와 같으면 제외</span>
+          <div class="inb-footer-btns">
+            <button class="btn btn-outline" onclick="closeLocMoveModal()">닫기</button>
+            <button class="btn btn-new inb-confirm-btn" id="locConfirmBtn" onclick="locFinalConfirm()">최종 확정</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</dialog>
+<!-- 위치 이동 확정 (요약 + 메모 선택). 파괴적 아님 — 확정 버튼 기본 포커스 안전. -->
+<dialog id="locConfirmModal" class="srm-modal" style="width:480px;max-width:92vw;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header" style="cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">위치 이동 확정</span>
+    <button class="modal-close" onclick="closeLocConfirmDialog()">×</button>
+  </div>
+  <div class="svoid-body">
+    <div class="svoid-summary" id="locConfirmSummary"></div>
+    <label class="svoid-reason-label">메모 <span style="font-weight:400;color:var(--text-muted)">(선택)</span></label>
+    <textarea id="locMemo" class="svoid-reason" rows="1" maxlength="200" placeholder="메모 (선택) — 예: 시즌오프 매대 이동"></textarea>
+    <div class="svoid-warn">📍 재고 수량은 변경되지 않습니다 — 위치만 이동하고 이동 원장에 from→to 로 기록됩니다</div>
+    <div class="svoid-btns">
+      <button class="btn btn-outline" onclick="closeLocConfirmDialog()">닫기</button>
+      <button class="btn btn-new" id="locConfirmProceedBtn" onclick="locConfirmProceed()">확정</button>
+    </div>
+  </div>
+</dialog>
+<!-- 위치 이동 창 닫기 확인 (staged 항목 있을 때) -->
+<dialog id="locCloseConfirmModal" class="srm-modal" style="width:460px;max-width:92vw;padding:0;overflow:hidden;border-radius:12px">
+  <div class="srm-header modal-header" style="cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">위치 이동 닫기</span>
+  </div>
+  <div class="inb-closeconf-body">
+    <p class="inb-closeconf-msg">위치이동 리스트에 <strong id="locCloseConfirmCount">0</strong>건이 남아 있습니다.<br>어떻게 하시겠습니까?</p>
+    <div class="inb-closeconf-btns">
+      <button class="btn btn-outline" id="locCloseCancelBtn" onclick="locCloseCancelChoice()">취소</button>
+      <button class="btn btn-new" onclick="locCloseKeep()">보존하고 닫기</button>
+      <button class="btn inb-closeconf-discard" onclick="locCloseDiscard()">삭제하고 닫기</button>
+    </div>
+    <p class="inb-closeconf-hint">보존: 다시 열면 리스트 복원 · 삭제: 임시저장까지 지움 (되돌릴 수 없음)</p>
+  </div>
+</dialog>
+
 <!-- (POS Phase 3e) 매출 조회 UI 는 🏬 매장 → '매출 조회' 서브탭 패널로 승격됨 (모달 제거). 영수증 상세만 모달 유지. -->
 
 <!-- 영수증 상세 (POS Phase 3d/3e) — 라인/합계/취소상태 + [판매 취소](3e 실동작). 품번 click → 공용 상품 상세. -->
