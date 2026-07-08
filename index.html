@@ -2466,8 +2466,10 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 
-<!-- SheetJS -->
+<!-- SheetJS (모든 읽기/파싱/round-trip) -->
 <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+<!-- ExcelJS (신규 상품등록 양식 생성 전용 — 인셀 드롭다운. SheetJS와 공존: XLSX vs ExcelJS 별개 전역). 실패 시 양식 다운로드만 영향(업로드 무관). -->
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <script src="js/core.js"></script>
 <script src="js/router.js"></script>
 <script src="js/utils.js"></script>
