@@ -5336,6 +5336,248 @@ window.locCloseDiscard = locCloseDiscard
 window.locCloseCancelChoice = locCloseCancelChoice
 window.generateLocNo = generateLocNo
 
+// =============================================
+// ===== 위치 이동 — 로케이션 엑셀 다운로드 + 업로드 (LOCATION ONLY) =====
+// =============================================
+// 🔴 재고 수량·바코드 무변경: 업로드 확정도 위치 이동 apply 로직(sizeLocations-only + location-move 원장) 재사용.
+//   다운로드=현재 매장 stock 품번 × 전 사이즈(품번/사이즈/바코드/로케이션/상품명/브랜드). 바코드=식별 전용(round-trip).
+//   업로드=1e 재고 업로드 미리보기 UX + _ssuResolveRow 듀얼-shape 미러(로케이션 adapt). safe-chunk(SET-overwrite, no-op skip 멱등).
+
+// ── 다운로드 (현재 활성 매장 기준) ──
+async function downloadLocations() {
+  if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
+  const store = _locStore || (typeof resolveActiveStore === 'function' ? resolveActiveStore() : '') || ''
+  if (!store) { showToast('대상 매장이 없습니다 — 매장을 선택하세요', 'warning'); return }
+  try { if (typeof buildStoreStockIndex === 'function') await buildStoreStockIndex(store) } catch (e) {}
+  const idx = (typeof _storeStockIndex !== 'undefined' && _storeStockIndex[store]) ? _storeStockIndex[store] : {}
+  const codes = Object.keys(idx).sort()
+  if (!codes.length) { showToast('이 매장에 재고 품번이 없습니다 — 재고 업로드 후 이용하세요', 'warning'); return }
+  const header = ['품번', '사이즈', '바코드', '로케이션', '상품명', '브랜드']
+  const rows = []
+  codes.forEach(code => {
+    const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(code) : null
+    SIZES.forEach(sz => {
+      const bc = (p && p.barcodes && p.barcodes[sz]) ? String(p.barcodes[sz]) : ''
+      const loc = (typeof getStoreStockLocation === 'function') ? (getStoreStockLocation(store, code, sz) || '') : ''
+      rows.push([code, sz, bc, loc, p ? (p.nameKr || p.nameEn || '') : '', p ? (p.brand || '') : ''])
+    })
+  })
+  const ws = XLSX.utils.aoa_to_sheet([header, ...rows])
+  ws['!cols'] = [{ wch: 18 }, { wch: 8 }, { wch: 16 }, { wch: 14 }, { wch: 22 }, { wch: 12 }]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '로케이션')
+  const today = kstDateKey()
+  XLSX.writeFile(wb, '로케이션_' + (_storeNameById(store) || store) + '_' + today + '.xlsx')
+}
+
+// ── 업로드 상태 ──
+let _locUpStore = ''
+let _locUpData = []       // 미리보기 행 [{rawCode,rawSize,barcode,locRaw,newLoc,method,code,size,fromLoc,status,valid,error}]
+let _locUpInFlight = false
+
+const _LOCUP_META = {
+  apply:     { cls: 'bc-row-new',       badge: '<span class="badge-preview-ok">반영</span>' },
+  noop:      { cls: 'bc-row-new',       badge: '<span class="badge-preview-warn">변화없음</span>' },
+  blank:     { cls: 'bc-row-miss',      badge: '<span class="badge-preview-warn">빈위치</span>' },
+  unmatched: { cls: 'bc-row-miss',      badge: '<span class="badge-preview-error">미등록</span>' },
+  mismatch:  { cls: 'bc-row-dup',       badge: '<span class="badge-preview-dup">불일치</span>' },
+  duplicate: { cls: 'bc-row-dup',       badge: '<span class="badge-preview-dup">중복</span>' },
+  incomplete:{ cls: 'bc-row-miss',      badge: '<span class="badge-preview-error">식별불가</span>' },
+}
+
+function openLocUploadModal() {
+  const store = (typeof resolveActiveStore === 'function') ? resolveActiveStore() : ''
+  if (!store) { showToast('배정된 매장이 없습니다 — 위치 이동 불가', 'warning'); return }
+  _locUpStore = store
+  _locUpData = []
+  const modal = document.getElementById('locUploadModal'); if (!modal) return
+  const nameEl = document.getElementById('locUpStoreName'); if (nameEl) nameEl.textContent = _storeNameById(store)
+  const area = document.getElementById('locUpPreviewArea'); if (area) area.style.display = 'none'
+  const fileEl = document.getElementById('locUpFile'); if (fileEl) fileEl.value = ''
+  const btn = document.getElementById('locUpConfirmBtn'); if (btn) btn.disabled = true
+  // 인덱스 최신화 (바코드 조회 + 현재 위치 조회)
+  if (typeof buildBarcodeIndex === 'function') buildBarcodeIndex()
+  if (typeof buildStoreStockIndex === 'function') buildStoreStockIndex(store).catch(() => {})
+  modal.showModal(); if (typeof centerModal === 'function') centerModal(modal)
+}
+function closeLocUploadModal() { const m = document.getElementById('locUploadModal'); if (m) m.close() }
+
+// 한 행 식별(듀얼 shape, 바코드 우선 — _ssuResolveRow 미러) + 로케이션 해석. 바코드=식별 전용(절대 미기록).
+function _locUpResolveRow(r) {
+  const rawCode = String(r[0] || '').trim()
+  const rawSize = String(r[1] || '').trim().toUpperCase()
+  const barcode = String(r[2] || '').trim()
+  const locRaw = String(r[3] || '').trim()
+  const newLoc = (typeof normalizeLocation === 'function') ? normalizeLocation(locRaw) : locRaw.toUpperCase()
+  const row = { rawCode, rawSize, barcode, locRaw, newLoc, method: '', code: '', size: '', fromLoc: '', status: '', valid: false, error: '' }
+  // 1) 식별 (바코드 우선 → findByBarcode, 아니면 품번+사이즈)
+  if (barcode) {
+    const hit = (typeof findByBarcode === 'function') ? findByBarcode(barcode) : null
+    if (!hit) { row.status = 'unmatched'; row.error = '바코드 미등록: ' + barcode; return row }
+    row.code = hit.productCode; row.size = hit.size; row.method = 'B'
+    if (rawCode && rawSize && ((rawCode.toUpperCase() !== (hit.productCode || '').toUpperCase()) || rawSize !== hit.size)) {
+      row.status = 'mismatch'; row.error = `바코드↔품번/사이즈 불일치 (바코드→${hit.productCode}/${hit.size})`; return row
+    }
+  } else if (rawCode && rawSize) {
+    const p = (State.allProducts || []).find(x => (x.productCode || '').toUpperCase() === rawCode.toUpperCase() && !x.deleted)
+    if (!p) { row.status = 'unmatched'; row.error = '품번 미등록: ' + rawCode; return row }
+    if (!SIZES.includes(rawSize)) { row.status = 'unmatched'; row.error = '사이즈 인식 불가: ' + rawSize; return row }
+    row.code = p.productCode; row.size = rawSize; row.method = 'A'
+  } else {
+    row.status = 'incomplete'; row.error = '품번+사이즈 또는 바코드 필요'; return row
+  }
+  // 2) 로케이션 해석 (식별 성공 후). 현재 위치 대비 변화 판정.
+  row.fromLoc = (typeof getStoreStockLocation === 'function') ? (getStoreStockLocation(_locUpStore, row.code, row.size) || '') : ''
+  const fromN = (typeof normalizeLocation === 'function') ? normalizeLocation(row.fromLoc) : String(row.fromLoc || '').trim().toUpperCase()
+  if (!newLoc) { row.status = 'blank'; row.error = '새 위치 없음 (건너뜀)'; return row }   // 빈 위치 → skip(목적지 없음)
+  if (newLoc === fromN) { row.status = 'noop'; row.error = '현재와 동일'; return row }        // no-op → skip
+  row.status = 'apply'; row.valid = true
+  return row
+}
+
+// 파싱 → 미리보기. 시트 내 (품번,사이즈) 중복(서로 다른 새위치)=모호 → 중복 제외(첫 행만 반영).
+function handleLocUpload(input) {
+  const file = input.files && input.files[0]
+  if (!file) return
+  if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
+  if (!_locUpStore) { showToast('대상 매장이 없습니다', 'warning'); return }
+  const reader = new FileReader()
+  reader.onload = function (e) {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' })
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false })   // raw:false=앞자리 0 바코드 텍스트 보존
+      const dataRows = []
+      raw.slice(1).forEach(r => {
+        const code = String(r[0] || '').trim(), size = String(r[1] || '').trim(), bc = String(r[2] || '').trim(), loc = String(r[3] || '').trim()
+        if (!code && !size && !bc && !loc) return   // 완전 빈 행 무시
+        dataRows.push(r)
+      })
+      _locUpData = dataRows.map(_locUpResolveRow)
+      // 시트 내 중복(동일 code|size, 반영 대상): 첫 행만 유지, 이후는 '중복' 제외(모호한 이중 위치 방지)
+      const seen = new Set()
+      _locUpData.forEach(d => {
+        if (!d.valid) return
+        const k = d.code + '|' + d.size
+        if (seen.has(k)) { d.status = 'duplicate'; d.valid = false; d.error = '파일 내 중복 (동일 품번/사이즈)' }
+        else seen.add(k)
+      })
+      renderLocUploadPreview()
+    } catch (err) {
+      showToast('파일 읽기 오류: ' + (err && err.message), 'error')
+    }
+  }
+  reader.readAsArrayBuffer(file)
+}
+
+function renderLocUploadPreview() {
+  const area = document.getElementById('locUpPreviewArea'); if (area) area.style.display = 'block'
+  const cnt = (f) => _locUpData.filter(f).length
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v }
+  set('locUpTotalCount', _locUpData.length)
+  set('locUpApplyCount', cnt(d => d.status === 'apply'))
+  set('locUpNoopCount', cnt(d => d.status === 'noop'))
+  set('locUpMissCount', cnt(d => d.status === 'unmatched' || d.status === 'incomplete'))
+  set('locUpDupCount', cnt(d => d.status === 'mismatch' || d.status === 'duplicate'))
+  set('locUpBlankCount', cnt(d => d.status === 'blank'))
+  const body = document.getElementById('locUpPreviewBody')
+  if (body) body.innerHTML = _locUpData.map(d => {
+    const m = _LOCUP_META[d.status] || _LOCUP_META.incomplete
+    const codeCell = esc(d.code || d.rawCode) + (d.method === 'B' ? ' <span style="font-size:10px;color:var(--text-muted)">(바코드)</span>' : '')
+    return `<tr class="${m.cls}">
+      <td>${m.badge}</td>
+      <td>${codeCell}</td>
+      <td style="text-align:center">${esc(d.size || d.rawSize)}</td>
+      <td style="font-family:monospace">${esc(d.barcode) || '-'}</td>
+      <td>${d.fromLoc ? esc(d.fromLoc) : '<span style="color:var(--text-muted)">(없음)</span>'}</td>
+      <td><strong>${esc(d.newLoc) || '-'}</strong></td>
+      <td style="font-size:11px;color:var(--danger)">${esc(d.error || '')}</td>
+    </tr>`
+  }).join('')
+  const btn = document.getElementById('locUpConfirmBtn')
+  if (btn) btn.disabled = cnt(d => d.valid) === 0
+}
+
+// 확정 — 반영(apply) 행만 safe-chunk 로 위치 이동 apply(sizeLocations-only + location-move 원장). 재고/바코드 무접촉.
+async function confirmLocUpload() {
+  if (_locUpInFlight) return
+  const store = _locUpStore || (typeof resolveActiveStore === 'function' ? resolveActiveStore() : '') || ''
+  if (!store) { showToast('대상 매장이 없습니다', 'warning'); return }
+  const act = _locUpData.filter(d => d.valid).map(d => ({ code: d.code, size: d.size, fromLocation: String(d.fromLoc || ''), toLocation: d.newLoc }))
+  if (!act.length) { showToast('반영할 위치가 없습니다', 'warning'); return }
+  if (!db) { showToast('서버 연결 없음', 'warning'); return }
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) { showToast('오프라인 상태 — 연결 확인 후 반영하세요', 'warning'); return }
+  const btn = document.getElementById('locUpConfirmBtn')
+  try {
+    _locUpInFlight = true
+    if (btn) { btn.disabled = true; if (btn.dataset.orig == null) btn.dataset.orig = btn.textContent; btn.textContent = '반영 중…' }
+    const uid = (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) ? firebase.auth().currentUser.uid : ''
+    const workerName = (typeof formatUserName === 'function')
+      ? formatUserName(_currentUserName, (typeof _currentUserPosition !== 'undefined' ? _currentUserPosition : ''))
+      : ((typeof _currentUserName !== 'undefined' && _currentUserName) || '')
+    const nowIso = new Date().toISOString()
+    const dateKey = kstDateKey()
+    const locNo = generateLocNo()
+    const batchId = dateKey + '_' + (uid || 'x') + '_' + Date.now()
+    // 🔴 safe-chunk: 위치=SET-overwrite(상쇄 아님) → 청크 안전(6d baseline 근거). 행 200개/배치(코드+원장 doc<500 여유).
+    //   결정적 id {locNo}_{글로벌seq} · 중간 실패 시 반영된 청크=유효(무손상), 재업로드는 no-op-skip 로 안전 재개.
+    const CHUNK = 200
+    let applied = 0, seq = 0
+    for (let i = 0; i < act.length; i += CHUNK) {
+      const slice = act.slice(i, i + CHUNK)
+      const batch = db.batch()
+      const byCode = {}
+      slice.forEach(l => { (byCode[l.code] || (byCode[l.code] = {}))[l.size] = l.toLocation })   // 🔴 sizeLocations 만
+      Object.keys(byCode).forEach(code => {
+        batch.set(db.collection('storeStock').doc(storeStockDocId(store, code)), {
+          storeId: store, productCode: code, sizeLocations: byCode[code], updatedAt: nowIso   // no sizes/defectSizes/barcodes
+        }, { merge: true })
+      })
+      slice.forEach(l => {
+        seq++
+        batch.set(db.collection('storeInbound').doc(locNo + '_' + String(seq).padStart(4, '0')), {
+          storeId: store, productCode: l.code, size: l.size,
+          moveType: 'location-move', qty: 0, stockDelta: 0, defectDelta: 0,
+          fromLocation: l.fromLocation, toLocation: l.toLocation, location: l.toLocation,
+          inboundNo: locNo, inboundType: '위치이동', reason: '', memo: '엑셀 업로드',
+          workerUid: uid, workerName: workerName, confirmedAt: nowIso, dateKey: dateKey, batchId: batchId
+        })
+      })
+      try {
+        await batch.commit()
+        applied += slice.length
+      } catch (e) {
+        // 중간 실패: 반영된 청크는 유효(무손상). 나머지는 같은 파일 재업로드 시 no-op-skip 로 안전 재개.
+        console.error('confirmLocUpload 청크 실패:', e && e.message)
+        const denied = e && (e.code === 'permission-denied' || e.code === 7 || /permission/i.test(String(e.message || '')))
+        try { if (typeof buildStoreStockIndex === 'function') await buildStoreStockIndex(store) } catch (e2) {}
+        if (typeof renderStoreStockView === 'function') renderStoreStockView()
+        showToast((denied ? '권한 오류' : '반영 실패') + ' — ' + applied + '/' + act.length + '건 반영됨. 같은 파일을 다시 업로드하면 안전하게 이어집니다(반영된 행은 변화없음으로 건너뜀)', 'error')
+        if (typeof logActivity === 'function' && applied) logActivity('location-move', '로케이션 엑셀 업로드', _storeNameById(store) + '(' + store + '): ' + locNo + ' · ' + applied + '/' + act.length + '건(부분) · ' + (e && e.message || ''))
+        return
+      }
+    }
+    if (typeof logActivity === 'function') logActivity('location-move', '로케이션 엑셀 업로드', _storeNameById(store) + '(' + store + '): ' + locNo + ' · ' + applied + '건')
+    try { if (typeof buildStoreStockIndex === 'function') await buildStoreStockIndex(store) } catch (e) {}
+    if (typeof renderStoreStockView === 'function') renderStoreStockView()
+    const excluded = _locUpData.length - applied
+    showToast('위치 반영 완료 · ' + applied + '건' + (excluded > 0 ? ' · 제외 ' + excluded + '건' : ''), 'success')
+    closeLocUploadModal()
+  } catch (e) {
+    console.error('confirmLocUpload 예외:', e && e.message)
+    showToast('반영 실패 — 다시 시도하세요' + (e && e.message ? ' (' + e.message + ')' : ''), 'error')
+  } finally {
+    _locUpInFlight = false
+    if (btn) { btn.disabled = false; if (btn.dataset.orig != null) { btn.textContent = btn.dataset.orig; delete btn.dataset.orig } }
+  }
+}
+
+window.downloadLocations = downloadLocations
+window.openLocUploadModal = openLocUploadModal
+window.closeLocUploadModal = closeLocUploadModal
+window.handleLocUpload = handleLocUpload
+window.confirmLocUpload = confirmLocUpload
+
 // ═══════════════════════════════════════════════════════════════
 // ===== POS Phase 6d — 품목 이동 원장(Unified Ledger) + 기준재고(baseline) + 대조(reconciliation) =====
 // ═══════════════════════════════════════════════════════════════

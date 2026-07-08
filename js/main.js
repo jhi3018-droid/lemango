@@ -83,6 +83,7 @@ async function initApp() {
   if (_locModal) _locModal.addEventListener('cancel', e => e.preventDefault())
   makeDraggableResizable(document.getElementById('locConfirmModal'), 380, 220)
   makeDraggableResizable(document.getElementById('locCloseConfirmModal'), 340, 180)
+  makeDraggableResizable(document.getElementById('locUploadModal'), 520, 340)   // 로케이션 엑셀 업로드 미리보기(ESC 닫힘 허용 — 서브 다이얼로그)
   // 품번 조회 창 = 빠른 서브 다이얼로그 → ESC 로 닫힘(작업 창과 별개). 닫힐 때 커서 복귀는 store.js 에서 처리.
   makeDraggableResizable(document.getElementById('inbLookupModal'), 420, 320)
   makeDraggableResizable(document.getElementById('inbCloseConfirmModal'), 340, 180)
@@ -120,6 +121,7 @@ async function initApp() {
     outgoingModal: closeOutgoingModal,
     barcodeUploadModal: closeBarcodeUploadModal,
     storeStockUploadModal: closeStoreStockUploadModal,
+    locUploadModal: closeLocUploadModal,
     workRegisterModal: closeWorkRegisterModal,
     planRegisterModal: closePlanRegisterModal,
     personalScheduleModal: closePersonalScheduleModal,

@@ -3051,6 +3051,12 @@
   <div class="inb-modal-body">
     <div id="locGate" class="inb-hidden"></div>
     <div id="locScreen" class="inb-screen inb-hidden">
+      <div class="loc-io-bar">
+        <span class="loc-io-label">엑셀:</span>
+        <button class="btn btn-outline btn-sm" onclick="downloadLocations()">⬇ 로케이션 다운로드</button>
+        <button class="btn btn-outline btn-sm" onclick="openLocUploadModal()">⬆ 로케이션 업로드</button>
+        <span class="loc-io-hint">다운로드(현재 위치) → 로케이션 열 편집 → 업로드 · 재고/바코드는 변경되지 않습니다</span>
+      </div>
       <div class="adj-top">
         <div class="adj-search-col">
           <div class="inb-field">
@@ -3113,6 +3119,43 @@
       <button class="btn inb-closeconf-discard" onclick="locCloseDiscard()">삭제하고 닫기</button>
     </div>
     <p class="inb-closeconf-hint">보존: 다시 열면 리스트 복원 · 삭제: 임시저장까지 지움 (되돌릴 수 없음)</p>
+  </div>
+</dialog>
+<!-- 로케이션 엑셀 업로드 (위치 이동 창) — 로케이션만 반영, 재고/바코드 무변경. 1e 재고 업로드 미리보기 UX 미러. -->
+<dialog id="locUploadModal" class="srm-modal" style="width:720px;max-height:82vh;padding:0;overflow:hidden;border-radius:10px">
+  <div class="srm-header modal-header" style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:move">
+    <span style="font-size:15px;font-weight:700;color:#fff">⬆ 로케이션 엑셀 업로드 <span id="locUpStoreName" class="inb-modal-store"></span></span>
+    <button class="modal-close" onclick="closeLocUploadModal()">×</button>
+  </div>
+  <div style="padding:18px;overflow-y:auto;flex:1">
+    <div class="bc-upload-area">
+      <p style="margin:0 0 6px;font-size:13px;color:var(--text-secondary)">엑셀 파일을 선택하세요 (품번 / 사이즈 / 바코드 / <strong>로케이션</strong>)</p>
+      <p style="margin:0 0 12px;font-size:12px;color:var(--text-muted)">행 구분: <strong>품번+사이즈</strong> 또는 <strong>바코드</strong> 중 하나로 상품 지정(바코드 우선) · <strong>로케이션</strong>만 반영됩니다. 🔴 재고 수량·바코드는 변경되지 않습니다. 상품명/브랜드 열은 참고용(무시).</p>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="file" id="locUpFile" accept=".xlsx,.xls,.csv" onchange="handleLocUpload(this)" />
+        <button class="btn btn-outline" onclick="downloadLocations()" style="white-space:nowrap">⬇ 현재 로케이션 다운로드</button>
+      </div>
+    </div>
+    <div id="locUpPreviewArea" style="display:none;margin-top:16px">
+      <div class="bc-summary" style="display:flex;gap:14px;font-size:13px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+        <span>총 <strong id="locUpTotalCount">0</strong>건</span>
+        <span style="color:var(--success)">반영 <strong id="locUpApplyCount">0</strong>건</span>
+        <span style="color:var(--text-muted)">변화없음 <strong id="locUpNoopCount">0</strong>건</span>
+        <span style="color:var(--danger)">미등록 <strong id="locUpMissCount">0</strong>건</span>
+        <span style="color:#1565c0">불일치/중복 <strong id="locUpDupCount">0</strong>건</span>
+        <span style="color:var(--warning)">빈위치 <strong id="locUpBlankCount">0</strong>건</span>
+      </div>
+      <div class="bc-preview-table-wrap" style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">
+        <table class="data-table" style="margin:0;font-size:13px">
+          <thead><tr><th style="width:74px">상태</th><th>품번</th><th style="width:56px">사이즈</th><th>바코드</th><th style="width:110px">현재 위치</th><th style="width:110px">새 위치</th><th style="width:180px">비고</th></tr></thead>
+          <tbody id="locUpPreviewBody"></tbody>
+        </table>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+        <button class="btn btn-outline" onclick="closeLocUploadModal()">취소</button>
+        <button class="btn btn-new" id="locUpConfirmBtn" onclick="confirmLocUpload()" disabled>위치 반영 확정</button>
+      </div>
+    </div>
   </div>
 </dialog>
 
