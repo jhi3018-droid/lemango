@@ -5733,6 +5733,25 @@ td[data-editable]:hover { background: #FAEEDA; }
 .ssv-neg { color: var(--danger); font-weight: 700; }
 .ssv-del-flag { font-size: 10px; color: var(--danger); background: rgba(224,82,82,0.12); border-radius: 3px; padding: 1px 5px; margin-left: 4px; }
 
+/* 재고현황 검색/조회 바 + 결과 패널 (07-08 — 로케이션 서브탭 대체) */
+.ssv-search-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; padding: 10px 12px; background: rgba(201,169,110,0.08); border: 1px solid var(--border); border-radius: 8px; }
+.ssv-search-input { flex: 1 1 280px; min-width: 200px; padding: 8px 10px; font-size: 14px; border: 1px solid var(--border); border-radius: 6px; }
+.ssv-search-input:focus { outline: none; border-color: var(--accent); }
+.ssv-search-hint { font-size: 11px; color: var(--text-muted); }
+.ssv-aux-panel { margin-bottom: 10px; }
+.ssv-aux-panel:empty { display: none; }
+.ssv-aux-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--primary); color: #fff; border-radius: 6px 6px 0 0; }
+.ssv-aux-title { flex: 1; font-size: 13px; font-weight: 700; }
+.ssv-aux-close { background: transparent; border: none; color: #fff; font-size: 15px; cursor: pointer; line-height: 1; padding: 2px 6px; }
+.ssv-aux-close:hover { color: var(--accent); }
+.ssv-aux-hit { padding: 12px; border: 1px solid var(--border); border-top: none; border-radius: 0 0 6px 6px; font-size: 13px; color: var(--primary); }
+.ssv-aux-empty { padding: 16px; text-align: center; font-size: 13px; color: var(--text-muted); border: 1px solid var(--border); border-radius: 6px; }
+.ssv-aux-tablewrap { max-height: 340px; overflow: auto; border: 1px solid var(--border); border-top: none; border-radius: 0 0 6px 6px; }
+.ssv-aux-table { margin: 0; font-size: 13px; }
+.ssv-aux-table thead th { position: sticky; top: 0; z-index: 2; background: var(--bg); color: var(--primary); }
+.ssv-aux-table .ssv-num { text-align: right; font-variant-numeric: tabular-nums; }
+.ssv-aux-table .ssv-c { text-align: center; }
+
 /* 매장 재고 상세 모달 */
 .ssv-detail-head { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 16px; }
 .ssv-detail-img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); flex-shrink: 0; }

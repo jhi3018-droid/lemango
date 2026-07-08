@@ -14,7 +14,7 @@ const STORE_SUBS = [
   { key: 'stock',     label: '매장별 재고현황' },
   { key: 'discount',  label: '매장 할인 상품 관리' },
   { key: 'logistics', label: '물류 발주 확인' },   // R2 물류 뷰(07-07 top-level 탭에서 이전) — 전 매장 발주 조회 + 확인✓/발송✓
-  { key: 'location',  label: '로케이션' },
+  // 로케이션 서브탭 제거(07-08) — 로케이션 조회는 재고현황 검색(바코드/품번) + 공유 상세 모달(사이즈별 정상/불량/로케이션)로 대체.
 ]
 
 // 현재 선택된 서브탭 (재렌더 시 유지). 기본값: 매장별 재고현황 (1f 에서 실제 구현되는 화면)
@@ -991,6 +991,14 @@ async function renderStoreStockView() {
     </tr>`
   }).join('')
   body.innerHTML = `
+    <div class="ssv-search-bar">
+      <input id="ssvSearchInput" class="ssv-search-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+        placeholder="바코드 스캔 또는 품번 입력 (바코드=정확 · 품번=부분일치)" onkeydown="_ssvSearchKey(event)">
+      <button class="btn btn-outline" onclick="_ssvSearch()">🔍 조회</button>
+      <button class="btn btn-outline" onclick="_ssvShowDefects()">🔴 불량 재고</button>
+      <span class="ssv-search-hint">바코드 정확일치 → 상세 · 품번 부분일치 → 목록</span>
+    </div>
+    <div id="ssvAuxPanel" class="ssv-aux-panel"></div>
     <div class="ssv-meta">${esc(_storeNameById(store))} · 총 ${codes.length}품번</div>
     <div class="ssv-table-wrap">
       <table class="data-table ssv-table">
@@ -1068,6 +1076,116 @@ window.renderStoreStockView = renderStoreStockView
 window.openStoreProductDetail = openStoreProductDetail
 window.openStoreStockDetail = openStoreStockDetail
 window.closeStoreStockDetail = closeStoreStockDetail
+
+// =============================================
+// ===== 재고현황 조회/검색 + 불량 재고 목록 (07-08 — 로케이션 서브탭 대체) =====
+// =============================================
+// 검색 자동 감지: 입력이 등록 바코드와 정확히 일치하면 바코드로 취급(우선) → 역인덱스 findByBarcode(core.js O(1))
+//   로 (품번,사이즈) 해소 → 공유 상세 모달(openStoreProductDetail: 사이즈별 정상/불량/로케이션). 아니면 품번 부분일치
+//   (대소문자 무시 substring, 현재 매장 재고 범위 = _storeStockIndex[store] 키) → 결과 목록 → 클릭 시 공유 모달.
+// 🔴 우선순위: 등록 바코드 정확일치가 품번 부분일치보다 우선(exact-barcode-first). 재고 write 없음(순수 조회).
+let _ssvDefectRows = []   // 마지막 불량 재고 목록(엑셀 내보내기용)
+
+function _ssvAuxClear() { const aux = document.getElementById('ssvAuxPanel'); if (aux) aux.innerHTML = '' }
+function _ssvAuxMsg(msg) { return `<div class="ssv-aux-empty">${esc(msg)}</div>` }
+function _ssvSearchKey(ev) { if (ev && ev.key === 'Enter') { ev.preventDefault(); _ssvSearch() } }
+
+// 조회 — 바코드 정확(우선) 또는 품번 부분. 상품 화면 재빌드 없이 #ssvAuxPanel 에만 렌더.
+function _ssvSearch() {
+  const aux = document.getElementById('ssvAuxPanel'); if (!aux) return
+  const inp = document.getElementById('ssvSearchInput')
+  const raw = String((inp && inp.value) || '').trim()
+  const store = _ssvStore || ''
+  if (!store) { aux.innerHTML = _ssvAuxMsg('매장이 선택되지 않았습니다'); return }
+  if (!raw) { aux.innerHTML = _ssvAuxMsg('바코드를 스캔하거나 품번을 입력하세요'); return }
+  // (1) 바코드 정확일치 우선 — 역인덱스(findByBarcode). soft-deleted 는 buildBarcodeIndex 에서 이미 제외됨.
+  const hit = (typeof findByBarcode === 'function') ? findByBarcode(raw) : null
+  if (hit && hit.productCode) {
+    aux.innerHTML = `<div class="ssv-aux-head"><span class="ssv-aux-title">🔖 바코드 일치</span>
+        <button class="ssv-aux-close" onclick="_ssvAuxClear()" title="닫기">✕</button></div>
+      <div class="ssv-aux-hit">바코드 <strong>${esc(raw)}</strong> → <span class="code-link" onclick="openStoreProductDetail('${esc(hit.productCode)}','${esc(store)}')">${esc(hit.productCode)}</span> · 사이즈 <strong>${esc(hit.size)}</strong> — 상세 모달을 엽니다</div>`
+    openStoreProductDetail(hit.productCode, store)   // 공유 모달(사이즈별 정상/불량/로케이션)
+    return
+  }
+  // (2) 품번 부분일치(대소문자 무시) — 현재 매장 재고 범위(_storeStockIndex[store] 키)
+  const q = raw.toLowerCase()
+  const idx = (typeof _storeStockIndex !== 'undefined' && _storeStockIndex[store]) ? _storeStockIndex[store] : {}
+  const codes = Object.keys(idx).filter(c => String(c).toLowerCase().includes(q)).sort()
+  if (!codes.length) {
+    aux.innerHTML = `<div class="ssv-aux-head"><span class="ssv-aux-title">🔍 품번 검색: "${esc(raw)}"</span>
+        <button class="ssv-aux-close" onclick="_ssvAuxClear()">✕</button></div>
+      <div class="ssv-aux-empty">일치하는 품번이 없습니다 (현재 매장 재고 기준 · 바코드도 미등록)</div>`
+    return
+  }
+  const trs = codes.map(code => {
+    const p = _ssvFindProduct(code)
+    const name = p ? (esc(p.nameKr || p.nameEn || '') + (p.deleted ? ' <span class="ssv-del-flag">삭제된 상품</span>' : '')) : '<span style="color:var(--text-muted)">(상품 정보 없음)</span>'
+    const total = SIZES.reduce((s, sz) => s + Number((idx[code] || {})[sz] || 0), 0)
+    return `<tr>
+        <td><span class="code-link" onclick="openStoreProductDetail('${esc(code)}','${esc(store)}')">${esc(code)}</span></td>
+        <td>${name}</td>
+        <td class="ssv-num${total < 0 ? ' ssv-neg' : ''}">${total}</td>
+      </tr>`
+  }).join('')
+  aux.innerHTML = `<div class="ssv-aux-head"><span class="ssv-aux-title">🔍 품번 검색: "${esc(raw)}" · ${codes.length}건</span>
+      <button class="ssv-aux-close" onclick="_ssvAuxClear()">✕</button></div>
+    <div class="ssv-aux-tablewrap"><table class="data-table ssv-aux-table">
+      <thead><tr><th style="width:160px">품번</th><th>상품명</th><th class="ssv-num" style="width:84px">총재고</th></tr></thead>
+      <tbody>${trs}</tbody></table></div>`
+}
+
+// 불량 재고 목록 — 현재 매장의 defectSizes>0 (품번,사이즈)만. 인덱스 재빌드로 6c 전환 즉시 반영.
+async function _ssvShowDefects() {
+  const aux = document.getElementById('ssvAuxPanel'); if (!aux) return
+  const store = _ssvStore || ''
+  if (!store) { aux.innerHTML = _ssvAuxMsg('매장이 선택되지 않았습니다'); return }
+  aux.innerHTML = `<div class="ssv-aux-empty">불러오는 중…</div>`
+  try { if (typeof buildStoreStockIndex === 'function') await buildStoreStockIndex(store) } catch (e) {}
+  if (_ssvStore !== store) return   // 로드 중 매장 전환됐으면 무시(stale 방지)
+  const defIdx = (typeof _storeDefectIndex !== 'undefined' && _storeDefectIndex[store]) ? _storeDefectIndex[store] : {}
+  const rows = []
+  Object.keys(defIdx).sort().forEach(code => {
+    SIZES.forEach(sz => { const qv = Number((defIdx[code] || {})[sz] || 0); if (qv > 0) rows.push({ code, sz, q: qv }) })
+  })
+  _ssvDefectRows = rows.slice()
+  if (!rows.length) {
+    aux.innerHTML = `<div class="ssv-aux-head"><span class="ssv-aux-title">🔴 불량 재고 목록 · ${esc(_storeNameById(store))}</span>
+        <button class="ssv-aux-close" onclick="_ssvAuxClear()">✕</button></div>
+      <div class="ssv-aux-empty">불량 재고 없음</div>`
+    return
+  }
+  const trs = rows.map(r => `<tr>
+      <td><span class="code-link" onclick="openStoreProductDetail('${esc(r.code)}','${esc(store)}')">${esc(r.code)}</span></td>
+      <td class="ssv-c">${esc(r.sz)}</td>
+      <td class="ssv-num spd-defect-has">${r.q}</td>
+    </tr>`).join('')
+  aux.innerHTML = `<div class="ssv-aux-head"><span class="ssv-aux-title">🔴 불량 재고 목록 · ${rows.length}건 · ${esc(_storeNameById(store))}</span>
+      <button class="btn btn-outline btn-sm" onclick="downloadDefectList()">📤 엑셀</button>
+      <button class="ssv-aux-close" onclick="_ssvAuxClear()">✕</button></div>
+    <div class="ssv-aux-tablewrap"><table class="data-table ssv-aux-table">
+      <thead><tr><th style="width:160px">품번</th><th class="ssv-c" style="width:80px">사이즈</th><th class="ssv-num" style="width:100px">불량수량</th></tr></thead>
+      <tbody>${trs}</tbody></table></div>`
+}
+
+// 불량 재고 목록 엑셀(품번/사이즈/불량수량) — 소유주 최소 요구.
+function downloadDefectList() {
+  if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
+  const rows = _ssvDefectRows || []
+  if (!rows.length) { showToast('내보낼 불량 재고가 없습니다', 'warning'); return }
+  const store = _ssvStore || ''
+  const aoa = [['품번', '사이즈', '불량수량']].concat(rows.map(r => [r.code, r.sz, r.q]))
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  ws['!cols'] = [{ wch: 18 }, { wch: 8 }, { wch: 10 }]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '불량재고')
+  XLSX.writeFile(wb, '불량재고_' + (_storeNameById(store) || store || '매장') + '.xlsx')
+}
+
+window._ssvSearch = _ssvSearch
+window._ssvSearchKey = _ssvSearchKey
+window._ssvShowDefects = _ssvShowDefects
+window._ssvAuxClear = _ssvAuxClear
+window.downloadDefectList = downloadDefectList
 
 // =============================================
 // ===== 입고 스캔 (POS Phase 2b) =====
