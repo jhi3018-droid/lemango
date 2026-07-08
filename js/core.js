@@ -279,6 +279,9 @@ async function _fsReloadSharedSettings() {
     if (fsData.settings && typeof fsData.settings === 'object') {
       Object.keys(_settings).forEach(k => delete _settings[k])
       Object.assign(_settings, fsData.settings)
+      // 🔴 신규 DEFAULT 키 backfill — 기존 Firestore settings 문서(신규 관리 리스트 키 없음)로 전면 교체돼도
+      //    washMethods/productionStatuses 등 새 기본값이 사라지지 않도록 누락 키만 채움(기존 값은 불변).
+      Object.keys(DEFAULT_SETTINGS).forEach(k => { if (_settings[k] === undefined) _settings[k] = JSON.parse(JSON.stringify(DEFAULT_SETTINGS[k])) })
       localStorage.setItem('lemango_settings_v1', JSON.stringify(_settings))
     }
     if (Array.isArray(fsData.channels)) {
@@ -553,6 +556,9 @@ window._onSharedDataChanged = function(docId, data) {
         case 'settings':
           Object.keys(_settings).forEach(k => delete _settings[k])
           Object.assign(_settings, parsed || {})
+          // 🔴 신규 DEFAULT 키 backfill — 이 경로도 delete-all+교체(merge 아님)이며 초기 onSnapshot 로드 시 발화 →
+          //    신규 관리 리스트 키가 없는 구 Firestore settings 문서로 교체돼도 기본값 유지(누락 키만, 기존 값 불변).
+          Object.keys(DEFAULT_SETTINGS).forEach(k => { if (_settings[k] === undefined) _settings[k] = JSON.parse(JSON.stringify(DEFAULT_SETTINGS[k])) })
           localStorage.setItem('lemango_settings_v1', JSON.stringify(_settings))
           if (typeof populateAllSelects === 'function') populateAllSelects()
           console.log('[RealtimeSync] 설정 동기화')
@@ -1044,6 +1050,9 @@ const DEFAULT_SETTINGS = {
   transparencies: ['없음', '약간있음'],
   linings:        ['없음', '있음'],
   capRings:       ['없음', '있음'],
+  washMethods:    ['손세탁', '드라이클리닝', '기계세탁'],
+  // 🔴 생산상태 기본값 = 기존 rProductionStatus 하드코딩 세트와 동일(지속생산/생산중단/시즌한정/샘플) → 기존 상품 값 무효화 방지
+  productionStatuses: ['지속생산', '생산중단', '시즌한정', '샘플'],
 }
 
 const SETTING_DEFS = [
@@ -1055,9 +1064,11 @@ const SETTING_DEFS = [
   { key: 'transparencies', title: '비침',      group: 'design', type: 'simple', ph: '옵션명 (예: 없음)' },
   { key: 'linings',        title: '안감',      group: 'design', type: 'simple', ph: '옵션명 (예: 없음)' },
   { key: 'capRings',       title: '캡고리',    group: 'design', type: 'simple', ph: '옵션명 (예: 없음)' },
+  { key: 'washMethods',    title: '세탁방법',  group: 'design', type: 'simple', ph: '예: 손세탁' },
   // group: 'info'
   { key: 'brands',         title: '브랜드',    group: 'info',   type: 'simple', ph: '브랜드명 (예: 르망고)' },
   { key: 'saleStatuses',   title: '판매상태',  group: 'info',   type: 'simple', ph: '상태명 (예: 판매중)' },
+  { key: 'productionStatuses', title: '생산상태', group: 'info', type: 'simple', ph: '예: 지속생산' },
 ]
 
 // =============================================
@@ -1634,6 +1645,7 @@ function isIpAllowed(ip) {
 function populateSelect(id, items, withAll = false, withBlank = false) {
   const el = document.getElementById(id)
   if (!el) return
+  if (!Array.isArray(items)) items = []   // 방어: 누락 설정 키(undefined) → 빈 목록(크래시 방지, 뒤 select 들도 계속 채워짐)
   const current = el.value
   let html = ''
   if (withAll)   html += '<option value="all">전체</option>'
@@ -1680,7 +1692,7 @@ function populateAllSelects() {
   populateSelect('rLining',      s.linings,         false, true)
   populateSelect('rCapRing',     s.capRings,        false, true)
   populateSelect('rSaleStatus',  s.saleStatuses)
-  populateSelect('rProductionStatus', ['지속생산','생산중단','시즌한정','샘플'])
+  populateSelect('rProductionStatus', s.productionStatuses)
   // 신규기획 모달 폼
   populateSelect('plBrand',      s.brands)
   populateSelect('plType',       s.types,           false, true)
