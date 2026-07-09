@@ -32,6 +32,35 @@ function loadPlanItems() {
 window.savePlanItems = savePlanItems
 window.loadPlanItems = loadPlanItems
 
+// 🔴 기획 항목 식별자 = `no` (내부 유일 id). 다음 no = 기존 최대값+1 (length+1 금지 — 삭제 gap 시 충돌).
+function _nextPlanNo() {
+  let maxNo = 0
+  ;(State.planItems || []).forEach(p => { const n = Number(p && p.no); if (Number.isFinite(n)) maxNo = Math.max(maxNo, n) })
+  return maxNo + 1
+}
+// 🔴 `no` 유일성 복구(in-memory·idempotent·배열순서 deterministic → 전 클라 동일 결과).
+//   과거 length+1 버그로 중복된 no 를 제거: 첫 등장은 유지, 이후 중복/누락은 fresh max+1 로 재배정.
+//   중복 no 는 openPlanDetailModal(find p.no===no)이 '첫 항목'을 반환 → 엉뚱한 항목 열림/저장의 근본원인.
+function _ensureUniquePlanNos() {
+  const items = State.planItems
+  if (!Array.isArray(items) || items.length < 2) return false
+  let maxNo = 0
+  items.forEach(p => { const n = Number(p && p.no); if (Number.isFinite(n)) maxNo = Math.max(maxNo, n) })
+  const seen = new Set()
+  let changed = false
+  items.forEach(p => {
+    if (!p) return
+    let n = Number(p.no)
+    if (!Number.isFinite(n) || seen.has(n)) { n = ++maxNo; changed = true }
+    // 🔴 항상 number 로 정규화(레거시 문자열 no "5" → 5): openPlanDetailModal 의 strict `p.no===no`(no=Number(data-no)) 정합
+    if (p.no !== n) { p.no = n; changed = true }
+    seen.add(n)
+  })
+  return changed
+}
+window._nextPlanNo = _nextPlanNo
+window._ensureUniquePlanNos = _ensureUniquePlanNos
+
 
 
 function openPlanRegisterModal(item) {
@@ -326,8 +355,8 @@ async function submitPlanRegister(e) {
   const sampleNo = document.getElementById('plSampleNo').value.trim()
   if (!sampleNo) { showToast('샘플번호는 필수입니다.', 'error'); return }
 
-  // 신규 planNo 예약
-  const newPlanNo = State.planItems.length + 1
+  // 신규 planNo 예약 — 🔴 max+1 (length+1 금지: 삭제 gap 시 기존 no 와 충돌 → 식별 붕괴)
+  const newPlanNo = _nextPlanNo()
 
   // 대기 중 파일 Storage 업로드
   const pendingCount = _planTempImages.filter(i => i._pending && i._file).length
@@ -704,7 +733,7 @@ const PLAN_REGULAR_COLS = [
   { key:'sampleNo',   label:'샘플번호',fixed:false, thAttr:'data-key="sampleNo"',
     td: p=>`<td><span class="code-link" onclick="openPlanDetailModal(${p.no})">${p.sampleNo}</span></td>` },
   { key:'productCode',label:'품번',   fixed:true,  thAttr:'data-key="productCode" style="width:145px"',
-    td: p=>`<td>${p.productCode?`<span class="code-link" onclick="openDetailModal('${p.productCode}')">${p.productCode}</span>`:`<span style="color:var(--text-muted);font-size:12px">-</span>`}</td>` },
+    td: p=>`<td>${p.productCode?`<span class="code-link" onclick="openPlanDetailModal(${p.no})">${p.productCode}</span>`:`<span style="color:var(--text-muted);font-size:12px">-</span>`}</td>` },
   { key:'brand',      label:'브랜드', fixed:false, thAttr:'data-key="brand"',
     td: p=>`<td style="font-size:12px">${p.brand||'-'}</td>` },
   { key:'nameKr',     label:'상품명', fixed:false, thAttr:'data-key="nameKr"',
@@ -732,6 +761,7 @@ function _getPlanAllCols() { return [...PLAN_REGULAR_COLS, ..._getPlanScheduleCo
 function _getPlanFixedKeys() { return _getPlanAllCols().filter(c=>c.fixed).map(c=>c.key) }
 
 function renderPlanTable() {
+  _ensureUniquePlanNos()   // 🔴 렌더 전 no 유일성 보장 → 행 data-no 와 open/save 식별이 항상 정확
   const _favArea = document.getElementById('planFavArea')
   if (_favArea && typeof renderFavoritesBar === 'function') _favArea.innerHTML = renderFavoritesBar('plan')
   const PLAN_ALL_COLS = _getPlanAllCols()
