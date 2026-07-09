@@ -1448,8 +1448,8 @@ window.copySizeGuideHtml = function() {
   if (typeof _detailCode !== 'undefined' && _detailCode) {
     p = State.allProducts.find(x => x.productCode === _detailCode) || null
   }
-  if (!p && typeof _editingPlanNo !== 'undefined' && _editingPlanNo != null) {
-    p = (State.planItems || []).find(x => x.no === _editingPlanNo) || null
+  if (!p && typeof _editingPlanId !== 'undefined' && _editingPlanId != null) {
+    p = (State.planItems || []).find(x => x.id === _editingPlanId) || null
   }
   if (!p) { showToast('상품 데이터를 찾을 수 없습니다.', 'warning'); return }
 
@@ -1695,7 +1695,7 @@ function initInlineEdit(tableId, tabKey) {
 function _startInlineEdit(td, tabKey, id, key) {
   const item = tabKey === 'product'
     ? State.allProducts.find(p => p.productCode === id)
-    : State.planItems.find(p => p.no === id)
+    : State.planItems.find(p => p.id === id)
   if (!item) return
   const curRaw = item[key] != null ? item[key] : ''
   const origHtml = td.innerHTML
@@ -1748,7 +1748,7 @@ function _startInlineEdit(td, tabKey, id, key) {
 function saveInlineEdit(tabKey, id, key, value) {
   const item = tabKey === 'product'
     ? State.allProducts.find(p => p.productCode === id)
-    : State.planItems.find(p => p.no === id)
+    : State.planItems.find(p => p.id === id)
   if (!item) return
   item[key] = value
   if (typeof stampModified === 'function') { try { stampModified(item) } catch(_){} }

@@ -243,12 +243,12 @@ function checkPlanAlerts() {
       const sch = it.schedule[def.key]
       if (!sch || !sch.end) return
       if (sch.end < today) {
-        addNotification('plan_deadline', `기획 지연: ${def.label}`, `${it.productCode || it.nameKr || ''} ${def.label} ${sch.end} 지연`, '#plan:' + it.no)
+        addNotification('plan_deadline', `기획 지연: ${def.label}`, `${it.productCode || it.nameKr || ''} ${def.label} ${sch.end} 지연`, '#plan:' + it.id)
       } else if (sch.end === today) {
-        addNotification('plan_deadline', `기획 D-Day: ${def.label}`, `${it.productCode || it.nameKr || ''} ${def.label} 오늘 마감`, '#plan:' + it.no)
+        addNotification('plan_deadline', `기획 D-Day: ${def.label}`, `${it.productCode || it.nameKr || ''} ${def.label} 오늘 마감`, '#plan:' + it.id)
       } else if (sch.end > today && sch.end <= soon) {
         const days = Math.ceil((new Date(sch.end) - new Date(today)) / 86400000)
-        addNotification('plan_deadline', `기획 D-${days}: ${def.label}`, `${it.productCode || it.nameKr || ''} ${def.label} ${sch.end} 마감`, '#plan:' + it.no)
+        addNotification('plan_deadline', `기획 D-${days}: ${def.label}`, `${it.productCode || it.nameKr || ''} ${def.label} ${sch.end} 마감`, '#plan:' + it.id)
       }
     })
   })
@@ -517,7 +517,7 @@ function openDashActivityPreview(type, no) {
   _dashInfoPostId = no
   let item = null, title = '', author = '', dateStr = '', content = ''
   if (type === 'plan') {
-    item = (State.planItems || []).find(x => x.no === no)
+    item = (State.planItems || []).find(x => x.id === no)
     if (!item) return
     title = '📋 ' + (item.productCode || item.sampleNo || '기획')
     author = item.createdByName || '-'
@@ -603,8 +603,8 @@ function renderDashActivity() {
       items.push({
         type: 'plan', label: '기획',
         text: (p.productCode || p.sampleNo || '') + ' ' + (p.nameKr || ''),
-        date: d, sortTs: _ts(d) || (p.no || 0),
-        onclick: `openDashActivityPreview('plan',${p.no})`, refId: p.no
+        date: d, sortTs: _ts(d) || (p.id || 0),
+        onclick: `openDashActivityPreview('plan',${p.id})`, refId: p.id
       })
     })
   }
@@ -861,7 +861,7 @@ function renderDashCalendar() {
         if (!dateItems[d]) dateItems[d] = { events: [], plans: [], works: [], personal: [] }
         const isStart = (d === phase.start)
         const tag = isStart ? '시작' : '완료'
-        if (!dateItems[d].plans.find(x => x.item.no === item.no && x.phaseKey === def.key && x.tag === tag)) {
+        if (!dateItems[d].plans.find(x => x.item.id === item.id && x.phaseKey === def.key && x.tag === tag)) {
           dateItems[d].plans.push({ item, phaseKey: def.key, phaseLabel: def.label, phase, tag })
         }
       })

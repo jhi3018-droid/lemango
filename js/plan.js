@@ -32,34 +32,44 @@ function loadPlanItems() {
 window.savePlanItems = savePlanItems
 window.loadPlanItems = loadPlanItems
 
-// 🔴 기획 항목 식별자 = `no` (내부 유일 id). 다음 no = 기존 최대값+1 (length+1 금지 — 삭제 gap 시 충돌).
-function _nextPlanNo() {
-  let maxNo = 0
-  ;(State.planItems || []).forEach(p => { const n = Number(p && p.no); if (Number.isFinite(n)) maxNo = Math.max(maxNo, n) })
-  return maxNo + 1
+// 🔴 기획 항목 identity = `id`(전용·불변·영구유일·재사용 금지). `no`=순수 표시용 행번호(현재 뷰 위치 1~N, 식별 아님).
+//   다음 id = 기존 id 최대 + 1 (숫자 monotonic counter). 생성/업로드/복제가 사용.
+function _nextPlanId() {
+  let maxId = 0
+  ;(State.planItems || []).forEach(p => { const n = Number(p && p.id); if (Number.isFinite(n)) maxId = Math.max(maxId, n) })
+  return maxId + 1
 }
-// 🔴 `no` 유일성 복구(in-memory·idempotent·배열순서 deterministic → 전 클라 동일 결과).
-//   과거 length+1 버그로 중복된 no 를 제거: 첫 등장은 유지, 이후 중복/누락은 fresh max+1 로 재배정.
-//   중복 no 는 openPlanDetailModal(find p.no===no)이 '첫 항목'을 반환 → 엉뚱한 항목 열림/저장의 근본원인.
-function _ensureUniquePlanNos() {
+// 🔴 id 백필 마이그레이션(1회·결정적·persist once). id 없는 항목에 부여:
+//   ⓐ 기존 저장 `no` 를 id 로 채택(고유하면) → comments/watch/lock 등 no-keyed 레거시 참조 그대로 유지.
+//     중복/누락 no 는 fresh max+1 (그 항목 참조는 어차피 중복 no 로 모호했음 → 손실 아닌 모호성 해소).
+//   idempotent: 전 항목 id 보유 후 재실행=무변경. deterministic: 배열순서+값에만 의존(Date/random 없음).
+function _ensurePlanIds() {
   const items = State.planItems
-  if (!Array.isArray(items) || items.length < 2) return false
-  let maxNo = 0
-  items.forEach(p => { const n = Number(p && p.no); if (Number.isFinite(n)) maxNo = Math.max(maxNo, n) })
+  if (!Array.isArray(items) || !items.length) return false
   const seen = new Set()
+  let maxId = 0
+  items.forEach(p => {
+    if (!p) return
+    const i = Number(p.id); if (Number.isFinite(i)) maxId = Math.max(maxId, i)
+    const n = Number(p.no); if (Number.isFinite(n)) maxId = Math.max(maxId, n)
+  })
   let changed = false
   items.forEach(p => {
     if (!p) return
-    let n = Number(p.no)
-    if (!Number.isFinite(n) || seen.has(n)) { n = ++maxNo; changed = true }
-    // 🔴 항상 number 로 정규화(레거시 문자열 no "5" → 5): openPlanDetailModal 의 strict `p.no===no`(no=Number(data-no)) 정합
-    if (p.no !== n) { p.no = n; changed = true }
-    seen.add(n)
+    let id = Number(p.id)
+    if (!Number.isFinite(id)) {
+      const legacyNo = Number(p.no)
+      id = (Number.isFinite(legacyNo) && !seen.has(legacyNo)) ? legacyNo : ++maxId
+      p.id = id; changed = true
+    } else if (seen.has(id)) {
+      id = ++maxId; p.id = id; changed = true
+    }
+    seen.add(id)
   })
   return changed
 }
-window._nextPlanNo = _nextPlanNo
-window._ensureUniquePlanNos = _ensureUniquePlanNos
+window._nextPlanId = _nextPlanId
+window._ensurePlanIds = _ensurePlanIds
 
 
 
@@ -355,14 +365,14 @@ async function submitPlanRegister(e) {
   const sampleNo = document.getElementById('plSampleNo').value.trim()
   if (!sampleNo) { showToast('샘플번호는 필수입니다.', 'error'); return }
 
-  // 신규 planNo 예약 — 🔴 max+1 (length+1 금지: 삭제 gap 시 기존 no 와 충돌 → 식별 붕괴)
-  const newPlanNo = _nextPlanNo()
+  // 신규 기획 identity 예약 — 🔴 불변 id = max(id)+1 (no 는 표시용이라 식별에 안 씀)
+  const newPlanId = _nextPlanId()
 
-  // 대기 중 파일 Storage 업로드
+  // 대기 중 파일 Storage 업로드 (Storage 폴더 = id)
   const pendingCount = _planTempImages.filter(i => i._pending && i._file).length
   if (pendingCount) {
     showToast(`참고 이미지 업로드 중... (${pendingCount}개)`, 'info')
-    try { await _uploadPendingPlanTempImages(newPlanNo) }
+    try { await _uploadPendingPlanTempImages(newPlanId) }
     catch (err) { showToast('이미지 업로드 실패: ' + err.message, 'error'); return }
   }
 
@@ -390,7 +400,7 @@ async function submitPlanRegister(e) {
 
   const val = (id) => document.getElementById(id)?.value.trim() || ''
   const item = {
-    no:          newPlanNo,
+    id:          newPlanId,
     sampleNo,
     productCode: document.getElementById('plProductCode').value.trim() || '',
     brand:       document.getElementById('plBrand').value,
@@ -720,8 +730,8 @@ function resetPlan() {
 
 // 신규기획 컬럼 정의 — regular(rowspan=2) + schedule group(colspan=2)
 const PLAN_REGULAR_COLS = [
-  { key:'no',         label:'No.',    fixed:false, thAttr:'data-key="no" data-no-filter style="width:45px;text-align:center"',
-    td: p=>`<td style="text-align:center">${p.no}${p.confirmed?'<br><span style="font-size:9px;background:var(--success);color:#fff;padding:1px 5px;border-radius:8px">이전됨</span>':''}</td>` },
+  { key:'no',         label:'No.',    fixed:false, thAttr:'data-key="no" data-no-sort data-no-filter style="width:45px;text-align:center"',
+    td: (p, rowNo)=>`<td style="text-align:center">${rowNo != null ? rowNo : ''}${p.confirmed?'<br><span style="font-size:9px;background:var(--success);color:#fff;padding:1px 5px;border-radius:8px">이전됨</span>':''}</td>` },
   { key:'_image',     label:'이미지', fixed:false, thAttr:'data-no-sort data-no-filter style="width:60px"',
     td: p=>{
       const url = getPlanThumbUrl(p)
@@ -731,9 +741,9 @@ const PLAN_REGULAR_COLS = [
       return `<td><div class="${cls}"><img src="${url}" onerror="this.onerror=null;this.src=PLACEHOLDER_IMG" />${tag}</div></td>`
     } },
   { key:'sampleNo',   label:'샘플번호',fixed:false, thAttr:'data-key="sampleNo"',
-    td: p=>`<td><span class="code-link" onclick="openPlanDetailModal(${p.no})">${p.sampleNo}</span></td>` },
+    td: p=>`<td><span class="code-link" onclick="openPlanDetailModal(${p.id})">${p.sampleNo}</span></td>` },
   { key:'productCode',label:'품번',   fixed:true,  thAttr:'data-key="productCode" style="width:145px"',
-    td: p=>`<td>${p.productCode?`<span class="code-link" onclick="openPlanDetailModal(${p.no})">${p.productCode}</span>`:`<span style="color:var(--text-muted);font-size:12px">-</span>`}</td>` },
+    td: p=>`<td>${p.productCode?`<span class="code-link" onclick="openPlanDetailModal(${p.id})">${p.productCode}</span>`:`<span style="color:var(--text-muted);font-size:12px">-</span>`}</td>` },
   { key:'brand',      label:'브랜드', fixed:false, thAttr:'data-key="brand"',
     td: p=>`<td style="font-size:12px">${p.brand||'-'}</td>` },
   { key:'nameKr',     label:'상품명', fixed:false, thAttr:'data-key="nameKr"',
@@ -761,7 +771,8 @@ function _getPlanAllCols() { return [...PLAN_REGULAR_COLS, ..._getPlanScheduleCo
 function _getPlanFixedKeys() { return _getPlanAllCols().filter(c=>c.fixed).map(c=>c.key) }
 
 function renderPlanTable() {
-  _ensureUniquePlanNos()   // 🔴 렌더 전 no 유일성 보장 → 행 data-no 와 open/save 식별이 항상 정확
+  // 🔴 렌더 전 id 백필(1회 persist). id 있는 항목만 있으면 무변경 → 재저장 없음.
+  if (_ensurePlanIds() && typeof savePlanItems === 'function') savePlanItems().catch(()=>{})
   const _favArea = document.getElementById('planFavArea')
   if (_favArea && typeof renderFavoritesBar === 'function') _favArea.innerHTML = renderFavoritesBar('plan')
   const PLAN_ALL_COLS = _getPlanAllCols()
@@ -808,9 +819,11 @@ function renderPlanTable() {
   ).join('')
 
   const _today = new Date().toISOString().slice(0, 10)
-  const tbodyHtml = pageData.map(p => {
-    const isChecked = _planSelected.has(p.no)
-    const regTds = activeRegular.map(c => c.td(p)).join('')
+  const _rowBase = (ps === 0 ? 0 : (page - 1) * ps)   // 🔴 No. = 현재 뷰 위치(1~N), 식별 아님
+  const tbodyHtml = pageData.map((p, _pi) => {
+    const rowNo = _rowBase + _pi + 1
+    const isChecked = _planSelected.has(p.id)
+    const regTds = activeRegular.map(c => c.td(p, rowNo)).join('')
     const schTds = activeSchedule.map(c => {
       const sch = p.schedule?.[c.scheduleKey] || {}
       let cellCls = 'schedule-date-cell'
@@ -828,7 +841,7 @@ function renderPlanTable() {
              `<td class="${cellCls}">${fmtD(sch.end)}${delayBadge}</td>`
     }).join('')
     const cls = [isChecked ? 'np-selected' : '', p.confirmed ? '' : ''].filter(Boolean).join(' ')
-    return `<tr class="${cls}" data-no="${p.no}"${p.confirmed?' style="opacity:0.6"':''}><td><input type="checkbox" class="np-check" data-no="${p.no}" ${isChecked?'checked':''} onchange="updatePlanSelection()"></td>${regTds}${schTds}</tr>`
+    return `<tr class="${cls}" data-id="${p.id}"${p.confirmed?' style="opacity:0.6"':''}><td><input type="checkbox" class="np-check" data-id="${p.id}" ${isChecked?'checked':''} onchange="updatePlanSelection()"></td>${regTds}${schTds}</tr>`
   }).join('')
 
   document.getElementById('npTableWrap').innerHTML = `
@@ -855,8 +868,8 @@ function renderPlanTable() {
   // initInlineEdit('planTable', 'plan') — intentionally not wired
   // Feature 12: row double-click → detail (now also covers cells previously inline-editable)
   initRowDblClick('planTable', (tr) => {
-    const no = Number(tr.getAttribute('data-no'))
-    if (!Number.isNaN(no)) openPlanDetailModal(no)
+    const id = Number(tr.getAttribute('data-id'))
+    if (!Number.isNaN(id)) openPlanDetailModal(id)
   })
 }
 
@@ -868,11 +881,11 @@ function initPlanDragSort() {
   if (!tbody) return
   const rows = Array.from(tbody.querySelectorAll('tr'))
   rows.forEach(tr => {
-    // skip rows with no data-no
-    if (!tr.hasAttribute('data-no')) {
-      // find first np-check checkbox for data-no fallback
+    // skip rows with no data-id
+    if (!tr.hasAttribute('data-id')) {
+      // find first np-check checkbox for data-id fallback
       const chk = tr.querySelector('.np-check')
-      if (chk) tr.setAttribute('data-no', chk.getAttribute('data-no'))
+      if (chk) tr.setAttribute('data-id', chk.getAttribute('data-id'))
     }
     tr.setAttribute('draggable', 'true')
     tr.addEventListener('dragstart', _planDragStart)
@@ -882,14 +895,14 @@ function initPlanDragSort() {
     tr.addEventListener('dragend', _planDragEnd)
   })
 }
-let _planDragSrcNo = null
+let _planDragSrcId = null
 function _planDragStart(e) {
   // don't start drag when starting from an input/checkbox
   const tag = (e.target.tagName || '').toLowerCase()
   if (['input','select','textarea','button','label'].includes(tag)) { e.preventDefault(); return }
-  _planDragSrcNo = Number(this.getAttribute('data-no'))
+  _planDragSrcId = Number(this.getAttribute('data-id'))
   this.classList.add('drag-row')
-  try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(_planDragSrcNo)) } catch(_){}
+  try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(_planDragSrcId)) } catch(_){}
 }
 function _planDragOver(e) {
   e.preventDefault()
@@ -900,18 +913,18 @@ function _planDragLeave() { this.classList.remove('drag-over') }
 function _planDrop(e) {
   e.preventDefault()
   this.classList.remove('drag-over')
-  const targetNo = Number(this.getAttribute('data-no'))
-  if (_planDragSrcNo == null || targetNo === _planDragSrcNo) return
+  const targetId = Number(this.getAttribute('data-id'))
+  if (_planDragSrcId == null || targetId === _planDragSrcId) return
   const arr = State.planItems
-  const from = arr.findIndex(x => x.no === _planDragSrcNo)
-  const to   = arr.findIndex(x => x.no === targetNo)
+  const from = arr.findIndex(x => x.id === _planDragSrcId)
+  const to   = arr.findIndex(x => x.id === targetId)
   if (from < 0 || to < 0) return
   const [moved] = arr.splice(from, 1)
   arr.splice(to, 0, moved)
   // reflect in filtered order too
   if (State.plan && Array.isArray(State.plan.filtered)) {
-    const fFrom = State.plan.filtered.findIndex(x => x.no === _planDragSrcNo)
-    const fTo   = State.plan.filtered.findIndex(x => x.no === targetNo)
+    const fFrom = State.plan.filtered.findIndex(x => x.id === _planDragSrcId)
+    const fTo   = State.plan.filtered.findIndex(x => x.id === targetId)
     if (fFrom >= 0 && fTo >= 0) {
       const [m2] = State.plan.filtered.splice(fFrom, 1)
       State.plan.filtered.splice(fTo, 0, m2)
@@ -924,17 +937,17 @@ function _planDrop(e) {
 function _planDragEnd() {
   this.classList.remove('drag-row')
   document.querySelectorAll('#planTable tr.drag-over').forEach(tr => tr.classList.remove('drag-over'))
-  _planDragSrcNo = null
+  _planDragSrcId = null
 }
 window.initPlanDragSort = initPlanDragSort
 
 // ===== 신규기획 상세 모달 =====
-let _editingPlanNo = null
+let _editingPlanId = null
 
-async function openPlanDetailModal(no) {
-  const item = State.planItems.find(p => p.no === no)
+async function openPlanDetailModal(id) {
+  const item = State.planItems.find(p => p.id === id)
   if (!item) return
-  _editingPlanNo = no
+  _editingPlanId = id
   _planTempImages = Array.isArray(item.tempImages) ? item.tempImages.map(x => ({ ...x })) : []
   if ((!window._allUsers || window._allUsers.length === 0) && typeof loadAllUsers === 'function') {
     try { await loadAllUsers() } catch(e) {}
@@ -951,11 +964,11 @@ async function openPlanDetailModal(no) {
   centerModal(modal)
   _pdSyncWatchBtn()
   _pdSyncLockWarn()
-  loadComments('plan', no)
-  if (typeof pushModalHistory === 'function') pushModalHistory('plan', no)
+  loadComments('plan', id)
+  if (typeof pushModalHistory === 'function') pushModalHistory('plan', id)
   const favBtn = document.getElementById('pdFavBtn')
   if (favBtn) {
-    const on = typeof isFavorite === 'function' && isFavorite('plan', no)
+    const on = typeof isFavorite === 'function' && isFavorite('plan', id)
     favBtn.textContent = on ? '★' : '☆'
     favBtn.classList.toggle('fav-on', on)
   }
@@ -966,7 +979,7 @@ function closePlanDetailModal(force) {
   const doClose = () => {
     if (modal.classList.contains('edit-mode')) modal.classList.remove('edit-mode')
     if (_pdPendingCode) {
-      const currentItem = State.planItems.find(p => p.no === _editingPlanNo)
+      const currentItem = State.planItems.find(p => p.id === _editingPlanId)
       if (!currentItem || currentItem.productCode !== _pdPendingCode) {
         _reservedCodes.delete(_pdPendingCode)
       }
@@ -979,21 +992,21 @@ function closePlanDetailModal(force) {
     _planTempImages = []
     // 편집 취소 시 삭제 예약 무시 (실제 삭제 안 함)
     _planTempImagesToDelete = []
-    try { if (typeof releaseEditLock === 'function') releaseEditLock('plan', _editingPlanNo) } catch(e) {}
+    try { if (typeof releaseEditLock === 'function') releaseEditLock('plan', _editingPlanId) } catch(e) {}
     modal.close()
   }
   if (force) { doClose(); return }
   safeCloseModal(modal, () => modal.classList.contains('edit-mode'), doClose)
 }
 
-async function clonePlanItem(no) {
-  const original = State.planItems.find(item => item.no === no)
+async function clonePlanItem(id) {
+  const original = State.planItems.find(item => item.id === id)
   if (!original) return
   const ok = await korConfirm('이 기획 상품을 복제하시겠습니까?\n동일한 정보로 새 기획이 생성됩니다.', '복제', '취소')
   if (!ok) return
   const cloned = JSON.parse(JSON.stringify(original))
-  const maxNo = State.planItems.reduce((max, item) => Math.max(max, item.no || 0), 0)
-  cloned.no = maxNo + 1
+  delete cloned.no                 // no=표시용(렌더 시 계산) — 복제본은 저장 안 함
+  cloned.id = _nextPlanId()        // 🔴 복제본 = 새 불변 id
   if (cloned.sampleNo) cloned.sampleNo = cloned.sampleNo + '_copy'
   cloned.productCode = ''
   cloned.confirmed = false
@@ -1005,9 +1018,9 @@ async function clonePlanItem(no) {
   savePlanItems().catch(e => console.error(e))
   closePlanDetailModal(true)
   if (typeof renderPlanTable === 'function') renderPlanTable()
-  setTimeout(() => { openPlanDetailModal(cloned.no) }, 300)
+  setTimeout(() => { openPlanDetailModal(cloned.id) }, 300)
   showToast('기획 상품이 복제되었습니다.')
-  if (typeof logActivity === 'function') logActivity('create', '신규기획', '기획 복제 — ' + (original.sampleNo || original.productCode || 'NO.' + original.no))
+  if (typeof logActivity === 'function') logActivity('create', '신규기획', '기획 복제 — ' + (original.sampleNo || original.productCode || 'ID.' + original.id))
 }
 window.clonePlanItem = clonePlanItem
 
@@ -1054,7 +1067,7 @@ function selectPdDesign(code) {
 function updatePdProductCode() {
   // 🔴 공유 로직(product-code.js): 일련번호 basis=분류+연도+시즌 · 6개 필수 반려 게이트 · full-code 유일성은 apply 가드.
   //   편집 중 아이템의 기존 품번은 제외(같은 basis 재생성 허용).
-  const currentItem = State.planItems.find(p => p.no === _editingPlanNo)
+  const currentItem = State.planItems.find(p => p.id === _editingPlanId)
   pcodeRenderPreview({
     cls:       document.getElementById('pdCgCls')?.value,
     gen:       document.getElementById('pdCgGen')?.value,
@@ -1075,12 +1088,12 @@ function applyPdGeneratedCode() {
   const code = document.getElementById('pdCgPreview')?.textContent?.trim()
   if (!pcodeIsValidCode(code)) { showToast('품번 생성 반려 — 필수 입력(분류·성별·타입·디자인·연도·시즌)을 확인하세요.', 'warning'); return }
 
-  const currentItem = State.planItems.find(p => p.no === _editingPlanNo)
+  const currentItem = State.planItems.find(p => p.id === _editingPlanId)
   const currentOwnCode = currentItem?.productCode || ''
 
   // 최종 중복 검사 (자기 자신 기존 코드는 허용)
   if ((State.allProducts.some(p => p.productCode === code) ||
-       State.planItems.some(p => p.productCode === code && p.no !== _editingPlanNo) ||
+       State.planItems.some(p => p.productCode === code && p.id !== _editingPlanId) ||
        _reservedCodes.has(code)) && code !== currentOwnCode) {
     showToast(`품번 "${code}"은 이미 사용 중입니다.`, 'error')
     updatePdProductCode()
@@ -1112,7 +1125,7 @@ function _pdUpdateHeaderBtns(mode) {
     b.style.display = mode === 'edit' ? 'inline-block' : 'none'
   })
   // confirmBtn 숨김 상태(confirmed) 유지
-  const item = State.planItems.find(p => p.no === _editingPlanNo)
+  const item = State.planItems.find(p => p.id === _editingPlanId)
   if (item && item.confirmed) {
     const cb = document.getElementById('pdConfirmBtn')
     if (cb) cb.style.display = 'none'
@@ -1138,7 +1151,7 @@ window.canDeletePlanItem = canDeletePlanItem
 
 // Open delete confirmation modal — type-to-confirm pattern
 function requestPlanDelete() {
-  const item = State.planItems.find(p => p.no === _editingPlanNo)
+  const item = State.planItems.find(p => p.id === _editingPlanId)
   if (!item) return
   if (!canDeletePlanItem(item)) {
     showToast('삭제 권한이 없습니다 (작성자 또는 관리자만 가능).', 'warning')
@@ -1164,7 +1177,7 @@ function requestPlanDelete() {
   input.placeholder = expected
   document.getElementById('pdcConfirmBtn').disabled = true
   modal._pdcExpected = expected
-  modal._pdcTargetNo = item.no
+  modal._pdcTargetId = item.id
   if (typeof centerModal === 'function') centerModal(modal)
   modal.showModal()
   setTimeout(() => input.focus(), 80)
@@ -1193,8 +1206,8 @@ window.closePlanDeleteConfirm = closePlanDeleteConfirm
 async function confirmPlanDelete() {
   const modal = document.getElementById('planDeleteConfirmModal')
   if (!modal) return
-  const targetNo = modal._pdcTargetNo
-  const idx = State.planItems.findIndex(p => p.no === targetNo)
+  const targetId = modal._pdcTargetId
+  const idx = State.planItems.findIndex(p => p.id === targetId)
   if (idx < 0) {
     showToast('삭제 대상을 찾을 수 없습니다 (이미 삭제됨).', 'warning')
     closePlanDeleteConfirm()
@@ -1242,7 +1255,7 @@ async function confirmPlanDelete() {
 
   // Release any held edit lock
   try {
-    if (typeof releaseEditLock === 'function') releaseEditLock('plan', targetNo)
+    if (typeof releaseEditLock === 'function') releaseEditLock('plan', targetId)
   } catch (e) {}
 
   // Activity log
@@ -1264,8 +1277,8 @@ window.confirmPlanDelete = confirmPlanDelete
 
 function _pdSyncWatchBtn() {
   const btn = document.getElementById('pdWatchBtn')
-  if (!btn || _editingPlanNo == null) return
-  const on = typeof isWatching === 'function' && isWatching('plan', _editingPlanNo)
+  if (!btn || _editingPlanId == null) return
+  const on = typeof isWatching === 'function' && isWatching('plan', _editingPlanId)
   btn.textContent = on ? '💛' : '🤍'
   btn.classList.toggle('active', on)
 }
@@ -1274,7 +1287,7 @@ window._pdSyncWatchBtn = _pdSyncWatchBtn
 function _pdSyncLockWarn() {
   const el = document.getElementById('pdLockWarn')
   if (!el) return
-  const info = (typeof getEditLockInfo === 'function') ? getEditLockInfo('plan', _editingPlanNo) : null
+  const info = (typeof getEditLockInfo === 'function') ? getEditLockInfo('plan', _editingPlanId) : null
   if (info) {
     const _who = (typeof formatUserName === 'function') ? formatUserName(info.name, info.position) : (info.name || '다른 사용자')
     el.textContent = `🔒 ${_who} 편집중`; el.style.display = ''
@@ -1287,7 +1300,7 @@ function togglePlanDetailEdit() {
   const modal = document.getElementById('planDetailModal')
   const willEdit = !modal.classList.contains('edit-mode')
   if (willEdit) {
-    const info = (typeof getEditLockInfo === 'function') ? getEditLockInfo('plan', _editingPlanNo) : null
+    const info = (typeof getEditLockInfo === 'function') ? getEditLockInfo('plan', _editingPlanId) : null
     if (info) {
       const who = (typeof formatUserName === 'function') ? formatUserName(info.name, info.position) : (info.name || '다른 사용자')
       showToast(`${who}님이 편집 중입니다`, 'warn')
@@ -1295,12 +1308,12 @@ function togglePlanDetailEdit() {
       return
     }
     // 락 획득 실패 시 진입 차단 (TOCTOU 보호 — acquireEditLock 자체가 토스트 표시)
-    if (typeof acquireEditLock === 'function' && !acquireEditLock('plan', _editingPlanNo)) {
+    if (typeof acquireEditLock === 'function' && !acquireEditLock('plan', _editingPlanId)) {
       _pdSyncLockWarn()
       return
     }
   } else {
-    if (typeof releaseEditLock === 'function') releaseEditLock('plan', _editingPlanNo)
+    if (typeof releaseEditLock === 'function') releaseEditLock('plan', _editingPlanId)
   }
   const isEdit = modal.classList.toggle('edit-mode')
   _pdUpdateHeaderBtns(isEdit ? 'edit' : 'view')
@@ -1317,7 +1330,7 @@ async function confirmPlanWithCheck() {
 window.confirmPlanWithCheck = confirmPlanWithCheck
 
 async function savePlanDetailEdit() {
-  const item = State.planItems.find(p => p.no === _editingPlanNo)
+  const item = State.planItems.find(p => p.id === _editingPlanId)
   if (!item) return
   const modal = document.getElementById('planDetailModal')
 
@@ -1328,7 +1341,7 @@ async function savePlanDetailEdit() {
   const pendingCount = _planTempImages.filter(i => i._pending && i._file).length
   if (pendingCount) {
     showToast(`참고 이미지 업로드 중... (${pendingCount}개)`, 'info')
-    try { await _uploadPendingPlanTempImages(item.no) }
+    try { await _uploadPendingPlanTempImages(item.id) }
     catch (err) { showToast('이미지 업로드 실패: ' + err.message, 'error'); return }
   }
 
@@ -1403,8 +1416,8 @@ async function savePlanDetailEdit() {
   showToast('저장됐습니다.', 'success')
   logActivity('update', '신규기획', `기획수정: ${item.sampleNo || item.productCode}`)
   try {
-    if (typeof notifyWatchers === 'function') notifyWatchers('plan', item.no, '수정됨')
-    if (typeof releaseEditLock === 'function') releaseEditLock('plan', item.no)
+    if (typeof notifyWatchers === 'function') notifyWatchers('plan', item.id, '수정됨')
+    if (typeof releaseEditLock === 'function') releaseEditLock('plan', item.id)
   } catch(e) {}
 }
 
@@ -1416,6 +1429,7 @@ function _buildProductFromPlan(item) {
 
   const cloned = JSON.parse(JSON.stringify(item))
   delete cloned.no
+  delete cloned.id          // 🔴 상품 식별 = productCode. 기획 id 를 상품에 넘기지 않음
   delete cloned.schedule
   delete cloned.confirmed
   delete cloned.confirmedAt
@@ -1470,7 +1484,7 @@ function _stampConfirmedBy(obj) {
 }
 
 async function confirmPlanToProduct() {
-  const item = State.planItems.find(p => p.no === _editingPlanNo)
+  const item = State.planItems.find(p => p.id === _editingPlanId)
   if (!item) return
 
   if (!item.productCode || !item.productCode.trim()) {
@@ -1804,24 +1818,24 @@ function buildPlanDetailContent(item) {
     </div>
 
     ${renderStampInfo(item)}
-    ${buildCommentSection('plan', item.no)}`
+    ${buildCommentSection('plan', item.id)}`
 }
 
 // ===== 일괄 일정 설정 =====
 function togglePlanCheckAll(checked) {
   const data = applyColFilters(State.plan.filtered, State.plan.columnFilters)
   data.forEach(item => {
-    if (checked) _planSelected.add(item.no)
-    else _planSelected.delete(item.no)
+    if (checked) _planSelected.add(item.id)
+    else _planSelected.delete(item.id)
   })
   renderPlanTable()
 }
 
 function updatePlanSelection() {
   document.querySelectorAll('.np-check').forEach(cb => {
-    const no = parseInt(cb.dataset.no)
-    if (cb.checked) _planSelected.add(no)
-    else _planSelected.delete(no)
+    const id = parseInt(cb.dataset.id)
+    if (cb.checked) _planSelected.add(id)
+    else _planSelected.delete(id)
   })
   renderPlanToolbar()
   updateCheckAllState()
@@ -1831,7 +1845,7 @@ function updateCheckAllState() {
   const cb = document.getElementById('npCheckAll')
   if (!cb) return
   const data = applyColFilters(State.plan.filtered, State.plan.columnFilters)
-  const count = data.filter(item => _planSelected.has(item.no)).length
+  const count = data.filter(item => _planSelected.has(item.id)).length
   cb.checked = count === data.length && data.length > 0
   cb.indeterminate = count > 0 && count < data.length
 }
@@ -1903,7 +1917,7 @@ function applyBulkSchedule() {
 
   let count = 0
   State.planItems.forEach(item => {
-    if (!_planSelected.has(item.no)) return
+    if (!_planSelected.has(item.id)) return
     if (!item.schedule) item.schedule = {}
     keys.forEach(key => {
       const input = scheduleInput[key]
@@ -1934,7 +1948,7 @@ function applyBulkSchedule() {
 let _bulkConfirmInFlight = false
 async function applyBulkConfirm() {
   if (_bulkConfirmInFlight) return
-  const selected = State.planItems.filter(p => _planSelected.has(p.no))
+  const selected = State.planItems.filter(p => _planSelected.has(p.id))
   if (!selected.length) { showToast('상품을 먼저 선택해주세요.', 'warning'); return }
   const alreadyConfirmed = selected.filter(p => p.confirmed).length
   const pending = selected.filter(p => !p.confirmed)

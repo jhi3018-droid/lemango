@@ -1529,10 +1529,10 @@
       <span class="dmodal-code" id="pdSampleNo"></span>
     </div>
     <div class="dmodal-header-actions">
-      <button class="fav-star" id="pdFavBtn" onclick="toggleFavorite('plan', _editingPlanNo, document.getElementById('pdNameKr').textContent)" title="즐겨찾기">☆</button>
-      <button class="btn btn-sm btn-outline watch-btn" id="pdWatchBtn" onclick="toggleWatch('plan', _editingPlanNo, document.getElementById('pdNameKr').textContent); _pdSyncWatchBtn()" title="변경 알림">🤍</button>
+      <button class="fav-star" id="pdFavBtn" onclick="toggleFavorite('plan', _editingPlanId, document.getElementById('pdNameKr').textContent)" title="즐겨찾기">☆</button>
+      <button class="btn btn-sm btn-outline watch-btn" id="pdWatchBtn" onclick="toggleWatch('plan', _editingPlanId, document.getElementById('pdNameKr').textContent); _pdSyncWatchBtn()" title="변경 알림">🤍</button>
       <span class="edit-lock-warn" id="pdLockWarn" style="display:none"></span>
-      <button class="btn btn-sm btn-outline" id="pdCloneBtn" onclick="clonePlanItem(_editingPlanNo)">복제</button>
+      <button class="btn btn-sm btn-outline" id="pdCloneBtn" onclick="clonePlanItem(_editingPlanId)">복제</button>
       <button class="btn btn-sm btn-primary pd-view-btn" id="pdEditBtn" onclick="togglePlanDetailEdit()">수정</button>
       <button class="btn btn-sm btn-outline btn-danger-sm pd-edit-btn" id="pdDeleteBtn" onclick="requestPlanDelete()" style="display:none">삭제</button>
       <button class="btn btn-sm btn-primary pd-edit-btn" id="pdSaveBtn" onclick="savePlanDetailEdit()" style="display:none">저장</button>

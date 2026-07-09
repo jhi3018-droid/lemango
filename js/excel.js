@@ -2651,15 +2651,19 @@ function cancelPlanBulkUpload() {
 
 async function _applyPlanUpload(parsed) {
   let added = 0, updated = 0
-  const baseNo = State.planItems.length
-    ? Math.max(...State.planItems.map(p => Number(p.no) || 0))
-    : 0
+  // 🔴 신규 기획 identity = 불변 id. baseId = 기존 id·레거시 no 통틀어 최대 (충돌 방지). no 는 표시용이라 미설정.
+  let baseId = 0
+  ;(State.planItems || []).forEach(p => {
+    if (!p) return
+    const idv = Number(p.id); if (Number.isFinite(idv)) baseId = Math.max(baseId, idv)
+    const nov = Number(p.no); if (Number.isFinite(nov)) baseId = Math.max(baseId, nov)
+  })
 
   parsed.added.forEach((item, i) => {
     const planItem = item.planItem
     if (planItem.sizeSpec == null) planItem.sizeSpec = {}
     if (planItem.schedule == null) planItem.schedule = {}
-    planItem.no = baseNo + i + 1
+    planItem.id = baseId + i + 1
     planItem.confirmed = false
     if (planItem.productCode) _reservedCodes.delete(planItem.productCode)
     stampCreated(planItem)

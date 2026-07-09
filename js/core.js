@@ -2216,7 +2216,7 @@ function globalSearch(q) {
   ;(State.planItems || []).forEach(p => {
     if (out.length >= 12) return
     const hay = ((p.productCode||'') + ' ' + (p.nameKr||'') + ' ' + (p.sampleNo||'') + ' ' + (p.brand||'')).toLowerCase()
-    if (hay.includes(q)) push({ type:'plan', id:p.no, title:p.nameKr || p.sampleNo || ('기획 #'+p.no), sub:`기획 · ${p.sampleNo||''}${p.productCode?' · '+p.productCode:''}` })
+    if (hay.includes(q)) push({ type:'plan', id:p.id, title:p.nameKr || p.sampleNo || ('기획 #'+p.id), sub:`기획 · ${p.sampleNo||''}${p.productCode?' · '+p.productCode:''}` })
   })
   ;(typeof _events !== 'undefined' ? _events : []).forEach(ev => {
     if (out.length >= 12) return
