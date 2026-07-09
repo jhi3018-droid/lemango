@@ -276,7 +276,7 @@
           <button class="btn btn-accent" onclick="downloadExcel('product')">⬇ 다운로드</button>
           <label class="btn btn-outline" for="pUploadFile">⬆ 업로드</label>
           <input type="file" id="pUploadFile" accept=".xlsx,.xls" style="display:none" onchange="handleUpload(this,'product')" />
-          <button class="btn btn-ghost" onclick="downloadSample('product')">샘플</button>
+          <button class="btn btn-ghost" onclick="downloadSample('product')">상품등록 양식</button>
         </div>
       </div>
     </div>
@@ -515,10 +515,10 @@
         <button class="filter-my-btn" onclick="filterMyAssigned('plan')">내 담당</button>
         <button class="btn btn-new" onclick="openPlanRegisterModal()">＋ 신규기획 등록</button>
         <div class="action-btns">
-          <button class="btn btn-accent" onclick="downloadExcel('plan')">⬇ 다운로드</button>
+          <button class="btn btn-accent" onclick="downloadExcel('plan')">⬇ 기존 기획 내보내기</button>
           <label class="btn btn-outline" for="planUploadFile">⬆ 업로드</label>
           <input type="file" id="planUploadFile" accept=".xlsx,.xls" style="display:none" onchange="handleUpload(this,'plan')" />
-          <button class="btn btn-ghost" onclick="downloadSample('plan')">샘플</button>
+          <button class="btn btn-ghost" onclick="downloadSample('product')">상품등록 양식</button>
         </div>
       </div>
     </div>
@@ -1074,7 +1074,7 @@
   <div class="rmodal-header">
     <h2 class="rmodal-title">신규 상품 등록</h2>
     <div class="rmodal-header-actions">
-      <button type="button" class="btn btn-outline rmodal-btn-sm" onclick="downloadSample('product')">샘플 다운로드</button>
+      <button type="button" class="btn btn-outline rmodal-btn-sm" onclick="downloadSample('product')">상품등록 양식</button>
       <label class="btn btn-accent rmodal-btn-sm" style="cursor:pointer;margin:0">
         엑셀 일괄 등록
         <input type="file" accept=".xlsx,.xls" style="display:none" onchange="handleRegisterUpload(this)" />

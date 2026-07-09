@@ -679,18 +679,17 @@ function parseSumUrls(cellValue) {
 function downloadSample(type) {
   if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
 
-  if (type === 'product') {
-    // Phase 2: 신규 130컬럼 상품등록 양식(ExcelJS 인셀 드롭다운). ExcelJS 미로딩 시 친절 안내(구 SheetJS 양식 폴백).
+  // 🔴 통합(단일 소스): 모든 빈-양식 다운로드('상품등록 양식') = 신규 상품등록 양식(downloadProductTemplate).
+  //   'product'/'plan' 둘 다 동일 양식 → 어디서 받아도 같은 파일(신규 양식 업로드=기획 항목 생성).
+  //   기존 기획 라운드트립 내보내기는 downloadExcel('plan')(_downloadPlanFull)로 별도 유지(다른 목적).
+  if (type === 'product' || type === 'plan') {
+    // Phase 2: 신규 상품등록 양식(ExcelJS 인셀 드롭다운). ExcelJS 미로딩 시 친절 안내(구 SheetJS 양식 폴백).
     if (typeof ExcelJS !== 'undefined' && ExcelJS && ExcelJS.Workbook) {
       downloadProductTemplate()
     } else {
       showToast('드롭다운 양식 라이브러리(ExcelJS) 로드 실패 — 네트워크 확인 후 다시 시도하세요. 기본 양식으로 받습니다.', 'warning')  // 폴백: 구 양식(드롭다운/코드목록 없음)
       _downloadProductSample()   // 폴백: 구 양식(드롭다운 없음). 업로드 파서는 무관.
     }
-    return
-  }
-  if (type === 'plan') {
-    _downloadPlanSample()
     return
   }
 
