@@ -263,58 +263,82 @@ function togglePcodePanel() {
   const btn = document.getElementById('pcodeToggleBtn')
   const open = panel.style.display === 'none' || panel.style.display === ''
   panel.style.display = open ? 'flex' : 'none'
-  btn.textContent = open ? '자동생성 ▴' : '자동생성 ▾'
+  btn.textContent = open ? '품번 생성 ▴' : '품번 생성 ▾'
 }
 
 // 적용됐지만 아직 등록 전인 품번 임시 예약 Set
 const _reservedCodes = new Set()
 
-function updateProductCode() {
-  const cls = document.getElementById('pcClass')?.value
-  const gen = document.getElementById('pcGender')?.value
-  const typ = document.getElementById('pcType')?.value
-  const des = document.getElementById('pcDesign')?.value
-  const year = document.getElementById('pcYear')?.value
-  const seasonNum = document.getElementById('pcSeasonNum')?.value
-  if (!cls || !des) return
-
-  const prefix = cls + gen + typ + des + year + seasonNum
-
+// ============================================================
+// ===== 🔴 품번 생성 공유 로직 (4 사이트 단일 소스 — §2.8) =====
+// ============================================================
+// basis = { cls, gen, typ, des, yearDigit, seasonNum }. 6개 전부 필수(반려 게이트).
+const PCODE_FIELD_LABELS = [['cls','분류'],['gen','성별'],['typ','타입'],['des','디자인번호'],['yearDigit','연도'],['seasonNum','시즌']]
+// 미입력 필드 라벨 배열(반려 메시지용). 빈값=미입력.
+function pcodeMissing(b) {
+  b = b || {}
+  return PCODE_FIELD_LABELS.filter(([k]) => !String(b[k] == null ? '' : b[k]).trim()).map(([, label]) => label)
+}
+// 🔴 일련번호 basis = 분류+연도+시즌 만(성별/타입/디자인 무시 — 소유주 결정). 13자리 positional parse.
+//   used = (분류=code[0:2] · 연도=code[9] · 시즌=code[10]) 일치 code 의 code[11:13]. 비-13자/제외코드 무시.
+//   레거시(4자리 sequence 등 다른 규약)는 positional 해석 불가 → 최종 full-code 유일성은 apply 가드가 authoritative.
+function nextSerial(basis, opts) {
+  const cls = String((basis && basis.cls) || '')
+  const yr  = String((basis && basis.yearDigit) || '')
+  const sn  = String((basis && basis.seasonNum) || '')
+  const excludeCode = (opts && opts.excludeCode) ? String(opts.excludeCode) : ''
   const used = new Set()
-  ;[...State.allProducts, ...State.planItems].forEach(p => {
-    const c = p.productCode || ''
-    if (c.length === prefix.length + 2 && c.startsWith(prefix)) {
-      used.add(c.slice(-2))
-    }
-  })
-  _reservedCodes.forEach(c => {
-    if (c.length === prefix.length + 2 && c.startsWith(prefix)) {
-      used.add(c.slice(-2))
-    }
-  })
-
-  let nextNum = null
-  for (let i = 0; i <= 99; i++) {
-    const candidate = String(i).padStart(2, '0')
-    if (!used.has(candidate)) { nextNum = candidate; break }
+  const scan = (c) => {
+    c = String(c || '')
+    if (!c || c === excludeCode || c.length !== 13) return
+    if (c.slice(0, 2) === cls && c[9] === yr && c[10] === sn) used.add(c.slice(11, 13))
   }
+  const A = (typeof State !== 'undefined' && State.allProducts) ? State.allProducts : []
+  const P = (typeof State !== 'undefined' && State.planItems) ? State.planItems : []
+  A.forEach(p => scan(p && p.productCode))
+  P.forEach(p => scan(p && p.productCode))
+  _reservedCodes.forEach(scan)
+  for (let i = 0; i <= 99; i++) { const cand = String(i).padStart(2, '0'); if (!used.has(cand)) return cand }
+  return null   // 00~99 소진(overflow) — silent wrap 금지
+}
+// 공유 프리뷰 렌더러: 반려(미입력) → 소진(overflow) → 유효코드. els={preview,seq,apply,excludeCode}
+// 반환: 유효 코드 문자열 or null.
+function pcodeRenderPreview(basis, els) {
+  els = els || {}
+  const setP = (t) => { if (els.preview) els.preview.textContent = t }
+  const setS = (t) => { if (els.seq) els.seq.textContent = t }
+  const setA = (d) => { if (els.apply) els.apply.disabled = d }
+  const missing = pcodeMissing(basis)
+  if (missing.length) { setP('품번 생성 반려 — 미입력: ' + missing.join(', ')); setS('-'); setA(true); return null }
+  const serial = nextSerial(basis, { excludeCode: els.excludeCode || '' })
+  if (serial === null) { setP('이 분류+연도+시즌 그룹의 일련번호(00~99)가 소진되었습니다'); setS('만료'); setA(true); return null }
+  const code = basis.cls + basis.gen + basis.typ + basis.des + basis.yearDigit + basis.seasonNum + serial
+  setP(code); setS(serial); setA(false)
+  return code
+}
+// apply 가드: 미리보기 텍스트가 유효 13자리 품번인지(반려/소진/안내 문구 차단)
+function pcodeIsValidCode(code) { return !!code && /^[A-Za-z0-9]{13}$/.test(String(code).trim()) }
+window.pcodeMissing = pcodeMissing; window.nextSerial = nextSerial
+window.pcodeRenderPreview = pcodeRenderPreview; window.pcodeIsValidCode = pcodeIsValidCode
 
-  const seqDisplay = document.getElementById('pcSeqDisplay')
-  const applyBtn   = document.getElementById('pcApplyBtn')
-  if (nextNum === null) {
-    seqDisplay.textContent = '만료'
-    document.getElementById('pcPreview').textContent = '사용 가능한 번호 없음'
-    if (applyBtn) applyBtn.disabled = true
-  } else {
-    seqDisplay.textContent = nextNum
-    document.getElementById('pcPreview').textContent = prefix + nextNum
-    if (applyBtn) applyBtn.disabled = false
-  }
+function updateProductCode() {
+  pcodeRenderPreview({
+    cls:       document.getElementById('pcClass')?.value,
+    gen:       document.getElementById('pcGender')?.value,
+    typ:       document.getElementById('pcType')?.value,
+    des:       document.getElementById('pcDesign')?.value,
+    yearDigit: document.getElementById('pcYear')?.value,
+    seasonNum: document.getElementById('pcSeasonNum')?.value
+  }, {
+    preview: document.getElementById('pcPreview'),
+    seq:     document.getElementById('pcSeqDisplay'),
+    apply:   document.getElementById('pcApplyBtn')
+  })
 }
 
 function applyGeneratedCode() {
   const code = document.getElementById('pcPreview').textContent
-  if (!code || code === '-' || code === '사용 가능한 번호 없음') return
+  if (!pcodeIsValidCode(code)) { showToast('품번 생성 반려 — 필수 입력(분류·성별·타입·디자인·연도·시즌)을 확인하세요.', 'warning'); return }
 
   if (State.allProducts.some(p => p.productCode === code) ||
       State.planItems.some(p => p.productCode === code) ||
@@ -328,7 +352,7 @@ function applyGeneratedCode() {
 
   document.getElementById('rProductCode').value = code
   document.getElementById('pcodePanel').style.display = 'none'
-  document.getElementById('pcodeToggleBtn').textContent = '자동생성 ▾'
+  document.getElementById('pcodeToggleBtn').textContent = '품번 생성 ▾'
 
   const cls = document.getElementById('pcClass')?.value || ''
   const typ = document.getElementById('pcType')?.value || ''

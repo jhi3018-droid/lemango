@@ -431,7 +431,7 @@ function togglePlPcodePanel() {
   const btn   = document.getElementById('plPcodeToggleBtn')
   const open  = panel.style.display === 'none' || panel.style.display === ''
   panel.style.display = open ? 'block' : 'none'
-  btn.textContent = open ? '자동생성 ▴' : '자동생성 ▾'
+  btn.textContent = open ? '품번 생성 ▴' : '품번 생성 ▾'
   if (open) initPlPcodePanel()
 }
 
@@ -545,50 +545,26 @@ function selectPlDesign(code) {
 }
 
 function updatePlProductCode() {
-  const cls       = document.getElementById('plPcClass')?.value
-  const gen       = document.getElementById('plPcGender')?.value
-  const typ       = document.getElementById('plPcType')?.value
-  const des       = document.getElementById('plPcDesign')?.value
-  const year      = document.getElementById('plPcYear')?.value
-  const seasonNum = document.getElementById('plPcSeasonNum')?.value
-  if (!cls || !des) return
-
-  const prefix = cls + gen + typ + des + year + seasonNum
-  // 길이 인식 매칭 — prefix는 11자, 전체 품번은 13자(prefix + 2자 일련번호)
-  // (이전 c.slice(0,12) === prefix 비교는 11자/12자 불일치로 항상 false → ...00 무한 루프 버그)
-  const usedNums = new Set(
-    [...State.allProducts, ...State.planItems]
-      .map(p => p.productCode)
-      .filter(c => c && c.length === prefix.length + 2 && c.startsWith(prefix))
-      .map(c => c.slice(-2))
-  )
-  _reservedCodes.forEach(c => {
-    if (c.length === prefix.length + 2 && c.startsWith(prefix)) usedNums.add(c.slice(-2))
+  // 🔴 공유 로직(product-code.js): 일련번호 basis=분류+연도+시즌 · 6개 필수 반려 게이트 · full-code 유일성은 apply 가드.
+  pcodeRenderPreview({
+    cls:       document.getElementById('plPcClass')?.value,
+    gen:       document.getElementById('plPcGender')?.value,
+    typ:       document.getElementById('plPcType')?.value,
+    des:       document.getElementById('plPcDesign')?.value,
+    yearDigit: document.getElementById('plPcYear')?.value,
+    seasonNum: document.getElementById('plPcSeasonNum')?.value
+  }, {
+    preview: document.getElementById('plPcPreview'),
+    seq:     document.getElementById('plPcSeqDisplay'),
+    apply:   document.getElementById('plPcApplyBtn')
   })
-
-  let nextNum = null
-  for (let i = 0; i <= 99; i++) {
-    const n = String(i).padStart(2,'0')
-    if (!usedNums.has(n)) { nextNum = n; break }
-  }
-
-  const seqDisplay = document.getElementById('plPcSeqDisplay')
-  const applyBtn   = document.getElementById('plPcApplyBtn')
-  if (nextNum === null) {
-    seqDisplay.textContent = '만료'
-    document.getElementById('plPcPreview').textContent = '사용 가능한 번호 없음'
-    if (applyBtn) applyBtn.disabled = true
-  } else {
-    seqDisplay.textContent = nextNum
-    document.getElementById('plPcPreview').textContent = prefix + nextNum
-    if (applyBtn) applyBtn.disabled = false
-  }
 }
 
 function applyPlGeneratedCode() {
   const code = document.getElementById('plPcPreview').textContent
-  if (!code || code === '-' || code === '사용 가능한 번호 없음') return
+  if (!pcodeIsValidCode(code)) { showToast('품번 생성 반려 — 필수 입력(분류·성별·타입·디자인·연도·시즌)을 확인하세요.', 'warning'); return }
 
+  // 🔴 full-code 유일성 최종 가드(authoritative)
   if (State.allProducts.some(p => p.productCode === code) ||
       State.planItems.some(p => p.productCode === code) ||
       _reservedCodes.has(code)) {
@@ -599,7 +575,7 @@ function applyPlGeneratedCode() {
   _reservedCodes.add(code)
   document.getElementById('plProductCode').value = code
   document.getElementById('plPcodePanel').style.display = 'none'
-  document.getElementById('plPcodeToggleBtn').textContent = '자동생성 ▾'
+  document.getElementById('plPcodeToggleBtn').textContent = '품번 생성 ▾'
 
   const cls = document.getElementById('plPcClass')?.value || ''
   const typ = document.getElementById('plPcType')?.value || ''
@@ -1046,57 +1022,28 @@ function selectPdDesign(code) {
 }
 
 function updatePdProductCode() {
-  const cls    = document.getElementById('pdCgCls')?.value    || ''
-  const gen    = document.getElementById('pdCgGen')?.value    || ''
-  const typ    = document.getElementById('pdCgTyp')?.value    || ''
-  const des    = document.getElementById('pdCgDesign')?.value || ''
-  const year   = document.getElementById('pdCgYear')?.value   || ''
-  const season = document.getElementById('pdCgSeason')?.value || ''
-
-  const previewEl = document.getElementById('pdCgPreview')
-  const applyBtn  = document.getElementById('pdCgApplyBtn')
-  if (!des) {
-    if (previewEl) previewEl.textContent = '디자인 번호를 선택하세요'
-    if (applyBtn)  applyBtn.disabled = true
-    return
-  }
-
-  const prefix = cls + gen + typ + des + year + season
-  // 현재 편집 중인 아이템의 기존 품번은 제외 (재생성 허용)
+  // 🔴 공유 로직(product-code.js): 일련번호 basis=분류+연도+시즌 · 6개 필수 반려 게이트 · full-code 유일성은 apply 가드.
+  //   편집 중 아이템의 기존 품번은 제외(같은 basis 재생성 허용).
   const currentItem = State.planItems.find(p => p.no === _editingPlanNo)
-  const currentOwnCode = currentItem?.productCode || ''
-  // 길이 인식 매칭 — prefix는 11자, 전체 품번은 13자
-  // (이전 c.slice(0,12) === prefix 비교는 11자/12자 불일치로 항상 false → ...00 무한 루프 버그)
-  const usedNums = new Set(
-    [...State.allProducts, ...State.planItems]
-      .map(p => p.productCode)
-      .filter(c => c && c !== currentOwnCode && c.length === prefix.length + 2 && c.startsWith(prefix))
-      .map(c => c.slice(-2))
-  )
-  _reservedCodes.forEach(c => {
-    if (c !== currentOwnCode && c.length === prefix.length + 2 && c.startsWith(prefix)) usedNums.add(c.slice(-2))
+  pcodeRenderPreview({
+    cls:       document.getElementById('pdCgCls')?.value,
+    gen:       document.getElementById('pdCgGen')?.value,
+    typ:       document.getElementById('pdCgTyp')?.value,
+    des:       document.getElementById('pdCgDesign')?.value,
+    yearDigit: document.getElementById('pdCgYear')?.value,
+    seasonNum: document.getElementById('pdCgSeason')?.value
+  }, {
+    preview: document.getElementById('pdCgPreview'),
+    apply:   document.getElementById('pdCgApplyBtn'),
+    excludeCode: (currentItem && currentItem.productCode) || ''
   })
-
-  let nextNum = null
-  for (let i = 0; i <= 99; i++) {
-    const n = String(i).padStart(2, '0')
-    if (!usedNums.has(n)) { nextNum = n; break }
-  }
-
-  if (nextNum === null) {
-    if (previewEl) previewEl.textContent = '사용 가능한 번호 없음'
-    if (applyBtn)  applyBtn.disabled = true
-  } else {
-    if (previewEl) previewEl.textContent = prefix + nextNum
-    if (applyBtn)  applyBtn.disabled = false
-  }
 }
 
 let _pdPendingCode = null  // 이번 편집 세션에서 예약된 임시 코드
 
 function applyPdGeneratedCode() {
   const code = document.getElementById('pdCgPreview')?.textContent?.trim()
-  if (!code || code === '-' || code.includes('없음') || code.includes('선택')) return
+  if (!pcodeIsValidCode(code)) { showToast('품번 생성 반려 — 필수 입력(분류·성별·타입·디자인·연도·시즌)을 확인하세요.', 'warning'); return }
 
   const currentItem = State.planItems.find(p => p.no === _editingPlanNo)
   const currentOwnCode = currentItem?.productCode || ''
@@ -1601,11 +1548,15 @@ function buildPlanDetailContent(item) {
   const capRingOpts      = mkOptsCur(_settings?.capRings,       item.capRing || '')
 
   // 품번 생성 패널용 옵션 (item 데이터로 기본값 추측)
-  const clsGuess    = item.brand?.includes('느와') ? 'NS' : 'LS'
-  const typGuess    = item.type === 'bikini' ? 'BK' : item.type === 'two piece' ? 'JM' : 'ON'
-  const yearGuess   = String(item.year  || '6')
-  const seasonGuess = String(item.season || '1')
-  const genGuess    = item.gender || 'W'
+  // 🔴 프리필: Phase 3 엑셀 업로드로 저장된 코드필드 우선 → 없으면 기존 추측 → 기본값.
+  //   (분류←classCode · 타입←typeCode · 연도←yearDigit · 시즌←season · 성별←genderCode/gender · 디자인←designCode)
+  const clsGuess    = item.classCode || (item.brand?.includes('느와') ? 'NS' : 'LS')
+  const typGuess    = item.typeCode  || (item.type === 'bikini' ? 'BK' : item.type === 'two piece' ? 'JM' : 'ON')
+  // yearDigit(코드) 우선 → 전체연도('2026')서 역파생 → 기본 '6' (구 버그: String(item.year||'6') 는 '2026' 이 옵션과 불일치)
+  const yearGuess   = item.yearDigit || (typeof pcodeYearDigit === 'function' ? pcodeYearDigit(item.year) : '') || '6'
+  const seasonGuess = String(item.season || '1')          // season 필드 = 시즌 코드(=seasonNum)
+  const genGuess    = item.genderCode || item.gender || 'W'
+  const designGuess = item.designCode || ''               // 디자인 코드(있으면 hidden input 프리필)
   const CLS_OPT = (typeof _classCodes !== 'undefined' && Array.isArray(_classCodes) && _classCodes.length)
     ? _classCodes.map(([c, n]) => [c, n])
     : [['LS','르망고 수영복'],['LW','르망고 의류'],['LG','르망고 굿즈'],['NS','느와 수영복'],['NW','느와 의류'],['NG','느와 굿즈']]
@@ -1636,7 +1587,7 @@ function buildPlanDetailContent(item) {
         <label>디자인 번호 (패턴)</label>
         <input type="text" id="pdCgDesignSearch" placeholder="코드 또는 패턴명 검색" oninput="filterPdDesignList()" autocomplete="off" class="design-search-input" />
         <div id="pdCgDesignDropdown" class="design-dropdown" style="max-height:160px;overflow-y:auto"></div>
-        <input type="hidden" id="pdCgDesign" />
+        <input type="hidden" id="pdCgDesign" value="${designGuess}" />
       </div>
       <div class="pdcg-preview-row">
         <span class="pdcg-label">미리보기</span>

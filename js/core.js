@@ -884,8 +884,11 @@ const PCODE_YEARS   = [['1','2021'],['2','2022'],['3','2023'],['4','2024'],['5',
 const PCODE_SEASONS = ['1','2','3','4','5']
 // 연도 코드('6') → 전체 연도('2026') 파생 (품번 코드는 별도 yearDigit 필드, year 필드는 전체 연도 유지)
 function pcodeYearFull(digit) { const e = PCODE_YEARS.find(([c]) => c === String(digit)); return e ? e[1] : '' }
+// 전체 연도('2026') → 연도 코드('6') 역파생 (레거시 기획: yearDigit 없고 year='2026'만 있을 때 프리필용)
+function pcodeYearDigit(fullYear) { const e = PCODE_YEARS.find(([, y]) => y === String(fullYear)); return e ? e[0] : '' }
 window.PCODE_GENDERS = PCODE_GENDERS; window.PCODE_TYPES = PCODE_TYPES
-window.PCODE_YEARS = PCODE_YEARS; window.PCODE_SEASONS = PCODE_SEASONS; window.pcodeYearFull = pcodeYearFull
+window.PCODE_YEARS = PCODE_YEARS; window.PCODE_SEASONS = PCODE_SEASONS
+window.pcodeYearFull = pcodeYearFull; window.pcodeYearDigit = pcodeYearDigit
 
 const POSITIONS = ['사원','주임','대리','과장','차장','실장','팀장','부장','이사','대표이사']
 let _currentUserPosition = ''

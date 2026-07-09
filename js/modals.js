@@ -1513,52 +1513,27 @@ function selectDetailDesign(code) {
 }
 
 function updateDetailProductCode() {
-  const cls    = document.getElementById('dCgCls')?.value
-  const gen    = document.getElementById('dCgGen')?.value
-  const typ    = document.getElementById('dCgTyp')?.value
-  const des    = document.getElementById('dCgDesign')?.value
-  const year   = document.getElementById('dCgYear')?.value
-  const season = document.getElementById('dCgSeason')?.value
-  if (!cls || !des) return
-
-  const prefix = cls + gen + typ + des + year + season  // 12자리
-
-  // 현재 상품 자신의 코드는 제외 (같은 prefix로 재생성 가능)
-  const currentOwnCode = _detailCode || ''
-
-  const used = new Set()
-  ;[...State.allProducts, ...State.planItems].forEach(p => {
-    const c = p.productCode || ''
-    if (c === currentOwnCode) return  // 자기 자신 제외
-    if (c.length === prefix.length + 2 && c.startsWith(prefix)) used.add(c.slice(-2))
+  // 🔴 공유 로직(product-code.js): 일련번호 basis=분류+연도+시즌 · 6개 필수 반려 게이트 · full-code 유일성은 apply 가드.
+  //   현재 상품 자신의 코드는 제외(같은 basis 로 재생성 허용).
+  pcodeRenderPreview({
+    cls:       document.getElementById('dCgCls')?.value,
+    gen:       document.getElementById('dCgGen')?.value,
+    typ:       document.getElementById('dCgTyp')?.value,
+    des:       document.getElementById('dCgDesign')?.value,
+    yearDigit: document.getElementById('dCgYear')?.value,
+    seasonNum: document.getElementById('dCgSeason')?.value
+  }, {
+    preview: document.getElementById('dCgPreview'),
+    apply:   document.getElementById('dCgApplyBtn'),
+    excludeCode: _detailCode || ''
   })
-  _reservedCodes.forEach(c => {
-    if (c === currentOwnCode) return
-    if (c.length === prefix.length + 2 && c.startsWith(prefix)) used.add(c.slice(-2))
-  })
-
-  let nextNum = null
-  for (let i = 0; i <= 99; i++) {
-    const candidate = String(i).padStart(2, '0')
-    if (!used.has(candidate)) { nextNum = candidate; break }
-  }
-
-  const preview = document.getElementById('dCgPreview')
-  const applyBtn = document.getElementById('dCgApplyBtn')
-  if (nextNum === null) {
-    if (preview)  preview.textContent = '사용 가능한 번호 없음'
-    if (applyBtn) applyBtn.disabled = true
-  } else {
-    if (preview)  preview.textContent = prefix + nextNum
-    if (applyBtn) applyBtn.disabled = false
-  }
 }
 
 function applyDetailGeneratedCode() {
   const code = document.getElementById('dCgPreview')?.textContent
-  if (!code || code === '-' || code === '사용 가능한 번호 없음') return
+  if (!pcodeIsValidCode(code)) { showToast('품번 생성 반려 — 필수 입력(분류·성별·타입·디자인·연도·시즌)을 확인하세요.', 'warning'); return }
 
-  // 중복 최종 확인 (자기 자신 제외)
+  // 🔴 full-code 유일성 최종 가드(authoritative) — 자기 자신 제외
   const currentOwnCode = _detailCode || ''
   if (code !== currentOwnCode && (
       State.allProducts.some(p => p.productCode === code) ||
