@@ -1587,7 +1587,7 @@ function buildPlanDetailContent(item) {
 
   const brandOpts  = _settings.brands.map(b => `<option value="${b}"${item.brand===b?' selected':''}>${b}</option>`).join('')
   const typeOpts   = _settings.types.map(([v,l]) => `<option value="${v}"${item.type===v?' selected':''}>${l}</option>`).join('')
-  const genderOpts = [['W','여성'],['M','남성'],['G','걸즈'],['B','보이즈'],['N','공용'],['K','키즈']]
+  const genderOpts = (typeof PCODE_GENDERS !== 'undefined' ? PCODE_GENDERS : [])
     .map(([v,l]) => `<option value="${v}"${item.gender===v?' selected':''}>${l}</option>`).join('')
   const mkOptsCur = (list, cur) => '<option value="">-</option>' + (list||[]).map(v => {
     const [val, lbl] = Array.isArray(v) ? v : [v, v]
@@ -1609,9 +1609,10 @@ function buildPlanDetailContent(item) {
   const CLS_OPT = (typeof _classCodes !== 'undefined' && Array.isArray(_classCodes) && _classCodes.length)
     ? _classCodes.map(([c, n]) => [c, n])
     : [['LS','르망고 수영복'],['LW','르망고 의류'],['LG','르망고 굿즈'],['NS','느와 수영복'],['NW','느와 의류'],['NG','느와 굿즈']]
-  const TYP_OPT = [['ON','원피스'],['MO','모노키니'],['BK','비키니'],['BR','브리프'],['JM','재머'],['RG','래시가드'],['AL','애슬레저'],['GM','의류'],['SC','수영모'],['BG','가방'],['ET','기타']]
-  const GEN_OPT = [['W','여성'],['M','남성'],['G','걸즈'],['B','보이즈'],['N','공용'],['K','키즈']]
-  const YEAR_OPT = ['1','2','3','4','5','6','7','8','9','0']
+  // 🔴 고정 세트는 core.js PCODE_* 단일 소스 참조(form + template + validator 공용)
+  const TYP_OPT  = (typeof PCODE_TYPES   !== 'undefined' ? PCODE_TYPES : [])
+  const GEN_OPT  = (typeof PCODE_GENDERS !== 'undefined' ? PCODE_GENDERS : [])
+  const YEAR_OPT = (typeof PCODE_YEARS   !== 'undefined' ? PCODE_YEARS : []).map(([c]) => c)
   const mkSel = (id, opts, guess, fn) =>
     `<select id="${id}" onchange="${fn}()">${opts.map(([v,l]) => `<option value="${v}"${v===guess?' selected':''}>${v}${l?' - '+l:''}</option>`).join('')}</select>`
 

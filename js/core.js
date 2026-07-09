@@ -873,6 +873,20 @@ const SPEC_ROWS = [
   { key: 'etc', label: '기타' },
 ]
 const GENDER_MAP = { W: '여성', M: '남성', U: '공용' }
+
+// ===== 품번(코드) 고정 세트 — 단일 소스 (form + template + validator 공용) =====
+// 관리형 아님(사용자 편집 불가한 고정 vocabulary). 관리형 리스트(_settings.*/_classCodes/_designCodes/_colorMasters)는
+// use-time 에 LIVE 로 읽어야 하지만, 이 4개는 고정이므로 상수 1곳이 single source of truth.
+// [code, label] 쌍. 업로드 파서/템플릿/폼(품번 자동생성 패널)이 모두 이 상수를 참조 → 드리프트 0.
+const PCODE_GENDERS = [['W','여성'],['M','남성'],['G','걸즈'],['B','보이즈'],['N','공용'],['K','키즈']]
+const PCODE_TYPES   = [['ON','원피스'],['MO','모노키니'],['BK','비키니'],['BR','브리프'],['JM','재머'],['RG','래시가드'],['AL','애슬레저'],['GM','의류'],['SC','수영모'],['BG','가방'],['ET','기타']]
+const PCODE_YEARS   = [['1','2021'],['2','2022'],['3','2023'],['4','2024'],['5','2025'],['6','2026'],['7','2027'],['8','2028'],['9','2029'],['0','2030']]
+const PCODE_SEASONS = ['1','2','3','4','5']
+// 연도 코드('6') → 전체 연도('2026') 파생 (품번 코드는 별도 yearDigit 필드, year 필드는 전체 연도 유지)
+function pcodeYearFull(digit) { const e = PCODE_YEARS.find(([c]) => c === String(digit)); return e ? e[1] : '' }
+window.PCODE_GENDERS = PCODE_GENDERS; window.PCODE_TYPES = PCODE_TYPES
+window.PCODE_YEARS = PCODE_YEARS; window.PCODE_SEASONS = PCODE_SEASONS; window.pcodeYearFull = pcodeYearFull
+
 const POSITIONS = ['사원','주임','대리','과장','차장','실장','팀장','부장','이사','대표이사']
 let _currentUserPosition = ''
 let _currentUserGrade = 1

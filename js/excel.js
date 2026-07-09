@@ -725,7 +725,7 @@ function downloadSample(type) {
 // =============================================
 // ===== Phase 2 — 신규 상품등록 양식 (ExcelJS 인셀 드롭다운) =====
 // =============================================
-// 컬럼 총계 = 127 (비사이즈 33[이미지URL 3열 제거·+CAFE24/사방넷 URL 2열] + 사이즈규격 91[buildSizeSpecColumns] + 판매상태/생산상태/등록일 3).
+// 컬럼 총계 = 128 (비사이즈 34[이미지URL 2열 제거(자사몰/외부몰)·대표이미지URL 복구·+CAFE24/사방넷 URL 2열] + 사이즈규격 91[buildSizeSpecColumns] + 판매상태/생산상태/등록일 3).
 //   사이즈 컬럼은 buildSizeSpecColumns() 단일 소스가 authoritative(§2.7).
 // 🔴 생성 전용(ExcelJS). SheetJS 는 모든 읽기/파싱/round-trip 유지. 업로드 검증/자동채움/품번차단 = Phase 3.
 // 드롭다운(인라인=고정세트 / 범위참조=관리리스트) 라벨 = "이름(코드)" (시즌/단순 관리리스트는 값=코드). Phase 3 파서 계약(단일 규칙):
@@ -744,10 +744,11 @@ function _prodTemplateDropdownValues() {
     // 고정 하드코딩 세트(index.html 옵션과 동일) — 인라인 드롭다운
     brand:  asStr(s.brands && s.brands.length ? s.brands : ['르망고', '르망고 느와']),
     class:  cc.map(([c, n]) => `${n}(${c})`),
-    gender: [['W','여성'],['M','남성'],['G','걸즈'],['B','보이즈'],['N','공용'],['K','키즈']].map(([c,n]) => `${n}(${c})`),
-    type:   [['ON','원피스'],['MO','모노키니'],['BK','비키니'],['BR','브리프'],['JM','재머'],['RG','래시가드'],['AL','애슬레저'],['GM','의류'],['SC','수영모'],['BG','가방'],['ET','기타']].map(([c,n]) => `${n}(${c})`),
-    year:   [['1','2021'],['2','2022'],['3','2023'],['4','2024'],['5','2025'],['6','2026'],['7','2027'],['8','2028'],['9','2029'],['0','2030']].map(([c,y]) => `${y}(${c})`),
-    season: ['1','2','3','4','5'],
+    // 🔴 고정 세트는 core.js 의 PCODE_* 단일 소스 참조 (form + template + validator 공용 — 드리프트 0)
+    gender: (typeof PCODE_GENDERS !== 'undefined' ? PCODE_GENDERS : []).map(([c,n]) => `${n}(${c})`),
+    type:   (typeof PCODE_TYPES   !== 'undefined' ? PCODE_TYPES   : []).map(([c,n]) => `${n}(${c})`),
+    year:   (typeof PCODE_YEARS   !== 'undefined' ? PCODE_YEARS   : []).map(([c,y]) => `${y}(${c})`),
+    season: (typeof PCODE_SEASONS  !== 'undefined' ? PCODE_SEASONS : []).slice(),
     // 관리형 리스트 — 범위참조 드롭다운(코드목록 시트). LIVE 값(설정 편집 반영).
     legCut: pairLabel(s.legCuts),
     fabricType: asStr(s.fabricTypes),
@@ -784,7 +785,7 @@ async function downloadProductTemplate() {
       { label:'레그컷', dd:'legCut' }, { label:'원단타입', dd:'fabricType' }, { label:'가슴선', dd:'chestLine' }, { label:'비침', dd:'transparency' }, { label:'안감', dd:'lining' }, { label:'캡고리', dd:'capRing' },
       { label:'소재' }, { label:'디자이너코멘트' }, { label:'세탁방법', dd:'washMethod' },
       { label:'모델착용사이즈' }, { label:'제조년월' }, { label:'제조사' }, { label:'제조국' },
-      { label:'CAFE24 상세 URL' }, { label:'사방넷 상세 URL' },
+      { label:'대표이미지URL', note:'대표 썸네일 URL (최우선 표시)' }, { label:'CAFE24 상세 URL' }, { label:'사방넷 상세 URL' },
       ...sizeCols.map(c => ({ label: c.label })),
       { label:'판매상태', dd:'saleStatus' }, { label:'생산상태', dd:'productionStatus' },
       { label:'등록일' },
@@ -1275,8 +1276,22 @@ function handleUpload(input, type) {
   reader.onload = e => {
     try {
       const wb   = XLSX.read(e.target.result, { type: 'array' })
-      const ws   = wb.Sheets[wb.SheetNames[0]]
+      // 🔴 Q4: 상품/기획 업로드는 시트를 이름으로 선택('상품등록'/'신규기획'). 없으면 참고시트(코드목록/입력 가이드) 제외한
+      //   첫 데이터 시트, 그래도 없으면 [0]. → 시트 순서 재정렬·코드목록 존재 시에도 안전(reorder-safe).
+      const pickByName = (names) => {
+        for (const n of names) if (wb.SheetNames.includes(n)) return n
+        const skip = new Set(['코드목록', '입력 가이드'])
+        return wb.SheetNames.find(n => !skip.has(n)) || wb.SheetNames[0]
+      }
+      const sheetName = (type === 'product' || type === 'plan') ? pickByName(['상품등록', '신규기획']) : wb.SheetNames[0]
+      const ws   = wb.Sheets[sheetName]
       const raw  = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+
+      // 🔴 신규 상품등록 양식('분류'+'샘플번호' 헤더)은 품번 자동생성 기획 항목을 만든다 →
+      //   어느 업로드 버튼(상품조회/신규기획)이든 uploadPlans(기획 생성)로 라우팅.
+      const hdr = raw[0] || []
+      const isNewProdTpl = hdr.some(h => String(h ?? '').trim() === '분류') && hdr.some(h => String(h ?? '').trim() === '샘플번호')
+      if (isNewProdTpl) { uploadPlans(raw); return }
 
       if (type === 'product') {
         uploadProducts(raw)
@@ -1954,12 +1969,24 @@ let _planBulkPending = null
 function uploadPlans(raw) {
   const parsed = _parsePlanUpload(raw)
   if (!parsed) return
+  const hasFail = parsed.failed && parsed.failed.length > 0
+  // 🔴 신규 상품등록 양식 = 항상 미리보기-후-확정(1e 패턴): 신규만 있어도 검증 결과를 먼저 보여준다.
+  if (parsed.isNewTpl) {
+    if (parsed.added.length || parsed.updated.length || hasFail) {
+      _planBulkPending = parsed
+      _showPlanBulkPreview(parsed)
+    } else {
+      showToast('변경 사항이 없습니다.', 'info')
+    }
+    return
+  }
+  // 구 양식 = 기존 동작 유지(round-trip 보존)
   if (parsed.updated.length > 0) {
     _planBulkPending = parsed
     _showPlanBulkPreview(parsed)
   } else if (parsed.added.length > 0) {
     _applyPlanUpload(parsed)
-  } else if ((parsed.failed && parsed.failed.length > 0) || (parsed.skipped && parsed.skipped.length > 0)) {
+  } else if (hasFail || (parsed.skipped && parsed.skipped.length > 0)) {
     _showUploadResultFromPlanParsed(parsed, 0, 0)
   } else {
     showToast('변경 사항이 없습니다.', 'info')
@@ -1971,9 +1998,30 @@ const PLAN_HEADER_TO_KEY = Object.assign({}, HEADER_TO_KEY, {
   '연도': 'year',
   '시즌': 'season',
   '성별': 'gender',
-  '메모': 'memo'
+  '메모': 'memo',
+  // 신규 상품등록 양식(Phase 2) 전용 헤더. 구 양식엔 없음 → 있으면 신규 양식 시그니처.
+  '분류': 'classInput',          // "이름(코드)" → extractCode → classCode (품번 1번째 자리)
+  'CAFE24 상세 URL': 'cafe24DetailUrl',
+  '사방넷 상세 URL': 'sabangDetailUrl'
+  // '백스타일명'(EN) = 백스타일(디자인코드) 로부터 자동 채움 → 셀 미매핑(무시)
+  // '타입'/'연도'/'백스타일' 은 HEADER_TO_KEY 상속(type/year/backStyle). 신규 양식에선 값이 코드라 파서가 재해석.
   // schedule 헤더('디자인 시작' 등)는 phase가 동적이라 _parsePlanUpload 내부에서 처리
 })
+
+// 🔴 Phase 2/3 파싱 계약: 라벨 후행 "(CODE)" 그룹 → 그 안, 없으면 값 전체(trim).
+//   "원피스(ON)"→"ON", "2026(6)"→"6", "1626"(괄호없음)→"1626", ""→"". 시즌/디자인코드=값 자체=코드.
+function extractCode(v) {
+  const s = (v == null) ? '' : String(v).trim()
+  if (!s) return ''
+  const m = s.match(/\(([^)]+)\)\s*$/)
+  return m ? m[1].trim() : s
+}
+
+// 관리형/고정 리스트 멤버십 (코드-쌍 [code,label] 이면 code 로, 단순 문자열이면 문자열로 비교). LIVE 소스는 호출부가 전달.
+function _codeInList(list, v) {
+  const target = String(v)
+  return (list || []).some(x => (Array.isArray(x) ? String(x[0]) : String(x)) === target)
+}
 
 function _parsePlanUpload(raw) {
   const hdr0 = raw[0] || []
@@ -1990,6 +2038,10 @@ function _parsePlanUpload(raw) {
     showToast('샘플번호 컬럼을 찾을 수 없습니다. 신규기획 양식인지 확인하세요.', 'error')
     return null
   }
+
+  // 🔴 신규 상품등록 양식(Phase 2) 감지 — '분류' 헤더는 신규 양식에만 존재(구 상품/구 기획 양식엔 없음).
+  //   신규 양식 = 코드 추출 + LIVE 검증 + 자동채움 + 품번 차단 적용. 구 양식 = 오늘과 동일(round-trip 보존).
+  const isNewTpl = hdr0.some(h => String(h ?? '').trim() === '분류')
 
   // sizeSpec + schedule 동적 매핑 — 부위 단일 소스: SIZE_SPEC_PARTS (core.js)
   const sizeSpecColMap = {}
@@ -2073,6 +2125,15 @@ function _parsePlanUpload(raw) {
   const presentKeys = new Set(Object.keys(COL))
   Object.keys(sizeSpecColMap).forEach(k => presentKeys.add('sizeSpec_' + k))
   Object.keys(scheduleColMap).forEach(k => presentKeys.add('schedule_' + k))
+  if (isNewTpl) {
+    // 🔴 Q2: 타입 코드(ON/BK…)는 type 필드에 절대 안 씀(5-2 카테고리할인 p.type===c.category 보호). typeCode 별도 필드로.
+    presentKeys.delete('type')        // update 시 기존 type(long-vocab) 보존 → 코드값 유입 차단
+    presentKeys.delete('classInput')  // classInput → classCode 로 재명명(아래 valueKeys 도 정리)
+    if (COL.type != null)       presentKeys.add('typeCode')    // 타입 컬럼 존재 → typeCode 파생
+    if (COL.year != null)       presentKeys.add('yearDigit')   // 연도 컬럼 존재 → yearDigit 파생(year 필드는 전체연도 유지)
+    if (COL.backStyle != null)  presentKeys.add('designCode')  // 백스타일 컬럼 = 디자인코드(신규 양식)
+    if (COL.classInput != null) presentKeys.add('classCode')
+  }
 
   const added = [], updated = [], skipped = [], failed = []
   // C1 fix: detect intra-file duplicates BEFORE building diffs; reject whole upload if any found
@@ -2114,9 +2175,13 @@ function _parsePlanUpload(raw) {
       if (s === DELETE_TOKEN || s === '') return 0
       return Number(raw) || 0
     }
-    const code = _s('code')
+    const typedCode = _s('code')
+    // 🔴 품번 차단: 신규 양식은 품번을 시스템이 생성 → 시트 입력값을 절대 STORE 안 함.
+    //   매칭(기존 항목 찾기)엔 사용 허용(작업지시). 구 양식은 오늘과 동일(저장·매칭 모두).
+    const matchCode = typedCode                 // 기존 항목 매칭용(신구 공통)
+    const code = isNewTpl ? '' : typedCode       // 저장용(신규=항상 공란)
 
-    // C1 fix: intra-file duplicate detection (sampleNo always checked, productCode if present)
+    // C1 fix: intra-file duplicate detection (sampleNo always checked, productCode if stored)
     if (seenSamples.has(sampleNo)) {
       duplicates.push({ type: '샘플번호', identifier: sampleNo, firstRow: seenSamples.get(sampleNo), secondRow: userRowNo })
       return
@@ -2128,12 +2193,12 @@ function _parsePlanUpload(raw) {
     seenSamples.set(sampleNo, userRowNo)
     if (code) seenCodes.set(code, userRowNo)
 
-    // confirmed:true 항목 차단 (이미 상품으로 이전됨)
-    const blockedExisting = code
-      ? State.planItems.find(p => p.productCode === code && p.confirmed)
+    // confirmed:true 항목 차단 (이미 상품으로 이전됨) — 매칭키 기준
+    const blockedExisting = matchCode
+      ? State.planItems.find(p => p.productCode === matchCode && p.confirmed)
       : null
     if (blockedExisting) {
-      failed.push({ row: userRowNo, productCode: code, name: blockedExisting.nameKr || '', reason: '이미 상품으로 이전된 항목입니다 (수정 불가)' })
+      failed.push({ row: userRowNo, productCode: matchCode, name: blockedExisting.nameKr || '', reason: '이미 상품으로 이전된 항목입니다 (수정 불가)' })
       return
     }
 
@@ -2163,6 +2228,31 @@ function _parsePlanUpload(raw) {
     const designArr  = COL.urlDesign != null   ? parseSumUrls(row[COL.urlDesign])   : []
     const shootArr   = COL.urlShoot != null    ? parseSumUrls(row[COL.urlShoot])    : []
 
+    // ── 필드 값(구 양식=raw / 신규 양식=코드추출·파생·자동채움) ──
+    let f_type = _s('type'), f_year = _s('year'), f_season = _s('season')
+    let f_gender = _s('gender'), f_backStyle = _s('backStyle'), f_legCut = _s('legCut')
+    let classCode = '', typeCode = '', yearDigit = '', designCode = ''
+    let cafe24DetailUrl = '', sabangDetailUrl = ''
+    let af_backStyleName = ''   // 자동채운 백스타일명(EN) — 미리보기 표시용
+    if (isNewTpl) {
+      classCode  = extractCode(_s('classInput'))   // "르망고 수영복(LS)" → LS
+      typeCode   = extractCode(_s('type'))          // "원피스(ON)" → ON
+      yearDigit  = extractCode(_s('year'))          // "2026(6)" → 6
+      designCode = extractCode(_s('backStyle'))     // "1626" → 1626 (괄호없음=값자체)
+      f_gender   = extractCode(_s('gender'))        // "여성(W)" → W (기존 저장 vocab=코드)
+      f_season   = extractCode(_s('season'))        // "1" → 1
+      f_legCut   = extractCode(_s('legCut'))        // 쌍이면 코드, 단순이면 값그대로(괄호없음)
+      f_type     = ''                               // 🔴 Q2: type 필드 공란(코드 유입 금지 — UI 에서 후설정)
+      f_year     = yearDigit ? (typeof pcodeYearFull === 'function' ? pcodeYearFull(yearDigit) : '') : ''  // "6" → "2026"
+      cafe24DetailUrl = _s('cafe24DetailUrl')
+      sabangDetailUrl = _s('sabangDetailUrl')
+      // 자동채움: 백스타일 디자인코드 → _designCodes(LIVE) 영문명 → backStyle 필드(영문명 저장 = 기존 시맨틱)
+      if (designCode && typeof _designCodes !== 'undefined' && Array.isArray(_designCodes)) {
+        const de = _designCodes.find(([c]) => String(c) === designCode)
+        if (de) { af_backStyleName = de[1] || ''; f_backStyle = af_backStyleName }
+      }
+    }
+
     const planItem = {
       sampleNo,
       productCode:  code,
@@ -2170,7 +2260,7 @@ function _parsePlanUpload(raw) {
       nameKr:       _s('nameKr'),
       nameEn:       _s('nameEn'),
       ...(() => {
-        // Color resolution: prefer 색상코드 → master, fallback to 색상(한글) → master
+        // Color resolution: prefer 색상코드 → master, fallback to 색상(한글) → master (🔴 코드 승리 = 자동채움)
         const codeRaw = _s('colorCode')
         const krRaw = _s('colorKr')
         const enRaw = _s('colorEn')
@@ -2183,12 +2273,13 @@ function _parsePlanUpload(raw) {
       })(),
       salePrice:    _n('salePrice'),
       costPrice:    _n('costPrice'),
-      type:         _s('type'),
-      year:         _s('year'),
-      season:       _s('season'),
-      gender:       _s('gender'),
-      backStyle:    _s('backStyle'),
-      legCut:       _s('legCut'),
+      type:         f_type,
+      year:         f_year,
+      season:       f_season,
+      gender:       f_gender,
+      backStyle:    f_backStyle,
+      legCut:       f_legCut,
+      ...(isNewTpl ? { classCode, typeCode, yearDigit, designCode, cafe24DetailUrl, sabangDetailUrl } : {}),
       guide:        _s('guide'),
       fabricType:   _s('fabricType'),
       chestLine:    _s('chestLine'),
@@ -2220,21 +2311,52 @@ function _parsePlanUpload(raw) {
       tempImages:  []
     }
 
-    // 매칭 우선순위: 품번 → 샘플번호 (confirmed 제외)
+    // 🔴 신규 양식 LIVE 검증(비어있지 않은 값만). 실패 → 반영 제외(failed). 구 양식 = 검증 없음(round-trip 보존).
+    if (isNewTpl) {
+      const vErrs = _validatePlanRowNew(planItem, {
+        classCode, typeCode, yearDigit, designCode,
+        brandRaw: _s('brand'),
+        saleStatus: _s('saleStatus'), productionStatus: _s('productionStatus')
+      })
+      if (vErrs.length) {
+        failed.push({ row: userRowNo, productCode: matchCode || '', name: planItem.nameKr || '', reason: vErrs.join(' · ') })
+        return
+      }
+    }
+
+    // 안내(info) — 반영은 하되 사용자에게 알림: 품번 무시 + 자동채움 결과
+    const info = []
+    if (isNewTpl && matchCode) info.push(`품번 '${matchCode}' 무시 (시스템 생성)`)
+    const autofill = {}
+    if (isNewTpl) {
+      if (planItem.colorCode && (planItem.colorKr || planItem.colorEn)) {
+        autofill.color = (planItem.colorKr || '') + (planItem.colorEn ? ' / ' + planItem.colorEn : '')
+      }
+      if (af_backStyleName) autofill.backStyleName = af_backStyleName
+      // 파생 코드 필드를 update 병합 대상으로 등록(신규 필드는 COL 에 없어 valueKeys 자동수집 안 됨)
+      if (typeCode)   valueKeys.add('typeCode')
+      if (yearDigit)  valueKeys.add('yearDigit')
+      if (designCode) valueKeys.add('designCode')
+      if (classCode)  valueKeys.add('classCode')
+      valueKeys.delete('classInput')   // classInput → classCode 로 대체
+      valueKeys.delete('type')         // type 필드 갱신 금지(공란 유지)
+    }
+
+    // 매칭 우선순위: 품번(매칭키) → 샘플번호 (confirmed 제외)
     let idx = -1
-    if (code) idx = State.planItems.findIndex(p => p.productCode === code && !p.confirmed)
+    if (matchCode) idx = State.planItems.findIndex(p => p.productCode === matchCode && !p.confirmed)
     if (idx < 0) idx = State.planItems.findIndex(p => p.sampleNo === sampleNo && !p.confirmed)
 
     if (idx >= 0) {
       const existing = State.planItems[idx]
       const diffs = _diffPlan(existing, planItem, presentKeys, deleteKeys)
       if (diffs.length > 0) {
-        updated.push({ code, sampleNo, idx, planItem, diffs, existing, presentKeys, valueKeys, deleteKeys, row: userRowNo })
+        updated.push({ code, sampleNo, idx, planItem, diffs, existing, presentKeys, valueKeys, deleteKeys, row: userRowNo, info, autofill })
       } else {
         skipped.push({ row: userRowNo, productCode: code || sampleNo, reason: '변경 사항 없음' })
       }
     } else {
-      added.push({ code, sampleNo, planItem, valueKeys, deleteKeys, row: userRowNo })
+      added.push({ code, sampleNo, planItem, valueKeys, deleteKeys, row: userRowNo, info, autofill })
     }
   })
 
@@ -2255,7 +2377,44 @@ function _parsePlanUpload(raw) {
     return null
   }
 
-  return { added, updated, failed, skipped }
+  return { added, updated, failed, skipped, isNewTpl }
+}
+
+// 🔴 신규 양식 행 LIVE 검증 — 관리형/마스터 소스는 호출 시점(use-time)에 읽음(스냅샷 금지).
+//   비어있지 않은 값만 검증(빈값=통과, round-trip 안전). 실패 사유는 "필드: 사유" 형식.
+function _validatePlanRowNew(pi, ctx) {
+  const errs = []
+  const S = (typeof _settings !== 'undefined' && _settings) ? _settings : {}   // LIVE
+  const brands = (S.brands && S.brands.length) ? S.brands : ['르망고', '르망고 느와']
+  const brandRaw = String(ctx.brandRaw || '').trim()
+  if (!brandRaw) errs.push('브랜드: 필수 입력')
+  else if (!_codeInList(brands, brandRaw)) errs.push(`브랜드: 미등록 '${brandRaw}'`)
+  // 색상코드 (LIVE _colorMasters via getColorByCode)
+  if (pi.colorCode && typeof getColorByCode === 'function' && !getColorByCode(pi.colorCode)) errs.push(`색상코드: 미등록 코드 '${pi.colorCode}'`)
+  // 분류 (LIVE _classCodes)
+  const classCodesLive = (typeof _classCodes !== 'undefined' && Array.isArray(_classCodes)) ? _classCodes : []
+  if (ctx.classCode && !_codeInList(classCodesLive, ctx.classCode)) errs.push(`분류: 미등록 코드 '${ctx.classCode}'`)
+  // 타입/연도/성별/시즌 (고정 PCODE_* 단일 소스)
+  if (ctx.typeCode  && !_codeInList((typeof PCODE_TYPES   !== 'undefined' ? PCODE_TYPES   : []), ctx.typeCode))  errs.push(`타입: 미등록 코드 '${ctx.typeCode}'`)
+  if (ctx.yearDigit && !_codeInList((typeof PCODE_YEARS   !== 'undefined' ? PCODE_YEARS   : []), ctx.yearDigit)) errs.push(`연도: 미등록 코드 '${ctx.yearDigit}'`)
+  if (pi.gender     && !_codeInList((typeof PCODE_GENDERS !== 'undefined' ? PCODE_GENDERS : []), pi.gender))    errs.push(`성별: 미등록 코드 '${pi.gender}'`)
+  if (pi.season     && !_codeInList((typeof PCODE_SEASONS !== 'undefined' ? PCODE_SEASONS : []), pi.season))    errs.push(`시즌: 미등록 '${pi.season}'`)
+  // 백스타일 디자인코드 (LIVE _designCodes)
+  const designCodesLive = (typeof _designCodes !== 'undefined' && Array.isArray(_designCodes)) ? _designCodes : []
+  if (ctx.designCode && !_codeInList(designCodesLive, ctx.designCode)) errs.push(`백스타일: 미등록 코드 '${ctx.designCode}'`)
+  // 관리형 리스트 (LIVE _settings.*) — 판매상태/생산상태는 상품확정 단계 필드라 저장 안 함, 검증만.
+  const mchecks = [
+    [pi.legCut, S.legCuts, '레그컷'], [pi.fabricType, S.fabricTypes, '원단타입'],
+    [pi.washMethod, S.washMethods, '세탁방법'], [pi.chestLine, S.chestLines, '가슴선'],
+    [pi.transparency, S.transparencies, '비침'], [pi.lining, S.linings, '안감'],
+    [pi.capRing, S.capRings, '캡고리'],
+    [String(ctx.saleStatus || '').trim(), S.saleStatuses, '판매상태'],
+    [String(ctx.productionStatus || '').trim(), S.productionStatuses, '생산상태']
+  ]
+  mchecks.forEach(([v, list, label]) => {
+    if (v && Array.isArray(list) && list.length && !_codeInList(list, v)) errs.push(`${label}: 미등록 '${v}'`)
+  })
+  return errs
 }
 
 // 기획 전용 비교 필드
@@ -2274,6 +2433,13 @@ const _PLAN_DIFF_FIELDS = [
   { key:'season', label:'시즌' },
   { key:'gender', label:'성별' },
   { key:'backStyle', label:'백스타일' },
+  // 신규 양식 파생 코드 필드(품번 생성용). presentKeys 게이팅 → 구 양식 diff 는 스킵.
+  { key:'classCode', label:'분류코드' },
+  { key:'typeCode', label:'타입코드' },
+  { key:'yearDigit', label:'연도코드' },
+  { key:'designCode', label:'디자인코드' },
+  { key:'cafe24DetailUrl', label:'CAFE24 상세 URL' },
+  { key:'sabangDetailUrl', label:'사방넷 상세 URL' },
   { key:'legCut', label:'레그컷' },
   { key:'guide', label:'가이드' },
   { key:'fabricType', label:'원단타입' },
@@ -2397,6 +2563,15 @@ function _showPlanBulkPreview(parsed) {
   if (parsed.skipped && parsed.skipped.length) html += '<span class="be-badge be-badge-skip">스킵 ' + parsed.skipped.length + '건</span>'
   html += '</div>'
 
+  // 자동채움/안내 요약(품번 무시·색상/백스타일명 자동) — 신규·수정 행에 노출
+  const _fmtItemInfo = (item) => {
+    const bits = []
+    if (item.autofill && item.autofill.color) bits.push('색상 자동: ' + item.autofill.color)
+    if (item.autofill && item.autofill.backStyleName) bits.push('백스타일명 자동: ' + item.autofill.backStyleName)
+    if (item.info && item.info.length) bits.push(...item.info)
+    return bits.length ? '<div class="be-autofill-note">' + esc(bits.join(' · ')) + '</div>' : ''
+  }
+
   if (parsed.updated.length) {
     html += '<div class="be-section-title">변경 사항 (수정)</div>'
     parsed.updated.forEach(item => {
@@ -2421,7 +2596,21 @@ function _showPlanBulkPreview(parsed) {
         html += '<td class="be-old">' + esc(oldDisp || '(없음)') + '</td>'
         html += '<td class="' + newCls + '">' + esc(newText) + '</td></tr>'
       })
-      html += '</tbody></table></div></div>'
+      html += '</tbody></table></div>'
+      html += _fmtItemInfo(item)
+      html += '</div>'
+    })
+  }
+
+  // 🔴 검증 실패/제외 — 필드+사유 표시(무음 금지). 이 행들은 [확정]에 반영되지 않음.
+  if (parsed.failed && parsed.failed.length) {
+    html += '<div class="be-section-title">반영 제외 (검증 실패 · ' + parsed.failed.length + '건)</div>'
+    parsed.failed.forEach(f => {
+      const idLabel = f.productCode || f.name || ('행 ' + f.row)
+      html += '<div class="be-add-row be-row-delete">'
+      html += '<span class="be-code">행 ' + esc(String(f.row)) + '</span>'
+      html += '<span class="be-name">' + esc(idLabel) + '</span>'
+      html += '<span class="be-new be-new-delete">' + esc(f.reason || '오류') + '</span></div>'
     })
   }
 
@@ -2432,6 +2621,7 @@ function _showPlanBulkPreview(parsed) {
       html += '<div class="be-add-row"><span class="be-code">' + esc(label) + '</span>'
       html += '<span class="be-name">' + esc(item.planItem.nameKr || '') + '</span>'
       html += '<span class="be-add-label">신규</span></div>'
+      html += _fmtItemInfo(item)
     })
   }
 
@@ -2545,7 +2735,11 @@ async function _applyPlanUpload(parsed) {
         nameKr:'nameKr', nameEn:'nameEn', colorKr:'colorKr', colorEn:'colorEn', colorCode:'colorCode',
         salePrice:'salePrice', costPrice:'costPrice',
         type:'type', year:'year', season:'season', gender:'gender',
-        backStyle:'backStyle', legCut:'legCut', guide:'guide',
+        backStyle:'backStyle',
+        // 신규 양식 파생 코드 필드(품번 생성용) — presentKeys/valueKeys 게이팅으로 구 양식은 무영향
+        classCode:'classCode', typeCode:'typeCode', yearDigit:'yearDigit', designCode:'designCode',
+        cafe24DetailUrl:'cafe24DetailUrl', sabangDetailUrl:'sabangDetailUrl',
+        legCut:'legCut', guide:'guide',
         fabricType:'fabricType', chestLine:'chestLine', transparency:'transparency',
         lining:'lining', capRing:'capRing', material:'material', comment:'comment',
         washMethod:'washMethod', modelSize:'modelSize',

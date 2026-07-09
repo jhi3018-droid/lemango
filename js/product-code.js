@@ -194,8 +194,25 @@ async function deleteBackStyle() {
 }
 
 // ===== 디자인번호 드롭다운 =====
+// 🔴 품번 자동생성 셀렉트를 단일 소스로 채움: 분류=_classCodes(LIVE) · 성별/타입/연도/시즌=PCODE_*(고정).
+//   index.html 정적 <option> 중복 제거 → form + template + validator 드리프트 0.
+function _populatePcodeSelects() {
+  const fill = (id, pairs, sel) => {
+    const el = document.getElementById(id); if (!el) return
+    el.innerHTML = (pairs || []).map(([v, l]) =>
+      `<option value="${v}"${v === sel ? ' selected' : ''}>${v}${l ? ' - ' + l : ''}</option>`).join('')
+  }
+  const cls = (typeof _classCodes !== 'undefined' && Array.isArray(_classCodes)) ? _classCodes : []
+  if (cls.length) fill('pcClass', cls.map(([c, n]) => [c, n]))
+  if (typeof PCODE_GENDERS !== 'undefined') fill('pcGender', PCODE_GENDERS)
+  if (typeof PCODE_TYPES   !== 'undefined') fill('pcType', PCODE_TYPES)
+  if (typeof PCODE_YEARS   !== 'undefined') fill('pcYear', PCODE_YEARS, '6')   // 기본 2026(6) 유지
+  if (typeof PCODE_SEASONS !== 'undefined') fill('pcSeasonNum', PCODE_SEASONS.map(s => [s, '']))
+}
+
 function initPcodePanel() {
   if (!document.getElementById('pcDesign')) return
+  _populatePcodeSelects()
   renderDesignList('')
   selectDesign('1626')
   renderBackStyleList('')

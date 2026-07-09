@@ -5396,6 +5396,8 @@ td[data-editable]:hover { background: #FAEEDA; }
 .be-badge { padding:4px 12px; border-radius:12px; font-size:13px; font-weight:600; }
 .be-badge-update { background:#fff3e0; color:#e65100; }
 .be-badge-add { background:#e8f5e9; color:#1b5e20; }
+.be-badge-fail { background:#fdecea; color:#b71c1c; }
+.be-badge-skip { background:#eceff1; color:#455a64; }
 .be-section-title { font-size:14px; font-weight:700; color:var(--primary); margin:16px 0 8px; padding-bottom:4px; border-bottom:1px solid var(--border); }
 .be-product { margin-bottom:10px; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
 .be-product-header { display:flex; align-items:center; gap:10px; padding:10px 14px; background:#fafafa; cursor:pointer; }
@@ -5531,6 +5533,8 @@ td[data-editable]:hover { background: #FAEEDA; }
 .be-add-row { display:flex; align-items:center; gap:10px; padding:8px 14px; border:1px solid #e8f5e9; border-radius:6px; margin-bottom:4px; }
 .be-add-label { font-size:11px; background:#e8f5e9; color:#1b5e20; padding:2px 8px; border-radius:10px; font-weight:600; }
 .be-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:18px; padding-top:14px; border-top:1px solid var(--border); }
+/* 신규 양식 업로드: 자동채움/안내(품번 무시·색상/백스타일명 자동) 노트 */
+.be-autofill-note { font-size:11px; color:var(--accent); background:rgba(201,169,110,.10); border-radius:5px; padding:4px 10px; margin:2px 0 8px; line-height:1.5; }
 
 /* === 상품 업로드 결과 모달 === */
 .upload-result-modal { width:700px; max-width:95vw; max-height:85vh; padding:0; border-radius:10px; overflow:hidden; }
