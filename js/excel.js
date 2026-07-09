@@ -776,11 +776,11 @@ async function downloadProductTemplate() {
     // 컬럼 정의(소유주 확정 순서). 🔴 개정: 이미지URL 3열 제거 · 백스타일/색상코드=자유입력(코드목록 조회) · CAFE24/사방넷 URL 2열=제조국 뒤.
     const sizeCols = (typeof buildSizeSpecColumns === 'function') ? buildSizeSpecColumns() : []
     const COLS = [
-      { label:'NO' }, { label:'브랜드', dd:'brand', req:true }, { label:'품번', note:'시스템 자동생성 — 비워두세요' }, { label:'샘플번호', req:true },
-      { label:'상품명(한글)' }, { label:'상품명(영문)' }, { label:'색상(한글)' }, { label:'색상(영문)' }, { label:'색상코드', note:'코드목록 시트 참고 — 코드 입력(Phase 3 색상명 자동)' },
+      { label:'NO' }, { label:'브랜드', dd:'brand', req:true }, { label:'품번', auto:true, note:'자동 입력(시스템 생성) — 작성 불필요' }, { label:'샘플번호', req:true },
+      { label:'상품명(한글)' }, { label:'상품명(영문)' }, { label:'색상(한글)', auto:true, note:'자동 입력 — 색상코드 입력 시 자동 채움(작성 불필요)' }, { label:'색상(영문)', auto:true, note:'자동 입력 — 색상코드 입력 시 자동 채움(작성 불필요)' }, { label:'색상코드', note:'코드목록 시트 참고 — 코드 입력(Phase 3 색상명 자동)' },
       { label:'판매가' }, { label:'원가' },
       { label:'연도', dd:'year' }, { label:'시즌', dd:'season' }, { label:'분류', dd:'class' }, { label:'성별', dd:'gender' }, { label:'타입', dd:'type' },
-      { label:'백스타일', note:'코드목록 시트 참고 — 코드 입력(Phase 3 백스타일명 자동)' }, { label:'백스타일명', note:'백스타일 코드 입력 시 영문명 자동(Phase 3)' },
+      { label:'백스타일', note:'코드목록 시트 참고 — 코드 입력(Phase 3 백스타일명 자동)' }, { label:'백스타일명', auto:true, note:'자동 입력 — 백스타일 코드 입력 시 자동(작성 불필요)' },
       { label:'레그컷', dd:'legCut' }, { label:'원단타입', dd:'fabricType' }, { label:'가슴선', dd:'chestLine' }, { label:'비침', dd:'transparency' }, { label:'안감', dd:'lining' }, { label:'캡고리', dd:'capRing' },
       { label:'소재' }, { label:'디자이너코멘트' }, { label:'세탁방법', dd:'washMethod' },
       { label:'모델착용사이즈' }, { label:'제조년월' }, { label:'제조사' }, { label:'제조국' },
@@ -791,6 +791,7 @@ async function downloadProductTemplate() {
     ]
 
     const _navy = 'FF1A1A2E', _gold = 'FFC9A96E', _green = 'FF4CAF7D'   // 기존 팔레트(브랜드컬러)
+    const _gray = 'FF6B6B6B'   // 자동입력(작성 불필요) — 기존 팔레트 CSS var --text-sub(#6b6b6b), 흰 글씨 가독
     const wb = new ExcelJS.Workbook()
     const ws = wb.addWorksheet('상품등록')
     const codeSheet = wb.addWorksheet('코드목록')   // 🔴 A2: VISIBLE — 사용자가 백스타일/색상 코드를 여기서 찾아 입력
@@ -832,8 +833,9 @@ async function downloadProductTemplate() {
       const cell = ws.getCell(1, i + 1)
       cell.value = c.label
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 }
-      // R3 헤더 색(기존 팔레트): 필수=골드 · 드롭다운=그린(목록에서 선택) · 그 외=네이비
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: c.req ? _gold : (c.dd ? _green : _navy) } }
+      // R3 헤더 색(기존 팔레트): 필수=골드 · 드롭다운=그린(목록에서 선택) · 자동입력=그레이(작성 불필요) · 그 외=네이비
+      //   🔴 색 선택은 COLS 엔트리 플래그(req/dd/auto)=컬럼 정체성 기준 → 컬럼 이동해도 정상(하드코딩 letter 없음).
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: c.req ? _gold : (c.dd ? _green : (c.auto ? _gray : _navy)) } }
       cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
       if (c.note) cell.note = c.note
       ws.getColumn(i + 1).width = c.label.length > 12 ? 18 : 12
