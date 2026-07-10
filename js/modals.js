@@ -403,6 +403,69 @@ function buildProductHistoryHtml(productCode) {
 }
 window.buildProductHistoryHtml = buildProductHistoryHtml
 
+// 🔴 B2c: 공용 코어 섹션 빌더 — 상품/기획 상세가 공통으로 렌더하는 6섹션(가격/소재/사이즈규격/가이드/제조/이미지)을 단일 소스로.
+//   반환 = 섹션별 필드 HTML 조각(섹션 래퍼 없음) → 각 화면이 자기 섹션 마크업(.dsection/.pd-section)으로 감쌈(CSS 스코프 보존).
+//   mode='product' → data-key(saveDetailEdit 제네릭 루프) · 'plan' → data-pkey(savePlanDetailEdit 제네릭 루프). 제네릭 저장이라 필드 무손실.
+//   🔴 기본정보(브랜드/품번+코드생성/색상/성별/담당자/판매상태/연도·시즌)는 mode-specific(데이터모델·순서 상이) → 화면별 유지(공용 아님).
+function buildDetailCommonSections(item, mode) {
+  const A = mode === 'plan' ? 'data-pkey' : 'data-key'
+  const s = (typeof _settings !== 'undefined' && _settings) ? _settings : {}
+  const escv = v => String(v == null ? '' : v).replace(/"/g, '&quot;')
+  const mkOpts = (arr, cur) => (arr || []).map(it => { const [v, l] = Array.isArray(it) ? it : [it, it]; return `<option value="${v}"${cur === v ? ' selected' : ''}>${l}</option>` }).join('')
+  const F = (label, key, val, type = 'text', opts = '', spanClass = '', dispOverride = '') => {
+    let inputVal
+    if (type === 'number') { const st = String(val ?? '').replace(/[^\d.-]/g, ''); inputVal = (st === '-' || st === '') ? '' : st }
+    else inputVal = escv(val)
+    const disp = dispOverride || (val != null && val !== '' ? String(val) : '-')
+    const inp = type === 'select' ? `<select ${A}="${key}">${opts}</select>`
+      : type === 'textarea' ? `<textarea ${A}="${key}" rows="4">${val || ''}</textarea>`
+      : `<input type="${type}" ${A}="${key}" value="${inputVal}" />`
+    return `<div class="dfield ${spanClass}"><span class="dfield-label">${label}</span><span class="dfield-value${disp === '-' ? ' empty' : ''}${type === 'textarea' ? ' long' : ''}">${disp}</span>${inp}</div>`
+  }
+  // 이미지 멀티-URL 필드(줄바꿈 문자열). htmlBtn=상세 URL([HTML 복사]→convertUrlsToHtml).
+  const UF = (label, key, val, htmlBtn = false) => {
+    const v = val || ''
+    const urls = v ? v.split(/[\n\r]+/).map(u => u.trim()).filter(Boolean) : []
+    const htmlB = htmlBtn ? `<button type="button" class="img-html-btn" onclick="event.stopPropagation();copyUrlHtml('${key}')" title="이미지 URL → 상세페이지 HTML 복사">HTML 복사</button>` : ''
+    const allCopyBtn = urls.length > 1 ? `<button type="button" class="btn-copy-url" data-url="${v.replace(/"/g, '&quot;')}" onclick="copySingleUrlFromBtn(this)" title="전체 URL 복사">전체복사</button>` : ''
+    const view = urls.length
+      ? urls.map(u => { const su = u.replace(/"/g, '&quot;'); return `<div class="url-item"><span class="url-item-text" title="${su}">${su}</span><button type="button" class="btn-copy-url btn-copy-single" data-url="${su}" onclick="copySingleUrlFromBtn(this)">복사</button></div>` }).join('')
+      : '<span class="url-empty-text">-</span>'
+    return `<div class="dfield span3"><div class="dfield-label-row"><span class="dfield-label">${label}</span>${htmlB}${allCopyBtn}</div><div class="url-list${urls.length ? '' : ' empty'}">${view}</div><textarea ${A}="${key}" rows="3">${v}</textarea></div>`
+  }
+  const price =
+      F('판매가(원)', 'salePrice', item.salePrice ? item.salePrice.toLocaleString() + '원' : '-', 'number')
+    + F('원가(원)', 'costPrice', item.costPrice ? item.costPrice.toLocaleString() + '원' : '-', 'number')
+    + F('타입', 'type', item.type, 'select', mkOpts(s.types, item.type))
+    + F('원단타입', 'fabricType', item.fabricType, 'select', mkOpts(s.fabricTypes, item.fabricType || ''))
+    + F('가이드', 'guide', item.guide)
+  const material =
+      F('소재', 'material', item.material, 'textarea', '', 'span3')
+    + (mode === 'product' ? F('원단설명', 'fabricDesc', item.fabricDesc, 'textarea', '', 'span3') : '')
+    + F('디자이너 코멘트', 'comment', item.comment, 'textarea', '', 'span3')
+    + F('세탁방법', 'washMethod', item.washMethod, 'textarea', '', 'span3')
+  const sizeSpec = `<div class="size-spec-view-wrap">${buildSizeSpecView(item.sizeSpec)}</div><div class="size-spec-edit-wrap">${buildSizeSpecEdit(item.sizeSpec)}</div>`
+  const guide =
+      F('가슴선', 'chestLine', item.chestLine, 'select', mkOpts(s.chestLines, item.chestLine || ''))
+    + F('다리파임', 'legCut', item.legCut, 'select', mkOpts(s.legCuts, item.legCut || ''))
+    + F('비침', 'transparency', item.transparency, 'select', mkOpts(s.transparencies, item.transparency || ''))
+    + F('안감', 'lining', item.lining, 'select', mkOpts(s.linings, item.lining || ''))
+    + F('캡고리', 'capRing', item.capRing, 'select', mkOpts(s.capRings, item.capRing || ''))
+    + F('모델착용사이즈', 'modelSize', item.modelSize)
+  const made =
+      F('제조년월', 'madeMonth', item.madeMonth)
+    + F('제조사', 'madeBy', item.madeBy)
+    + F('제조국', 'madeIn', item.madeIn)
+  const image =
+      UF('카페24 대표 (시스템 썸네일)', 'cafe24Main', item.cafe24Main || (item.mainImage || ''))
+    + UF('사방넷 대표', 'sabangMain', item.sabangMain || '')
+    + UF('CAFE24 상세 URL', 'cafe24DetailUrl', item.cafe24DetailUrl || '', true)
+    + UF('사방넷 상세 URL', 'sabangDetailUrl', item.sabangDetailUrl || '', true)
+    + F('영상 URL', 'videoUrl', item.videoUrl || '', 'text', '', 'span3')
+  return { price, material, sizeSpec, guide, made, image }
+}
+window.buildDetailCommonSections = buildDetailCommonSections
+
 function buildDetailContent(p) {
   const sizes  = SIZES
   const platforms = _platforms
@@ -556,6 +619,9 @@ function buildDetailContent(p) {
       <textarea data-key="pinnedMemo" rows="2" placeholder="📌 고정 메모 (상단 상시 노출)">${esc(p.pinnedMemo || '')}</textarea>
     </div>`
 
+  // 🔴 B2c: 공용 코어 6섹션(가격/소재/사이즈규격/가이드/제조/이미지) 단일 소스
+  const core = buildDetailCommonSections(p, 'product')
+
   return `
     ${pinnedMemoBlock}
     <div class="dsection">
@@ -632,50 +698,35 @@ function buildDetailContent(p) {
     <div class="dsection">
       <div class="dsection-title">가격 / 디자인</div>
       <div class="dsection-grid">
-        ${field('판매가(원)', 'salePrice',  p.salePrice ? p.salePrice.toLocaleString()+'원' : '-', 'number')}
-        ${field('원가(원)',   'costPrice',  p.costPrice ? p.costPrice.toLocaleString()+'원' : '-', 'number')}
-        ${field('타입',       'type',       p.type,     'select', typeOpts)}
-        ${field('원단타입',   'fabricType', p.fabricType, 'select', fabricOpts)}
-        ${field('가이드',     'guide',      p.guide)}
+        ${core.price}
       </div>
     </div>
 
     <div class="dsection">
       <div class="dsection-title">소재</div>
       <div class="dsection-grid col1">
-        ${field('소재',     'material',   p.material,   'textarea','','span3')}
-        ${field('원단설명', 'fabricDesc', p.fabricDesc, 'textarea','','span3')}
-        ${field('디자이너 코멘트', 'comment', p.comment, 'textarea','','span3')}
-        ${field('세탁방법', 'washMethod', p.washMethod, 'textarea','','span3')}
+        ${core.material}
       </div>
     </div>
 
     <div class="dsection">
       <div class="dsection-title">사이즈 규격 <button type="button" class="img-html-btn-all" onclick="event.stopPropagation();copySizeGuideHtml()">사이즈 HTML 복사</button></div>
       <div style="padding:10px 12px">
-        <div class="size-spec-view-wrap">${buildSizeSpecView(p.sizeSpec)}</div>
-        <div class="size-spec-edit-wrap">${buildSizeSpecEdit(p.sizeSpec)}</div>
+        ${core.sizeSpec}
       </div>
     </div>
 
     <div class="dsection">
       <div class="dsection-title">가이드</div>
       <div class="dsection-grid">
-        ${field('가슴선',   'chestLine',    p.chestLine,    'select', chestLineOpts)}
-        ${field('다리파임', 'legCut',       p.legCut,       'select', legOpts)}
-        ${field('비침',     'transparency', p.transparency, 'select', transparencyOpts)}
-        ${field('안감',     'lining',       p.lining,       'select', liningOpts)}
-        ${field('캡고리',   'capRing',      p.capRing,      'select', capRingOpts)}
-        ${field('모델착용사이즈', 'modelSize', p.modelSize)}
+        ${core.guide}
       </div>
     </div>
 
     <div class="dsection">
       <div class="dsection-title">제조 정보</div>
       <div class="dsection-grid">
-        ${field('제조년월', 'madeMonth', p.madeMonth)}
-        ${field('제조사',   'madeBy',    p.madeBy)}
-        ${field('제조국',   'madeIn',    p.madeIn)}
+        ${core.made}
         <div class="dfield">
           <label class="dfield-label">최종입고일</label>
           <span class="dfield-value">${((p.stockLog||[]).filter(l=>l.type==='in').reduce((m,l)=>l.date>m?l.date:m,'')) || '—'}</span>
@@ -752,22 +803,7 @@ function buildDetailContent(p) {
         이미지 URL <span class="dimg-arrow">▼</span>
       </div>
       <div id="dImgBody" class="dsection-grid col1">
-        ${(() => {
-          // 🔴 B2a: 대표 = 카페24 대표 + 사방넷 대표(멀티 URL) · 상세 = 카페24/사방넷 상세 URL([HTML 복사]). 레거시 6에디터 제거.
-          //   레거시 mainImage seed: cafe24Main 비었고 mainImage 있으면 대표(카페24) 필드에 시드해 표시(편집 저장 시 cafe24Main 로 승격).
-          const cafe24Main = p.cafe24Main || (p.mainImage || '')
-          const sabangMain = p.sabangMain || ''
-          const cafe24Detail = p.cafe24DetailUrl || ''
-          const sabangDetail = p.sabangDetailUrl || ''
-          const vidUrl   = p.videoUrl || ''
-          return `
-            ${urlField('카페24 대표 (시스템 썸네일)', 'cafe24Main', cafe24Main, 'textarea')}
-            ${urlField('사방넷 대표', 'sabangMain', sabangMain, 'textarea')}
-            ${urlField('CAFE24 상세 URL', 'cafe24DetailUrl', cafe24Detail, 'textarea', true)}
-            ${urlField('사방넷 상세 URL', 'sabangDetailUrl', sabangDetail, 'textarea', true)}
-            ${urlField('영상 URL', 'videoUrl', vidUrl, 'text')}
-          `
-        })()}
+        ${core.image}
       </div>
     </div>
 

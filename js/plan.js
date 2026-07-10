@@ -1533,6 +1533,8 @@ function buildPlanDetailContent(item) {
       <textarea data-pkey="pinnedMemo" rows="2" placeholder="📌 고정 메모 (상단 상시 노출)">${esc(item.pinnedMemo || '')}</textarea>
     </div>`
 
+  // 🔴 B2c: 공용 코어 6섹션(가격/소재/사이즈규격/가이드/제조/이미지) — 상품 상세와 단일 소스 공유(mode='plan'→data-pkey)
+  const core = (typeof buildDetailCommonSections === 'function') ? buildDetailCommonSections(item, 'plan') : null
   document.getElementById('pdContent').innerHTML = `
     ${plPinnedMemoBlock}
     <div class="pd-section">
@@ -1591,55 +1593,37 @@ function buildPlanDetailContent(item) {
     <div class="pd-section">
       <div class="pd-section-title">가격 / 디자인</div>
       <div class="dfields-grid">
-        ${pf('판매가', 'salePrice', item.salePrice, 'number')}
-        ${pf('원가',   'costPrice', item.costPrice, 'number')}
-        ${pf('타입',   'type',      item.type, 'select', typeOpts, '', typeLabel[item.type] || item.type)}
-        ${pf('원단타입', 'fabricType', item.fabricType, 'select', fabricOpts)}
-        ${pf('가이드',   'guide',      item.guide)}
+        ${core.price}
       </div>
     </div>
     <div class="pd-section">
       <div class="pd-section-title">소재</div>
       <div class="dfields-grid">
-        ${pf('소재',            'material',   item.material,   'textarea', '', 'dfield-span2')}
-        ${pf('디자이너 코멘트', 'comment',    item.comment,    'textarea', '', 'dfield-span2')}
-        ${pf('세탁방법',        'washMethod', item.washMethod, 'textarea', '', 'dfield-span2')}
+        ${core.material}
       </div>
     </div>
     <div class="pd-section">
       <div class="pd-section-title">사이즈 규격 <button type="button" class="img-html-btn-all" onclick="event.stopPropagation();copySizeGuideHtml()">사이즈 HTML 복사</button></div>
       <div style="padding:10px 12px">
-        <div class="size-spec-view-wrap">${buildSizeSpecView(item.sizeSpec)}</div>
-        <div class="size-spec-edit-wrap">${buildSizeSpecEdit(item.sizeSpec)}</div>
+        ${core.sizeSpec}
       </div>
     </div>
     <div class="pd-section">
       <div class="pd-section-title">가이드</div>
       <div class="dfields-grid">
-        ${pf('가슴선',   'chestLine',    item.chestLine,    'select', chestLineOpts)}
-        ${pf('다리파임', 'legCut',       item.legCut,       'select', legCutOpts)}
-        ${pf('비침',     'transparency', item.transparency, 'select', transparencyOpts)}
-        ${pf('안감',     'lining',       item.lining,       'select', liningOpts)}
-        ${pf('캡고리',   'capRing',      item.capRing,      'select', capRingOpts)}
-        ${pf('모델착용사이즈', 'modelSize', item.modelSize)}
+        ${core.guide}
       </div>
     </div>
     <div class="pd-section">
       <div class="pd-section-title">제조 정보</div>
       <div class="dfields-grid">
-        ${pf('제조년월', 'madeMonth', item.madeMonth)}
-        ${pf('제조사',   'madeBy',    item.madeBy)}
-        ${pf('제조국',   'madeIn',    item.madeIn)}
+        ${core.made}
       </div>
     </div>
     <div class="pd-section">
       <div class="pd-section-title">이미지 URL</div>
       <div class="dfields-grid">
-        ${pf('카페24 대표 (시스템 썸네일)', 'cafe24Main', item.cafe24Main || (item.mainImage || ''), 'textarea', '', 'dfield-span2')}
-        ${pf('사방넷 대표', 'sabangMain', item.sabangMain || '', 'textarea', '', 'dfield-span2')}
-        ${pf('CAFE24 상세 URL', 'cafe24DetailUrl', item.cafe24DetailUrl || '', 'textarea', '', 'dfield-span2', '', true)}
-        ${pf('사방넷 상세 URL', 'sabangDetailUrl', item.sabangDetailUrl || '', 'textarea', '', 'dfield-span2', '', true)}
-        ${pf('영상 URL',   'videoUrl',   item.videoUrl || '',                    'text',     '', 'dfield-span2')}
+        ${core.image}
       </div>
     </div>
     <div class="pd-section">
