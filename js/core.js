@@ -752,6 +752,19 @@ const PLACEHOLDER_IMG = 'assets/logo-placeholder.png'
 window.PLACEHOLDER_IMG = PLACEHOLDER_IMG
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', 'F']
 
+// === 사이즈 별칭 정규화 (단일 소스) ===
+// 파일/사용자 입력의 변형 표기를 재고·바코드 정규 키(SIZES)로 매핑.
+// 🔴 EXACT 매핑만 — substring/startsWith 절대 금지(예: 'XL' ⊂ '2XL' 오매칭 방지).
+// 정규 키는 '2XL'(SIZES 기준). 변형 표기 'XXL'/'2X'는 재고·바코드 맥락에서 유일하게 2XL 을 의미.
+// ⚠️ 사이즈규격(측정) 도메인의 'XXL'(SIZE_SPEC_SIZES)은 별개 어휘 — 이 정규화 경로를 타지 않음(무접촉).
+const SIZE_ALIASES = { 'XXL': '2XL', '2X': '2XL' }
+function normalizeSizeKey(raw) {
+  const s = String(raw == null ? '' : raw).trim().toUpperCase()
+  return SIZE_ALIASES[s] || s   // 별칭이면 정규 키 반환, 아니면 그대로(미지 토큰은 이후 SIZES.includes 에서 탈락)
+}
+window.SIZE_ALIASES = SIZE_ALIASES
+window.normalizeSizeKey = normalizeSizeKey
+
 // === 사이즈 규격 — 단일 소스 (앱 전역) ===
 // 데이터 구조: { XS:{bust,waist,hip}, S:{...}, ..., XXL:{...}, F:{bust} }
 // 측정 부위(parts)를 추가/변경하려면 SIZE_SPEC_PARTS 한 곳만 수정하면 화면/엑셀이 자동 반영된다.

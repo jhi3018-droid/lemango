@@ -714,7 +714,7 @@ function downloadStoreStockSample() {
 // 한 행의 상품 식별 (방식 A: 품번+사이즈 / 방식 B: 바코드 우선). 수량은 _ssuValidateRows 에서.
 function _ssuResolveRow(r) {
   const rawCode = String(r[0] || '').trim()
-  const rawSize = String(r[1] || '').trim().toUpperCase()
+  const rawSize = normalizeSizeKey(r[1])   // 별칭 정규화(XXL/2X→2XL) — SIZES.includes + 바코드 교차검증 공통
   const barcode = String(r[2] || '').trim()
   const qtyRaw  = String(r[3] || '').trim()
   const row = { rawCode, rawSize, barcode, qtyRaw, method: '', code: '', size: '', qty: NaN, status: '', valid: false, error: '', dupSum: false }
@@ -5405,7 +5405,7 @@ function closeLocUploadModal() { const m = document.getElementById('locUploadMod
 // 한 행 식별(듀얼 shape, 바코드 우선 — _ssuResolveRow 미러) + 로케이션 해석. 바코드=식별 전용(절대 미기록).
 function _locUpResolveRow(r) {
   const rawCode = String(r[0] || '').trim()
-  const rawSize = String(r[1] || '').trim().toUpperCase()
+  const rawSize = normalizeSizeKey(r[1])   // 별칭 정규화(XXL/2X→2XL) — SIZES.includes + 바코드 교차검증 공통
   const barcode = String(r[2] || '').trim()
   const locRaw = String(r[3] || '').trim()
   const newLoc = (typeof normalizeLocation === 'function') ? normalizeLocation(locRaw) : locRaw.toUpperCase()

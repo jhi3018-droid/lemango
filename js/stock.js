@@ -614,12 +614,15 @@ function closeBarcodeUploadModal(force) {
 function downloadBarcodeSample() {
   if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
   const header = ['품번', '사이즈', '바코드']
+  // 7개 정규 사이즈 전부 예시로 제공(2XL·F 포함) — 정규 키를 명확히 안내.
   const sample = [
-    ['LSWON16266707', 'XS', '8809100001001'],
-    ['LSWON16266707', 'S',  '8809100001002'],
-    ['LSWON16266707', 'M',  '8809100001003'],
-    ['LSWON16266707', 'L',  '8809100001004'],
-    ['LSWON16266707', 'XL', '8809100001005'],
+    ['LSWON16266707', 'XS',  '8809100001001'],
+    ['LSWON16266707', 'S',   '8809100001002'],
+    ['LSWON16266707', 'M',   '8809100001003'],
+    ['LSWON16266707', 'L',   '8809100001004'],
+    ['LSWON16266707', 'XL',  '8809100001005'],
+    ['LSWON16266707', '2XL', '8809100001006'],
+    ['LSWON16266707', 'F',   '8809100001007'],
   ]
   const ws = XLSX.utils.aoa_to_sheet([header, ...sample])
   ws['!cols'] = [{ wch: 18 }, { wch: 8 }, { wch: 18 }]
@@ -661,7 +664,8 @@ function handleBarcodeUpload(input) {
       _bcUploadData = dataRows.map(r => {
         // 품번 비교는 대소문자 무시(양쪽 대문자화). 저장은 실제 상품의 원래 casing에 한다 (p.barcodes만 변경).
         const code = String(r[0]).trim().toUpperCase()
-        const size = String(r[1]).trim().toUpperCase()
+        // 사이즈 별칭 정규화(XXL/2X → 2XL) 후 SIZES 정규 키로 매칭 — EXACT, substring 아님.
+        const size = normalizeSizeKey(r[1])
         const barcode = String(r[2]).trim()
         const product = State.allProducts.find(p => (p.productCode || '').toUpperCase() === code && !p.deleted)
         const existing = product?.barcodes?.[size] || ''
