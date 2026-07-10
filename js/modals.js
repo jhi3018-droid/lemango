@@ -18,6 +18,18 @@ window.openImageViewer = openImageViewer
 // 하위호환: 기존 openModal(idx, images) 호출부(상품조회 테이블 등)는 그대로 → 뷰어로 위임.
 function openModal(idx, images) { openImageViewer(images, idx) }
 
+// 🔴 단일 닫기 루틴 — ✕/ESC/backdrop/프로그램 전 경로 공통. close() + 이미지 src/스피너/오류 상태 정리(잔상 방어).
+function closeImageViewer() {
+  const modal = document.getElementById('imageModal')
+  if (!modal) return
+  modal.close()
+  const imgEl = document.getElementById('modalImg')
+  if (imgEl) { imgEl.onload = null; imgEl.onerror = null; imgEl.src = ''; imgEl.style.visibility = '' }
+  const spinner = document.getElementById('modalSpinner'); if (spinner) spinner.style.display = 'none'
+  const errEl = document.getElementById('modalError'); if (errEl) errEl.style.display = 'none'
+}
+window.closeImageViewer = closeImageViewer
+
 function _imgMetaText(im) {
   if (!im) return ''
   const bits = []
@@ -65,12 +77,12 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowLeft')  { e.preventDefault(); modalNav(-1) }
   else if (e.key === 'ArrowRight') { e.preventDefault(); modalNav(1) }
   // 🔴 ESC 스택: preventDefault 로 네이티브 dialog ESC(다음 하위 dialog 닫기)까지 억제 → 뷰어만 닫고 상세 모달 유지.
-  else if (e.key === 'Escape')     { e.preventDefault(); e.stopPropagation(); modal.close() }
+  else if (e.key === 'Escape')     { e.preventDefault(); e.stopPropagation(); closeImageViewer() }
 }, true)   // capture: 하위 모달 핸들러보다 먼저 처리
-// backdrop(다이얼로그 바깥 영역) 클릭 → 닫기
+// backdrop(다이얼로그 바깥 영역) 클릭 → 닫기 (단일 close 루틴)
 ;(function () {
   const m = document.getElementById('imageModal')
-  if (m) m.addEventListener('click', e => { if (e.target === m || e.target.classList.contains('modal-img-wrap')) m.close() })
+  if (m) m.addEventListener('click', e => { if (e.target === m || e.target.classList.contains('modal-img-wrap')) closeImageViewer() })
 })()
 
 // 🔴 상품 상세 참고 이미지(tempImages) 뷰어 — 라벨/캡션 포함 세트로 ◀▶ 순환.
