@@ -131,7 +131,7 @@ function openPlanRegisterModal(item) {
 
   modal.showModal()
   centerModal(modal)
-  initPlPcodePanel()
+  initPlanCodePicker()   // 🔴 B1: 패널 제거 → 기본정보 백스타일 picker 초기화(품번 생성 = [품번 생성] 버튼)
 }
 
 function buildPlanTempImageSection(item) {
@@ -200,6 +200,14 @@ function buildPlanProductImageSection(item) {
         <div class="rform-field" style="grid-column:span 2">
           <label>영상 URL</label>
           <input type="text" id="npVideoUrl" placeholder="https://..." value="${(item && item.videoUrl) ? String(item.videoUrl).replace(/"/g,'&quot;') : ''}" />
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>CAFE24 상세 URL</label>
+          <textarea id="npCafe24DetailUrl" rows="2" placeholder="여러 개면 줄바꿈으로 구분">${esc((item && item.cafe24DetailUrl) || '')}</textarea>
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>사방넷 상세 URL</label>
+          <textarea id="npSabangDetailUrl" rows="2" placeholder="여러 개면 줄바꿈으로 구분">${esc((item && item.sabangDetailUrl) || '')}</textarea>
         </div>
       </div>
     </div>
@@ -415,6 +423,13 @@ async function submitPlanRegister(e) {
     year:        document.getElementById('plYear').value,
     season:      document.getElementById('plSeason').value,
     gender:      document.getElementById('plGender').value,
+    // 🔴 B1: 품번 코드 필드 (엑셀 업로드와 동일 shape — 편집 시 프리필/상품확정 정합). typeCode≠type(5-2 보호)
+    classCode:      document.getElementById('plClass')?.value || '',
+    typeCode:       document.getElementById('plTypeCode')?.value || '',
+    yearDigit:      (typeof pcodeYearDigit === 'function') ? pcodeYearDigit(document.getElementById('plYear')?.value || '') : '',
+    designCode:     document.getElementById('plPcDesign')?.value || '',
+    cafe24DetailUrl: (document.getElementById('npCafe24DetailUrl')?.value || '').trim(),
+    sabangDetailUrl: (document.getElementById('npSabangDetailUrl')?.value || '').trim(),
     // 디자인 속성
     fabricType:   val('plFabricType'),
     backStyle:    val('plBackStyle'),
@@ -465,92 +480,17 @@ async function submitPlanRegister(e) {
 }
 
 // ===== 신규기획 품번 자동생성 =====
-function togglePlPcodePanel() {
-  const panel = document.getElementById('plPcodePanel')
-  const btn   = document.getElementById('plPcodeToggleBtn')
-  const open  = panel.style.display === 'none' || panel.style.display === ''
-  panel.style.display = open ? 'block' : 'none'
-  btn.textContent = open ? '품번 생성 ▴' : '품번 생성 ▾'
-  if (open) initPlPcodePanel()
-}
-
-function initPlPcodePanel() {
+// 🔴 B1: 신규기획 백스타일(=디자인 코드) picker 초기화. 패널 제거 → 기본정보 인라인.
+//   구 renderPlBackStyleList/selectPlBackStyle/showPlBsForm/confirmPlBsForm = 존재하지 않는 plPcBackStyle/plBsDropdown 참조 dead code 였음 → 제거.
+function initPlanCodePicker() {
   if (!document.getElementById('plPcDesign')) return
+  // 🔴 기본 선택 없음(공란) — 백스타일=의도적 선택(업로드 designCode='' 공란과 값 정합 · 디자인 반려 테스트 가능)
+  document.getElementById('plPcDesign').value = ''
+  const s = document.getElementById('plPcDesignSearch'); if (s) { s.value = ''; s.placeholder = '코드 또는 패턴명 검색 (예: 1626 / Crossed / 크로스)' }
+  const bs = document.getElementById('plBackStyle'); if (bs) bs.value = ''
   renderPlDesignList('')
-  selectPlDesign('1626')
-  renderPlBackStyleList('')
-  document.getElementById('plPcPreview').textContent = '-'
-  document.getElementById('plPcSeqDisplay').textContent = '-'
-  const applyBtn = document.getElementById('plPcApplyBtn')
-  if (applyBtn) applyBtn.disabled = true
 }
-
-function renderPlBackStyleList(query) {
-  const q = (query || '').toLowerCase().trim()
-  const list = q
-    ? _designCodes.filter(([c,e,k]) => c.includes(q) || e.toLowerCase().includes(q) || k.toLowerCase().includes(q))
-    : _designCodes
-  const current = document.getElementById('plPcBackStyle')?.value
-  const dd = document.getElementById('plBsDropdown')
-  if (!dd) return
-  dd.innerHTML = list.map(([c,e,k]) =>
-    `<div class="design-listitem${current===c?' selected':''}" onclick="selectPlBackStyle('${c}')">[${c}] ${e} / ${k}</div>`
-  ).join('') || '<div class="design-no-result">없음</div>'
-}
-
-function filterPlBackStyleList() {
-  renderPlBackStyleList(document.getElementById('plPcBsSearch')?.value || '')
-}
-
-function selectPlBackStyle(code) {
-  const found = _designCodes.find(([c]) => c === code)
-  if (!found) return
-  document.getElementById('plPcBackStyle').value = code
-  document.getElementById('plPcBsSearch').value = ''
-  document.getElementById('plPcBsSearch').placeholder = `${code} - ${found[1]} (${found[2]})`
-  renderPlBackStyleList('')
-}
-
-function showPlBsForm(mode) {
-  const form = document.getElementById('plBsForm')
-  if (!form) return
-  if (mode === 'edit') {
-    const cur = document.getElementById('plPcBackStyle')?.value
-    if (!cur) { showToast('수정할 백스타일을 선택하세요.', 'warning'); return }
-    const entry = _designCodes.find(([c]) => c === cur)
-    if (entry) {
-      document.getElementById('plBsFormCode').value = entry[0]
-      document.getElementById('plBsFormEn').value   = entry[1]
-      document.getElementById('plBsFormKr').value   = entry[2]
-    }
-  } else {
-    document.getElementById('plBsFormCode').value = ''
-    document.getElementById('plBsFormEn').value   = ''
-    document.getElementById('plBsFormKr').value   = ''
-  }
-  form.dataset.mode = mode
-  form.style.display = 'flex'
-}
-
-function confirmPlBsForm() {
-  const form = document.getElementById('plBsForm')
-  const mode = form?.dataset.mode
-  const code = document.getElementById('plBsFormCode')?.value.trim()
-  const en   = document.getElementById('plBsFormEn')?.value.trim()
-  const kr   = document.getElementById('plBsFormKr')?.value.trim()
-  if (!code || !en || !kr) { showToast('코드, 영문, 한글 모두 입력해주세요.', 'warning'); return }
-  if (mode === 'add') {
-    if (_designCodes.find(([c]) => c === code)) { showToast('이미 존재하는 코드입니다.', 'error'); return }
-    _designCodes.push([code, en, kr])
-  } else {
-    const idx = _designCodes.findIndex(([c]) => c === code)
-    if (idx !== -1) _designCodes[idx] = [code, en, kr]; else _designCodes.push([code, en, kr])
-  }
-  saveDesignCodes()
-  renderPlBackStyleList('')
-  document.getElementById('plPcBackStyle').value = code
-  if (form) form.style.display = 'none'
-}
+window.initPlanCodePicker = initPlanCodePicker
 
 function renderPlDesignList(query) {
   const q = (query || '').toLowerCase().trim()
@@ -580,64 +520,26 @@ function selectPlDesign(code) {
   document.getElementById('plPcDesign').value = code
   document.getElementById('plPcDesignSearch').value = ''
   document.getElementById('plPcDesignSearch').placeholder = `${code} - ${found[1]} (${found[2]})`
+  const bs = document.getElementById('plBackStyle')   // 🔴 B1: 백스타일명(EN) 자동채움(read-only)
+  if (bs) bs.value = found[1] || ''
   renderPlDesignList('')
 }
 
-function updatePlProductCode() {
-  // 🔴 공유 로직(product-code.js): 일련번호 basis=분류+연도+시즌 · 6개 필수 반려 게이트 · full-code 유일성은 apply 가드.
-  pcodeRenderPreview({
-    cls:       document.getElementById('plPcClass')?.value,
-    gen:       document.getElementById('plPcGender')?.value,
-    typ:       document.getElementById('plPcType')?.value,
+// 🔴 B1: 신규기획 1-버튼 품번 생성 (Phase A 공유 코어 _genCodeInto). 연도(plYear)=전체연도 → yearDigit 파생.
+//   🔴 typeCode → type(plType) 절대 미기입(5-2 카테고리 할인 보호 — 구 typeMap 누출 제거). 백스타일명은 picker 가 채움.
+function genPlanCode() {
+  const yearFull  = document.getElementById('plYear')?.value || ''
+  const yearDigit = (typeof pcodeYearDigit === 'function') ? pcodeYearDigit(yearFull) : ''
+  _genCodeInto({
+    cls:       document.getElementById('plClass')?.value,
+    gen:       document.getElementById('plGender')?.value,
+    typ:       document.getElementById('plTypeCode')?.value,
     des:       document.getElementById('plPcDesign')?.value,
-    yearDigit: document.getElementById('plPcYear')?.value,
-    seasonNum: document.getElementById('plPcSeasonNum')?.value
-  }, {
-    preview: document.getElementById('plPcPreview'),
-    seq:     document.getElementById('plPcSeqDisplay'),
-    apply:   document.getElementById('plPcApplyBtn')
-  })
+    yearDigit,
+    seasonNum: document.getElementById('plSeason')?.value
+  }, 'plProductCode', 'plBrand')
 }
-
-function applyPlGeneratedCode() {
-  const code = document.getElementById('plPcPreview').textContent
-  if (!pcodeIsValidCode(code)) { showToast('품번 생성 반려 — 필수 입력(분류·성별·타입·디자인·연도·시즌)을 확인하세요.', 'warning'); return }
-
-  // 🔴 full-code 유일성 최종 가드(authoritative)
-  if (State.allProducts.some(p => p.productCode === code) ||
-      State.planItems.some(p => p.productCode === code) ||
-      _reservedCodes.has(code)) {
-    showToast(`품번 "${code}"은 이미 사용 중입니다.`, 'error')
-    updatePlProductCode()
-    return
-  }
-  _reservedCodes.add(code)
-  document.getElementById('plProductCode').value = code
-  document.getElementById('plPcodePanel').style.display = 'none'
-  document.getElementById('plPcodeToggleBtn').textContent = '품번 생성 ▾'
-
-  const cls = document.getElementById('plPcClass')?.value || ''
-  const typ = document.getElementById('plPcType')?.value || ''
-  document.getElementById('plBrand').value = cls.startsWith('N') ? '르망고 느와' : '르망고'
-
-  const typeEl = document.getElementById('plType')
-  if (typeEl) {
-    const typeMap = { ON: 'onepiece', MO: 'onepiece', BK: 'bikini', BR: 'bikini' }
-    const mapped = typeMap[typ]
-    if (mapped) typeEl.value = mapped
-  }
-
-  const yearMap = {'1':'2021','2':'2022','3':'2023','4':'2024','5':'2025','6':'2026','7':'2027','8':'2028','9':'2029','0':'2030'}
-  const yearVal = document.getElementById('plPcYear')?.value
-  const yearEl = document.getElementById('plYear')
-  if (yearEl && yearVal) yearEl.value = yearMap[yearVal] || yearVal
-  const seasonEl = document.getElementById('plSeason')
-  if (seasonEl) seasonEl.value = document.getElementById('plPcSeasonNum')?.value || ''
-  const genderEl = document.getElementById('plGender')
-  if (genderEl) genderEl.value = document.getElementById('plPcGender')?.value || ''
-
-  showToast(`품번 ${code} 적용됨`, 'success')
-}
+window.genPlanCode = genPlanCode
 
 
 function searchPlan() {

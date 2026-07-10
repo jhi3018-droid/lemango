@@ -35,7 +35,7 @@ function openRegisterModal() {
   const modal = document.getElementById('registerModal')
   modal.showModal()
   centerModal(modal)
-  initPcodePanel()
+  initRegisterCodePicker()   // 🔴 B1: 패널 제거 → 기본정보 백스타일 picker 초기화(품번 생성 = [품번 생성] 버튼)
 }
 
 function closeRegisterModal(force) {
@@ -73,7 +73,8 @@ function submitRegister(e) {
   const costPrice   = parseInt(document.getElementById('rCostPrice').value) || 0
   const type        = document.getElementById('rType').value
   const fabricType  = document.getElementById('rFabricType').value
-  const backStyle     = document.getElementById('rBackStyle').value.trim()
+  const backStyle     = document.getElementById('rBackStyle').value.trim()        // 백스타일명(EN) — picker 자동채움
+  const designCode    = document.getElementById('pcDesign')?.value.trim() || ''   // 🔴 B1: 디자인(백스타일) 코드
   const legCut        = document.getElementById('rLegCut').value
   const guide         = document.getElementById('rGuide').value.trim()
   const chestLine     = document.getElementById('rChestLine').value
@@ -97,6 +98,9 @@ function submitRegister(e) {
   const imgExternal = (document.getElementById('rImgExternal')?.value || '').split('\n').map(u => u.trim()).filter(Boolean)
   const imgSum      = (document.getElementById('rImgSum')?.value || '').split('\n').map(u => u.trim()).filter(Boolean)
   const videoUrl    = document.getElementById('rVideoUrl')?.value.trim() || null
+  // 🔴 B1: CAFE24/사방넷 상세 URL — 여러 개면 줄바꿈 구분(엑셀 업로드와 동일하게 문자열로 저장)
+  const cafe24DetailUrl = document.getElementById('rCafe24DetailUrl')?.value.trim() || ''
+  const sabangDetailUrl = document.getElementById('rSabangDetailUrl')?.value.trim() || ''
   const saleStatus       = document.getElementById('rSaleStatus')?.value || '판매중'
   const productionStatus = document.getElementById('rProductionStatus')?.value || '지속생산'
   const logisticsDate    = document.getElementById('rLogisticsDate')?.value || null
@@ -140,6 +144,9 @@ function submitRegister(e) {
     type,
     fabricType,
     backStyle,
+    designCode,
+    cafe24DetailUrl,
+    sabangDetailUrl,
     legCut,
     guide,
     chestLine,

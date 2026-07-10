@@ -1093,102 +1093,9 @@
         </div>
         <div class="rform-field required" style="grid-column:span 4">
           <label>품번</label>
-          <div class="pcode-wrap">
-            <div class="pcode-input-row">
-              <input type="text" id="rProductCode" placeholder="예: LSWON16266707" required />
-              <button type="button" class="btn-pcode-toggle" id="pcodeToggleBtn" onclick="togglePcodePanel()">품번 생성 ▾</button>
-            </div>
-            <div class="pcode-panel" id="pcodePanel" style="display:none">
-              <div class="pcode-row">
-                <div class="pcode-sel-group">
-                  <label>분류</label>
-                  <select id="pcClass">
-                    <option value="LS">LS - 르망고 수영복</option>
-                    <option value="LW">LW - 르망고 의류</option>
-                    <option value="LG">LG - 르망고 굿즈</option>
-                    <option value="NS">NS - 느와 수영복</option>
-                    <option value="NW">NW - 느와 의류</option>
-                    <option value="NG">NG - 느와 굿즈</option>
-                  </select>
-                </div>
-                <div class="pcode-sel-group">
-                  <label>성별</label>
-                  <select id="pcGender">
-                    <option value="W">W - 여성</option>
-                    <option value="M">M - 남성</option>
-                    <option value="G">G - 걸즈</option>
-                    <option value="B">B - 보이즈</option>
-                    <option value="N">N - 공용</option>
-                    <option value="K">K - 키즈</option>
-                  </select>
-                </div>
-                <div class="pcode-sel-group">
-                  <label>타입</label>
-                  <select id="pcType">
-                    <option value="ON">ON - 원피스</option>
-                    <option value="MO">MO - 모노키니</option>
-                    <option value="BK">BK - 비키니</option>
-                    <option value="BR">BR - 브리프</option>
-                    <option value="JM">JM - 재머</option>
-                    <option value="RG">RG - 래시가드</option>
-                    <option value="AL">AL - 애슬레저</option>
-                    <option value="GM">GM - 의류</option>
-                    <option value="SC">SC - 수영모</option>
-                    <option value="BG">BG - 가방</option>
-                    <option value="ET">ET - 기타</option>
-                  </select>
-                </div>
-                <div class="pcode-sel-group">
-                  <label>연도</label>
-                  <select id="pcYear">
-                    <option value="1">1 - 2021</option>
-                    <option value="2">2 - 2022</option>
-                    <option value="3">3 - 2023</option>
-                    <option value="4">4 - 2024</option>
-                    <option value="5">5 - 2025</option>
-                    <option value="6" selected>6 - 2026</option>
-                    <option value="7">7 - 2027</option>
-                    <option value="8">8 - 2028</option>
-                    <option value="9">9 - 2029</option>
-                    <option value="0">0 - 2030</option>
-                  </select>
-                </div>
-                <div class="pcode-sel-group">
-                  <label>시즌</label>
-                  <select id="pcSeasonNum">
-                    <option value="1">1</option>
-                    <option value="2">2</option>
-                    <option value="3">3</option>
-                    <option value="4">4</option>
-                    <option value="5">5</option>
-                  </select>
-                </div>
-              </div>
-              <div class="pcode-row">
-                <div class="pcode-sel-group pcode-design">
-                  <label>디자인 번호 (패턴) — 코드·영문·한글 검색 가능</label>
-                  <div class="design-search-wrap" id="designSearchWrap">
-                    <input type="text" id="pcDesignSearch" class="design-search-input"
-                      placeholder="코드 또는 패턴명 검색 (예: 1626 / Crossed / 크로스)"
-                      autocomplete="off"
-                      oninput="filterDesignList()"
-                    />
-                    <input type="hidden" id="pcDesign" value="1626" />
-                    <div class="design-listbox" id="designDropdown"></div>
-                  </div>
-                </div>
-              </div>
-              <div class="pcode-preview-row">
-                <button type="button" class="btn btn-outline" onclick="updateProductCode()">품번 생성</button>
-                <div class="pcode-preview-label">생성될 품번</div>
-                <div class="pcode-preview" id="pcPreview">-</div>
-                <div class="pcode-seq-wrap">
-                  <label>일련번호</label>
-                  <span class="pcode-seq-display" id="pcSeqDisplay">-</span>
-                </div>
-                <button type="button" class="btn btn-accent" id="pcApplyBtn" onclick="applyGeneratedCode()" disabled>적용</button>
-              </div>
-            </div>
+          <div class="pcode-input-row">
+            <input type="text" id="rProductCode" placeholder="[품번 생성] 버튼으로 생성 · 직접 입력도 가능" required />
+            <button type="button" class="btn btn-accent btn-pcode-gen" onclick="genRegisterCode()">품번 생성</button>
           </div>
         </div>
         <div class="rform-field">
@@ -1215,14 +1122,85 @@
           <label>색상</label>
           <div id="rColorPickerSlot"></div>
         </div>
+        <!-- 🔴 B1: 품번 코드 필드 그룹 (기본정보로 이전, 패널 제거). 성별=6종 PCODE 통일 -->
+        <div class="rform-field">
+          <label>연도</label>
+          <select id="rYear">
+            <option value="1">2021</option>
+            <option value="2">2022</option>
+            <option value="3">2023</option>
+            <option value="4">2024</option>
+            <option value="5">2025</option>
+            <option value="6" selected>2026</option>
+            <option value="7">2027</option>
+            <option value="8">2028</option>
+            <option value="9">2029</option>
+            <option value="0">2030</option>
+          </select>
+        </div>
+        <div class="rform-field">
+          <label>시즌</label>
+          <select id="rSeason">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
+        </div>
+        <div class="rform-field">
+          <label>분류</label>
+          <select id="rClass">
+            <option value="LS">LS - 르망고 수영복</option>
+            <option value="LW">LW - 르망고 의류</option>
+            <option value="LG">LG - 르망고 굿즈</option>
+            <option value="NS">NS - 느와 수영복</option>
+            <option value="NW">NW - 느와 의류</option>
+            <option value="NG">NG - 느와 굿즈</option>
+          </select>
+        </div>
         <div class="rform-field">
           <label>성별</label>
           <select id="rGender">
-            <option value="">-</option>
+            <option value="">선택</option>
             <option value="W">여성</option>
             <option value="M">남성</option>
-            <option value="U">공용</option>
+            <option value="G">걸즈</option>
+            <option value="B">보이즈</option>
+            <option value="N">공용</option>
+            <option value="K">키즈</option>
           </select>
+        </div>
+        <div class="rform-field">
+          <label>타입 (품번)</label>
+          <select id="rTypeCode">
+            <option value="ON">ON - 원피스</option>
+            <option value="MO">MO - 모노키니</option>
+            <option value="BK">BK - 비키니</option>
+            <option value="BR">BR - 브리프</option>
+            <option value="JM">JM - 재머</option>
+            <option value="RG">RG - 래시가드</option>
+            <option value="AL">AL - 애슬레저</option>
+            <option value="GM">GM - 의류</option>
+            <option value="SC">SC - 수영모</option>
+            <option value="BG">BG - 가방</option>
+            <option value="ET">ET - 기타</option>
+          </select>
+        </div>
+        <div class="rform-field">
+          <label>백스타일명 (자동)</label>
+          <input type="text" id="rBackStyle" placeholder="백스타일 선택 시 자동" readonly />
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>백스타일 (디자인 코드) — 코드·영문·한글 검색</label>
+          <div class="design-search-wrap" id="designSearchWrap">
+            <input type="text" id="pcDesignSearch" class="design-search-input"
+              placeholder="코드 또는 패턴명 검색 (예: 1626 / Crossed / 크로스)"
+              autocomplete="off"
+              oninput="filterDesignList()" />
+            <input type="hidden" id="pcDesign" value="" />
+            <div class="design-listbox" id="designDropdown"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -1245,10 +1223,6 @@
         <div class="rform-field">
           <label>원단 타입</label>
           <select id="rFabricType"></select>
-        </div>
-        <div class="rform-field">
-          <label>백스타일</label>
-          <input type="text" id="rBackStyle" placeholder="예: Crossed X" />
         </div>
         <div class="rform-field">
           <label>가이드</label>
@@ -1365,6 +1339,14 @@
         <div class="rform-field" style="grid-column:span 2">
           <label>영상 URL</label>
           <input type="url" id="rVideoUrl" placeholder="https://..." />
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>CAFE24 상세 URL</label>
+          <textarea id="rCafe24DetailUrl" rows="2" placeholder="여러 개면 줄바꿈으로 구분"></textarea>
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>사방넷 상세 URL</label>
+          <textarea id="rSabangDetailUrl" rows="2" placeholder="여러 개면 줄바꿈으로 구분"></textarea>
         </div>
         <div class="rform-field" style="grid-column:span 4">
           <label>디자이너 코멘트</label>
@@ -1615,102 +1597,9 @@
         </div>
         <div class="rform-field" style="grid-column:span 4">
           <label>품번 (선택)</label>
-          <div class="pcode-wrap">
-            <div class="pcode-input-row">
-              <input type="text" id="plProductCode" placeholder="없으면 공란 — 품번 생성 가능" />
-              <button type="button" class="btn-pcode-toggle" id="plPcodeToggleBtn" onclick="togglePlPcodePanel()">품번 생성 ▾</button>
-            </div>
-            <!-- 품번 자동생성 패널 -->
-            <div class="pcode-panel" id="plPcodePanel" style="display:none">
-              <div class="pcode-row">
-                <div class="pcode-sel-group">
-                  <label>분류</label>
-                  <select id="plPcClass">
-                    <option value="LS">LS - 르망고 수영복</option>
-                    <option value="LW">LW - 르망고 의류</option>
-                    <option value="LG">LG - 르망고 굿즈</option>
-                    <option value="NS">NS - 느와 수영복</option>
-                    <option value="NW">NW - 느와 의류</option>
-                    <option value="NG">NG - 느와 굿즈</option>
-                  </select>
-                </div>
-                <div class="pcode-sel-group">
-                  <label>성별</label>
-                  <select id="plPcGender">
-                    <option value="W">W - 여성</option>
-                    <option value="M">M - 남성</option>
-                    <option value="G">G - 걸즈</option>
-                    <option value="B">B - 보이즈</option>
-                    <option value="N">N - 공용</option>
-                    <option value="K">K - 키즈</option>
-                  </select>
-                </div>
-                <div class="pcode-sel-group">
-                  <label>타입</label>
-                  <select id="plPcType">
-                    <option value="ON">ON - 원피스</option>
-                    <option value="MO">MO - 모노키니</option>
-                    <option value="BK">BK - 비키니</option>
-                    <option value="BR">BR - 브리프</option>
-                    <option value="JM">JM - 재머</option>
-                    <option value="RG">RG - 래시가드</option>
-                    <option value="AL">AL - 애슬레저</option>
-                    <option value="GM">GM - 의류</option>
-                    <option value="SC">SC - 수영모</option>
-                    <option value="BG">BG - 가방</option>
-                    <option value="ET">ET - 기타</option>
-                  </select>
-                </div>
-                <div class="pcode-sel-group">
-                  <label>연도</label>
-                  <select id="plPcYear">
-                    <option value="1">1 - 2021</option>
-                    <option value="2">2 - 2022</option>
-                    <option value="3">3 - 2023</option>
-                    <option value="4">4 - 2024</option>
-                    <option value="5">5 - 2025</option>
-                    <option value="6" selected>6 - 2026</option>
-                    <option value="7">7 - 2027</option>
-                    <option value="8">8 - 2028</option>
-                    <option value="9">9 - 2029</option>
-                    <option value="0">0 - 2030</option>
-                  </select>
-                </div>
-                <div class="pcode-sel-group">
-                  <label>시즌</label>
-                  <select id="plPcSeasonNum">
-                    <option value="1">1</option>
-                    <option value="2">2</option>
-                    <option value="3">3</option>
-                    <option value="4">4</option>
-                    <option value="5">5</option>
-                  </select>
-                </div>
-              </div>
-              <div class="pcode-row">
-                <div class="pcode-sel-group pcode-design">
-                  <label>디자인 번호 (패턴) — 코드·영문·한글 검색 가능</label>
-                  <div class="design-search-wrap" id="plDesignSearchWrap">
-                    <input type="text" id="plPcDesignSearch" class="design-search-input"
-                      placeholder="코드 또는 패턴명 검색"
-                      autocomplete="off"
-                      oninput="filterPlDesignList()" />
-                    <input type="hidden" id="plPcDesign" value="1626" />
-                    <div class="design-listbox" id="plDesignDropdown"></div>
-                  </div>
-                </div>
-              </div>
-              <div class="pcode-preview-row">
-                <button type="button" class="btn btn-outline" onclick="updatePlProductCode()">품번 생성</button>
-                <div class="pcode-preview-label">생성될 품번</div>
-                <div class="pcode-preview" id="plPcPreview">-</div>
-                <div class="pcode-seq-wrap">
-                  <label>일련번호</label>
-                  <span class="pcode-seq-display" id="plPcSeqDisplay">-</span>
-                </div>
-                <button type="button" class="btn btn-accent" id="plPcApplyBtn" onclick="applyPlGeneratedCode()" disabled>적용</button>
-              </div>
-            </div>
+          <div class="pcode-input-row">
+            <input type="text" id="plProductCode" placeholder="[품번 생성] 버튼으로 생성 · 직접 입력도 가능 · 없으면 공란" />
+            <button type="button" class="btn btn-accent btn-pcode-gen" onclick="genPlanCode()">품번 생성</button>
           </div>
         </div>
         <div class="rform-field">
@@ -1729,25 +1618,7 @@
           <label>색상</label>
           <div id="plColorPickerSlot"></div>
         </div>
-      </div>
-    </div>
-
-    <!-- 가격 / 디자인 -->
-    <div class="rform-section">
-      <div class="rform-section-title">가격 / 디자인</div>
-      <div class="rform-grid">
-        <div class="rform-field">
-          <label>판매가 (원)</label>
-          <input type="number" id="plSalePrice" placeholder="150000" min="0" step="1000" />
-        </div>
-        <div class="rform-field">
-          <label>원가 (원)</label>
-          <input type="number" id="plCostPrice" placeholder="60000" min="0" step="1000" />
-        </div>
-        <div class="rform-field">
-          <label>타입</label>
-          <select id="plType"></select>
-        </div>
+        <!-- 🔴 B1: 품번 코드 필드 그룹 (기본정보로 이전, 패널 제거). 연도/시즌/성별=가격/디자인서 이전 -->
         <div class="rform-field">
           <label>연도</label>
           <select id="plYear">
@@ -1770,6 +1641,17 @@
           </select>
         </div>
         <div class="rform-field">
+          <label>분류</label>
+          <select id="plClass">
+            <option value="LS">LS - 르망고 수영복</option>
+            <option value="LW">LW - 르망고 의류</option>
+            <option value="LG">LG - 르망고 굿즈</option>
+            <option value="NS">NS - 느와 수영복</option>
+            <option value="NW">NW - 느와 의류</option>
+            <option value="NG">NG - 느와 굿즈</option>
+          </select>
+        </div>
+        <div class="rform-field">
           <label>성별</label>
           <select id="plGender">
             <option value="">선택</option>
@@ -1782,12 +1664,58 @@
           </select>
         </div>
         <div class="rform-field">
-          <label>원단타입</label>
-          <select id="plFabricType"></select>
+          <label>타입 (품번)</label>
+          <select id="plTypeCode">
+            <option value="ON">ON - 원피스</option>
+            <option value="MO">MO - 모노키니</option>
+            <option value="BK">BK - 비키니</option>
+            <option value="BR">BR - 브리프</option>
+            <option value="JM">JM - 재머</option>
+            <option value="RG">RG - 래시가드</option>
+            <option value="AL">AL - 애슬레저</option>
+            <option value="GM">GM - 의류</option>
+            <option value="SC">SC - 수영모</option>
+            <option value="BG">BG - 가방</option>
+            <option value="ET">ET - 기타</option>
+          </select>
         </div>
         <div class="rform-field">
-          <label>백스타일</label>
-          <input type="text" id="plBackStyle" placeholder="예: U넥" />
+          <label>백스타일명 (자동)</label>
+          <input type="text" id="plBackStyle" placeholder="백스타일 선택 시 자동" readonly />
+        </div>
+        <div class="rform-field" style="grid-column:span 2">
+          <label>백스타일 (디자인 코드) — 코드·영문·한글 검색</label>
+          <div class="design-search-wrap" id="plDesignSearchWrap">
+            <input type="text" id="plPcDesignSearch" class="design-search-input"
+              placeholder="코드 또는 패턴명 검색 (예: 1626 / Crossed / 크로스)"
+              autocomplete="off"
+              oninput="filterPlDesignList()" />
+            <input type="hidden" id="plPcDesign" value="" />
+            <div class="design-listbox" id="plDesignDropdown"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 가격 / 디자인 -->
+    <div class="rform-section">
+      <div class="rform-section-title">가격 / 디자인</div>
+      <div class="rform-grid">
+        <div class="rform-field">
+          <label>판매가 (원)</label>
+          <input type="number" id="plSalePrice" placeholder="150000" min="0" step="1000" />
+        </div>
+        <div class="rform-field">
+          <label>원가 (원)</label>
+          <input type="number" id="plCostPrice" placeholder="60000" min="0" step="1000" />
+        </div>
+        <div class="rform-field">
+          <label>타입</label>
+          <select id="plType"></select>
+        </div>
+        <div class="rform-field">
+          <label>원단타입</label>
+          <select id="plFabricType"></select>
         </div>
         <div class="rform-field">
           <label>가이드</label>

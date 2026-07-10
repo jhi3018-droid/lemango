@@ -872,7 +872,8 @@ const SPEC_ROWS = [
   { key: 'hip', label: '엉덩이' },
   { key: 'etc', label: '기타' },
 ]
-const GENDER_MAP = { W: '여성', M: '남성', U: '공용' }
+// 🔴 B1: register 성별 6종 PCODE 통일(W/M/G/B/N/K) → 표시 라벨 추가(additive). U=레거시('공용', 마이그레이션 없음) 유지 표시.
+const GENDER_MAP = { W: '여성', M: '남성', G: '걸즈', B: '보이즈', N: '공용', K: '키즈', U: '공용' }
 
 // ===== 품번(코드) 고정 세트 — 단일 소스 (form + template + validator 공용) =====
 // 관리형 아님(사용자 편집 불가한 고정 vocabulary). 관리형 리스트(_settings.*/_classCodes/_designCodes/_colorMasters)는
@@ -1713,11 +1714,11 @@ function populateAllSelects() {
   // 신규기획 모달 폼
   populateSelect('plBrand',      s.brands)
   populateSelect('plType',       s.types,           false, true)
-  // 품번 자동생성 분류 select (신규등록 + 신규기획)
+  // 🔴 B1: 품번 코드 분류 select — 기본정보로 이전(rClass/plClass). LIVE _classCodes 오버라이드(정적 옵션 fallback).
   if (typeof _classCodes !== 'undefined' && Array.isArray(_classCodes)) {
     const _classItems = _classCodes.map(([code, name]) => [code, code + ' - ' + name])
-    populateSelect('pcClass',   _classItems)
-    populateSelect('plPcClass', _classItems)
+    populateSelect('rClass',  _classItems)
+    populateSelect('plClass', _classItems)
   }
   // 판매조회 플랫폼 필터
   populateSelect('slPlatform',   _platforms,        true)

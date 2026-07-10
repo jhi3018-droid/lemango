@@ -98,129 +98,22 @@ async function saveDesignCodes() {
   }
 }
 
-// ===== 백스타일 드롭다운 (디자인번호와 동일 데이터 사용) =====
-function renderBackStyleList(query) {
-  const q = query.toLowerCase().trim()
-  const list = q
-    ? _designCodes.filter(([code, en, kr]) =>
-        code.includes(q) || en.toLowerCase().includes(q) || kr.toLowerCase().includes(q))
-    : _designCodes
-  const current = document.getElementById('pcBackStyle')?.value
-  const dd = document.getElementById('bsDropdown')
-  if (!dd) return
-  if (list.length === 0) { dd.innerHTML = '<div class="design-no-result">검색 결과 없음</div>'; return }
-  dd.innerHTML = list.map(([code, en, kr]) =>
-    `<div class="design-option${code === current ? ' selected' : ''}" onclick="selectBackStyle('${code}')">
-      <span class="design-code">${code}</span>
-      <span class="design-names"><span class="design-en">${en}</span><span class="design-kr">${kr}</span></span>
-    </div>`
-  ).join('')
-  const sel = dd.querySelector('.design-option.selected')
-  if (sel) sel.scrollIntoView({ block: 'nearest' })
-}
+// 🔴 B1: 구 백스타일 드롭다운 함수군(renderBackStyleList/selectBackStyle/showBsForm/confirmBsForm/deleteBackStyle)은
+//   존재하지 않는 pcBackStyle/pcBsSearch/bsDropdown 를 참조하던 dead code 였음(register 폼 백스타일=디자인 코드 picker 로 통합) → 제거.
+//   백스타일 picker = 디자인 코드 picker(pcDesign/pcDesignSearch/designDropdown) 단일화. selectDesign 이 백스타일명(rBackStyle) 자동채움.
 
-function filterBackStyleList() {
-  renderBackStyleList(document.getElementById('pcBsSearch')?.value || '')
-}
-
-function selectBackStyle(code) {
-  const found = _designCodes.find(([c]) => c === code)
-  if (!found) return
-  document.getElementById('pcBackStyle').value = code
-  document.getElementById('pcBsSearch').value = ''
-  document.getElementById('pcBsSearch').placeholder = `${code} - ${found[1]} (${found[2]})`
-  renderBackStyleList('')
-}
-
-let _bsFormMode = 'add'
-function showBsForm(mode) {
-  _bsFormMode = mode
-  const form = document.getElementById('bsForm')
-  document.getElementById('bsFormCode').value = ''
-  document.getElementById('bsFormEn').value   = ''
-  document.getElementById('bsFormKr').value   = ''
-  if (mode === 'edit') {
-    const cur = document.getElementById('pcBackStyle')?.value
-    if (!cur) { showToast('수정할 디자인번호를 선택하세요.', 'warning'); return }
-    const found = _designCodes.find(([c]) => c === cur)
-    if (found) {
-      document.getElementById('bsFormCode').value = found[0]
-      document.getElementById('bsFormEn').value   = found[1]
-      document.getElementById('bsFormKr').value   = found[2]
-    }
-  }
-  form.style.display = 'flex'
-  document.getElementById('bsFormCode').focus()
-}
-
-function confirmBsForm() {
-  const code = document.getElementById('bsFormCode').value.trim()
-  const en   = document.getElementById('bsFormEn').value.trim()
-  const kr   = document.getElementById('bsFormKr').value.trim()
-  if (!code || !en || !kr) { showToast('코드, 영문명, 한글명을 모두 입력하세요.', 'warning'); return }
-  if (!/^\d{4}$/.test(code)) { showToast('코드는 4자리 숫자여야 합니다.', 'warning'); return }
-
-  if (_bsFormMode === 'add') {
-    if (_designCodes.some(([c]) => c === code)) { showToast('이미 존재하는 코드입니다.', 'warning'); return }
-    _designCodes.push([code, en, kr])
-    saveDesignCodes()
-    renderBackStyleList('')
-    selectBackStyle(code)
-  } else {
-    const cur = document.getElementById('pcBackStyle').value
-    const idx = _designCodes.findIndex(([c]) => c === cur)
-    if (idx === -1) return
-    if (code !== cur && _designCodes.some(([c]) => c === code)) { showToast('이미 존재하는 코드입니다.', 'warning'); return }
-    _designCodes[idx] = [code, en, kr]
-    saveDesignCodes()
-    renderBackStyleList('')
-    selectBackStyle(code)
-  }
-  document.getElementById('bsForm').style.display = 'none'
-}
-
-async function deleteBackStyle() {
-  const cur = document.getElementById('pcBackStyle')?.value
-  if (!cur) { showToast('삭제할 디자인번호를 선택하세요.', 'warning'); return }
-  const found = _designCodes.find(([c]) => c === cur)
-  if (!found) return
-  if (!await korConfirm(`"${found[1]} (${found[2]})" 디자인번호를 삭제하시겠습니까?`)) return
-  _designCodes = _designCodes.filter(([c]) => c !== cur)
-  saveDesignCodes()
-  document.getElementById('pcBackStyle').value = ''
-  document.getElementById('pcBsSearch').placeholder = '코드 또는 스타일명 검색'
-  document.getElementById('pcBsSearch').value = ''
-  renderBackStyleList('')
-}
-
-// ===== 디자인번호 드롭다운 =====
-// 🔴 품번 자동생성 셀렉트를 단일 소스로 채움: 분류=_classCodes(LIVE) · 성별/타입/연도/시즌=PCODE_*(고정).
-//   index.html 정적 <option> 중복 제거 → form + template + validator 드리프트 0.
-function _populatePcodeSelects() {
-  const fill = (id, pairs, sel) => {
-    const el = document.getElementById(id); if (!el) return
-    el.innerHTML = (pairs || []).map(([v, l]) =>
-      `<option value="${v}"${v === sel ? ' selected' : ''}>${v}${l ? ' - ' + l : ''}</option>`).join('')
-  }
-  const cls = (typeof _classCodes !== 'undefined' && Array.isArray(_classCodes)) ? _classCodes : []
-  if (cls.length) fill('pcClass', cls.map(([c, n]) => [c, n]))
-  if (typeof PCODE_GENDERS !== 'undefined') fill('pcGender', PCODE_GENDERS)
-  if (typeof PCODE_TYPES   !== 'undefined') fill('pcType', PCODE_TYPES)
-  if (typeof PCODE_YEARS   !== 'undefined') fill('pcYear', PCODE_YEARS, '6')   // 기본 2026(6) 유지
-  if (typeof PCODE_SEASONS !== 'undefined') fill('pcSeasonNum', PCODE_SEASONS.map(s => [s, '']))
-}
-
-function initPcodePanel() {
+// ===== 디자인번호(=백스타일) 드롭다운 =====
+// 🔴 B1: register 폼 백스타일(=디자인 코드) picker 초기화. 패널 제거 → 기본정보 인라인.
+//   🔴 기본 선택 없음(공란) — 백스타일=사용자가 의도적으로 선택(스푸리어스 기본값 방지 · 업로드의 designCode='' 공란과 값 정합 · 디자인 반려 테스트 가능).
+//   분류/성별/타입/연도/시즌 select = HTML 정적 옵션(성별=6종 PCODE) + 분류는 populateAllSelects LIVE 오버라이드.
+function initRegisterCodePicker() {
   if (!document.getElementById('pcDesign')) return
-  _populatePcodeSelects()
+  document.getElementById('pcDesign').value = ''
+  const s = document.getElementById('pcDesignSearch'); if (s) { s.value = ''; s.placeholder = '코드 또는 패턴명 검색 (예: 1626 / Crossed / 크로스)' }
+  const bs = document.getElementById('rBackStyle'); if (bs) bs.value = ''
   renderDesignList('')
-  selectDesign('1626')
-  renderBackStyleList('')
-  document.getElementById('pcPreview').textContent = '-'
-  document.getElementById('pcSeqDisplay').textContent = '-'
-  const applyBtn = document.getElementById('pcApplyBtn')
-  if (applyBtn) applyBtn.disabled = true
 }
+window.initRegisterCodePicker = initRegisterCodePicker
 
 function renderDesignList(query) {
   const q = query.toLowerCase().trim()
@@ -255,15 +148,9 @@ function selectDesign(code) {
   document.getElementById('pcDesign').value = code
   document.getElementById('pcDesignSearch').value = ''
   document.getElementById('pcDesignSearch').placeholder = `${code} - ${found[1]} (${found[2]})`
+  const bs = document.getElementById('rBackStyle')   // 🔴 B1: 백스타일명(EN) 자동채움(read-only)
+  if (bs) bs.value = found[1] || ''
   renderDesignList('')
-}
-
-function togglePcodePanel() {
-  const panel = document.getElementById('pcodePanel')
-  const btn = document.getElementById('pcodeToggleBtn')
-  const open = panel.style.display === 'none' || panel.style.display === ''
-  panel.style.display = open ? 'flex' : 'none'
-  btn.textContent = open ? '품번 생성 ▴' : '품번 생성 ▾'
 }
 
 // 적용됐지만 아직 등록 전인 품번 임시 예약 Set
@@ -321,59 +208,38 @@ function pcodeIsValidCode(code) { return !!code && /^[A-Za-z0-9]{13}$/.test(Stri
 window.pcodeMissing = pcodeMissing; window.nextSerial = nextSerial
 window.pcodeRenderPreview = pcodeRenderPreview; window.pcodeIsValidCode = pcodeIsValidCode
 
-function updateProductCode() {
-  pcodeRenderPreview({
-    cls:       document.getElementById('pcClass')?.value,
-    gen:       document.getElementById('pcGender')?.value,
-    typ:       document.getElementById('pcType')?.value,
-    des:       document.getElementById('pcDesign')?.value,
-    yearDigit: document.getElementById('pcYear')?.value,
-    seasonNum: document.getElementById('pcSeasonNum')?.value
-  }, {
-    preview: document.getElementById('pcPreview'),
-    seq:     document.getElementById('pcSeqDisplay'),
-    apply:   document.getElementById('pcApplyBtn')
-  })
-}
-
-function applyGeneratedCode() {
-  const code = document.getElementById('pcPreview').textContent
-  if (!pcodeIsValidCode(code)) { showToast('품번 생성 반려 — 필수 입력(분류·성별·타입·디자인·연도·시즌)을 확인하세요.', 'warning'); return }
-
+// 🔴 B1: 공유 1-버튼 생성 코어. basis(6필드) → 반려 → 소진 → full-code 유일성 가드(authoritative) → target 채움 + 예약.
+//   🔴 typeCode → type 절대 미기입(5-2 카테고리 할인 보호). 백스타일명은 selectDesign(picker) 이 이미 채움.
+function _genCodeInto(basis, targetId, brandId) {
+  const missing = pcodeMissing(basis)
+  if (missing.length) { showToast('품번 생성 반려 — 미입력: ' + missing.join(', '), 'warning'); return }
+  const targetEl = document.getElementById(targetId)
+  const prev = (targetEl && targetEl.value || '').trim()
+  if (prev && _reservedCodes.has(prev)) _reservedCodes.delete(prev)   // 재생성 시 이전 예약 해제
+  const serial = nextSerial(basis, {})
+  if (serial === null) { showToast('이 분류+연도+시즌 그룹의 일련번호(00~99)가 소진되었습니다. 연도/시즌을 확인하세요.', 'error'); return }
+  const code = String(basis.cls) + String(basis.gen) + String(basis.typ) + String(basis.des) + String(basis.yearDigit) + String(basis.seasonNum) + serial
+  if (!pcodeIsValidCode(code)) { showToast('품번 생성 반려 — 입력값을 확인하세요.', 'warning'); return }
   if (State.allProducts.some(p => p.productCode === code) ||
       State.planItems.some(p => p.productCode === code) ||
       _reservedCodes.has(code)) {
-    showToast(`품번 "${code}"은 이미 사용 중입니다. 다시 생성해주세요.`, 'error')
-    updateProductCode()
-    return
+    showToast(`품번 "${code}"은 이미 사용 중입니다. 다시 생성해주세요.`, 'error'); return
   }
-
   _reservedCodes.add(code)
-
-  document.getElementById('rProductCode').value = code
-  document.getElementById('pcodePanel').style.display = 'none'
-  document.getElementById('pcodeToggleBtn').textContent = '품번 생성 ▾'
-
-  const cls = document.getElementById('pcClass')?.value || ''
-  const typ = document.getElementById('pcType')?.value || ''
-
-  const brandEl = document.getElementById('rBrand')
-  if (brandEl) {
-    brandEl.value = cls.startsWith('N') ? '르망고 느와' : '르망고'
-  }
-
-  const typeEl = document.getElementById('rType')
-  if (typeEl) {
-    const typeMap = { ON: 'onepiece', MO: 'onepiece', BK: 'bikini', BR: 'bikini' }
-    const mapped = typeMap[typ]
-    if (mapped) typeEl.value = mapped
-  }
-
-  // 백스타일 자동 채우기
-  const bsCode  = document.getElementById('pcBackStyle')?.value
-  const bsEntry = _designCodes.find(([c]) => c === bsCode)
-  const backStyleEl = document.getElementById('rBackStyle')
-  if (backStyleEl && bsEntry) backStyleEl.value = bsEntry[1]
-
-  showToast(`품번 ${code} 적용됨`, 'success')
+  if (targetEl) targetEl.value = code
+  if (brandId) { const b = document.getElementById(brandId); if (b) b.value = String(basis.cls).startsWith('N') ? '르망고 느와' : '르망고' }
+  showToast(`품번 ${code} 생성됨`, 'success')
 }
+// register 폼: 연도 select value = digit(직접). 백스타일 des = pcDesign(hidden).
+function genRegisterCode() {
+  _genCodeInto({
+    cls:       document.getElementById('rClass')?.value,
+    gen:       document.getElementById('rGender')?.value,
+    typ:       document.getElementById('rTypeCode')?.value,
+    des:       document.getElementById('pcDesign')?.value,
+    yearDigit: document.getElementById('rYear')?.value,
+    seasonNum: document.getElementById('rSeason')?.value
+  }, 'rProductCode', 'rBrand')
+}
+window._genCodeInto = _genCodeInto
+window.genRegisterCode = genRegisterCode
