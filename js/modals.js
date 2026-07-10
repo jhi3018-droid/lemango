@@ -869,11 +869,14 @@ function buildDetailContent(p) {
         <div class="plan-img-grid">
           ${p.tempImages.map((img, i) => {
             const safe = String(img.url || '').replace(/"/g,'&quot;')
-            const nm = (img.name || '').length > 16 ? img.name.slice(0,14)+'..' : (img.name||'')
+            // 🔴 B3: 라벨(슬롯) 우선 표시 + 그래픽명(caption). 라벨 없으면 파일명.
+            const label = img.label ? esc(img.label) : ''
+            const nmSrc = img.caption || img.name || ''
+            const nm = nmSrc.length > 18 ? nmSrc.slice(0,16)+'..' : nmSrc
             return `<div class="plan-img-thumb plan-img-thumb-temp">
-              <span class="plan-img-thumb-tag-temp">임시</span>
+              <span class="plan-img-thumb-tag-temp">${label || '임시'}</span>
               <img src="${safe}" onclick="window.open('${safe.replace(/'/g,"\\'")}','_blank')" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'" />
-              <div class="plan-img-thumb-name">${esc(nm)}</div>
+              <div class="plan-img-thumb-name" title="${esc(nmSrc)}">${esc(nm)}</div>
               <button type="button" class="plan-img-thumb-x temp-del-btn" onclick="deleteProductTempImage(${i})">✕</button>
             </div>`
           }).join('')}

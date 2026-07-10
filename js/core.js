@@ -889,6 +889,11 @@ function pcodeYearFull(digit) { const e = PCODE_YEARS.find(([c]) => c === String
 function pcodeYearDigit(fullYear) { const e = PCODE_YEARS.find(([, y]) => y === String(fullYear)); return e ? e[0] : '' }
 window.PCODE_GENDERS = PCODE_GENDERS; window.PCODE_TYPES = PCODE_TYPES
 window.PCODE_YEARS = PCODE_YEARS; window.PCODE_SEASONS = PCODE_SEASONS
+
+// 🔴 B3: 신규기획 참고 이미지 라벨 슬롯(샘플시트 순서). 지금은 고정 상수 — 추후 관리형 리스트로 승격 가능(설정 UI 미구현).
+//   순서 = 표시 순서. '스타일'=대표(임시 상태 plan 테이블 썸네일 우선). 슬롯 외 레거시(라벨 없음)=기타 스트립.
+const PLAN_IMG_SLOTS = ['스타일', '겉감', '백지', '랍빠']
+window.PLAN_IMG_SLOTS = PLAN_IMG_SLOTS
 window.pcodeYearFull = pcodeYearFull; window.pcodeYearDigit = pcodeYearDigit
 
 const POSITIONS = ['사원','주임','대리','과장','차장','실장','팀장','부장','이사','대표이사']

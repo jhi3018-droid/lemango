@@ -141,15 +141,15 @@ function buildPlanTempImageSection(item) {
         참고 이미지
         <span class="plan-img-badge plan-img-badge-temp">임시</span>
       </div>
-      <div class="plan-img-desc">샘플/참고용 임시 이미지. 상품확정 시 상품조회로 이전되어 확인 후 삭제할 수 있습니다.</div>
-      <div class="plan-img-actions">
-        <button type="button" class="plan-img-btn" onclick="addPlanTempImageUrl()">+ URL 추가</button>
+      <div class="plan-img-desc">라벨 슬롯(스타일/겉감/백지/랍빠)에 <b>Ctrl+V 붙여넣기</b>·드래그·파일·URL 로 등록. 스타일=대표(임시 상태 목록 썸네일). 상품확정 시 이전됩니다.</div>
+      <div class="plan-img-grid" id="planTempImgGrid"></div>
+      <div class="plan-img-actions" style="margin-top:8px">
+        <button type="button" class="plan-img-btn" onclick="addPlanTempImageUrl()">+ 기타 URL</button>
         <label class="plan-img-btn plan-img-upload-label">
-          + 파일 업로드
+          + 기타 파일
           <input type="file" accept="image/*" multiple style="display:none" onchange="handlePlanTempImageUpload(this)" />
         </label>
       </div>
-      <div class="plan-img-grid" id="planTempImgGrid"></div>
     </div>
   `
 }
@@ -227,25 +227,57 @@ function handlePlanTempImageUpload(input) {
   input.value = ''
 }
 
+// 🔴 B3: 라벨 슬롯(PLAN_IMG_SLOTS) + 기타(레거시·미분류) 스트립. create/detail 공용(#planTempImgGrid).
 function renderPlanTempImageGrid() {
   const grids = document.querySelectorAll('#planTempImgGrid')
   if (!grids.length) return
-  let html
-  if (!_planTempImages.length) {
-    html = '<div style="color:var(--text-muted);font-size:12px;padding:8px">참고 이미지 없음</div>'
-  } else {
-    html = _planTempImages.map((img, i) => {
-      const nameDisp = (img.name || '').length > 16 ? img.name.slice(0, 14) + '..' : (img.name || '')
-      const safeUrl = String(img.url).replace(/"/g, '&quot;')
-      const tagText = img._pending ? '대기' : '임시'
-      return `<div class="plan-img-thumb plan-img-thumb-temp">
-        <span class="plan-img-thumb-tag-temp">${tagText}</span>
-        <img src="${safeUrl}" onerror="this.onerror=null;this.src=PLACEHOLDER_IMG" onclick="window.open('${safeUrl.replace(/'/g,"\\'")}','_blank')" />
-        <div class="plan-img-thumb-name">${esc(nameDisp)}</div>
-        <button type="button" class="plan-img-thumb-x temp-del-btn" onclick="removePlanTempImage(${i})">✕</button>
+  const slots = (typeof PLAN_IMG_SLOTS !== 'undefined') ? PLAN_IMG_SLOTS : []
+  const byLabel = {}, others = []
+  ;(_planTempImages || []).forEach((img, i) => {
+    if (img && img.label && slots.includes(img.label)) byLabel[img.label] = { img, i }
+    else others.push({ img, i })
+  })
+  const slotHtml = slots.map(label => {
+    const rec = byLabel[label]
+    const primary = label === '스타일'
+    const filled = !!(rec && rec.img && rec.img.url)
+    const safeUrl = filled ? String(rec.img.url).replace(/"/g, '&quot;') : ''
+    const pending = filled && rec.img._pending
+    const caption = filled ? (rec.img.caption || '') : ''
+    const inner = filled
+      ? `<img src="${safeUrl}" onerror="this.onerror=null;this.src=PLACEHOLDER_IMG" onclick="event.stopPropagation();window.open('${safeUrl.replace(/'/g, "\\'")}','_blank')" />
+         ${pending ? '<span class="plan-slot-badge">대기</span>' : ''}
+         <button type="button" class="plan-slot-x" title="제거" onclick="event.stopPropagation();_planSlotRemove('${label}')">✕</button>`
+      : `<div class="plan-slot-empty">📋 붙여넣기(Ctrl+V) / 드래그<br><span class="plan-slot-empty-sub">또는 아래 파일·URL</span></div>`
+    return `<div class="plan-slot${primary ? ' plan-slot-primary' : ''}${filled ? ' filled' : ''}">
+      <div class="plan-slot-label">${esc(label)}${primary ? ' <span class="plan-slot-main-tag">메인</span>' : ''}</div>
+      <div class="plan-slot-drop" tabindex="0" data-plan-slot="${esc(label)}"
+        ondragover="_planSlotDragOver(event, this)" ondragleave="_planSlotDragLeave(event, this)" ondrop="_planSlotDrop(event, '${label}')"
+        title="클릭 후 Ctrl+V 붙여넣기 · 드래그 앤 드롭">${inner}</div>
+      <input type="text" class="plan-slot-cap" data-plan-cap="${esc(label)}" value="${esc(caption)}" placeholder="그래픽명" oninput="_planSlotCaptionChange(this, '${label}')" />
+      <div class="plan-slot-actions">
+        <label class="plan-slot-mini">파일<input type="file" accept="image/*" style="display:none" onchange="_planSlotFileSelect(this, '${label}')" /></label>
+        <button type="button" class="plan-slot-mini" onclick="_planSlotAddUrl('${label}')">URL</button>
+      </div>
+    </div>`
+  }).join('')
+  const otherHtml = others.length
+    ? `<div class="plan-slot-others">
+        <div class="plan-slot-others-title">기타 / 미분류 (${others.length})</div>
+        <div class="plan-img-grid">${others.map(({ img, i }) => {
+          const nm = (img.name || '').length > 16 ? img.name.slice(0, 14) + '..' : (img.name || '')
+          const su = String(img.url).replace(/"/g, '&quot;')
+          const tag = img._pending ? '대기' : '임시'
+          return `<div class="plan-img-thumb plan-img-thumb-temp">
+            <span class="plan-img-thumb-tag-temp">${tag}</span>
+            <img src="${su}" onerror="this.onerror=null;this.src=PLACEHOLDER_IMG" onclick="window.open('${su.replace(/'/g, "\\'")}','_blank')" />
+            <div class="plan-img-thumb-name">${esc(nm)}</div>
+            <button type="button" class="plan-img-thumb-x temp-del-btn" onclick="removePlanTempImage(${i})">✕</button>
+          </div>`
+        }).join('')}</div>
       </div>`
-    }).join('')
-  }
+    : ''
+  const html = `<div class="plan-slots">${slotHtml}</div>${otherHtml}`
   grids.forEach(g => { g.innerHTML = html })
 }
 
@@ -300,7 +332,153 @@ async function _flushPlanStorageDeletions() {
   _planTempImagesToDelete = []
 }
 
+// =============================================
+// ===== 🔴 B3: 참고 이미지 라벨 슬롯 — 붙여넣기(Ctrl+V)/드래그/파일/URL + 클라 압축 =====
+// =============================================
+// 🔴 클라이언트 압축: long-edge 2000px 초과 시 canvas 리사이즈 + JPEG 0.85. 작은 이미지(<800KB & ≤2000px)=원본 스킵.
+//   반환 Promise<Blob>. 실패/비이미지 = 원본 그대로(안전). 압축본이 원본보다 크면 원본 유지.
+function _compressImageBlob(file) {
+  return new Promise((resolve) => {
+    try {
+      if (!file || !file.type || !file.type.startsWith('image/')) { resolve(file); return }
+      const SMALL = 800 * 1024
+      const url = URL.createObjectURL(file)
+      const img = new Image()
+      img.onload = () => {
+        const longEdge = Math.max(img.naturalWidth, img.naturalHeight)
+        if (file.size <= SMALL && longEdge <= 2000) { URL.revokeObjectURL(url); resolve(file); return }
+        const scale = longEdge > 2000 ? 2000 / longEdge : 1
+        const w = Math.max(1, Math.round(img.naturalWidth * scale))
+        const h = Math.max(1, Math.round(img.naturalHeight * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = w; canvas.height = h
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+        URL.revokeObjectURL(url)
+        canvas.toBlob((blob) => {
+          resolve((blob && blob.size < file.size) ? blob : file)
+        }, 'image/jpeg', 0.85)
+      }
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file) }
+      img.src = url
+    } catch (e) { resolve(file) }
+  })
+}
+
+// 슬롯에 이미지 blob 등록(압축 → 10MB 가드 → 슬롯 덮어쓰기 → pending push → 렌더 → caption 포커스).
+//   🔴 pending 업로드(현행 파일 동작과 동일 — 저장 시 _uploadPendingPlanTempImages 로 업로드). URL 은 즉시(참조).
+async function _addSlotImageFromBlob(fileOrBlob, name, label) {
+  if (!fileOrBlob) return
+  showToast('이미지 처리 중…', 'info')
+  let blob
+  try { blob = await _compressImageBlob(fileOrBlob) } catch (e) { blob = fileOrBlob }
+  if (blob.size > 10 * 1024 * 1024) {
+    showToast(`이미지가 압축 후에도 10MB를 초과합니다 (${(blob.size / 1024 / 1024).toFixed(1)}MB).`, 'error')
+    return
+  }
+  _planSlotClearExisting(label)   // 덮어쓰기(기존 슬롯 엔트리 정리 · caption 승계)
+  const keepCaption = _planSlotPendingCaption; _planSlotPendingCaption = ''
+  const fname = (name || `paste_${label}_${Date.now()}.jpg`).replace(/[^\w.\-가-힣]/g, '_')
+  const previewUrl = URL.createObjectURL(blob)
+  _planTempImages.push({ url: previewUrl, type: 'file', name: fname, label, caption: keepCaption, _file: blob, _pending: true, _previewUrl: previewUrl })
+  renderPlanTempImageGrid()
+  setTimeout(() => { const cap = document.querySelector(`[data-plan-cap="${label}"]`); if (cap) cap.focus() }, 30)
+}
+
+// 슬롯의 기존 엔트리 제거(Storage 파일=삭제예약 · 미리보기 URL 해제 · caption 은 _planSlotPendingCaption 로 승계)
+let _planSlotPendingCaption = ''
+function _planSlotClearExisting(label) {
+  const idx = _planTempImages.findIndex(t => t && t.label === label)
+  _planSlotPendingCaption = ''
+  if (idx < 0) return
+  const old = _planTempImages[idx]
+  _planSlotPendingCaption = old.caption || ''
+  if (old.path && !old._pending) _planTempImagesToDelete.push(old.path)   // 교체된 Storage 파일 삭제 시도(실패=orphan 허용)
+  if (old._previewUrl) { try { URL.revokeObjectURL(old._previewUrl) } catch (e) {} }
+  _planTempImages.splice(idx, 1)
+}
+
+function _planSlotFileSelect(input, label) {
+  const f = input.files && input.files[0]
+  input.value = ''
+  if (f) _addSlotImageFromBlob(f, f.name, label)
+}
+
+async function _planSlotAddUrl(label) {
+  const url = window.prompt('이미지 URL을 입력하세요 (http/https)')
+  if (!url) return
+  const t = url.trim()
+  if (!/^https?:\/\//i.test(t)) { showToast('http:// 또는 https:// 로 시작해야 합니다.', 'error'); return }
+  _planSlotClearExisting(label)
+  const keepCaption = _planSlotPendingCaption; _planSlotPendingCaption = ''
+  _planTempImages.push({ url: t, type: 'url', name: t, label, caption: keepCaption })
+  renderPlanTempImageGrid()
+}
+
+function _planSlotDragOver(e, el) { e.preventDefault(); if (el) el.classList.add('plan-slot-hover') }
+function _planSlotDragLeave(e, el) { if (el) el.classList.remove('plan-slot-hover') }
+function _planSlotDrop(e, label) {
+  e.preventDefault()
+  const el = e.currentTarget; if (el) el.classList.remove('plan-slot-hover')
+  const files = e.dataTransfer && e.dataTransfer.files
+  const f = files && Array.from(files).find(x => x.type && x.type.startsWith('image/'))
+  if (f) _addSlotImageFromBlob(f, f.name, label)
+  else showToast('이미지 파일만 등록할 수 있습니다.', 'warning')
+}
+
+function _planSlotCaptionChange(el, label) {
+  const entry = _planTempImages.find(t => t && t.label === label)
+  if (entry) entry.caption = el.value
+}
+
+function _planSlotRemove(label) {
+  _planSlotClearExisting(label)
+  _planSlotPendingCaption = ''
+  renderPlanTempImageGrid()
+}
+
+function _firstEmptyPlanSlot() {
+  const slots = (typeof PLAN_IMG_SLOTS !== 'undefined') ? PLAN_IMG_SLOTS : []
+  const filled = new Set(_planTempImages.filter(t => t && t.label).map(t => t.label))
+  return slots.find(sName => !filled.has(sName)) || null
+}
+
+// 🔴 전역 붙여넣기 핸들러(플랜 모달 열림 시): 이미지 클립보드만 처리 · 텍스트 붙여넣기 절대 방해 안 함.
+//   포커스가 슬롯([data-plan-slot]) 내부면 그 슬롯, 아니면(그리고 텍스트 입력 포커스 아니면) 첫 빈 슬롯.
+function _planSlotPasteHandler(e) {
+  const pd = document.getElementById('planDetailModal'), pr = document.getElementById('planRegisterModal')
+  if (!((pd && pd.open) || (pr && pr.open))) return
+  const items = e.clipboardData && e.clipboardData.items
+  if (!items) return
+  const imgItem = Array.from(items).find(it => it.kind === 'file' && it.type && it.type.startsWith('image/'))
+  if (!imgItem) return   // 이미지 없음 → 텍스트 붙여넣기 그대로 통과
+  const ae = document.activeElement
+  const focusedSlot = (ae && ae.closest) ? ae.closest('[data-plan-slot]') : null
+  let label
+  if (focusedSlot) {
+    label = focusedSlot.getAttribute('data-plan-slot')
+  } else {
+    const isText = ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)
+    if (isText) return   // 🔴 텍스트 입력 포커스 + 슬롯 아님 → 방해 안 함
+    label = _firstEmptyPlanSlot()
+  }
+  if (!label) return
+  e.preventDefault()
+  const f = imgItem.getAsFile()
+  if (f) _addSlotImageFromBlob(f, f.name || `paste_${Date.now()}.png`, label)
+}
+if (typeof document !== 'undefined') document.addEventListener('paste', _planSlotPasteHandler)
+window._planSlotFileSelect = _planSlotFileSelect
+window._planSlotAddUrl = _planSlotAddUrl
+window._planSlotDragOver = _planSlotDragOver
+window._planSlotDragLeave = _planSlotDragLeave
+window._planSlotDrop = _planSlotDrop
+window._planSlotCaptionChange = _planSlotCaptionChange
+window._planSlotRemove = _planSlotRemove
+
 function getPlanThumbUrl(item) {
+  // 🔴 B3: 임시 상태 face = 스타일 슬롯 이미지 우선 → 아니면 B2a compat 체인
+  const st = Array.isArray(item?.tempImages) ? item.tempImages.find(t => t && t.label === '스타일' && t.url) : null
+  if (st) return st.url
   // 🔴 B2a compat: 카페24 대표[0] → 레거시 mainImage → tempImages → images.sum/lemango(레거시)
   const c24 = (typeof _firstImageUrl === 'function') ? _firstImageUrl(item?.cafe24Main) : ''
   if (c24) return c24
@@ -1544,11 +1722,12 @@ function buildPlanDetailContent(item) {
     </div>
     <div class="pd-section">
       <div class="pd-section-title">참고 이미지 <span class="plan-img-badge plan-img-badge-temp">임시</span></div>
+      <div class="plan-img-desc" style="padding:0 12px 6px">라벨 슬롯에 <b>Ctrl+V 붙여넣기</b>·드래그·파일·URL 로 등록(스타일=대표). 슬롯 클릭 후 붙여넣기 또는 아무데서나 붙여넣으면 첫 빈 슬롯으로 들어갑니다.</div>
       <div class="plan-img-grid" id="planTempImgGrid"></div>
-      <div class="plan-edit-img-actions">
-        <button type="button" class="plan-img-btn" onclick="addPlanTempImageUrl()">+ URL 추가</button>
+      <div class="plan-edit-img-actions" style="margin-top:8px">
+        <button type="button" class="plan-img-btn" onclick="addPlanTempImageUrl()">+ 기타 URL</button>
         <label class="plan-img-btn plan-img-upload-label">
-          + 파일 업로드
+          + 기타 파일
           <input type="file" accept="image/*" multiple style="display:none" onchange="handlePlanTempImageUpload(this)" />
         </label>
       </div>
