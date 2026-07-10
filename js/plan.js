@@ -245,7 +245,7 @@ function renderPlanTempImageGrid() {
     const pending = filled && rec.img._pending
     const caption = filled ? (rec.img.caption || '') : ''
     const inner = filled
-      ? `<img src="${safeUrl}" onerror="this.onerror=null;this.src=PLACEHOLDER_IMG" onclick="event.stopPropagation();window.open('${safeUrl.replace(/'/g, "\\'")}','_blank')" />
+      ? `<img src="${safeUrl}" onerror="this.onerror=null;this.src=PLACEHOLDER_IMG" onclick="event.stopPropagation();_planTempViewer(${rec.i})" />
          ${pending ? '<span class="plan-slot-badge">대기</span>' : ''}
          <button type="button" class="plan-slot-x" title="제거" onclick="event.stopPropagation();_planSlotRemove('${label}')">✕</button>`
       : `<div class="plan-slot-empty">📋 붙여넣기(Ctrl+V) / 드래그<br><span class="plan-slot-empty-sub">또는 아래 파일·URL</span></div>`
@@ -270,7 +270,7 @@ function renderPlanTempImageGrid() {
           const tag = img._pending ? '대기' : '임시'
           return `<div class="plan-img-thumb plan-img-thumb-temp">
             <span class="plan-img-thumb-tag-temp">${tag}</span>
-            <img src="${su}" onerror="this.onerror=null;this.src=PLACEHOLDER_IMG" onclick="window.open('${su.replace(/'/g, "\\'")}','_blank')" />
+            <img src="${su}" onerror="this.onerror=null;this.src=PLACEHOLDER_IMG" onclick="_planTempViewer(${i})" />
             <div class="plan-img-thumb-name">${esc(nm)}</div>
             <button type="button" class="plan-img-thumb-x temp-del-btn" onclick="removePlanTempImage(${i})">✕</button>
           </div>`
@@ -467,6 +467,15 @@ function _planSlotPasteHandler(e) {
   if (f) _addSlotImageFromBlob(f, f.name || `paste_${Date.now()}.png`, label)
 }
 if (typeof document !== 'undefined') document.addEventListener('paste', _planSlotPasteHandler)
+// 🔴 참고 이미지(슬롯+기타) 뷰어 — _planTempImages 세트(라벨/캡션)로 ◀▶ 순환.
+function _planTempViewer(rawIdx) {
+  const all = _planTempImages || []
+  const set = all.filter(t => t && t.url).map(t => ({ url: t.url, label: t.label, caption: t.caption, name: t.name }))
+  const clicked = all[rawIdx]
+  const start = clicked ? set.findIndex(s => s.url === clicked.url) : 0
+  if (typeof openImageViewer === 'function') openImageViewer(set, start < 0 ? 0 : start)
+}
+window._planTempViewer = _planTempViewer
 window._planSlotFileSelect = _planSlotFileSelect
 window._planSlotAddUrl = _planSlotAddUrl
 window._planSlotDragOver = _planSlotDragOver
@@ -1559,24 +1568,13 @@ function buildPlanDetailContent(item) {
     ..._pdLines(item.sabangMain),
     ...(item.mainImage ? [item.mainImage] : [])
   ].filter(Boolean)
-  const tempImgs = Array.isArray(item.tempImages) ? item.tempImages : []
-
+  // 🔴 뷰어(새 탭 대체): 상품 이미지 세트를 통째로 넘겨 ◀▶ 순환. (구 tempImgHtml=B3 슬롯으로 대체·제거)
+  const _prodImgsJson = JSON.stringify(prodImgs).replace(/"/g, '&quot;')
   const prodImgHtml = prodImgs.length
-    ? prodImgs.map(url =>
-        `<img src="${url}" class="pd-thumb" onclick="window.open('${String(url).replace(/'/g,"\\'")}','_blank')" onerror="this.onerror=null;this.src=PLACEHOLDER_IMG" />`
+    ? prodImgs.map((url, pi) =>
+        `<img src="${url}" class="pd-thumb" onclick="openImageViewer(${_prodImgsJson}, ${pi})" onerror="this.onerror=null;this.src=PLACEHOLDER_IMG" />`
       ).join('')
     : '<span class="pd-no-img">등록된 상품 이미지 없음</span>'
-  const tempImgHtml = tempImgs.length
-    ? tempImgs.map(img => {
-        const safe = String(img.url).replace(/"/g,'&quot;')
-        const nm = (img.name || '').length > 16 ? img.name.slice(0,14)+'..' : (img.name||'')
-        return `<div class="plan-img-thumb plan-img-thumb-temp">
-          <span class="plan-img-thumb-tag-temp">임시</span>
-          <img src="${safe}" onclick="window.open('${safe.replace(/'/g,"\\'")}','_blank')" onerror="this.onerror=null;this.src=PLACEHOLDER_IMG" />
-          <div class="plan-img-thumb-name">${esc(nm)}</div>
-        </div>`
-      }).join('')
-    : ''
 
   const fmtDate = d => d || '-'
   const typeLabel   = { onepiece: '원피스', bikini: '비키니', 'two piece': '투피스' }

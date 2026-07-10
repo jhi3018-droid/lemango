@@ -382,8 +382,10 @@ function buildEventDetailContent(ev) {
   if (imgs.length) {
     html += `<div class="srm-divider"></div><div class="srm-memo-label">이미지</div>`
     html += `<div class="ev-img-grid-view" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">`
-    imgs.forEach(i => {
-      html += `<img src="${esc(i.url)}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #eee" onclick="window.open('${esc(i.url)}','_blank')">`
+    // 🔴 뷰어(새 탭 대체): 행사 이미지 세트 통째로 → ◀▶ 순환
+    const _evImgsJson = JSON.stringify(imgs.map(i => i.url)).replace(/"/g, '&quot;')
+    imgs.forEach((i, ei) => {
+      html += `<img src="${esc(i.url)}" style="width:80px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #eee;cursor:pointer" onclick="openImageViewer(${_evImgsJson}, ${ei})">`
     })
     html += '</div>'
   }

@@ -1424,8 +1424,16 @@
   <button class="modal-close" onclick="document.getElementById('imageModal').close()">✕</button>
   <button class="modal-prev" id="modalPrev" onclick="modalNav(-1)">‹</button>
   <button class="modal-next" id="modalNext" onclick="modalNav(1)">›</button>
-  <img id="modalImg" src="" alt="" class="modal-img" />
-  <div class="modal-counter" id="modalCounter"></div>
+  <div class="modal-img-wrap">
+    <div class="modal-spinner" id="modalSpinner"></div>
+    <img id="modalImg" src="" alt="" class="modal-img" />
+    <div class="modal-error" id="modalError" style="display:none">⚠️ 이미지를 불러올 수 없습니다</div>
+  </div>
+  <div class="modal-meta" id="modalMeta"></div>
+  <div class="modal-footer-row">
+    <div class="modal-counter" id="modalCounter"></div>
+    <a class="modal-orig" id="modalOrig" href="#" target="_blank" rel="noopener">원본 열기 ↗</a>
+  </div>
 </dialog>
 
 <!-- 엑셀 업로드 미리보기 모달 -->

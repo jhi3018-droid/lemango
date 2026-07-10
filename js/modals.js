@@ -1,34 +1,88 @@
 // =============================================
-// ===== 이미지 모달 =====
+// ===== 🔴 전역 이미지 뷰어(라이트박스) — 새 탭 오픈 대체, 앱 전역 단일 컴포넌트 =====
 // =============================================
-function openModal(idx, images) {
-  State.modal.images = images
-  State.modal.idx    = idx
+// openImageViewer(images, startIndex): images = URL 문자열 배열 또는 {url,label?,caption?,name?} 객체 배열(혼용 OK).
+//   메타 라인 = label · caption (B3 슬롯) / 아니면 파일명·URL 호스트. ◀▶(다중), ESC/backdrop/✕ 닫기, 로딩 스피너·오류 플레이스홀더.
+function openImageViewer(images, startIndex) {
+  const arr = (Array.isArray(images) ? images : [images])
+    .map(x => (typeof x === 'string') ? { url: x } : (x || {}))
+    .filter(x => x && x.url)
+  if (!arr.length) return
+  State.modal.images = arr
+  State.modal.idx = Math.max(0, Math.min(startIndex || 0, arr.length - 1))
   updateModal()
   document.getElementById('imageModal').showModal()
+}
+window.openImageViewer = openImageViewer
+
+// 하위호환: 기존 openModal(idx, images) 호출부(상품조회 테이블 등)는 그대로 → 뷰어로 위임.
+function openModal(idx, images) { openImageViewer(images, idx) }
+
+function _imgMetaText(im) {
+  if (!im) return ''
+  const bits = []
+  if (im.label) bits.push(im.label)
+  if (im.caption) bits.push(im.caption)
+  if (bits.length) return bits.join(' · ')
+  if (im.name) return im.name
+  try { const u = new URL(im.url); return u.hostname } catch (e) { return String(im.url || '') }
 }
 
 function updateModal() {
   const { images, idx } = State.modal
-  document.getElementById('modalImg').src = images[idx] || ''
-  document.getElementById('modalCounter').textContent = images.length > 1 ? `${idx+1} / ${images.length}` : ''
-  document.getElementById('modalPrev').style.display = images.length > 1 ? '' : 'none'
-  document.getElementById('modalNext').style.display = images.length > 1 ? '' : 'none'
+  const im = (images && images[idx]) || {}
+  const imgEl = document.getElementById('modalImg')
+  const spinner = document.getElementById('modalSpinner')
+  const errEl = document.getElementById('modalError')
+  if (spinner) spinner.style.display = ''
+  if (errEl) errEl.style.display = 'none'
+  if (imgEl) {
+    imgEl.style.visibility = 'hidden'
+    imgEl.onload = () => { if (spinner) spinner.style.display = 'none'; imgEl.style.visibility = 'visible' }
+    imgEl.onerror = () => { if (spinner) spinner.style.display = 'none'; imgEl.style.visibility = 'hidden'; if (errEl) errEl.style.display = '' }
+    imgEl.src = im.url || ''
+    // 🔴 캐시된/동일 이미지 재오픈 시 onload 미발화 → 동기 완료 처리(스피너 잔존 방지)
+    if (imgEl.complete && imgEl.naturalWidth) { if (spinner) spinner.style.display = 'none'; imgEl.style.visibility = 'visible' }
+  }
+  const cnt = document.getElementById('modalCounter'); if (cnt) cnt.textContent = images.length > 1 ? `${idx + 1} / ${images.length}` : ''
+  const prev = document.getElementById('modalPrev'); if (prev) prev.style.display = images.length > 1 ? '' : 'none'
+  const next = document.getElementById('modalNext'); if (next) next.style.display = images.length > 1 ? '' : 'none'
+  const meta = document.getElementById('modalMeta'); if (meta) meta.textContent = _imgMetaText(im)
+  const orig = document.getElementById('modalOrig'); if (orig) orig.href = im.url || '#'
 }
 
 function modalNav(dir) {
   const { images } = State.modal
+  if (!images || images.length < 2) return
   State.modal.idx = (State.modal.idx + dir + images.length) % images.length
   updateModal()
 }
 
+// ESC/◀▶ — imageModal 이 최상위 dialog(showModal)라 ESC 는 뷰어를 먼저 닫음(하위 상세 모달 유지). arrows=페이지 스크롤 방지.
 document.addEventListener('keydown', e => {
   const modal = document.getElementById('imageModal')
-  if (!modal.open) return
-  if (e.key === 'ArrowLeft')  modalNav(-1)
-  if (e.key === 'ArrowRight') modalNav(1)
-  if (e.key === 'Escape')     modal.close()
-})
+  if (!modal || !modal.open) return
+  if (e.key === 'ArrowLeft')  { e.preventDefault(); modalNav(-1) }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); modalNav(1) }
+  // 🔴 ESC 스택: preventDefault 로 네이티브 dialog ESC(다음 하위 dialog 닫기)까지 억제 → 뷰어만 닫고 상세 모달 유지.
+  else if (e.key === 'Escape')     { e.preventDefault(); e.stopPropagation(); modal.close() }
+}, true)   // capture: 하위 모달 핸들러보다 먼저 처리
+// backdrop(다이얼로그 바깥 영역) 클릭 → 닫기
+;(function () {
+  const m = document.getElementById('imageModal')
+  if (m) m.addEventListener('click', e => { if (e.target === m || e.target.classList.contains('modal-img-wrap')) m.close() })
+})()
+
+// 🔴 상품 상세 참고 이미지(tempImages) 뷰어 — 라벨/캡션 포함 세트로 ◀▶ 순환.
+function _prodTempViewer(idx) {
+  const p = State.allProducts.find(x => x.productCode === _detailCode)
+  const all = (p && Array.isArray(p.tempImages)) ? p.tempImages : []
+  const set = all.filter(t => t && t.url).map(t => ({ url: t.url, label: t.label, caption: t.caption, name: t.name }))
+  const clicked = all[idx]
+  const start = clicked ? set.findIndex(s => s.url === clicked.url) : 0
+  openImageViewer(set, start < 0 ? 0 : start)
+}
+window._prodTempViewer = _prodTempViewer
 
 // =============================================
 // ===== 범용 드래그 + 리사이즈 초기화 =====
@@ -280,8 +334,8 @@ function initDetailImages(p) {
   mainImg.style.display = ''
   noneEl.style.display = 'none'
   mainImg.style.cursor = 'pointer'
-  mainImg.title = '클릭하면 새 탭에서 열립니다'
-  mainImg.onclick = () => { if (mainImg.src) window.open(mainImg.src) }
+  mainImg.title = '클릭하면 크게 보기'
+  mainImg.onclick = () => { if (_detailImgList.length) openImageViewer(_detailImgList, _detailImgIdx) }   // 🔴 뷰어(새 탭 대체)
 
   // 화살표 표시/숨김
   const hasMulti = _detailImgList.length > 1
@@ -875,7 +929,7 @@ function buildDetailContent(p) {
             const nm = nmSrc.length > 18 ? nmSrc.slice(0,16)+'..' : nmSrc
             return `<div class="plan-img-thumb plan-img-thumb-temp">
               <span class="plan-img-thumb-tag-temp">${label || '임시'}</span>
-              <img src="${safe}" onclick="window.open('${safe.replace(/'/g,"\\'")}','_blank')" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'" />
+              <img src="${safe}" onclick="_prodTempViewer(${i})" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'" />
               <div class="plan-img-thumb-name" title="${esc(nmSrc)}">${esc(nm)}</div>
               <button type="button" class="plan-img-thumb-x temp-del-btn" onclick="deleteProductTempImage(${i})">✕</button>
             </div>`

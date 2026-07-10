@@ -794,6 +794,17 @@ body.col-resize-active * { cursor: col-resize !important; }
   font-size: 11px;
   font-family: 'Inter';
 }
+/* 🔴 전역 이미지 뷰어 — 메타(라벨·그래픽명) + 원본열기 + 로딩/오류 */
+.image-modal { display: flex; flex-direction: column; }
+.modal-img-wrap { position: relative; display: flex; align-items: center; justify-content: center; min-height: 140px; cursor: zoom-out; }
+.modal-meta { color: #eee; font-size: 12px; text-align: center; padding: 7px 44px 2px; word-break: break-all; line-height: 1.4; min-height: 15px; }
+.modal-footer-row { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 6px 12px 12px; }
+.modal-footer-row .modal-counter { position: static; transform: none; background: rgba(255,255,255,.12); }
+.modal-orig { color: var(--accent, #c9a96e); font-size: 11px; text-decoration: none; white-space: nowrap; }
+.modal-orig:hover { text-decoration: underline; }
+.modal-spinner { position: absolute; width: 34px; height: 34px; border: 3px solid rgba(255,255,255,.22); border-top-color: #fff; border-radius: 50%; animation: imgv-spin 0.8s linear infinite; }
+.modal-error { position: absolute; color: var(--warning, #f0a500); font-size: 13px; padding: 20px; text-align: center; }
+@keyframes imgv-spin { to { transform: rotate(360deg); } }
 
 /* ===== 한글 확인 다이얼로그 ===== */
 .kor-confirm-dialog {
