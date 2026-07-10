@@ -341,7 +341,8 @@ function confirmRegisterUpload() {
       madeMonth:   String(row[UPLOAD_COL.madeMonth]  || '').trim(),
       madeBy:      String(row[UPLOAD_COL.madeBy]     || '').trim(),
       madeIn:      item.madeIn,
-      mainImage:   UPLOAD_COL.mainImage != null ? String(row[UPLOAD_COL.mainImage] || '').trim() : '',
+      // 🔴 신규 이미지 모델: 구 '대표이미지URL' 컬럼 → cafe24Main 이관. mainImage/images.* 미기입(레거시 6종 셀 무시).
+      cafe24Main:  UPLOAD_COL.mainImage != null ? String(row[UPLOAD_COL.mainImage] || '').trim() : '',
       videoUrl:    String(row[UPLOAD_COL.videoUrl]   || '').trim(),
       chestLine:   '',
       transparency:'',
@@ -349,7 +350,6 @@ function confirmRegisterUpload() {
       capRing:     '',
       gender:      '',
       sizeSpec:    {},
-      images:      { sum: sumUrls, lemango: lemonUrls, noir: [], external: extUrls, design: [], shoot: [] },
       mallCodes:   {},
       stock:       Object.fromEntries(SIZES.map(sz => [sz, 0])),
       sales:       Object.fromEntries(_platforms.map(pl => [pl, 0])),

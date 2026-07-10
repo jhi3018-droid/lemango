@@ -39,23 +39,12 @@ const ALL_DOWNLOAD_COLUMNS = [
   { key:'madeIn', label:'제조국' },
   { key:'saleStatus', label:'판매상태' },
   { key:'productionStatus', label:'생산상태' },
-  { key:'cafe24Main', label:'카페24 대표' },   // 🔴 B2a: 대표 이미지(시스템 썸네일)
-  { key:'sabangMain', label:'사방넷 대표' },   // 🔴 B2a
-  { key:'mainImage', label:'대표이미지URL' },  // 레거시(구 데이터 export)
-  { key:'images.sum', label:'이미지URL(합본)' },
-  { key:'images.lemango', label:'이미지URL(자사몰)' },
-  { key:'images.noir', label:'이미지URL(느와)' },
-  { key:'images.external', label:'이미지URL(외부몰)' },
-  { key:'images.design', label:'이미지URL(디자인)' },
-  { key:'images.shoot', label:'이미지URL(촬영)' },
+  // 🔴 이미지 모델 신규(대표=카페24/사방넷 · 상세 URL). 레거시 대표이미지URL·이미지URL/HTML 6종 제거(구 데이터는 cafe24Main compat-read 로 export).
+  { key:'cafe24Main', label:'카페24 대표' },
+  { key:'sabangMain', label:'사방넷 대표' },
+  { key:'cafe24DetailUrl', label:'CAFE24 상세 URL' },
+  { key:'sabangDetailUrl', label:'사방넷 상세 URL' },
   { key:'videoUrl', label:'영상URL' },
-  { key:'images.sum.html', label:'이미지HTML(합본)' },
-  { key:'images.lemango.html', label:'이미지HTML(자사몰)' },
-  { key:'images.noir.html', label:'이미지HTML(느와)' },
-  { key:'images.external.html', label:'이미지HTML(외부몰)' },
-  { key:'images.design.html', label:'이미지HTML(디자인)' },
-  { key:'images.shoot.html', label:'이미지HTML(촬영)' },
-  { key:'images.all.html', label:'이미지HTML(전체)' },
   { key:'registDate', label:'등록일' },
   { key:'lastInDate', label:'최종입고일' },
   { key:'stock.XS', label:'재고_XS' },
@@ -101,7 +90,7 @@ const DEFAULT_FORMATS = [
       'modelSize',
       'madeMonth','madeBy','madeIn',
       'saleStatus','productionStatus',
-      'mainImage','images.sum','images.lemango','images.noir','images.external','images.design','images.shoot','videoUrl',
+      'cafe24Main','sabangMain','cafe24DetailUrl','sabangDetailUrl','videoUrl',   // 🔴 신규 이미지 모델(레거시 대표/이미지 6종 제거)
       '...mallCodes',
       'registDate','lastInDate'
     ]
@@ -146,6 +135,8 @@ function _resolveColumns(columns) {
 // 상품 데이터에서 키 기반 값 추출
 function _getProductValue(p, key, idx) {
   if (key === 'no') return idx + 1
+  // 🔴 대표 이미지 legacy-compat: cafe24Main 비었고 레거시 mainImage 있으면 카페24 대표 셀로 export → round-trip 자연 마이그레이션.
+  if (key === 'cafe24Main') return p.cafe24Main || (p.mainImage || '')
   if (key === 'totalStock') return getTotalStock(p)
   if (key === 'totalSales') return getTotalSales(p)
   if (key === 'exhaustion') return getExhaustion(p)
@@ -635,6 +626,11 @@ const HEADER_TO_KEY = {
   '제조국': 'madeIn',
   '판매상태': 'saleStatus',
   '생산상태': 'productionStatus',
+  // 🔴 신규 이미지 모델 헤더(상품 export/수정 라운드트립). 레거시 '대표이미지URL'/'이미지URL 6종'은 구 파일 읽기용으로 유지하되 apply 에서 대표=cafe24Main 로 이관·6종은 무시.
+  '카페24 대표': 'cafe24Main',
+  '사방넷 대표': 'sabangMain',
+  'CAFE24 상세 URL': 'cafe24DetailUrl',
+  '사방넷 상세 URL': 'sabangDetailUrl',
   '대표이미지URL': 'mainImage',
   '이미지URL(합본)': 'urlSum',
   '이미지URL(자사몰)': 'urlLemango',
@@ -1557,19 +1553,15 @@ function _parseProductUpload(raw) {
       madeMonth:     _s('madeMonth'),
       madeBy:        _s('madeBy'),
       madeIn:        _s('madeIn'),
-      mainImage:     _s('mainImage'),
+      // 🔴 신규 이미지 모델: 대표=cafe24Main(신규 '카페24 대표' 셀 · 없으면 레거시 '대표이미지URL' 셀 이관) + 사방넷 대표 + 상세 URL 2종. mainImage/images.* 미기입(레거시 6종 셀은 읽어도 무시).
+      cafe24Main:      _s('cafe24Main') || _s('mainImage'),
+      sabangMain:      _s('sabangMain'),
+      cafe24DetailUrl: _s('cafe24DetailUrl'),
+      sabangDetailUrl: _s('sabangDetailUrl'),
       videoUrl:      _s('videoUrl') || null,
       saleStatus:    isNew ? (_s('saleStatus') || '판매중') : '판매중',
       productionStatus: _s('productionStatus'),
       barcodes:      Object.fromEntries(SIZES.map(sz => [sz, ''])),
-      images: {
-        sum:      sumUrls,
-        lemango:  lemUrls,
-        noir:     noirUrls,
-        external: extUrls,
-        design:   designUrls,
-        shoot:    shootUrls
-      },
       mallCodes,
       stock: Object.fromEntries(SIZES.map(sz => [sz, 0])),
       stockLog: [],
@@ -1648,7 +1640,11 @@ const _DIFF_FIELDS = [
   { key:'madeIn', label:'제조국' },
   { key:'saleStatus', label:'판매상태' },
   { key:'productionStatus', label:'생산상태' },
-  { key:'mainImage', label:'대표이미지' },
+  // 🔴 신규 이미지 모델 diff(대표=카페24/사방넷 · 상세 URL). 레거시 mainImage/images.* diff 제거.
+  { key:'cafe24Main', label:'카페24 대표' },
+  { key:'sabangMain', label:'사방넷 대표' },
+  { key:'cafe24DetailUrl', label:'CAFE24 상세 URL' },
+  { key:'sabangDetailUrl', label:'사방넷 상세 URL' },
   { key:'videoUrl', label:'영상URL' },
 ]
 // _DIFF_FIELDS의 product field key → 업로드 헤더 key 매핑 (이름이 다른 것만)
@@ -1701,18 +1697,7 @@ function _diffProduct(existing, uploaded, presentKeys, deleteKeys) {
       diffs.push(entry)
     }
   })
-  // 이미지 배열 비교
-  const imgSections = ['sum','lemango','noir','external','design','shoot']
-  imgSections.forEach(sec => {
-    if (presentKeys && !presentKeys.has(_IMG_PRESENT_KEY[sec])) return
-    const oldArr = (existing.images?.[sec] || []).join('\n')
-    const newArr = (uploaded.images?.[sec] || []).join('\n')
-    if (oldArr !== newArr) {
-      const entry = { key: 'images.' + sec, label: '이미지(' + sec + ')', oldVal: oldArr, newVal: newArr }
-      if (deleteKeys.has(_IMG_PRESENT_KEY[sec])) entry.isDelete = true
-      diffs.push(entry)
-    }
-  })
+  // 🔴 레거시 이미지 6종(images.*) diff 제거 — dead field(시트 미기입). 대표/상세 URL 은 _DIFF_FIELDS 스칼라로 비교.
   // sizeSpec 비교 — 부위 단일 소스: SIZE_SPEC_PARTS (core.js). 헤더에 컬럼 있을 때만 비교.
   SIZE_SPEC_SIZES.forEach(sz => {
     SIZE_SPEC_PARTS.forEach(pt => {
@@ -1903,7 +1888,9 @@ function _applyProductUpload(parsed) {
         washMethod:'washMethod', bust:'bust', waist:'waist', hip:'hip',
         modelSize:'modelSize', madeMonth:'madeMonth', madeBy:'madeBy', madeIn:'madeIn',
         saleStatus:'saleStatus', productionStatus:'productionStatus',
-        mainImage:'mainImage', videoUrl:'videoUrl'
+        // 🔴 신규 이미지 모델(대표=cafe24Main/sabangMain · 상세 URL). mainImage/images.* 미기입.
+        cafe24Main:'cafe24Main', sabangMain:'sabangMain',
+        cafe24DetailUrl:'cafe24DetailUrl', sabangDetailUrl:'sabangDetailUrl', videoUrl:'videoUrl'
       }
       // Master-aware: same canonical color → preserve existing color (no harmful overwrite,
       // e.g. legacy colorEn="NA" must NOT be snapped to "Navy" on a no-edit round-trip)
@@ -1918,17 +1905,13 @@ function _applyProductUpload(parsed) {
         }
         // else: preserve existing
       })
-      // 이미지 섹션: header present + value (or [삭제]) gates override
-      const IMG_MAP = { urlSum:'sum', urlLemango:'lemango', urlNoir:'noir', urlExternal:'external', urlDesign:'design', urlShoot:'shoot' }
-      const mergedImages = { ...(existing.images || {}) }
-      Object.entries(IMG_MAP).forEach(([hdrKey, secKey]) => {
-        if (deleteKeys.has(hdrKey)) {
-          mergedImages[secKey] = []
-        } else if (presentKeys.has(hdrKey) && valueKeys.has(hdrKey)) {
-          mergedImages[secKey] = item.product.images?.[secKey] || []
-        }
-      })
-      merged.images = mergedImages
+      // 🔴 레거시 호환: 구 파일('대표이미지URL'=mainImage 헤더, '카페24 대표' 없음) → cafe24Main 으로 이관(round-trip 마이그레이션).
+      //   item.product.cafe24Main = build 에서 `_s('cafe24Main') || _s('mainImage')` 라 mainImage 셀값 담김.
+      if (!presentKeys.has('cafe24Main') && presentKeys.has('mainImage')) {
+        if (deleteKeys.has('mainImage')) merged.cafe24Main = ''
+        else if (valueKeys.has('mainImage')) merged.cafe24Main = item.product.cafe24Main || ''
+      }
+      // 🔴 레거시 이미지 6종(images.*)은 시트에서 미기입(dead field) — 기존값은 spread 로 보존, 시트 셀 무시(no write).
       // mallCodes: spread merge + [삭제] removes channel from object
       const mergedMall = { ...(existing.mallCodes || {}), ...(item.product.mallCodes || {}) }
       Array.from(deleteKeys).forEach(dk => {

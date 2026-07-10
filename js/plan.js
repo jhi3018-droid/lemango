@@ -851,7 +851,15 @@ function renderPlanTable() {
   State.plan.inactiveColumns = State.plan.inactiveColumns.filter(k => allKeys.includes(k))
   renderColInactiveArea('npInactiveArea','npInactiveTags','plan',PLAN_ALL_COLS,PLAN_FIXED_KEYS,'renderPlanTable')
 
-  const data = applyColFilters(State.plan.filtered, State.plan.columnFilters)
+  // 🔴 사용자 선택 정렬 없으면 최신 등록순 기본 정렬(id desc — id=단조 증가 identity[c114125]). 상품조회(createdAt desc)와 동일 취지.
+  if (!State.plan.sort || !State.plan.sort.key) {
+    State.plan.filtered.sort((a, b) => (Number(b && b.id) || 0) - (Number(a && a.id) || 0))
+  }
+  // 렌더 시 State.plan.sort 재적용(검색/동기화로 filtered 재구축돼도 사용자 정렬 유지 — 상품조회 미러)
+  const _sorted = (State.plan.sort && State.plan.sort.key)
+    ? sortData(State.plan.filtered, State.plan.sort.key, State.plan.sort.dir)
+    : State.plan.filtered
+  const data = applyColFilters(_sorted, State.plan.columnFilters)
   const page = State.plan.page || 1
   const ps = getPageSize('plan')
   const pageData = ps === 0 ? data : data.slice((page-1)*ps, page*ps)

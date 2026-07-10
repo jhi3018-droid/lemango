@@ -1748,7 +1748,7 @@ const State = {
   product: { filtered: [], sort: { key: 'registDate', dir: 'desc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {}, searchCriteria: null, needsRerender: false },
   stock:   { filtered: [], sort: { key: 'registDate', dir: 'desc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {}, searchCriteria: null, needsRerender: false },
   sales:   { filtered: [], sort: { key: 'registDate', dir: 'desc' }, page: 1, pageSize: 10, activePlatforms: [], inactivePlatforms: [], columnFilters: {}, colWidths: {}, searchCriteria: null, needsRerender: false },
-  plan:    { filtered: [], sort: { key: 'no', dir: 'asc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {} },
+  plan:    { filtered: [], sort: { key: null, dir: 'desc' }, page: 1, pageSize: 10, columnFilters: {}, activeColumns: null, inactiveColumns: [], colWidths: {} },   /* 🔴 기본 정렬=최신 등록순(id desc, renderPlanTable) */
   event:   { filtered: [], sort: { key: 'startDate', dir: 'asc' }, page: 1 },
   work:    { filtered: [], sort: { key: 'startDate', dir: 'desc' }, page: 1 },
   workItems: [],
