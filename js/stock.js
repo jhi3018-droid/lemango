@@ -706,18 +706,27 @@ function _bcValidateRows() {
       return
     }
     // 3) 배치(파일) 내 중복 — 동일 바코드가 다른 품번/사이즈에 사용됨
+    //    🔴 size 비교는 EXACT(seen.size !== d.size) — 축약/부분매칭 아님(2XL 은 XL 과 절대 동일 취급 안 됨).
     const seen = batchSeen.get(d.barcode)
     if (seen && (seen.code !== d.code || seen.size !== d.size)) {
       d.status = 'collision'; d.valid = false
-      d.error = `파일 내 중복: ${seen.code}/${seen.size} 와 동일 바코드`
+      // 같은 상품의 다른 사이즈면 사이즈 정정 안내(한 바코드=한 사이즈 원칙)
+      d.error = (seen.code === d.code)
+        ? `파일 내 같은 상품 ${seen.size} 행과 동일 바코드 — 한 바코드는 한 사이즈에만 등록`
+        : `파일 내 중복: ${seen.code}/${seen.size} 와 동일 바코드`
       return
     }
     // 4) 기존 등록과 충돌 — 동일 바코드가 다른 품번/사이즈에 이미 등록됨
     //    (동일 품번+사이즈에 이미 등록된 경우는 충돌 아님 → no-op/덮어쓰기)
+    //    🔴 size 비교는 EXACT(hit.size !== d.size) — 예: 2XL 업로드는 XL 슬롯과 절대 매칭 안 됨.
+    //    같은 상품의 '다른 사이즈'에 이미 있으면 = 과거 사이즈 오등록(예: 2XL 바코드가 XL 슬롯에 저장돼 있음)
+    //    → 시스템은 정정 방법을 안내(자동 이동/덮어쓰기 안 함 — 어느 쪽이 옳은지 알 수 없어 데이터 보호).
     const hit = typeof findByBarcode === 'function' ? findByBarcode(d.barcode) : null
     if (hit && ((hit.productCode || '').toUpperCase() !== d.code || hit.size !== d.size)) {
       d.status = 'collision'; d.valid = false
-      d.error = `이미 ${hit.productCode}/${hit.size} 에 등록됨`
+      d.error = ((hit.productCode || '').toUpperCase() === d.code)
+        ? `이 바코드는 같은 상품의 ${hit.size} 사이즈에 이미 등록됨 — 상세 모달에서 ${hit.size} 바코드를 비운 뒤 ${d.size} 로 재등록하세요`
+        : `이미 ${hit.productCode}/${hit.size} 에 등록됨`
       return
     }
     // 통과 → 신규 / 동일(no-op) / 덮어쓰기
