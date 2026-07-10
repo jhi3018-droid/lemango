@@ -1308,6 +1308,8 @@ body.col-resize-active * { cursor: col-resize !important; }
 /* 품번 생성 패널 — 수정 모드일 때만 표시 */
 .dcg-edit-only { display: none; }
 .detail-modal.edit-mode .dcg-edit-only { display: flex; }
+/* 🔴 B2b: 기획 상세(plan-detail-modal)도 품번 코드 그룹을 수정 모드에서만 표시 */
+.plan-detail-modal.edit-mode .dcg-edit-only { display: flex; }
 
 /* 수정 모드 활성화 */
 .detail-modal.edit-mode .dfield-value { display: none !important; }

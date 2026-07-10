@@ -830,6 +830,14 @@ async function openPlanDetailModal(id) {
   }
   buildPlanDetailContent(item)
   renderPlanTempImageGrid()
+  // 🔴 B2b: 품번 코드 디자인 picker 드롭다운 초기화(패널 제거 → 기본정보 인라인)
+  if (typeof filterPdDesignList === 'function' && document.getElementById('pdCgDesignDropdown')) {
+    const dcur = document.getElementById('pdCgDesign')?.value
+    const de = (typeof _designCodes !== 'undefined') ? _designCodes.find(([c]) => c === dcur) : null
+    const dsearch = document.getElementById('pdCgDesignSearch')
+    if (dsearch && de) dsearch.placeholder = `${de[0]} - ${de[1]} (${de[2]})`
+    filterPdDesignList()
+  }
   // 뷰 모드로 초기화
   const modal = document.getElementById('planDetailModal')
   modal.classList.remove('edit-mode')
@@ -901,19 +909,7 @@ async function clonePlanItem(id) {
 window.clonePlanItem = clonePlanItem
 
 // ===== 기획 상세 모달 — 품번 인라인 생성 =====
-function togglePdCodeGenPanel() {
-  const panel = document.getElementById('pdCodeGenPanel')
-  const btn   = document.querySelector('.pdcg-toggle-btn')
-  if (!panel) return
-  const open = panel.style.display === 'none'
-  panel.style.display = open ? '' : 'none'
-  if (btn) btn.textContent = open ? '품번 생성 ▴' : '품번 생성 ▾'
-  if (open) {
-    filterPdDesignList()
-    updatePdProductCode()
-  }
-}
-
+// 🔴 B2b: 패널 제거 → 디자인 picker 는 기본정보 인라인. selectPdDesign 이 백스타일명(pdBackStyleName) 자동채움.
 function filterPdDesignList() {
   const q = (document.getElementById('pdCgDesignSearch')?.value || '').toLowerCase().trim()
   const list = q
@@ -936,61 +932,47 @@ function selectPdDesign(code) {
   document.getElementById('pdCgDesign').value = code
   document.getElementById('pdCgDesignSearch').value = ''
   document.getElementById('pdCgDesignSearch').placeholder = `${code} - ${found[1]} (${found[2]})`
+  const bs = document.getElementById('pdBackStyleName')   // 🔴 B2b: 백스타일명(EN) 자동채움(readonly, data-pkey=backStyle)
+  if (bs) bs.value = found[1] || ''
   filterPdDesignList()
-  updatePdProductCode()
-}
-
-function updatePdProductCode() {
-  // 🔴 공유 로직(product-code.js): 일련번호 basis=분류+연도+시즌 · 6개 필수 반려 게이트 · full-code 유일성은 apply 가드.
-  //   편집 중 아이템의 기존 품번은 제외(같은 basis 재생성 허용).
-  const currentItem = State.planItems.find(p => p.id === _editingPlanId)
-  pcodeRenderPreview({
-    cls:       document.getElementById('pdCgCls')?.value,
-    gen:       document.getElementById('pdCgGen')?.value,
-    typ:       document.getElementById('pdCgTyp')?.value,
-    des:       document.getElementById('pdCgDesign')?.value,
-    yearDigit: document.getElementById('pdCgYear')?.value,
-    seasonNum: document.getElementById('pdCgSeason')?.value
-  }, {
-    preview: document.getElementById('pdCgPreview'),
-    apply:   document.getElementById('pdCgApplyBtn'),
-    excludeCode: (currentItem && currentItem.productCode) || ''
-  })
 }
 
 let _pdPendingCode = null  // 이번 편집 세션에서 예약된 임시 코드
 
-function applyPdGeneratedCode() {
-  const code = document.getElementById('pdCgPreview')?.textContent?.trim()
-  if (!pcodeIsValidCode(code)) { showToast('품번 생성 반려 — 필수 입력(분류·성별·타입·디자인·연도·시즌)을 확인하세요.', 'warning'); return }
-
+// 🔴 B2b: 기획 상세 1-버튼 품번 생성 (Phase A 공유 경로 + 자기코드 excludeCode + _pdPendingCode 예약). 연도=전체연도→yearDigit 파생.
+function genPdCode() {
   const currentItem = State.planItems.find(p => p.id === _editingPlanId)
-  const currentOwnCode = currentItem?.productCode || ''
-
-  // 최종 중복 검사 (자기 자신 기존 코드는 허용)
-  if ((State.allProducts.some(p => p.productCode === code) ||
-       State.planItems.some(p => p.productCode === code && p.id !== _editingPlanId) ||
-       _reservedCodes.has(code)) && code !== currentOwnCode) {
-    showToast(`품번 "${code}"은 이미 사용 중입니다.`, 'error')
-    updatePdProductCode()
-    return
+  const ownCode = (currentItem && currentItem.productCode) || ''
+  const yearFull  = document.getElementById('pdCgYear')?.value || ''
+  const yearDigit = (typeof pcodeYearDigit === 'function') ? pcodeYearDigit(yearFull) : ''
+  const basis = {
+    cls:       document.getElementById('pdCgCls')?.value,
+    gen:       document.getElementById('pdCgGen')?.value,
+    typ:       document.getElementById('pdCgTyp')?.value,
+    des:       document.getElementById('pdCgDesign')?.value,
+    yearDigit,
+    seasonNum: document.getElementById('pdCgSeason')?.value
   }
-
-  // 이전에 예약했던 임시 코드 해제
-  if (_pdPendingCode && _pdPendingCode !== currentOwnCode) {
-    _reservedCodes.delete(_pdPendingCode)
+  const missing = pcodeMissing(basis)
+  if (missing.length) { showToast('품번 생성 반려 — 미입력: ' + missing.join(', '), 'warning'); return }
+  const serial = nextSerial(basis, { excludeCode: ownCode })
+  if (serial === null) { showToast('이 분류+연도+시즌 그룹의 일련번호(00~99)가 소진되었습니다.', 'error'); return }
+  const code = String(basis.cls) + String(basis.gen) + String(basis.typ) + String(basis.des) + String(basis.yearDigit) + String(basis.seasonNum) + serial
+  if (!pcodeIsValidCode(code)) { showToast('품번 생성 반려 — 입력값을 확인하세요.', 'warning'); return }
+  if (code !== ownCode && (
+      State.allProducts.some(p => p.productCode === code) ||
+      State.planItems.some(p => p.productCode === code && p.id !== _editingPlanId) ||
+      _reservedCodes.has(code))) {
+    showToast(`품번 "${code}"은 이미 사용 중입니다. 다시 생성해주세요.`, 'error'); return
   }
-
+  if (_pdPendingCode && _pdPendingCode !== ownCode) _reservedCodes.delete(_pdPendingCode)
   _pdPendingCode = code
-  if (code !== currentOwnCode) _reservedCodes.add(code)
-
+  if (code !== ownCode) _reservedCodes.add(code)
   const input = document.getElementById('pdProductCodeInput')
   if (input) input.value = code
-  document.getElementById('pdCodeGenPanel').style.display = 'none'
-  const toggleBtn = document.querySelector('.pdcg-toggle-btn')
-  if (toggleBtn) toggleBtn.textContent = '품번 생성 ▾'
-  showToast(`품번 "${code}" 적용됐습니다.`, 'success')
+  showToast(`품번 "${code}" 생성됨. 저장 버튼을 눌러 확정하세요.`, 'success')
 }
+window.genPdCode = genPdCode
 
 function _pdUpdateHeaderBtns(mode) {
   // mode: 'view' | 'edit'
@@ -1234,6 +1216,9 @@ async function savePlanDetailEdit() {
     }
   })
 
+  // 🔴 B2b: yearDigit 를 year(전체연도)와 동기화(품번 코드 연도 필드=year 저장 · 프리필은 yearDigit 우선)
+  if (typeof pcodeYearDigit === 'function' && item.year) item.yearDigit = pcodeYearDigit(item.year)
+
   // 🔴 B2a: 레거시 이미지 필드 opportunistic strip (대량 삭제 아님 — 재저장 항목만 dead field 제거)
   delete item.mainImage
   if (item.images && typeof item.images === 'object') {
@@ -1468,38 +1453,52 @@ function buildPlanDetailContent(item) {
   const TYP_OPT  = (typeof PCODE_TYPES   !== 'undefined' ? PCODE_TYPES : [])
   const GEN_OPT  = (typeof PCODE_GENDERS !== 'undefined' ? PCODE_GENDERS : [])
   const YEAR_OPT = (typeof PCODE_YEARS   !== 'undefined' ? PCODE_YEARS : []).map(([c]) => c)
-  const mkSel = (id, opts, guess, fn) =>
-    `<select id="${id}" onchange="${fn}()">${opts.map(([v,l]) => `<option value="${v}"${v===guess?' selected':''}>${v}${l?' - '+l:''}</option>`).join('')}</select>`
+  // 🔴 B2b: 패널 제거 → 코드 셀렉트 인라인(기본정보). data-pkey 로 저장(classCode/typeCode/gender/year/season/designCode/backStyle) — B1 create 미러 · onchange 프리뷰 없음.
+  const mkSel = (id, opts, guess, dataKey) =>
+    `<select id="${id}"${dataKey ? ` data-pkey="${dataKey}"` : ''}>${opts.map(([v,l]) => `<option value="${v}"${v===guess?' selected':''}>${v}${l?' - '+l:''}</option>`).join('')}</select>`
+  // 연도 = 전체연도(item.year 저장) · genPdCode 가 yearDigit 파생
+  const FULLYEAR_OPT = [['', '선택']].concat((typeof PCODE_YEARS !== 'undefined' ? PCODE_YEARS : []).map(([c, y]) => [y, y]))
+  const yearFullGuess = item.year || (typeof pcodeYearFull === 'function' ? pcodeYearFull(yearGuess) : '') || ''
+  // 🔴 B2b: 레거시 out-of-vocab 값 보존(free-text→select 전환 시 미편집 재저장으로 blank 화 방지)
+  if (item.year && !FULLYEAR_OPT.some(([v]) => String(v) === String(item.year))) FULLYEAR_OPT.push([String(item.year), String(item.year) + ' (기존)'])
+  const SEASON_OPT = [['','선택'],['1',''],['2',''],['3',''],['4',''],['5','']]
+  if (item.season && !SEASON_OPT.some(([v]) => String(v) === String(item.season))) SEASON_OPT.push([String(item.season), String(item.season) + ' (기존)'])
 
   const pcVal = item.productCode || ''
   const productCodeField = `<div class="dfield dfield-span2">
     <span class="dfield-label">품번</span>
     <span class="dfield-value${!pcVal ? ' empty' : ''}">${pcVal || '-'}</span>
     <div class="pdcg-input-row">
-      <input type="text" data-pkey="productCode" id="pdProductCodeInput" value="${pcVal}" placeholder="품번 직접 입력" style="flex:1" />
-      <button class="btn btn-outline pdcg-toggle-btn" onclick="togglePdCodeGenPanel()" style="font-size:11px;padding:4px 12px;white-space:nowrap">품번 생성 ▾</button>
-    </div>
-    <div id="pdCodeGenPanel" class="pd-codegen-panel" style="display:none">
-      <div class="pdcg-selects">
-        <div class="pdcg-group"><label>분류</label>${mkSel('pdCgCls', CLS_OPT, clsGuess, 'updatePdProductCode')}</div>
-        <div class="pdcg-group"><label>성별</label>${mkSel('pdCgGen', GEN_OPT, genGuess, 'updatePdProductCode')}</div>
-        <div class="pdcg-group"><label>타입</label>${mkSel('pdCgTyp', TYP_OPT, typGuess, 'updatePdProductCode')}</div>
-        <div class="pdcg-group"><label>연도</label>${mkSel('pdCgYear', YEAR_OPT.map(v => [v, '']), yearGuess, 'updatePdProductCode')}</div>
-        <div class="pdcg-group"><label>시즌</label>${mkSel('pdCgSeason', ['1','2','3','4','5'].map(v => [v,'']), seasonGuess, 'updatePdProductCode')}</div>
-      </div>
-      <div class="pdcg-design-row">
-        <label>디자인 번호 (패턴)</label>
-        <input type="text" id="pdCgDesignSearch" placeholder="코드 또는 패턴명 검색" oninput="filterPdDesignList()" autocomplete="off" class="design-search-input" />
-        <div id="pdCgDesignDropdown" class="design-dropdown" style="max-height:160px;overflow-y:auto"></div>
-        <input type="hidden" id="pdCgDesign" value="${designGuess}" />
-      </div>
-      <div class="pdcg-preview-row">
-        <span class="pdcg-label">미리보기</span>
-        <code id="pdCgPreview" class="pdcg-preview">-</code>
-        <button class="btn btn-primary" id="pdCgApplyBtn" onclick="applyPdGeneratedCode()" disabled style="font-size:12px;padding:4px 14px">적용</button>
-      </div>
+      <input type="text" data-pkey="productCode" id="pdProductCodeInput" value="${pcVal}" placeholder="[품번 생성] 버튼으로 생성 · 직접 입력도 가능 · 없으면 공란" style="flex:1" />
+      <button class="btn btn-accent" onclick="genPdCode()" style="font-size:11px;padding:4px 12px;white-space:nowrap">품번 생성</button>
     </div>
   </div>`
+
+  // 🔴 B2b: 품번 코드 필드 그룹(기본정보 인라인, edit-only). 연도/시즌/성별/백스타일 = 가격/디자인서 이전(dedup) + 분류/타입 신규.
+  const pdCgCodeGroup = `
+    <div class="dfield dfield-span2 dcg-edit-only">
+      <span class="dfield-label">품번 코드</span>
+      <div class="pdcg-selects">
+        <div class="pdcg-group"><label>연도</label>${mkSel('pdCgYear', FULLYEAR_OPT, yearFullGuess, 'year')}</div>
+        <div class="pdcg-group"><label>시즌</label>${mkSel('pdCgSeason', SEASON_OPT, seasonGuess, 'season')}</div>
+        <div class="pdcg-group"><label>분류</label>${mkSel('pdCgCls', CLS_OPT, clsGuess, 'classCode')}</div>
+        <div class="pdcg-group"><label>성별</label>${mkSel('pdCgGen', [['','선택'], ...GEN_OPT], item.gender || '', 'gender')}</div>
+        <div class="pdcg-group"><label>타입(품번)</label>${mkSel('pdCgTyp', TYP_OPT, typGuess, 'typeCode')}</div>
+      </div>
+      <div class="pdcg-design-row">
+        <label>백스타일 (디자인 코드) — 코드·영문·한글 검색</label>
+        <input type="text" id="pdCgDesignSearch" placeholder="코드 또는 패턴명 검색 (예: 1626 / Crossed / 크로스)" oninput="filterPdDesignList()" autocomplete="off" class="design-search-input" />
+        <div id="pdCgDesignDropdown" class="design-dropdown" style="max-height:160px;overflow-y:auto"></div>
+        <input type="hidden" id="pdCgDesign" data-pkey="designCode" value="${designGuess}" />
+      </div>
+    </div>`
+  // 백스타일명(readonly 자동) — 뷰 모드에서도 표시(edit-only 아님). picker(selectPdDesign)가 채움.
+  const pdBackStyleField = `
+    <div class="dfield">
+      <span class="dfield-label">백스타일명</span>
+      <span class="dfield-value${!item.backStyle ? ' empty' : ''}">${item.backStyle || '-'}</span>
+      <input type="text" data-pkey="backStyle" id="pdBackStyleName" value="${String(item.backStyle || '').replace(/"/g,'&quot;')}" placeholder="백스타일 선택 시 자동" readonly />
+    </div>`
 
   // Pinned memo + Assignee (Feature 5 & 11)
   const _plUsers = Array.isArray(window._allUsers) ? window._allUsers : []
@@ -1585,6 +1584,8 @@ function buildPlanDetailContent(item) {
           </div>`
         })()}
         ${plAssigneeField}
+        ${pdBackStyleField}
+        ${pdCgCodeGroup}
       </div>
     </div>
     <div class="pd-section">
@@ -1593,11 +1594,7 @@ function buildPlanDetailContent(item) {
         ${pf('판매가', 'salePrice', item.salePrice, 'number')}
         ${pf('원가',   'costPrice', item.costPrice, 'number')}
         ${pf('타입',   'type',      item.type, 'select', typeOpts, '', typeLabel[item.type] || item.type)}
-        ${pf('연도',   'year',      item.year)}
-        ${pf('시즌',   'season',    item.season)}
-        ${pf('성별',   'gender',    item.gender, 'select', genderOpts, '', genderLabel[item.gender] || item.gender)}
         ${pf('원단타입', 'fabricType', item.fabricType, 'select', fabricOpts)}
-        ${pf('백스타일', 'backStyle',  item.backStyle)}
         ${pf('가이드',   'guide',      item.guide)}
       </div>
     </div>

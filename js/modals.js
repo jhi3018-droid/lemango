@@ -232,6 +232,14 @@ async function openDetailModal(productCode, opts) {
 
   // 오른쪽 상세 내용
   document.getElementById('dDetailContent').innerHTML = buildDetailContent(p)
+  // 🔴 B2b: 품번 코드 디자인 picker 드롭다운 초기화(패널 제거 → 기본정보 인라인). 현재 디자인 placeholder 표기.
+  if (typeof filterDetailDesignList === 'function' && document.getElementById('dCgDesignDropdown')) {
+    const dcur = document.getElementById('dCgDesign')?.value
+    const de = (typeof _designCodes !== 'undefined') ? _designCodes.find(([c]) => c === dcur) : null
+    const dsearch = document.getElementById('dCgDesignSearch')
+    if (dsearch && de) dsearch.placeholder = `${de[0]} - ${de[1]} (${de[2]})`
+    filterDetailDesignList()
+  }
 
   modal.showModal()
   centerModal(modal)
@@ -416,8 +424,9 @@ function buildDetailContent(p) {
   const dcgYearGuess = existCode.length >= 10 ? existCode.slice(9,10) : '6'
   const dcgSeaGuess  = existCode.length >= 11 ? existCode.slice(10,11): '1'
 
+  // 🔴 B2b: 품번 생성 패널 제거 → 코드 셀렉트를 기본정보에 인라인(edit-only). onchange 프리뷰 없음(1-버튼).
   const dcgMkSel = (id, opts, guess) =>
-    `<select id="${id}" onchange="updateDetailProductCode()">${opts.map(([v,l]) => `<option value="${v}"${v===guess?' selected':''}>${v}${l?' - '+l:''}</option>`).join('')}</select>`
+    `<select id="${id}">${opts.map(([v,l]) => `<option value="${v}"${v===guess?' selected':''}>${v}${l?' - '+l:''}</option>`).join('')}</select>`
 
   const productCodeField = p.productCodeLocked
     ? `<div class="dfield">
@@ -432,30 +441,29 @@ function buildDetailContent(p) {
         <span class="dfield-label">품번</span>
         <span class="dfield-value${!existCode ? ' empty' : ''}">${existCode || '-'}</span>
         <div class="pdcg-input-row dcg-edit-only">
-          <input type="text" data-key="productCode" id="dCgProductCodeInput" value="${existCode.replace(/"/g,'&quot;')}" placeholder="품번 직접 입력" />
-          <button class="btn btn-outline pdcg-toggle-btn" onclick="toggleDetailCodeGenPanel()" style="font-size:11px;padding:4px 12px;white-space:nowrap">품번 생성 ▾</button>
-        </div>
-        <div id="dCgPanel" class="pd-codegen-panel" style="display:none">
-          <div class="pdcg-selects">
-            <div class="pdcg-group"><label>분류</label>${dcgMkSel('dCgCls', DCG_CLS_OPT, dcgClsGuess)}</div>
-            <div class="pdcg-group"><label>성별</label>${dcgMkSel('dCgGen', DCG_GEN_OPT, dcgGenGuess)}</div>
-            <div class="pdcg-group"><label>타입</label>${dcgMkSel('dCgTyp', DCG_TYP_OPT, dcgTypGuess)}</div>
-            <div class="pdcg-group"><label>연도</label>${dcgMkSel('dCgYear', DCG_YEAR_OPT.map(v=>[v,'']), dcgYearGuess)}</div>
-            <div class="pdcg-group"><label>시즌</label>${dcgMkSel('dCgSeason', ['1','2','3','4','5'].map(v=>[v,'']), dcgSeaGuess)}</div>
-          </div>
-          <div class="pdcg-design-row">
-            <label>디자인 번호 (패턴)</label>
-            <input type="text" id="dCgDesignSearch" placeholder="코드 또는 패턴명 검색" oninput="filterDetailDesignList()" autocomplete="off" class="design-search-input" />
-            <div id="dCgDesignDropdown" class="design-dropdown" style="max-height:160px;overflow-y:auto"></div>
-            <input type="hidden" id="dCgDesign" value="${dcgDesGuess}" />
-          </div>
-          <div class="pdcg-preview-row">
-            <span class="pdcg-label">미리보기</span>
-            <code id="dCgPreview" class="pdcg-preview">-</code>
-            <button class="btn btn-primary" id="dCgApplyBtn" onclick="applyDetailGeneratedCode()" disabled style="font-size:12px;padding:4px 14px">적용</button>
-          </div>
+          <input type="text" data-key="productCode" id="dCgProductCodeInput" value="${existCode.replace(/"/g,'&quot;')}" placeholder="[품번 생성] 버튼으로 생성 · 직접 입력도 가능" />
+          <button class="btn btn-accent" onclick="genDetailCode()" style="font-size:11px;padding:4px 12px;white-space:nowrap">품번 생성</button>
         </div>
       </div>`
+
+  // 🔴 B2b: 품번 코드 필드 그룹(기본정보 인라인, edit-only). 상품=positional 프리필. designCode/백스타일명 = data-key 로 저장(B1 register 미러).
+  const dcgCodeGroup = p.productCodeLocked ? '' : `
+    <div class="dfield span2 dcg-edit-only">
+      <span class="dfield-label">품번 코드</span>
+      <div class="pdcg-selects">
+        <div class="pdcg-group"><label>분류</label>${dcgMkSel('dCgCls', DCG_CLS_OPT, dcgClsGuess)}</div>
+        <div class="pdcg-group"><label>성별</label>${dcgMkSel('dCgGen', DCG_GEN_OPT, dcgGenGuess)}</div>
+        <div class="pdcg-group"><label>타입</label>${dcgMkSel('dCgTyp', DCG_TYP_OPT, dcgTypGuess)}</div>
+        <div class="pdcg-group"><label>연도</label>${dcgMkSel('dCgYear', DCG_YEAR_OPT.map(v=>[v,'']), dcgYearGuess)}</div>
+        <div class="pdcg-group"><label>시즌</label>${dcgMkSel('dCgSeason', ['1','2','3','4','5'].map(v=>[v,'']), dcgSeaGuess)}</div>
+      </div>
+      <div class="pdcg-design-row">
+        <label>백스타일 (디자인 코드) — 코드·영문·한글 검색</label>
+        <input type="text" id="dCgDesignSearch" placeholder="코드 또는 패턴명 검색 (예: 1626 / Crossed / 크로스)" oninput="filterDetailDesignList()" autocomplete="off" class="design-search-input" />
+        <div id="dCgDesignDropdown" class="design-dropdown" style="max-height:160px;overflow-y:auto"></div>
+        <input type="hidden" id="dCgDesign" data-key="designCode" value="${dcgDesGuess}" />
+      </div>
+    </div>`
 
   const field = (label, key, val, type='text', opts='', spanClass='') => {
     // type=number 일 때 입력값 정제: "55,000원" / "-" 같은 표시용 포맷이 들어와도
@@ -608,6 +616,16 @@ function buildDetailContent(p) {
             </div>
           </div>
         </div>
+        ${dcgCodeGroup}
+        ${(() => {
+          // 🔴 B2b: 백스타일명(EN, readonly 자동) — picker(selectDetailDesign)가 채움. 가격/디자인의 backStyle 이전.
+          const bsVal = (p.backStyle || '').replace(/"/g,'&quot;')
+          return `<div class="dfield">
+            <span class="dfield-label">백스타일명</span>
+            <span class="dfield-value${!p.backStyle ? ' empty' : ''}">${p.backStyle || '-'}</span>
+            <input type="text" data-key="backStyle" id="dBackStyleName" value="${bsVal}" placeholder="백스타일 선택 시 자동" readonly />
+          </div>`
+        })()}
       </div>
     </div>
 
@@ -618,7 +636,6 @@ function buildDetailContent(p) {
         ${field('원가(원)',   'costPrice',  p.costPrice ? p.costPrice.toLocaleString()+'원' : '-', 'number')}
         ${field('타입',       'type',       p.type,     'select', typeOpts)}
         ${field('원단타입',   'fabricType', p.fabricType, 'select', fabricOpts)}
-        ${field('백스타일',   'backStyle',  p.backStyle)}
         ${field('가이드',     'guide',      p.guide)}
       </div>
     </div>
@@ -1444,19 +1461,7 @@ function setProductionStatus(btn, status) {
 // =============================================
 // ===== 상세 모달 — 품번 인라인 생성 패널 =====
 // =============================================
-function toggleDetailCodeGenPanel() {
-  const panel = document.getElementById('dCgPanel')
-  const btn   = document.querySelector('#dDetailContent .pdcg-toggle-btn')
-  if (!panel) return
-  const open = panel.style.display === 'none'
-  panel.style.display = open ? '' : 'none'
-  if (btn) btn.textContent = open ? '품번 생성 ▴' : '품번 생성 ▾'
-  if (open) {
-    filterDetailDesignList()
-    updateDetailProductCode()
-  }
-}
-
+// 🔴 B2b: 패널 제거 → 디자인 picker 는 기본정보 인라인. selectDetailDesign 이 백스타일명(dBackStyleName) 자동채움.
 function filterDetailDesignList() {
   const q = (document.getElementById('dCgDesignSearch')?.value || '').toLowerCase().trim()
   const list = q
@@ -1481,63 +1486,43 @@ function selectDetailDesign(code) {
   document.getElementById('dCgDesign').value = code
   const search = document.getElementById('dCgDesignSearch')
   if (search) { search.value = ''; search.placeholder = `${code} - ${found[1]} (${found[2]})` }
+  const bs = document.getElementById('dBackStyleName')   // 🔴 B2b: 백스타일명(EN) 자동채움(readonly, data-key=backStyle)
+  if (bs) bs.value = found[1] || ''
   filterDetailDesignList()
-  updateDetailProductCode()
 }
 
-function updateDetailProductCode() {
-  // 🔴 공유 로직(product-code.js): 일련번호 basis=분류+연도+시즌 · 6개 필수 반려 게이트 · full-code 유일성은 apply 가드.
-  //   현재 상품 자신의 코드는 제외(같은 basis 로 재생성 허용).
-  pcodeRenderPreview({
+// 🔴 B2b: 상품 상세 1-버튼 품번 생성 (Phase A 공유 경로 + 자기코드 excludeCode + _detailPendingCode 예약).
+function genDetailCode() {
+  const basis = {
     cls:       document.getElementById('dCgCls')?.value,
     gen:       document.getElementById('dCgGen')?.value,
     typ:       document.getElementById('dCgTyp')?.value,
     des:       document.getElementById('dCgDesign')?.value,
     yearDigit: document.getElementById('dCgYear')?.value,
     seasonNum: document.getElementById('dCgSeason')?.value
-  }, {
-    preview: document.getElementById('dCgPreview'),
-    apply:   document.getElementById('dCgApplyBtn'),
-    excludeCode: _detailCode || ''
-  })
-}
-
-function applyDetailGeneratedCode() {
-  const code = document.getElementById('dCgPreview')?.textContent
-  if (!pcodeIsValidCode(code)) { showToast('품번 생성 반려 — 필수 입력(분류·성별·타입·디자인·연도·시즌)을 확인하세요.', 'warning'); return }
-
+  }
+  const missing = pcodeMissing(basis)
+  if (missing.length) { showToast('품번 생성 반려 — 미입력: ' + missing.join(', '), 'warning'); return }
+  const ownCode = _detailCode || ''
+  const serial = nextSerial(basis, { excludeCode: ownCode })   // 자기 코드 제외(같은 basis 재생성 허용)
+  if (serial === null) { showToast('이 분류+연도+시즌 그룹의 일련번호(00~99)가 소진되었습니다.', 'error'); return }
+  const code = String(basis.cls) + String(basis.gen) + String(basis.typ) + String(basis.des) + String(basis.yearDigit) + String(basis.seasonNum) + serial
+  if (!pcodeIsValidCode(code)) { showToast('품번 생성 반려 — 입력값을 확인하세요.', 'warning'); return }
   // 🔴 full-code 유일성 최종 가드(authoritative) — 자기 자신 제외
-  const currentOwnCode = _detailCode || ''
-  if (code !== currentOwnCode && (
+  if (code !== ownCode && (
       State.allProducts.some(p => p.productCode === code) ||
       State.planItems.some(p => p.productCode === code) ||
       _reservedCodes.has(code))) {
-    showToast(`품번 "${code}"은 이미 사용 중입니다. 다시 생성해주세요.`, 'error')
-    updateDetailProductCode()
-    return
+    showToast(`품번 "${code}"은 이미 사용 중입니다. 다시 생성해주세요.`, 'error'); return
   }
-
-  // 이전 임시 예약 해제 (자기 원래 코드가 아닌 경우만)
-  if (_detailPendingCode && _detailPendingCode !== currentOwnCode) {
-    _reservedCodes.delete(_detailPendingCode)
-  }
-  // 새 코드 예약 (원래 코드와 다를 때만)
-  if (code !== currentOwnCode) {
-    _reservedCodes.add(code)
-  }
+  if (_detailPendingCode && _detailPendingCode !== ownCode) _reservedCodes.delete(_detailPendingCode)
+  if (code !== ownCode) _reservedCodes.add(code)
   _detailPendingCode = code
-
   const input = document.getElementById('dCgProductCodeInput')
   if (input) input.value = code
-
-  // 패널 닫기
-  const panel = document.getElementById('dCgPanel')
-  if (panel) panel.style.display = 'none'
-  const btn = document.querySelector('#dDetailContent .pdcg-toggle-btn')
-  if (btn) btn.textContent = '품번 생성 ▾'
-
-  showToast(`품번 "${code}" 적용됨. 저장 버튼을 눌러 확정하세요.`, 'success')
+  showToast(`품번 "${code}" 생성됨. 저장 버튼을 눌러 확정하세요.`, 'success')
 }
+window.genDetailCode = genDetailCode
 
 // ===== Feature 8: Product compare =====
 function getSelectedProducts() {
