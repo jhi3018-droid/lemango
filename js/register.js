@@ -93,10 +93,9 @@ function submitRegister(e) {
   const madeBy      = document.getElementById('rMadeBy').value.trim()
   const registDate  = document.getElementById('rRegistDate').value
   const comment     = document.getElementById('rComment').value.trim()
-  const mainImage   = document.getElementById('rMainImage')?.value.trim() || ''
-  const imgJasa     = (document.getElementById('rImgJasa')?.value || '').split('\n').map(u => u.trim()).filter(Boolean)
-  const imgExternal = (document.getElementById('rImgExternal')?.value || '').split('\n').map(u => u.trim()).filter(Boolean)
-  const imgSum      = (document.getElementById('rImgSum')?.value || '').split('\n').map(u => u.trim()).filter(Boolean)
+  // 🔴 B2a: 대표 = 카페24 대표 + 사방넷 대표(멀티 URL 문자열). 레거시 mainImage/자사몰/외부몰/SUM 제거.
+  const cafe24Main  = document.getElementById('rCafe24Main')?.value.trim() || ''
+  const sabangMain  = document.getElementById('rSabangMain')?.value.trim() || ''
   const videoUrl    = document.getElementById('rVideoUrl')?.value.trim() || null
   // 🔴 B1: CAFE24/사방넷 상세 URL — 여러 개면 줄바꿈 구분(엑셀 업로드와 동일하게 문자열로 저장)
   const cafe24DetailUrl = document.getElementById('rCafe24DetailUrl')?.value.trim() || ''
@@ -160,16 +159,9 @@ function submitRegister(e) {
     madeIn,
     madeBy,
     comment,
-    mainImage,
+    cafe24Main,
+    sabangMain,
     videoUrl,
-    images: {
-      sum:      imgSum,
-      lemango:  imgJasa,
-      noir:     [],
-      external: imgExternal,
-      design:   null,
-      shoot:    null
-    },
     modelSize,
     washMethod: '',
     barcodes: Object.fromEntries(SIZES.map(sz => [sz, ''])),

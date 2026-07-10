@@ -1320,33 +1320,26 @@
     <div class="rform-section">
       <div class="rform-section-title">이미지 URL</div>
       <div class="rform-grid">
-        <div class="rform-field" style="grid-column:span 4">
-          <label>대표이미지 URL</label>
-          <input type="url" id="rMainImage" placeholder="https://... (목록/상세 썸네일 최우선)" />
+        <!-- 🔴 B2a: 대표 = 카페24 대표(시스템 썸네일) + 사방넷 대표 · 상세 = 카페24/사방넷 상세 URL([HTML 복사]). 레거시 자사몰/외부몰/SUM 제거 -->
+        <div class="rform-field" style="grid-column:span 2">
+          <label>카페24 대표 (시스템 썸네일)</label>
+          <textarea id="rCafe24Main" rows="2" placeholder="여러 개면 줄바꿈으로 구분 (첫 URL=목록/상세 썸네일)"></textarea>
         </div>
         <div class="rform-field" style="grid-column:span 2">
-          <label>자사몰 URL</label>
-          <textarea id="rImgJasa" rows="3" placeholder="URL을 줄바꿈으로 구분"></textarea>
+          <label>사방넷 대표</label>
+          <textarea id="rSabangMain" rows="2" placeholder="여러 개면 줄바꿈으로 구분"></textarea>
         </div>
         <div class="rform-field" style="grid-column:span 2">
-          <label>외부몰 URL</label>
-          <textarea id="rImgExternal" rows="3" placeholder="URL을 줄바꿈으로 구분"></textarea>
+          <label>CAFE24 상세 URL <button type="button" class="img-html-btn" onclick="copyUrlHtml('rCafe24DetailUrl')" title="이미지 URL → 상세페이지 HTML 복사">HTML 복사</button></label>
+          <textarea id="rCafe24DetailUrl" rows="2" placeholder="여러 개면 줄바꿈으로 구분"></textarea>
         </div>
         <div class="rform-field" style="grid-column:span 2">
-          <label>SUM URL</label>
-          <textarea id="rImgSum" rows="3" placeholder="URL을 줄바꿈으로 구분"></textarea>
+          <label>사방넷 상세 URL <button type="button" class="img-html-btn" onclick="copyUrlHtml('rSabangDetailUrl')" title="이미지 URL → 상세페이지 HTML 복사">HTML 복사</button></label>
+          <textarea id="rSabangDetailUrl" rows="2" placeholder="여러 개면 줄바꿈으로 구분"></textarea>
         </div>
         <div class="rform-field" style="grid-column:span 2">
           <label>영상 URL</label>
           <input type="url" id="rVideoUrl" placeholder="https://..." />
-        </div>
-        <div class="rform-field" style="grid-column:span 2">
-          <label>CAFE24 상세 URL</label>
-          <textarea id="rCafe24DetailUrl" rows="2" placeholder="여러 개면 줄바꿈으로 구분"></textarea>
-        </div>
-        <div class="rform-field" style="grid-column:span 2">
-          <label>사방넷 상세 URL</label>
-          <textarea id="rSabangDetailUrl" rows="2" placeholder="여러 개면 줄바꿈으로 구분"></textarea>
         </div>
         <div class="rform-field" style="grid-column:span 4">
           <label>디자이너 코멘트</label>

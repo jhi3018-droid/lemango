@@ -155,59 +155,37 @@ function buildPlanTempImageSection(item) {
 }
 
 function buildPlanProductImageSection(item) {
-  const mainImg = (item && item.mainImage) ? String(item.mainImage).replace(/"/g,'&quot;') : ''
-  const getArr = k => {
-    const v = item?.images?.[k]
-    if (Array.isArray(v)) return v.join('\n')
-    return v || ''
-  }
+  // 🔴 B2a: 대표 = 카페24 대표 + 사방넷 대표(멀티 URL) · 상세 = 카페24/사방넷 상세 URL([HTML 복사]). 레거시 6에디터 제거.
+  //   레거시 mainImage seed: cafe24Main 비었고 mainImage 있으면 대표(카페24)에 시드.
+  const cafe24Main = esc((item && (item.cafe24Main || item.mainImage)) || '')
+  const sabangMain = esc((item && item.sabangMain) || '')
   return `
     <div class="rform-section">
       <div class="rform-section-title">
         상품 이미지
         <span class="plan-img-badge plan-img-badge-prod">상품</span>
       </div>
-      <div class="plan-img-desc">실제 상품 이미지 URL. 상품조회 이전 후에도 유지됩니다.</div>
+      <div class="plan-img-desc">카페24 대표 = 시스템 썸네일(최우선). 상세 URL은 [HTML 복사]로 상세페이지 HTML 생성.</div>
       <div class="rform-grid">
         <div class="rform-field" style="grid-column:span 2">
-          <label>대표이미지 URL</label>
-          <input type="text" id="npMainImage" placeholder="https://..." value="${mainImg}" />
+          <label>카페24 대표 (시스템 썸네일)</label>
+          <textarea id="npCafe24Main" rows="2" placeholder="여러 개면 줄바꿈으로 구분">${cafe24Main}</textarea>
         </div>
         <div class="rform-field" style="grid-column:span 2">
-          <label>SUM (한 줄에 하나)</label>
-          <textarea id="npImg_sum" rows="2" placeholder="https://...">${esc(getArr('sum'))}</textarea>
+          <label>사방넷 대표</label>
+          <textarea id="npSabangMain" rows="2" placeholder="여러 개면 줄바꿈으로 구분">${sabangMain}</textarea>
         </div>
         <div class="rform-field" style="grid-column:span 2">
-          <label>자사몰 (lemango)</label>
-          <textarea id="npImg_lemango" rows="2" placeholder="https://...">${esc(getArr('lemango'))}</textarea>
+          <label>CAFE24 상세 URL <button type="button" class="img-html-btn" onclick="copyUrlHtml('npCafe24DetailUrl')" title="이미지 URL → 상세페이지 HTML 복사">HTML 복사</button></label>
+          <textarea id="npCafe24DetailUrl" rows="2" placeholder="여러 개면 줄바꿈으로 구분">${esc((item && item.cafe24DetailUrl) || '')}</textarea>
         </div>
         <div class="rform-field" style="grid-column:span 2">
-          <label>느와 (noir)</label>
-          <textarea id="npImg_noir" rows="2" placeholder="https://...">${esc(getArr('noir'))}</textarea>
-        </div>
-        <div class="rform-field" style="grid-column:span 2">
-          <label>외부몰 (external)</label>
-          <textarea id="npImg_external" rows="2" placeholder="https://...">${esc(getArr('external'))}</textarea>
-        </div>
-        <div class="rform-field" style="grid-column:span 2">
-          <label>디자인 (design)</label>
-          <textarea id="npImg_design" rows="2" placeholder="https://...">${esc(getArr('design'))}</textarea>
-        </div>
-        <div class="rform-field" style="grid-column:span 2">
-          <label>촬영 (shoot)</label>
-          <textarea id="npImg_shoot" rows="2" placeholder="https://...">${esc(getArr('shoot'))}</textarea>
+          <label>사방넷 상세 URL <button type="button" class="img-html-btn" onclick="copyUrlHtml('npSabangDetailUrl')" title="이미지 URL → 상세페이지 HTML 복사">HTML 복사</button></label>
+          <textarea id="npSabangDetailUrl" rows="2" placeholder="여러 개면 줄바꿈으로 구분">${esc((item && item.sabangDetailUrl) || '')}</textarea>
         </div>
         <div class="rform-field" style="grid-column:span 2">
           <label>영상 URL</label>
           <input type="text" id="npVideoUrl" placeholder="https://..." value="${(item && item.videoUrl) ? String(item.videoUrl).replace(/"/g,'&quot;') : ''}" />
-        </div>
-        <div class="rform-field" style="grid-column:span 2">
-          <label>CAFE24 상세 URL</label>
-          <textarea id="npCafe24DetailUrl" rows="2" placeholder="여러 개면 줄바꿈으로 구분">${esc((item && item.cafe24DetailUrl) || '')}</textarea>
-        </div>
-        <div class="rform-field" style="grid-column:span 2">
-          <label>사방넷 상세 URL</label>
-          <textarea id="npSabangDetailUrl" rows="2" placeholder="여러 개면 줄바꿈으로 구분">${esc((item && item.sabangDetailUrl) || '')}</textarea>
         </div>
       </div>
     </div>
@@ -323,6 +301,9 @@ async function _flushPlanStorageDeletions() {
 }
 
 function getPlanThumbUrl(item) {
+  // 🔴 B2a compat: 카페24 대표[0] → 레거시 mainImage → tempImages → images.sum/lemango(레거시)
+  const c24 = (typeof _firstImageUrl === 'function') ? _firstImageUrl(item?.cafe24Main) : ''
+  if (c24) return c24
   if (item?.mainImage) return item.mainImage
   if (item?.tempImages && item.tempImages.length) return item.tempImages[0].url
   if (item?.images?.sum?.length) return item.images.sum[0]
@@ -384,18 +365,9 @@ async function submitPlanRegister(e) {
     catch (err) { showToast('이미지 업로드 실패: ' + err.message, 'error'); return }
   }
 
-  // Image collection — separate temp (reference) vs product images
-  const splitLines = (id) => (document.getElementById(id)?.value || '')
-    .split(/[\n\r]+/).map(s => s.trim()).filter(Boolean)
-  const mainImageUrl = (document.getElementById('npMainImage')?.value || '').trim()
-  const prodImages = {
-    sum:      splitLines('npImg_sum'),
-    lemango:  splitLines('npImg_lemango'),
-    noir:     splitLines('npImg_noir'),
-    external: splitLines('npImg_external'),
-    design:   splitLines('npImg_design').join('\n'),
-    shoot:    splitLines('npImg_shoot').join('\n')
-  }
+  // 🔴 B2a: 이미지 = 카페24 대표 + 사방넷 대표(멀티 URL 문자열). 레거시 6키/mainImage 미저장.
+  const cafe24MainUrl = (document.getElementById('npCafe24Main')?.value || '').trim()
+  const sabangMainUrl = (document.getElementById('npSabangMain')?.value || '').trim()
   // 저장용 정리 (내부 플래그 제거)
   const tempImagesSnap = _planTempImages.map(x => {
     const { _file, _pending, _previewUrl, ...rest } = x
@@ -452,11 +424,11 @@ async function submitPlanRegister(e) {
     madeIn:      val('plMadeIn'),
     // 메모
     memo:        val('plMemo'),
-    // 이미지
-    mainImage:   mainImageUrl,
+    // 🔴 B2a 이미지: 카페24/사방넷 대표(멀티 URL 문자열). 레거시 mainImage/images 미저장.
+    cafe24Main:  cafe24MainUrl,
+    sabangMain:  sabangMainUrl,
     tempImages:  tempImagesSnap,
     videoUrl:    (document.getElementById('npVideoUrl')?.value || '').trim(),
-    images:      prodImages,
     schedule: (() => {
       const sch = {}
       document.querySelectorAll('#planRegisterModal .pl-sched-input').forEach(el => {
@@ -637,7 +609,9 @@ const PLAN_REGULAR_COLS = [
   { key:'_image',     label:'이미지', fixed:false, thAttr:'data-no-sort data-no-filter style="width:60px"',
     td: p=>{
       const url = getPlanThumbUrl(p)
-      const isTemp = !p.mainImage && !(p.images?.sum?.length) && !(p.images?.lemango?.length) && !(p.images?.noir?.length) && p.tempImages && p.tempImages.length
+      // 🔴 B2a: 대표(카페24) 또는 레거시 이미지 없고 tempImages 만 있으면 '임시' 배지
+      const _hasReal = (typeof _firstImageUrl==='function' && _firstImageUrl(p.cafe24Main)) || p.mainImage || (p.images?.sum?.length) || (p.images?.lemango?.length)
+      const isTemp = !_hasReal && p.tempImages && p.tempImages.length
       const cls = isTemp ? 'plan-table-thumb plan-table-thumb-temp' : 'plan-table-thumb'
       const tag = isTemp ? '<span class="plan-table-thumb-tag">임시</span>' : ''
       return `<td><div class="${cls}"><img src="${url}" onerror="this.onerror=null;this.src=PLACEHOLDER_IMG" />${tag}</div></td>`
@@ -1247,29 +1221,10 @@ async function savePlanDetailEdit() {
     catch (err) { showToast('이미지 업로드 실패: ' + err.message, 'error'); return }
   }
 
-  // 이미지 URL pseudo 키 매핑
-  const IMG_KEYS = {
-    imgLemango:  'lemango',
-    imgNoir:     'noir',
-    imgExternal: 'external',
-    imgSum:      'sum',
-    imgDesign:   'design',
-    imgShoot:    'shoot'
-  }
-  if (!item.images) item.images = {}
-
+  // 🔴 B2a: 6키 이미지 에디터 제거 → cafe24Main/sabangMain/cafe24DetailUrl/sabangDetailUrl(멀티 URL 문자열)은 일반 필드로 저장.
   // 일반 input/select/textarea
   modal.querySelectorAll('[data-pkey]').forEach(el => {
     const key = el.dataset.pkey
-    if (IMG_KEYS[key]) {
-      const imgKey = IMG_KEYS[key]
-      if (imgKey === 'design' || imgKey === 'shoot') {
-        item.images[imgKey] = el.value.trim() || null
-      } else {
-        item.images[imgKey] = (el.value || '').split('\n').map(u => u.trim()).filter(Boolean)
-      }
-      return
-    }
     const val = el.tagName === 'INPUT' && el.type === 'number' ? (parseFloat(el.value) || 0) : el.value
     item[key] = val
     if (key === 'assignee') {
@@ -1278,6 +1233,12 @@ async function savePlanDetailEdit() {
       item.assigneePosition = u ? (u.position || '') : ''
     }
   })
+
+  // 🔴 B2a: 레거시 이미지 필드 opportunistic strip (대량 삭제 아님 — 재저장 항목만 dead field 제거)
+  delete item.mainImage
+  if (item.images && typeof item.images === 'object') {
+    ;['sum','lemango','noir','external','design','shoot'].forEach(k => { delete item.images[k] })
+  }
 
   // 사이즈 규격 수집 (XS~XXL × bust/waist/hip 구조)
   if (Array.isArray(item.sizeSpec) || !item.sizeSpec || typeof item.sizeSpec !== 'object') item.sizeSpec = {}
@@ -1343,6 +1304,8 @@ function _buildProductFromPlan(item) {
   delete cloned.lastModifiedBy
   delete cloned.lastModifiedByName
   delete cloned.lastModifiedAt
+  // 🔴 B2a: 레거시 6키 images 는 상품 확정 시 미승계(dead-field). 대표 = cafe24Main/sabangMain(cloned 로 승계) + 레거시 mainImage(compat, cloned 로 승계).
+  delete cloned.images
 
   return {
     ...cloned,
@@ -1359,14 +1322,6 @@ function _buildProductFromPlan(item) {
     revenueLog:    [],
     registDate:    new Date().toISOString().slice(0, 10),
     logisticsDate: '',
-    images: {
-      sum:      item.images?.sum      || [],
-      lemango:  Array.isArray(item.images?.lemango) ? item.images.lemango : (item.images?.lemango ? [item.images.lemango] : []),
-      noir:     Array.isArray(item.images?.noir)    ? item.images.noir    : (item.images?.noir    ? [item.images.noir]    : []),
-      external: item.images?.external || [],
-      design:   item.images?.design   || null,
-      shoot:    item.images?.shoot    || null
-    },
     tempImages: (item.tempImages || []).map(img => ({ ...img, fromPlan: true })),
     // 기획 일정 이력 (상품조회 하단에 표시)
     scheduleLog: item.schedule && Object.keys(item.schedule).length
@@ -1434,11 +1389,12 @@ function buildPlanDetailContent(item) {
 
   const schedules = SCHEDULE_DEFS
 
+  // 🔴 B2a: 갤러리 = 카페24 대표 + 사방넷 대표 + 레거시 mainImage(compat). 6키 미표시.
+  const _pdLines = (typeof _imageUrlLines === 'function') ? _imageUrlLines : (s => String(s||'').split(/[\n\r]+/).map(u=>u.trim()).filter(Boolean))
   const prodImgs = [
-    ...(item.mainImage ? [item.mainImage] : []),
-    ...(Array.isArray(item.images?.sum) ? item.images.sum : []),
-    ...(Array.isArray(item.images?.lemango) ? item.images.lemango : (item.images?.lemango ? [item.images.lemango] : [])),
-    ...(Array.isArray(item.images?.noir) ? item.images.noir : (item.images?.noir ? [item.images.noir] : []))
+    ..._pdLines(item.cafe24Main),
+    ..._pdLines(item.sabangMain),
+    ...(item.mainImage ? [item.mainImage] : [])
   ].filter(Boolean)
   const tempImgs = Array.isArray(item.tempImages) ? item.tempImages : []
 
@@ -1464,15 +1420,17 @@ function buildPlanDetailContent(item) {
   const genderLabel = { W: '여성', M: '남성', G: '걸즈', B: '보이즈', N: '공용', K: '키즈' }
 
   // 뷰/편집 겸용 필드 헬퍼 (dispOverride: select일 때 표시용 한글 레이블)
-  const pf = (label, key, val, type = 'text', opts = '', spanClass = '', dispOverride = '') => {
+  const pf = (label, key, val, type = 'text', opts = '', spanClass = '', dispOverride = '', htmlBtn = false) => {
     const dispVal = dispOverride || (val !== null && val !== undefined && val !== '' ? String(val) : '-')
     const inputEl = type === 'select'
       ? `<select data-pkey="${key}">${opts}</select>`
       : type === 'textarea'
         ? `<textarea data-pkey="${key}" rows="3">${val || ''}</textarea>`
         : `<input type="${type}" data-pkey="${key}" value="${String(val || '').replace(/"/g, '&quot;')}" />`
+    // 🔴 B2a: 상세 URL 필드용 [HTML 복사](기존 convertUrlsToHtml 재사용)
+    const htmlBtnHtml = htmlBtn ? `<button type="button" class="img-html-btn" onclick="event.stopPropagation();copyUrlHtml('${key}')" title="이미지 URL → 상세페이지 HTML 복사" style="margin-left:6px">HTML 복사</button>` : ''
     return `<div class="dfield ${spanClass}">
-      <span class="dfield-label">${label}</span>
+      <span class="dfield-label">${label}${htmlBtnHtml}</span>
       <span class="dfield-value${dispVal === '-' ? ' empty' : ''}">${dispVal}</span>
       ${inputEl}
     </div>`
@@ -1680,13 +1638,10 @@ function buildPlanDetailContent(item) {
     <div class="pd-section">
       <div class="pd-section-title">이미지 URL</div>
       <div class="dfields-grid">
-        ${pf('대표이미지', 'mainImage', item.mainImage, 'text', '', 'dfield-span2')}
-        ${pf('자사몰',     'imgLemango', Array.isArray(item.images?.lemango) ? (item.images.lemango||[]).join('\n') : (item.images?.lemango||''), 'textarea', '', 'dfield-span2')}
-        ${pf('느와',       'imgNoir',    Array.isArray(item.images?.noir)    ? (item.images.noir||[]).join('\n')    : (item.images?.noir||''),    'textarea', '', 'dfield-span2')}
-        ${pf('외부몰',     'imgExternal',(item.images?.external||[]).join('\n'), 'textarea', '', 'dfield-span2')}
-        ${pf('SUM',        'imgSum',     (item.images?.sum||[]).join('\n'),      'textarea', '', 'dfield-span2')}
-        ${pf('디자인',     'imgDesign',  item.images?.design || '',              'text',     '', 'dfield-span2')}
-        ${pf('촬영',       'imgShoot',   item.images?.shoot  || '',              'text',     '', 'dfield-span2')}
+        ${pf('카페24 대표 (시스템 썸네일)', 'cafe24Main', item.cafe24Main || (item.mainImage || ''), 'textarea', '', 'dfield-span2')}
+        ${pf('사방넷 대표', 'sabangMain', item.sabangMain || '', 'textarea', '', 'dfield-span2')}
+        ${pf('CAFE24 상세 URL', 'cafe24DetailUrl', item.cafe24DetailUrl || '', 'textarea', '', 'dfield-span2', '', true)}
+        ${pf('사방넷 상세 URL', 'sabangDetailUrl', item.sabangDetailUrl || '', 'textarea', '', 'dfield-span2', '', true)}
         ${pf('영상 URL',   'videoUrl',   item.videoUrl || '',                    'text',     '', 'dfield-span2')}
       </div>
     </div>

@@ -39,7 +39,9 @@ const ALL_DOWNLOAD_COLUMNS = [
   { key:'madeIn', label:'제조국' },
   { key:'saleStatus', label:'판매상태' },
   { key:'productionStatus', label:'생산상태' },
-  { key:'mainImage', label:'대표이미지URL' },
+  { key:'cafe24Main', label:'카페24 대표' },   // 🔴 B2a: 대표 이미지(시스템 썸네일)
+  { key:'sabangMain', label:'사방넷 대표' },   // 🔴 B2a
+  { key:'mainImage', label:'대표이미지URL' },  // 레거시(구 데이터 export)
   { key:'images.sum', label:'이미지URL(합본)' },
   { key:'images.lemango', label:'이미지URL(자사몰)' },
   { key:'images.noir', label:'이미지URL(느와)' },
@@ -724,7 +726,7 @@ function downloadSample(type) {
 // =============================================
 // ===== Phase 2 — 신규 상품등록 양식 (ExcelJS 인셀 드롭다운) =====
 // =============================================
-// 컬럼 총계 = 128 (비사이즈 34[이미지URL 2열 제거(자사몰/외부몰)·대표이미지URL 복구·+CAFE24/사방넷 URL 2열] + 사이즈규격 91[buildSizeSpecColumns] + 판매상태/생산상태/등록일 3).
+// 컬럼 총계 = 129 (비사이즈 35[🔴 B2a: 대표이미지URL → 카페24 대표+사방넷 대표 2열 · +CAFE24/사방넷 상세 URL 2열 · 레거시 자사몰/외부몰/SUM 없음] + 사이즈규격 91[buildSizeSpecColumns] + 판매상태/생산상태/등록일 3).
 //   사이즈 컬럼은 buildSizeSpecColumns() 단일 소스가 authoritative(§2.7).
 // 🔴 생성 전용(ExcelJS). SheetJS 는 모든 읽기/파싱/round-trip 유지. 업로드 검증/자동채움/품번차단 = Phase 3.
 // 드롭다운(인라인=고정세트 / 범위참조=관리리스트) 라벨 = "이름(코드)" (시즌/단순 관리리스트는 값=코드). Phase 3 파서 계약(단일 규칙):
@@ -784,7 +786,7 @@ async function downloadProductTemplate() {
       { label:'레그컷', dd:'legCut' }, { label:'원단타입', dd:'fabricType' }, { label:'가슴선', dd:'chestLine' }, { label:'비침', dd:'transparency' }, { label:'안감', dd:'lining' }, { label:'캡고리', dd:'capRing' },
       { label:'소재' }, { label:'디자이너코멘트' }, { label:'세탁방법', dd:'washMethod' },
       { label:'모델착용사이즈' }, { label:'제조년월' }, { label:'제조사' }, { label:'제조국' },
-      { label:'대표이미지URL', note:'대표 썸네일 URL (최우선 표시)' }, { label:'CAFE24 상세 URL' }, { label:'사방넷 상세 URL' },
+      { label:'카페24 대표', note:'카페24 대표 이미지 URL — 시스템 썸네일(최우선). 여러 개면 줄바꿈' }, { label:'사방넷 대표', note:'사방넷 대표 이미지 URL. 여러 개면 줄바꿈' }, { label:'CAFE24 상세 URL' }, { label:'사방넷 상세 URL' },
       ...sizeCols.map(c => ({ label: c.label })),
       { label:'판매상태', dd:'saleStatus' }, { label:'생산상태', dd:'productionStatus' },
       { label:'등록일' },
@@ -2002,6 +2004,8 @@ const PLAN_HEADER_TO_KEY = Object.assign({}, HEADER_TO_KEY, {
   '메모': 'memo',
   // 신규 상품등록 양식(Phase 2) 전용 헤더. 구 양식엔 없음 → 있으면 신규 양식 시그니처.
   '분류': 'classInput',          // "이름(코드)" → extractCode → classCode (품번 1번째 자리)
+  '카페24 대표': 'cafe24Main',    // 🔴 B2a: 대표 이미지(시스템 썸네일) — 멀티 URL 문자열
+  '사방넷 대표': 'sabangMain',    // 🔴 B2a: 사방넷 대표 이미지 — 멀티 URL 문자열
   'CAFE24 상세 URL': 'cafe24DetailUrl',
   '사방넷 상세 URL': 'sabangDetailUrl'
   // '백스타일명'(EN) = 백스타일(디자인코드) 로부터 자동 채움 → 셀 미매핑(무시)
@@ -2296,18 +2300,14 @@ function _parsePlanUpload(raw) {
       madeBy:       _s('madeBy'),
       madeIn:       _s('madeIn'),
       memo:         _s('memo'),
-      mainImage:    _s('mainImage'),
       videoUrl:     _s('videoUrl'),
-      // W2: design/shoot stored as ARRAYS (consistent with sum/lemango/noir/external)
-      // _diffPlan and apply normalize legacy string-typed existing data on read
-      images: {
-        sum:      sumUrls,
-        lemango:  lemUrls,
-        noir:     noirUrls,
-        external: extUrls,
-        design:   designArr,
-        shoot:    shootArr
-      },
+      // 🔴 B2a: 신규 양식 = 카페24/사방넷 대표(멀티 URL 문자열). 구 양식 = 레거시 mainImage/images(round-trip 보존).
+      ...(isNewTpl
+        ? { cafe24Main: _s('cafe24Main'), sabangMain: _s('sabangMain') }
+        : {
+            mainImage: _s('mainImage'),
+            images: { sum: sumUrls, lemango: lemUrls, noir: noirUrls, external: extUrls, design: designArr, shoot: shootArr }
+          }),
       schedule:    Object.keys(scheduleColMap).length ? _readSchedule(row, k => deleteKeys.add(k)) : null,
       tempImages:  []
     }
@@ -2456,7 +2456,9 @@ const _PLAN_DIFF_FIELDS = [
   { key:'madeBy', label:'제조사' },
   { key:'madeIn', label:'제조국' },
   { key:'memo', label:'메모' },
-  { key:'mainImage', label:'대표이미지' },
+  { key:'cafe24Main', label:'카페24 대표' },   // 🔴 B2a
+  { key:'sabangMain', label:'사방넷 대표' },   // 🔴 B2a
+  { key:'mainImage', label:'대표이미지' },     // 레거시(구 양식 round-trip)
   { key:'videoUrl', label:'영상URL' }
 ]
 
@@ -2744,6 +2746,7 @@ async function _applyPlanUpload(parsed) {
         // 신규 양식 파생 코드 필드(품번 생성용) — presentKeys/valueKeys 게이팅으로 구 양식은 무영향
         classCode:'classCode', typeCode:'typeCode', yearDigit:'yearDigit', designCode:'designCode',
         cafe24DetailUrl:'cafe24DetailUrl', sabangDetailUrl:'sabangDetailUrl',
+        cafe24Main:'cafe24Main', sabangMain:'sabangMain',   // 🔴 B2a 대표(멀티 URL 문자열)
         legCut:'legCut', guide:'guide',
         fabricType:'fabricType', chestLine:'chestLine', transparency:'transparency',
         lining:'lining', capRing:'capRing', material:'material', comment:'comment',

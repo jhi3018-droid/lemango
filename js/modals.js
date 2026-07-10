@@ -253,14 +253,12 @@ let _detailImgList = []
 let _detailImgIdx = 0
 
 function getDetailImages(p) {
+  // 🔴 B2a: 카페24 대표 + 사방넷 대표 + 레거시 mainImage(compat). 6키 에디터 제거 → 갤러리에서 6키 미표시.
   const imgs = []
-  if (p.mainImage) imgs.push(p.mainImage)
-  if (p.images) {
-    ;['sum','lemango','noir','external','design','shoot'].forEach(key => {
-      const arr = p.images[key]
-      if (Array.isArray(arr)) arr.forEach(url => { if (url && !imgs.includes(url)) imgs.push(url) })
-    })
-  }
+  const push = (u) => { if (u && !imgs.includes(u)) imgs.push(u) }
+  ;(typeof _imageUrlLines === 'function' ? _imageUrlLines(p.cafe24Main) : []).forEach(push)
+  ;(typeof _imageUrlLines === 'function' ? _imageUrlLines(p.sabangMain) : []).forEach(push)
+  push(p.mainImage)   // 레거시 대표 compat
   return imgs
 }
 
@@ -481,8 +479,9 @@ function buildDetailContent(p) {
     </div>`
   }
 
-  // URL 필드 (복사 버튼 포함) — textarea 타입은 URL별 개별 복사 버튼 표시
-  const urlField = (label, key, val, type='text') => {
+  // URL 필드 (복사 버튼 포함) — textarea 타입은 URL별 개별 복사 버튼 표시. htmlBtn=true → [HTML 복사](상세 URL용)
+  const urlField = (label, key, val, type='text', htmlBtn=false) => {
+    const htmlBtnHtml = htmlBtn ? `<button type="button" class="img-html-btn" onclick="event.stopPropagation();copyUrlHtml('${key}')" title="이미지 URL → 상세페이지 HTML 복사">HTML 복사</button>` : ''
     if (type === 'textarea') {
       const urls = val ? val.split(/[\n\r]+/).map(u => u.trim()).filter(Boolean) : []
       const hasUrls = urls.length > 0
@@ -501,6 +500,7 @@ function buildDetailContent(p) {
       return `<div class="dfield span3">
         <div class="dfield-label-row">
           <span class="dfield-label">${label}</span>
+          ${htmlBtnHtml}
           ${allCopyBtn}
         </div>
         <div class="url-list${!hasUrls ? ' empty' : ''}" data-urlkey="${key}">${urlItems}</div>
@@ -627,7 +627,7 @@ function buildDetailContent(p) {
       <div class="dsection-title">소재</div>
       <div class="dsection-grid col1">
         ${field('소재',     'material',   p.material,   'textarea','','span3')}
-        ${field('원단설명', 'fabricType', p.fabricType, 'textarea','','span3')}
+        ${field('원단설명', 'fabricDesc', p.fabricDesc, 'textarea','','span3')}
         ${field('디자이너 코멘트', 'comment', p.comment, 'textarea','','span3')}
         ${field('세탁방법', 'washMethod', p.washMethod, 'textarea','','span3')}
       </div>
@@ -733,51 +733,23 @@ function buildDetailContent(p) {
     <div class="dsection">
       <div class="dsection-title dimg-toggle" onclick="toggleDImg('dImgBody')">
         이미지 URL <span class="dimg-arrow">▼</span>
-        <button type="button" class="img-html-btn-all" onclick="event.stopPropagation();copyAllImageHtml()">전체 HTML 복사</button>
       </div>
       <div id="dImgBody" class="dsection-grid col1">
         ${(() => {
-          const mainImg  = p.mainImage || ''
-          const jasaUrls = [...(p.images?.lemango||[]), ...(p.images?.noir||[])]
-          const extUrls  = p.images?.external || []
-          const sumUrls  = p.images?.sum || []
+          // 🔴 B2a: 대표 = 카페24 대표 + 사방넷 대표(멀티 URL) · 상세 = 카페24/사방넷 상세 URL([HTML 복사]). 레거시 6에디터 제거.
+          //   레거시 mainImage seed: cafe24Main 비었고 mainImage 있으면 대표(카페24) 필드에 시드해 표시(편집 저장 시 cafe24Main 로 승격).
+          const cafe24Main = p.cafe24Main || (p.mainImage || '')
+          const sabangMain = p.sabangMain || ''
+          const cafe24Detail = p.cafe24DetailUrl || ''
+          const sabangDetail = p.sabangDetailUrl || ''
           const vidUrl   = p.videoUrl || ''
-          const preview = (arr) => {
-            const first = Array.isArray(arr) ? arr[0] : arr
-            return first ? `<span class="dimg-preview">${first}</span>` : ''
-          }
           return `
-        ${(() => {
-          const safeVal = (mainImg||'').replace(/"/g, '&quot;')
-          const valueHtml = mainImg
-            ? `<span class="dfield-value dimg-link-wrap" data-urlkey="mainImage"><a href="${safeVal}" target="_blank" rel="noopener" class="dimg-link">${esc(mainImg)}</a></span>`
-            : `<span class="dfield-value empty" data-urlkey="mainImage">-</span>`
-          return `<div class="dfield span3 dimg-main-row">
-            <div class="dfield-label-row">
-              <span class="dfield-label">대표이미지URL</span>
-              ${mainImg ? `<button type="button" class="img-html-btn" onclick="event.stopPropagation();copyImageHtml('mainImage')">HTML</button>` : ''}
-              ${mainImg ? `<button type="button" class="btn-copy-url" data-url="${safeVal}" onclick="copySingleUrlFromBtn(this)" title="클립보드 복사">복사</button>` : ''}
-            </div>
-            ${valueHtml}
-            <input type="text" data-key="mainImage" value="${safeVal}" placeholder="https://..." />
-          </div>`
-        })()}
-        <div class="dimg-sub">
-          <div class="dimg-sub-title collapsed" onclick="toggleDImg('dImgJasa')">자사몰 ${preview(jasaUrls)}<span class="dimg-arrow">▶</span>${jasaUrls.length ? `<button type="button" class="img-html-btn" onclick="event.stopPropagation();copyImageHtml('jasa')">HTML</button>` : ''}</div>
-          <div id="dImgJasa" class="dimg-hidden">${urlField('자사몰', 'urlJasa', jasaUrls.join('\n'), 'textarea')}</div>
-        </div>
-        <div class="dimg-sub">
-          <div class="dimg-sub-title collapsed" onclick="toggleDImg('dImgExternal')">외부몰 ${preview(extUrls)}<span class="dimg-arrow">▶</span>${extUrls.length ? `<button type="button" class="img-html-btn" onclick="event.stopPropagation();copyImageHtml('external')">HTML</button>` : ''}</div>
-          <div id="dImgExternal" class="dimg-hidden">${urlField('외부몰', 'urlExternal', extUrls.join('\n'), 'textarea')}</div>
-        </div>
-        <div class="dimg-sub">
-          <div class="dimg-sub-title collapsed" onclick="toggleDImg('dImgSum')">SUM ${preview(sumUrls)}<span class="dimg-arrow">▶</span>${sumUrls.length ? `<button type="button" class="img-html-btn" onclick="event.stopPropagation();copyImageHtml('sum')">HTML</button>` : ''}</div>
-          <div id="dImgSum" class="dimg-hidden">${urlField('SUM', 'urlSum', sumUrls.join('\n'), 'textarea')}</div>
-        </div>
-        <div class="dimg-sub">
-          <div class="dimg-sub-title collapsed" onclick="toggleDImg('dImgVideo')">영상 URL ${preview(vidUrl)}<span class="dimg-arrow">▶</span></div>
-          <div id="dImgVideo" class="dimg-hidden">${urlField('영상 URL', 'videoUrl', vidUrl, 'text')}</div>
-        </div>`
+            ${urlField('카페24 대표 (시스템 썸네일)', 'cafe24Main', cafe24Main, 'textarea')}
+            ${urlField('사방넷 대표', 'sabangMain', sabangMain, 'textarea')}
+            ${urlField('CAFE24 상세 URL', 'cafe24DetailUrl', cafe24Detail, 'textarea', true)}
+            ${urlField('사방넷 상세 URL', 'sabangDetailUrl', sabangDetail, 'textarea', true)}
+            ${urlField('영상 URL', 'videoUrl', vidUrl, 'text')}
+          `
         })()}
       </div>
     </div>
@@ -1375,13 +1347,6 @@ function saveDetailEdit() {
       return // 품번 확정 후 변경 금지
     } else if (key === 'salePrice' || key === 'costPrice') {
       p[key] = parseInt(val) || 0
-    } else if (key === 'mainImage') {
-      p.mainImage = val || ''
-    } else if (['urlJasa','urlExternal','urlSum'].includes(key)) {
-      const arr = val.split(/[\n\r]+/).map(u=>u.trim()).filter(Boolean)
-      if (key === 'urlJasa')    { p.images.lemango = arr; p.images.noir = [] }
-      if (key === 'urlExternal')p.images.external = arr
-      if (key === 'urlSum')     p.images.sum      = arr
     } else if (key === 'videoUrl') {
       p.videoUrl = val || null
     } else if (key === 'assignee') {
@@ -1390,9 +1355,17 @@ function saveDetailEdit() {
       p.assigneeName = u ? (u.name || '') : ''
       p.assigneePosition = u ? (u.position || '') : ''
     } else {
+      // 🔴 B2a: cafe24Main/sabangMain/cafe24DetailUrl/sabangDetailUrl(멀티 URL 문자열) 포함 일반 필드
       p[key] = val
     }
   })
+
+  // 🔴 B2a: 레거시 이미지 필드 opportunistic strip (대량 삭제 아님 — 재저장되는 상품만 dead field 제거).
+  //   대표는 cafe24Main 로 승격(빌더가 mainImage seed) → mainImage/6키 제거해도 손실 없음.
+  delete p.mainImage
+  if (p.images && typeof p.images === 'object') {
+    ;['sum','lemango','noir','external','design','shoot'].forEach(k => { delete p.images[k] })
+  }
 
   // mallCodes 저장
   if (!p.mallCodes) p.mallCodes = {}

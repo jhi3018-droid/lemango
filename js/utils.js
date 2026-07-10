@@ -313,23 +313,33 @@ const getExhaustion = p => {
   return st > 0 ? Math.round(sl / st * 100) : 0
 }
 
+// 🔴 B2a: 멀티 URL(줄바꿈 구분) 문자열에서 첫 URL 추출 (카페24/사방넷 대표 = 시스템 썸네일 소스).
+function _firstImageUrl(s) {
+  if (!s) return ''
+  return String(s).split(/[\n\r]+/).map(u => u.trim()).filter(Boolean)[0] || ''
+}
+function _imageUrlLines(s) {
+  if (!s) return []
+  return String(s).split(/[\n\r]+/).map(u => u.trim()).filter(Boolean)
+}
+window._firstImageUrl = _firstImageUrl
+window._imageUrlLines = _imageUrlLines
+// 🔴 B2a 썸네일 compat 체인(소유주 확정): 카페24 대표[0] → 레거시 mainImage → images.sum[0] → images.lemango[0] → null.
+//   시스템 썸네일 = 카페24 대표(사방넷 대표는 썸네일 폴백 아님 — 소유주 결정). images.sum/lemango 는 레거시 데이터 읽기전용 폴백(에디터 없음).
 function getThumbUrl(p) {
-  if (p.mainImage)               return p.mainImage            // 대표이미지 최우선
-  if (p.images?.sum?.length)     return p.images.sum[0]
-  if (p.images?.lemango?.length) return p.images.lemango[0]
-  if (p.images?.noir?.length)    return p.images.noir[0]
-  if (p.images?.design)          return p.images.design
-  if (p.images?.shoot)           return p.images.shoot
+  const c24 = _firstImageUrl(p.cafe24Main)
+  if (c24)                       return c24
+  if (p.mainImage)               return p.mainImage            // 레거시 대표 compat
+  if (p.images?.sum?.length)     return p.images.sum[0]        // 레거시 폴백(읽기전용)
+  if (p.images?.lemango?.length) return p.images.lemango[0]    // 레거시 폴백(읽기전용)
   return null
 }
+// 갤러리(테이블 이미지 뷰어) — 카페24/사방넷 대표 + 레거시 mainImage 만(6키 에디터 제거).
 function getAllImages(p) {
   const imgs = []
-  if (p.images?.sum)      imgs.push(...p.images.sum)
-  if (p.images?.lemango)  imgs.push(...p.images.lemango)
-  if (p.images?.noir)     imgs.push(...p.images.noir)
-  if (p.images?.external) imgs.push(...p.images.external)
-  if (p.images?.design)   imgs.push(p.images.design)
-  if (p.images?.shoot)    imgs.push(p.images.shoot)
+  _imageUrlLines(p.cafe24Main).forEach(u => imgs.push(u))
+  _imageUrlLines(p.sabangMain).forEach(u => imgs.push(u))
+  if (p.mainImage) imgs.push(p.mainImage)   // 레거시 대표 compat
   return [...new Set(imgs.filter(Boolean))]  // 중복 제거
 }
 
@@ -1407,39 +1417,20 @@ function convertUrlsToHtml(urlString) {
 }
 window.convertUrlsToHtml = convertUrlsToHtml
 
-function copyImageHtml(key) {
-  const p = State.allProducts.find(x => x.productCode === _detailCode)
-  if (!p) return
-  let urlString = ''
-  if (key === 'jasa') {
-    const a = [...(p.images?.lemango||[]), ...(p.images?.noir||[])]
-    urlString = a.join('\n')
-  } else if (key === 'mainImage') {
-    urlString = p.mainImage || ''
-  } else {
-    const arr = p.images?.[key]
-    urlString = Array.isArray(arr) ? arr.join('\n') : (arr || '')
-  }
-  if (!urlString.trim()) { showToast('URL이 없습니다.', 'warning'); return }
-  const html = convertUrlsToHtml(urlString)
-  navigator.clipboard.writeText(html).then(() => showToast('HTML 복사 완료 (' + key + ')'))
+// 🔴 B2a: 상세 URL 필드(카페24/사방넷 상세)의 현재 값 → convertUrlsToHtml → 클립보드.
+//   대상 = id(생성 폼) 또는 data-key(상품 상세) 또는 data-pkey(기획 상세). 기존 컨버터 재사용(신규 컨버터 없음).
+function copyUrlHtml(idOrKey) {
+  const el = document.getElementById(idOrKey)
+    || document.querySelector(`[data-key="${idOrKey}"]`)
+    || document.querySelector(`[data-pkey="${idOrKey}"]`)
+  const val = el ? (el.value || '') : ''
+  if (!val.trim()) { showToast('URL이 없습니다.', 'warning'); return }
+  navigator.clipboard.writeText(convertUrlsToHtml(val)).then(() => showToast('HTML 복사 완료'))
 }
-window.copyImageHtml = copyImageHtml
+window.copyUrlHtml = copyUrlHtml
 
-function copyAllImageHtml() {
-  const p = State.allProducts.find(x => x.productCode === _detailCode)
-  if (!p) return
-  const sections = ['sum', 'lemango', 'noir', 'external', 'design', 'shoot']
-  let allHtml = ''
-  sections.forEach(key => {
-    const arr = p.images?.[key]
-    const urlString = Array.isArray(arr) ? arr.join('\n') : (arr || '')
-    if (urlString.trim()) allHtml += convertUrlsToHtml(urlString) + '\n'
-  })
-  if (!allHtml.trim()) { showToast('이미지 URL이 없습니다.', 'warning'); return }
-  navigator.clipboard.writeText(allHtml.trim()).then(() => showToast('전체 이미지 HTML 복사 완료'))
-}
-window.copyAllImageHtml = copyAllImageHtml
+// 🔴 B2a: 구 copyImageHtml/copyAllImageHtml(레거시 6키 images.* 읽어 HTML 복사) 제거 —
+//   6키 에디터 폐지 + 상세 URL 필드는 copyUrlHtml(convertUrlsToHtml) 로 대체(위). convertUrlsToHtml 는 유지.
 
 // ===== 사이즈/가이드/모델 HTML 복사 (카페24 상세페이지용) =====
 window.copySizeGuideHtml = function() {
