@@ -1496,7 +1496,7 @@ function saveDetailEdit() {
     if (pl) p.mallCodes[pl] = inp.value.trim()
   })
 
-  // sizeSpec 저장 (XS~XXL × bust/waist/hip 구조)
+  // sizeSpec 저장 (XS~2XL, F × 부위별 구조 — collectSizeSpec 이 캐논 SIZES 순회, XXL 잔존 없음)
   const _detailModal = document.getElementById('detailModal')
   if (Array.isArray(p.sizeSpec) || !p.sizeSpec || typeof p.sizeSpec !== 'object') p.sizeSpec = {}
   p.sizeSpec = collectSizeSpec(_detailModal)

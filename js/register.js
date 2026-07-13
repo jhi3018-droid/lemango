@@ -7,7 +7,7 @@ function openRegisterModal() {
   // 오늘 날짜를 등록일 기본값으로
   document.getElementById('rRegistDate').value = new Date().toISOString().slice(0,10)
 
-  // 사이즈 규격 그리드 동적 생성 (XS~XXL × 가슴/허리/엉덩이)
+  // 사이즈 규격 그리드 동적 생성 (XS~2XL, F × 부위별 — buildSizeSpecEdit)
   const specWrap = document.getElementById('rSizeSpecGrid')
   if (specWrap) {
     specWrap.innerHTML = buildSizeSpecEdit({})
@@ -84,7 +84,7 @@ function submitRegister(e) {
   const gender        = document.getElementById('rGender')?.value || ''
   const modelSize     = document.getElementById('rModelSize')?.value.trim() || ''
 
-  // sizeSpec 수집 (XS~XXL × bust/waist/hip 구조)
+  // sizeSpec 수집 (XS~2XL, F × 부위별 구조)
   const _rRegModal = document.getElementById('registerModal')
   const sizeSpec = collectSizeSpec(_rRegModal)
   const material      = document.getElementById('rMaterial').value.trim()

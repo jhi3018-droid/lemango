@@ -142,14 +142,8 @@ function _getProductValue(p, key, idx) {
   if (key === 'exhaustion') return getExhaustion(p)
   if (key === 'lastInDate') return ((p.stockLog||[]).filter(l=>l.type==='in').reduce((m,l)=>l.date>m?l.date:m,''))||''
   if (key.startsWith('sizeSpec_')) {
-    const spec = (p.sizeSpec && typeof p.sizeSpec === 'object' && !Array.isArray(p.sizeSpec)) ? p.sizeSpec : {}
-    if (key === 'sizeSpec_F') {
-      const f = spec['F']
-      if (f == null) return ''
-      if (typeof f === 'object') return f.bust || f.waist || f.hip || ''
-      return f
-    }
-    const rest = key.slice('sizeSpec_'.length) // e.g. "XS_bust"
+    const spec = normalizeSizeSpecRead((p.sizeSpec && typeof p.sizeSpec === 'object' && !Array.isArray(p.sizeSpec)) ? p.sizeSpec : {}) || {}   // 레거시 XXL→2XL, F 문자열→객체
+    const rest = key.slice('sizeSpec_'.length) // e.g. "XS_bust" / "F_bust"
     const usIdx = rest.lastIndexOf('_')
     if (usIdx < 0) return ''
     const size = rest.slice(0, usIdx)
@@ -722,7 +716,7 @@ function downloadSample(type) {
 // =============================================
 // ===== Phase 2 — 신규 상품등록 양식 (ExcelJS 인셀 드롭다운) =====
 // =============================================
-// 컬럼 총계 = 129 (비사이즈 35[🔴 B2a: 대표이미지URL → 카페24 대표+사방넷 대표 2열 · +CAFE24/사방넷 상세 URL 2열 · 레거시 자사몰/외부몰/SUM 없음] + 사이즈규격 91[buildSizeSpecColumns] + 판매상태/생산상태/등록일 3).
+// 컬럼 총계 = 150 (비사이즈 35[🔴 B2a: 대표이미지URL → 카페24 대표+사방넷 대표 2열 · +CAFE24/사방넷 상세 URL 2열 · 레거시 자사몰/외부몰/SUM 없음] + 사이즈규격 112[buildSizeSpecColumns = 7사이즈(XS~2XL,F)×16부위, F 도 부위별] + 판매상태/생산상태/등록일 3). 실제 표시=COLS.length 동적.
 //   사이즈 컬럼은 buildSizeSpecColumns() 단일 소스가 authoritative(§2.7).
 // 🔴 생성 전용(ExcelJS). SheetJS 는 모든 읽기/파싱/round-trip 유지. 업로드 검증/자동채움/품번차단 = Phase 3.
 // 드롭다운(인라인=고정세트 / 범위참조=관리리스트) 라벨 = "이름(코드)" (시즌/단순 관리리스트는 값=코드). Phase 3 파서 계약(단일 규칙):
@@ -888,8 +882,7 @@ function _downloadProductSample() {
   const _sizeSpecCols = buildSizeSpecColumns()
   const sizeSpecHeaders = _sizeSpecCols.map(c => c.label)
   const sizeSpecSamples = _sizeSpecCols.map(c => {
-    if (c.key === 'sizeSpec_F') return ''
-    const rest = c.key.slice('sizeSpec_'.length)   // "M_bust"
+    const rest = c.key.slice('sizeSpec_'.length)   // "M_bust" / "F_bust"
     const ui = rest.lastIndexOf('_')
     const sz = rest.slice(0, ui), part = rest.slice(ui + 1)
     return sz === 'M' ? (SIZE_SPEC_SAMPLE[part] || '') : ''   // M 행만 예시값
@@ -1010,7 +1003,7 @@ function _downloadProductSample() {
     ['이미지URL(디자인)', '디자인 이미지 URL (줄바꿈 구분)', '', ''],
     ['이미지URL(촬영)', '촬영 이미지 URL (줄바꿈 구분)', '', ''],
     ['영상URL', '영상 링크 (YouTube 등)', '', 'https://youtube.com/shorts/example'],
-    ...sizeSpecHeaders.map(h => [h, h === 'F' ? '프리사이즈(단일)' : (h + ' 규격 (cm, 숫자만)'), '', h === 'M 가슴' ? '48' : h === 'M 허리' ? '38' : h === 'M 엉덩이' ? '52' : '']),
+    ...sizeSpecHeaders.map(h => [h, h + ' 규격 (cm, 숫자만)', '', h === 'M 가슴' ? '48' : h === 'M 허리' ? '38' : h === 'M 엉덩이' ? '52' : '']),
     ..._platforms.map(pl => ['쇼핑몰코드(' + pl + ')', pl + ' 쇼핑몰 상품코드', '', '']),
     ['등록일', '상품 등록일 (YYYY-MM-DD)', '', '2026-01-15'],
     ['최종입고일', '최종 입고일 (참고용)', '', '2026-03-17'],
@@ -1104,13 +1097,7 @@ function _getPlanValue(p, key, idx) {
   }
   // 그 외 — 사이즈규격 / 이미지 등은 _getProductValue 패턴 재사용
   if (key.startsWith('sizeSpec_')) {
-    const spec = (p.sizeSpec && typeof p.sizeSpec === 'object' && !Array.isArray(p.sizeSpec)) ? p.sizeSpec : {}
-    if (key === 'sizeSpec_F') {
-      const f = spec['F']
-      if (f == null) return ''
-      if (typeof f === 'object') return f.bust || f.waist || f.hip || ''
-      return f
-    }
+    const spec = normalizeSizeSpecRead((p.sizeSpec && typeof p.sizeSpec === 'object' && !Array.isArray(p.sizeSpec)) ? p.sizeSpec : {}) || {}   // 레거시 XXL→2XL, F 문자열→객체
     const rest = key.slice('sizeSpec_'.length)
     const usIdx = rest.lastIndexOf('_')
     if (usIdx < 0) return ''
@@ -1230,8 +1217,7 @@ function _downloadPlanSample() {
     ['소재', '소재 구성', '', 'Shell: P80% SP20%'],
     ['디자이너코멘트', '디자이너 메모', '', '플라워 모티프 디테일'],
     ['세탁방법', '세탁 안내', '', '손세탁'],
-    ['XS~XXL × ' + SIZE_SPEC_PARTS.map(p => p.excel).join('/') + ' (' + (SIZE_SPEC_SIZES.length * SIZE_SPEC_PARTS.length) + '셀)', '사이즈별 규격 (cm, 숫자만)', '', '48'],
-    ['F', '프리사이즈 단일값 (cm, 숫자만)', '', ''],
+    [SIZE_SPEC_SIZES[0] + '~' + SIZE_SPEC_SIZES[SIZE_SPEC_SIZES.length - 1] + ' × ' + SIZE_SPEC_PARTS.map(p => p.excel).join('/') + ' (' + (SIZE_SPEC_SIZES.length * SIZE_SPEC_PARTS.length) + '셀, F 포함 부위별)', '사이즈별 규격 (cm, 숫자만)', '', '48'],
     ['모델착용사이즈', '모델 착용 사이즈', '', 'S'],
     ['제조년월', '제조 년월', '', '2025년 12월'],
     ['제조사', '제조사명', '', '주식회사 르망고'],
@@ -1366,7 +1352,7 @@ function _parseProductUpload(raw) {
 
   // 신규양식: 헤더에서 쇼핑몰코드/등록일/최종입고일 + 사이즈 규격 컬럼(SIZE_SPEC_PARTS×사이즈 + F) 동적 인덱스 탐색
   let mallColMap = {}, registDateCol = null, lastInDateCol = null
-  let sizeSpecColMap = {} // { 'XS_bust': idx, ..., 'F': idx } — 부위 단일 소스: SIZE_SPEC_PARTS (core.js)
+  let sizeSpecColMap = {} // { 'XS_bust': idx, ..., 'F_bust': idx } — 부위 단일 소스: SIZE_SPEC_PARTS (core.js)
   if (isNew) {
     hdr0.forEach((h, i) => {
       const s = String(h ?? '').trim()
@@ -1374,17 +1360,21 @@ function _parseProductUpload(raw) {
       if (m) mallColMap[m[1]] = i
       if (s === '등록일') registDateCol = i
       if (s === '최종입고일') lastInDateCol = i
-      // sizeSpec 컬럼: "XS 가슴", "XS 허리", ..., "F"
-      if (s === 'F') { sizeSpecColMap['F'] = i; return }
+      // sizeSpec 컬럼: "XS 가슴", ..., "2XL 가슴", "F 가슴", ...
+      // 🔴 레거시 단일 'F' 컬럼 → F_bust · 레거시 'XXL 부위' 헤더 → 2XL(SIZE_SPEC_HEADER_ALIASES, EXACT)
+      if (s === 'F') { if (sizeSpecColMap['F_bust'] == null) sizeSpecColMap['F_bust'] = i; return }
       SIZE_SPEC_SIZES.forEach(sz => {
         Object.entries(SIZE_SPEC_PART_LABEL).forEach(([partKey, partLabel]) => {
-          if (s === sz + ' ' + partLabel) sizeSpecColMap[sz + '_' + partKey] = i
+          const key = sz + '_' + partKey
+          if (s === sz + ' ' + partLabel) { sizeSpecColMap[key] = i; return }   // 정규 라벨 우선
+          const aliases = SIZE_SPEC_HEADER_ALIASES[sz]
+          if (aliases && sizeSpecColMap[key] == null && aliases.some(a => s === a + ' ' + partLabel)) sizeSpecColMap[key] = i
         })
       })
     })
   }
 
-  // 엑셀 행에서 sizeSpec 컬럼을 읽어 {XS:{<part>:v}, ..., F:{bust}} 구조로 반환
+  // 엑셀 행에서 sizeSpec 컬럼을 읽어 {XS:{<part>:v}, ..., 2XL:{...}, F:{...}} 구조로 반환
   function _readSizeSpec(row) {
     const spec = {}
     SIZE_SPEC_SIZES.forEach(sz => {
@@ -1398,10 +1388,6 @@ function _parseProductUpload(raw) {
       })
       if (hasAny) spec[sz] = vals
     })
-    if (sizeSpecColMap['F'] != null) {   // F 단일값 — 특수 처리 (loop 제외)
-      const fv = String(row[sizeSpecColMap['F']] ?? '').trim().replace(/[^\d.]/g, '')
-      if (fv) spec['F'] = { bust: fv, waist: '', hip: '' }
-    }
     return spec
   }
 
@@ -1423,7 +1409,7 @@ function _parseProductUpload(raw) {
   // 신규양식: 헤더에서 발견된 키만 / 레거시: _LEGACY_COL의 모든 키 (전체 덮어쓰기 유지)
   const presentKeys = new Set(Object.keys(COL))
   // 사이즈 규격 컬럼이 헤더에 있으면 sizeSpec_<size>_<part> 로 등록 (diff 가 인식)
-  // 예: "XS 가슴" → sizeSpec_XS_bust, "F" → sizeSpec_F
+  // 예: "XS 가슴" → sizeSpec_XS_bust, "F 가슴" → sizeSpec_F_bust (레거시 단일 "F" 헤더도 F_bust 로 매핑)
   Object.keys(sizeSpecColMap).forEach(k => presentKeys.add('sizeSpec_' + k))
   // 쇼핑몰코드 컬럼이 헤더에 있으면 mallCode_<platform> 으로 등록 (헤더 없으면 diff 스킵)
   Object.keys(mallColMap).forEach(k => presentKeys.add('mallCode_' + k))
@@ -1699,11 +1685,13 @@ function _diffProduct(existing, uploaded, presentKeys, deleteKeys) {
   })
   // 🔴 레거시 이미지 6종(images.*) diff 제거 — dead field(시트 미기입). 대표/상세 URL 은 _DIFF_FIELDS 스칼라로 비교.
   // sizeSpec 비교 — 부위 단일 소스: SIZE_SPEC_PARTS (core.js). 헤더에 컬럼 있을 때만 비교.
+  // F 포함 전 사이즈 부위별 비교(단일값 F 특수처리 제거). 레거시 XXL 은 정규화로 2XL 로 비교(거짓 diff 방지).
+  const _exSpec = normalizeSizeSpecRead(existing.sizeSpec) || {}
   SIZE_SPEC_SIZES.forEach(sz => {
     SIZE_SPEC_PARTS.forEach(pt => {
       const part = pt.key
       if (presentKeys && !presentKeys.has('sizeSpec_' + sz + '_' + part)) return
-      const oldV = String(existing.sizeSpec?.[sz]?.[part] ?? '')
+      const oldV = String(_exSpec[sz]?.[part] ?? '')
       const newV = String(uploaded.sizeSpec?.[sz]?.[part] ?? '')
       if (oldV !== newV) {
         const entry = { key: 'sizeSpec.' + sz + '.' + part, label: sz + ' ' + pt.excel, oldVal: oldV, newVal: newV }
@@ -1712,17 +1700,6 @@ function _diffProduct(existing, uploaded, presentKeys, deleteKeys) {
       }
     })
   })
-  // F 사이즈 (단일 컬럼)
-  if (!presentKeys || presentKeys.has('sizeSpec_F')) {
-    const _fStr = (v) => v == null ? '' : (typeof v === 'object' ? String(v.bust || v.waist || v.hip || '') : String(v))
-    const oldF = _fStr(existing.sizeSpec?.F)
-    const newF = _fStr(uploaded.sizeSpec?.F)
-    if (oldF !== newF) {
-      const entry = { key: 'sizeSpec.F', label: 'F', oldVal: oldF, newVal: newF }
-      if (deleteKeys.has('sizeSpec_F')) entry.isDelete = true
-      diffs.push(entry)
-    }
-  }
   // mallCodes 비교 — 헤더에 해당 쇼핑몰 컬럼이 있을 때만 (false positive 방지)
   const allMallKeys = new Set([...Object.keys(existing.mallCodes || {}), ...Object.keys(uploaded.mallCodes || {})])
   allMallKeys.forEach(k => {
@@ -1844,10 +1821,12 @@ function _applyProductUpload(parsed) {
     // (handles W6) 부위 단일 소스: SIZE_SPEC_PARTS (core.js)
     const _PARTS = SIZE_SPEC_PARTS.map(p => p.key)
     const mergedSizeSpec = (() => {
-      // If no sizeSpec columns at all in the upload, preserve existing entirely
-      if (item.product.sizeSpec == null) return existing.sizeSpec || {}
-      const out = JSON.parse(JSON.stringify(existing.sizeSpec || {}))
-      SIZE_SPEC_SIZES.forEach(sz => {
+      // 🔴 save-normalize: 레거시 XXL→2XL 드롭 + 구 F 문자열→객체 (비파괴, 값 승계)
+      const base = normalizeSizeSpecRead(existing.sizeSpec) || {}
+      // If no sizeSpec columns at all in the upload, preserve existing entirely (정규화만 적용)
+      if (item.product.sizeSpec == null) return base
+      const out = JSON.parse(JSON.stringify(base))
+      SIZE_SPEC_SIZES.forEach(sz => {   // F 포함 전 사이즈 부위별(F 단일컬럼 특수처리 제거)
         _PARTS.forEach(part => {
           const headerKey = 'sizeSpec_' + sz + '_' + part
           if (deleteKeys.has(headerKey)) {
@@ -1863,14 +1842,6 @@ function _applyProductUpload(parsed) {
           }
         })
       })
-      // F single-cell handling
-      if (deleteKeys.has('sizeSpec_F')) {
-        if (out.F && typeof out.F === 'object') out.F.bust = '' ; else out.F = { bust:'', waist:'', hip:'' }
-      } else if (presentKeys && presentKeys.has('sizeSpec_F')) {
-        const f = item.product.sizeSpec?.F
-        if (f && (f.bust || f.waist || f.hip)) out.F = f
-        // else preserve existing
-      }
       return out
     })()
 
@@ -2038,10 +2009,14 @@ function _parsePlanUpload(raw) {
 
   hdr0.forEach((h, i) => {
     const s = String(h ?? '').trim()
-    if (s === 'F') { sizeSpecColMap['F'] = i; return }
+    // 🔴 레거시 단일 'F' 컬럼 → F_bust · 레거시 'XXL 부위' 헤더 → 2XL(SIZE_SPEC_HEADER_ALIASES, EXACT)
+    if (s === 'F') { if (sizeSpecColMap['F_bust'] == null) sizeSpecColMap['F_bust'] = i; return }
     SIZE_SPEC_SIZES.forEach(sz => {
       Object.entries(SIZE_SPEC_PART_LABEL).forEach(([partKey, partLabel]) => {
-        if (s === sz + ' ' + partLabel) sizeSpecColMap[sz + '_' + partKey] = i
+        const key = sz + '_' + partKey
+        if (s === sz + ' ' + partLabel) { sizeSpecColMap[key] = i; return }   // 정규 라벨 우선
+        const aliases = SIZE_SPEC_HEADER_ALIASES[sz]
+        if (aliases && sizeSpecColMap[key] == null && aliases.some(a => s === a + ' ' + partLabel)) sizeSpecColMap[key] = i
       })
     })
     phases.forEach(ph => {
@@ -2070,11 +2045,6 @@ function _parsePlanUpload(raw) {
       })
       if (hasAny) spec[sz] = vals
     })
-    if (sizeSpecColMap['F'] != null) {   // F 단일값 — 특수 처리 (loop 제외)
-      const raw = String(row[sizeSpecColMap['F']] ?? '').trim()
-      const fv = raw === DELETE_TOKEN ? '' : raw.replace(/[^\d.]/g, '')
-      if (fv) spec['F'] = { bust: fv, waist: '', hip: '' }
-    }
     return spec
   }
 
@@ -2481,12 +2451,14 @@ function _diffPlan(existing, uploaded, presentKeys, deleteKeys) {
       diffs.push(entry)
     }
   })
-  // sizeSpec — 부위 단일 소스: SIZE_SPEC_PARTS (core.js)
+  // sizeSpec — 부위 단일 소스: SIZE_SPEC_PARTS (core.js). F 포함 전 사이즈 부위별(단일 F 특수처리 제거).
+  // 레거시 XXL 은 정규화로 2XL 로 비교(거짓 diff 방지).
+  const _exSpec = normalizeSizeSpecRead(existing.sizeSpec) || {}
   SIZE_SPEC_SIZES.forEach(sz => {
     SIZE_SPEC_PARTS.forEach(pt => {
       const part = pt.key
       if (presentKeys && !presentKeys.has('sizeSpec_' + sz + '_' + part)) return
-      const oldV = String(existing.sizeSpec?.[sz]?.[part] ?? '')
+      const oldV = String(_exSpec[sz]?.[part] ?? '')
       const newV = String(uploaded.sizeSpec?.[sz]?.[part] ?? '')
       if (oldV !== newV) {
         const entry = { key: 'sizeSpec.' + sz + '.' + part, label: sz + ' ' + pt.excel, oldVal: oldV, newVal: newV }
@@ -2495,16 +2467,6 @@ function _diffPlan(existing, uploaded, presentKeys, deleteKeys) {
       }
     })
   })
-  if (!presentKeys || presentKeys.has('sizeSpec_F')) {
-    const _fStr = (v) => v == null ? '' : (typeof v === 'object' ? String(v.bust || v.waist || v.hip || '') : String(v))
-    const oldF = _fStr(existing.sizeSpec?.F)
-    const newF = _fStr(uploaded.sizeSpec?.F)
-    if (oldF !== newF) {
-      const entry = { key: 'sizeSpec.F', label: 'F', oldVal: oldF, newVal: newF }
-      if (deleteKeys.has('sizeSpec_F')) entry.isDelete = true
-      diffs.push(entry)
-    }
-  }
   // schedule (동적 phases)
   const phases = (typeof getPlanPhases === 'function') ? getPlanPhases() : []
   phases.forEach(ph => {
@@ -2668,9 +2630,11 @@ async function _applyPlanUpload(parsed) {
     // 부위 단일 소스: SIZE_SPEC_PARTS (core.js)
     const _PARTS = SIZE_SPEC_PARTS.map(p => p.key)
     const mergedSizeSpec = (() => {
-      if (uploaded.sizeSpec == null) return existing.sizeSpec || {}
-      const out = JSON.parse(JSON.stringify(existing.sizeSpec || {}))
-      SIZE_SPEC_SIZES.forEach(sz => {
+      // 🔴 save-normalize: 레거시 XXL→2XL 드롭 + 구 F 문자열→객체 (비파괴, 값 승계)
+      const base = normalizeSizeSpecRead(existing.sizeSpec) || {}
+      if (uploaded.sizeSpec == null) return base
+      const out = JSON.parse(JSON.stringify(base))
+      SIZE_SPEC_SIZES.forEach(sz => {   // F 포함 전 사이즈 부위별(단일 F 특수처리 제거)
         _PARTS.forEach(part => {
           const headerKey = 'sizeSpec_' + sz + '_' + part
           if (deleteKeys.has(headerKey)) {
@@ -2685,12 +2649,6 @@ async function _applyPlanUpload(parsed) {
           }
         })
       })
-      if (deleteKeys.has('sizeSpec_F')) {
-        if (out.F && typeof out.F === 'object') out.F.bust = '' ; else out.F = { bust:'', waist:'', hip:'' }
-      } else if (presentKeys && presentKeys.has('sizeSpec_F')) {
-        const f = uploaded.sizeSpec?.F
-        if (f && (f.bust || f.waist || f.hip)) out.F = f
-      }
       return out
     })()
 

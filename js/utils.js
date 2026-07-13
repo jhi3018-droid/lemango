@@ -5,15 +5,17 @@
 /* HTML 이스케이프 (전역 단일 소스) */
 function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;') }
 
-// ===== 사이즈 규격 헬퍼 (XS~XXL × SIZE_SPEC_PARTS) =====
-// 데이터 구조: { XS:{<part>:value}, ..., XXL:{...} }
-// 사이즈/부위 단일 소스는 core.js 의 SIZE_SPEC_SIZES / SIZE_SPEC_PARTS
+// ===== 사이즈 규격 헬퍼 (XS~2XL, F × SIZE_SPEC_PARTS) =====
+// 데이터 구조: { XS:{<part>:value}, ..., 2XL:{...}, F:{...} }
+// 사이즈/부위 단일 소스는 core.js 의 SIZE_SPEC_SIZES(=캐논 SIZES) / SIZE_SPEC_PARTS
+// 레거시 'XXL' 키 / 구 F 문자열은 normalizeSizeSpecRead 로 읽기 시 2XL·객체로 마이그레이트(비파괴).
 
 // 보기모드 — 값이 있는 사이즈만 표시. 데이터 없으면 안내 문구.
 window.buildSizeSpecView = function(sizeSpec) {
   if (!sizeSpec || typeof sizeSpec !== 'object' || Array.isArray(sizeSpec)) {
     return '<div style="color:#b4b2a9;font-size:12px">사이즈 규격 미등록</div>'
   }
+  sizeSpec = normalizeSizeSpecRead(sizeSpec)   // 레거시 XXL→2XL, F 문자열→객체
   const sizes = SIZE_SPEC_SIZES
   // 값이 있는 사이즈(행)
   const activeSizes = sizes.filter(sz => sizeSpec[sz] && SIZE_SPEC_PARTS.some(pt => sizeSpec[sz][pt.key]))
@@ -38,7 +40,7 @@ window.buildSizeSpecView = function(sizeSpec) {
 
 // 수정모드 — 전체 사이즈 입력 그리드
 window.buildSizeSpecEdit = function(sizeSpec) {
-  const safe = (sizeSpec && typeof sizeSpec === 'object' && !Array.isArray(sizeSpec)) ? sizeSpec : {}
+  const safe = normalizeSizeSpecRead((sizeSpec && typeof sizeSpec === 'object' && !Array.isArray(sizeSpec)) ? sizeSpec : {})   // 레거시 XXL→2XL, F 문자열→객체 (편집 시 값 승계)
   const sizes = SIZE_SPEC_SIZES
   let html = '<table class="size-spec-table size-spec-edit">'
   html += '<thead><tr><th>사이즈</th>' + SIZE_SPEC_PARTS.map(pt => '<th>' + pt.label + '(cm)</th>').join('') + '</tr></thead>'
@@ -1444,8 +1446,8 @@ window.copySizeGuideHtml = function() {
   }
   if (!p) { showToast('상품 데이터를 찾을 수 없습니다.', 'warning'); return }
 
-  const sizeSpec = (p.sizeSpec && typeof p.sizeSpec === 'object' && !Array.isArray(p.sizeSpec)) ? p.sizeSpec : {}
-  const sizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
+  const sizeSpec = normalizeSizeSpecRead((p.sizeSpec && typeof p.sizeSpec === 'object' && !Array.isArray(p.sizeSpec)) ? p.sizeSpec : {})   // 레거시 XXL→2XL, F 문자열→객체
+  const sizes = SIZE_SPEC_SIZES   // 캐논 SIZES 단일 소스(별도 하드코딩 목록 제거)
   const activeSizes = sizes.filter(function(sz) {
     const s = sizeSpec[sz]
     return s && SIZE_SPEC_PARTS.some(function(pt) { return s[pt.key] })
@@ -1479,7 +1481,7 @@ window.copySizeGuideHtml = function() {
   const mappedLining = liningMap[lining] || lining
   const mappedCapRing = capMap[capRing] || capRing
 
-  const sizeLabels = { 'XS':'75(XS)', 'S':'80(S)', 'M':'85(M)', 'L':'90(L)', 'XL':'95(XL)', 'XXL':'100(XXL)' }
+  const sizeLabels = { 'XS':'75(XS)', 'S':'80(S)', 'M':'85(M)', 'L':'90(L)', 'XL':'95(XL)', '2XL':'100(2XL)', 'F':'FREE' }
 
   // ========== CSS ==========
   let css = '<style>\n'

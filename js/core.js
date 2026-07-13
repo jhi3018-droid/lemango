@@ -756,7 +756,8 @@ const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', 'F']
 // 파일/사용자 입력의 변형 표기를 재고·바코드 정규 키(SIZES)로 매핑.
 // 🔴 EXACT 매핑만 — substring/startsWith 절대 금지(예: 'XL' ⊂ '2XL' 오매칭 방지).
 // 정규 키는 '2XL'(SIZES 기준). 변형 표기 'XXL'/'2X'는 재고·바코드 맥락에서 유일하게 2XL 을 의미.
-// ⚠️ 사이즈규격(측정) 도메인의 'XXL'(SIZE_SPEC_SIZES)은 별개 어휘 — 이 정규화 경로를 타지 않음(무접촉).
+// ⚠️ 사이즈규격(측정) 도메인도 이제 캐논 SIZES(2XL) 사용 — 이 SIZE_ALIASES(바코드)와는 별개 경로.
+//    사이즈규격의 레거시 'XXL' 은 SIZE_SPEC_HEADER_ALIASES/normalizeSizeSpecRead 가 처리(이 상수 무접촉).
 const SIZE_ALIASES = { 'XXL': '2XL', '2X': '2XL' }
 function normalizeSizeKey(raw) {
   const s = String(raw == null ? '' : raw).trim().toUpperCase()
@@ -766,9 +767,16 @@ window.SIZE_ALIASES = SIZE_ALIASES
 window.normalizeSizeKey = normalizeSizeKey
 
 // === 사이즈 규격 — 단일 소스 (앱 전역) ===
-// 데이터 구조: { XS:{bust,waist,hip}, S:{...}, ..., XXL:{...}, F:{bust} }
+// 데이터 구조: { XS:{bust,waist,hip}, S:{...}, ..., 2XL:{...}, F:{...} }
 // 측정 부위(parts)를 추가/변경하려면 SIZE_SPEC_PARTS 한 곳만 수정하면 화면/엑셀이 자동 반영된다.
-const SIZE_SPEC_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL']   // utils.js 에서 이관
+// 🔴 사이즈 목록 = 캐논 SIZES 그대로(재고·바코드와 동일 어휘). 별도 하드코딩 목록 금지 —
+//    과거 사이즈규격 도메인이 'XXL'을 쓰고 재고가 '2XL'을 써서 발산 → 바코드 사고 유발. 이제 단일 소스로 통일.
+//    레거시 'XXL' 키/헤더는 읽기 시 2XL 로 마이그레이트(normalizeSizeSpecRead / SIZE_SPEC_HEADER_ALIASES).
+const SIZE_SPEC_SIZES = SIZES   // 캐논 SIZES 파생(발산 불가) — ['XS','S','M','L','XL','2XL','F']
+
+// 사이즈규격 엑셀 헤더 레거시 별칭 — 구 파일의 'XXL 가슴' 등 헤더를 2XL 부위로 수용(EXACT, substring 금지).
+// (구 단일 'F' 컬럼 → F_bust 는 각 파서 헤더 스캔에서 직접 처리)
+const SIZE_SPEC_HEADER_ALIASES = { '2XL': ['XXL'] }
 const SIZE_SPEC_PARTS = [
   { key: 'torso',    label: '토르소', excel: '토르소' }, // 최좌측
   { key: 'bust',     label: '가슴',   excel: '가슴' },
@@ -789,12 +797,12 @@ const SIZE_SPEC_PARTS = [
 ]
 
 // 엑셀 사이즈규격 컬럼 생성기 — 사이즈규격 컬럼은 반드시 이 함수로만 생성한다 (triple-list desync 방지)
+// F 는 이제 다른 사이즈와 동일하게 부위별(per-part) 처리 — SIZE_SPEC_SIZES 에 F 포함(캐논 SIZES).
 function buildSizeSpecColumns() {
   const cols = []
   SIZE_SPEC_SIZES.forEach(sz =>
     SIZE_SPEC_PARTS.forEach(pt =>
       cols.push({ key: `sizeSpec_${sz}_${pt.key}`, label: `${sz} ${pt.excel}` })))
-  cols.push({ key: 'sizeSpec_F', label: 'F' })   // F 는 단일값 유지 (decision)
   return cols
 }
 
@@ -816,18 +824,41 @@ function getActiveParts(sizeSpec, activeSizes) {
 // 샘플 엑셀 예시 셀 값 (part key 기준, 미정의 부위는 '')
 const SIZE_SPEC_SAMPLE = { torso: '130', bust: '48', waist: '38', hip: '52', length: '68', shoulder: '37', sleeve: '58', hem: '45', lengthTop: '32', lengthBottom: '24', underBust: '40', thighWidth: '28', cupWidth: '13', cupHeight: '15', frontWaist: '30', backWaist: '32' }
 
+// 레거시 sizeSpec 읽기 정규화 (비파괴 — 원본 미변경, 필요 시에만 얕은 사본 반환).
+// 🔴 화면 렌더(view/edit/HTML)·엑셀 export·병합(save-normalize) 진입점에서 호출 → 데이터 무손실.
+//   ① 레거시 'XXL' 키 → '2XL' (2XL 부재 시 값 승계, 이미 있으면 XXL 폐기 — 이중계상 방지)
+//   ② 구 F 단일값(문자열 저장분) → { bust: 값 } 객체 (부위별 그리드가 값 표시/편집 가능)
+function normalizeSizeSpecRead(spec) {
+  if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return spec
+  let out = spec
+  const fork = () => { if (out === spec) out = Object.assign({}, spec) }
+  if (out.XXL != null) {
+    fork()
+    if (out['2XL'] == null) out['2XL'] = out.XXL
+    delete out.XXL
+  }
+  if (typeof out.F === 'string') {
+    const v = out.F.trim()
+    fork()
+    out.F = v ? { bust: v } : {}
+  }
+  return out
+}
+
 // 방어적 window 미러
 window.SIZE_SPEC_SIZES = SIZE_SPEC_SIZES
+window.SIZE_SPEC_HEADER_ALIASES = SIZE_SPEC_HEADER_ALIASES
 window.SIZE_SPEC_PARTS = SIZE_SPEC_PARTS
 window.buildSizeSpecColumns = buildSizeSpecColumns
 window.SIZE_SPEC_PART_LABEL = SIZE_SPEC_PART_LABEL
 window.emptySizeSpecParts = emptySizeSpecParts
 window.getActiveParts = getActiveParts
 window.SIZE_SPEC_SAMPLE = SIZE_SPEC_SAMPLE
+window.normalizeSizeSpecRead = normalizeSizeSpecRead
 
-// 컬럼 수 드리프트 감지 (사이즈×부위 + F)
+// 컬럼 수 드리프트 감지 (사이즈×부위 — F 포함, 이제 단일값 특수 컬럼 없음)
 console.assert(
-  buildSizeSpecColumns().length === SIZE_SPEC_SIZES.length * SIZE_SPEC_PARTS.length + 1,
+  buildSizeSpecColumns().length === SIZE_SPEC_SIZES.length * SIZE_SPEC_PARTS.length,
   'size-spec column count drift'
 )
 

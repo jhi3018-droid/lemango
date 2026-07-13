@@ -103,7 +103,7 @@ function openPlanRegisterModal(item) {
   fillSel('plLining',       _settings?.linings)
   fillSel('plCapRing',      _settings?.capRings)
 
-  // 사이즈 규격 그리드 동적 생성 (XS~XXL × 가슴/허리/엉덩이)
+  // 사이즈 규격 그리드 동적 생성 (XS~2XL, F × 부위별 — buildSizeSpecEdit)
   const specWrap = document.getElementById('plSizeSpecGrid')
   if (specWrap) {
     const existingSpec = (item && item.sizeSpec && typeof item.sizeSpec === 'object' && !Array.isArray(item.sizeSpec)) ? item.sizeSpec : {}
@@ -561,7 +561,7 @@ async function submitPlanRegister(e) {
     return rest
   })
 
-  // sizeSpec 수집 (XS~XXL × bust/waist/hip 구조)
+  // sizeSpec 수집 (XS~2XL, F × 부위별 구조)
   const _plRegModal = document.getElementById('planRegisterModal')
   const sizeSpec = collectSizeSpec(_plRegModal)
 
@@ -1420,7 +1420,7 @@ async function savePlanDetailEdit() {
     ;['sum','lemango','noir','external','design','shoot'].forEach(k => { delete item.images[k] })
   }
 
-  // 사이즈 규격 수집 (XS~XXL × bust/waist/hip 구조)
+  // 사이즈 규격 수집 (XS~2XL, F × 부위별 구조)
   if (Array.isArray(item.sizeSpec) || !item.sizeSpec || typeof item.sizeSpec !== 'object') item.sizeSpec = {}
   item.sizeSpec = collectSizeSpec(modal)
   // 일정 date inputs (dynamic phases)

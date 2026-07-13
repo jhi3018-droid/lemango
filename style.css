@@ -1161,7 +1161,7 @@ body.col-resize-active * { cursor: col-resize !important; }
   border-bottom: 0.5px solid var(--border-light, #e5e5e5);
 }
 
-/* 사이즈 규격 그리드 테이블 (XS~XXL × 가슴/허리/엉덩이) */
+/* 사이즈 규격 그리드 테이블 (XS~2XL, F × 부위별) */
 .size-spec-table-wrap { overflow-x: auto; }
 .size-spec-table { width:100%; border-collapse:collapse; font-size:12px; margin-bottom:8px; text-align:center; }
 .size-spec-table th { text-align:center; padding:6px 8px; background:#faf9f7; color:#888; font-weight:500; font-size:11px; border-bottom:1px solid #f0efe9; }
