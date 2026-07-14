@@ -274,6 +274,7 @@
         <button class="btn btn-outline" onclick="openCompareModal()">⇆ 비교</button>
         <div class="action-btns">
           <button class="btn btn-accent" onclick="downloadExcel('product')">⬇ 다운로드</button>
+          <button class="btn btn-outline" onclick="exportCafe24Csv()" title="선택(체크) 또는 검색결과 전체를 카페24 대량등록 CSV로 내보내기">🛒 카페24 등록 CSV</button>
           <label class="btn btn-outline" for="pUploadFile">⬆ 업로드</label>
           <input type="file" id="pUploadFile" accept=".xlsx,.xls" style="display:none" onchange="handleUpload(this,'product')" />
           <button class="btn btn-ghost" onclick="downloadSample('product')">상품등록 양식</button>
@@ -3160,6 +3161,9 @@
 <script src="js/backup.js"></script>
 <script src="js/trash.js"></script>
 <script src="js/store.js"></script>
+<!-- 카페24 등록 CSV: cafe24-data.js(생성된 상수) → cafe24.js(로직). core/utils/color-master/product-code 뒤 로드. -->
+<script src="js/cafe24-data.js"></script>
+<script src="js/cafe24.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
