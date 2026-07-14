@@ -653,6 +653,7 @@ window.removeStoreDiscount = removeStoreDiscount
 let _ssuData = []          // 파싱·검증된 업로드 행
 let _ssuMode = 'set'       // 'set'(절대) | 'add'(증가)
 let _ssuTargetStore = ''   // 대상 매장 id (resolveActiveStore)
+let _ssuFileName = ''      // 업로드 파일명 (입출고 내역 memo 추적성)
 
 function _ssuIsAdmin() {
   const g = (typeof _currentUserGrade !== 'undefined' && _currentUserGrade) ? _currentUserGrade : 1
@@ -667,6 +668,7 @@ function openStoreStockUploadModal() {
   _ssuTargetStore = store
   _ssuData = []
   _ssuMode = 'set'
+  _ssuFileName = ''
   const input = document.getElementById('ssuUploadFile'); if (input) input.value = ''
   const nameEl = document.getElementById('ssuTargetStoreName'); if (nameEl) nameEl.textContent = _storeNameById(store)
   const setRadio = document.querySelector('input[name="ssuMode"][value="set"]'); if (setRadio) setRadio.checked = true
@@ -778,6 +780,7 @@ const _SSU_PREVIEW_META = {
 function handleStoreStockUpload(input) {
   const file = input.files && input.files[0]
   if (!file) return
+  _ssuFileName = (file && file.name) ? String(file.name) : ''   // 파일명 캡처(원장 memo)
   if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
   // 인덱스 최신화 (바코드 조회용)
   if (typeof buildBarcodeIndex === 'function') buildBarcodeIndex()
@@ -889,27 +892,68 @@ async function confirmStoreStockUpload() {
   })
   const codes = Object.keys(byCode)
 
-  const btn = document.getElementById('ssuConfirmBtn'); if (btn) btn.disabled = true
+  // 🔴 입출고 내역(원장) 기록 메타 — storeStock write 는 무변경, storeInbound 이동 doc 를 옆에 추가만.
+  //   증감(delta): SET = new − old(SET 가드가 이미 로드한 인덱스, store.js SET 분기) · ADD = +qty. delta≠0 라인만 기록(무변경 재업로드=0 doc).
+  const oldIdx = (typeof _storeStockIndex !== 'undefined' && _storeStockIndex[store]) ? _storeStockIndex[store] : {}
+  const uid = (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) ? firebase.auth().currentUser.uid : ''
+  const workerName = (typeof formatUserName === 'function')
+    ? formatUserName(_currentUserName, (typeof _currentUserPosition !== 'undefined' ? _currentUserPosition : ''))
+    : ((typeof _currentUserName !== 'undefined' && _currentUserName) || '')
   const nowIso = new Date().toISOString()
+  const dateKey = (typeof kstDateKey === 'function') ? kstDateKey() : nowIso.slice(0, 10)
+  const uploadNo = 'UP-' + ((typeof kstStamp === 'function') ? kstStamp() : nowIso.replace(/\D/g, '').slice(0, 14)) + '-' + ((typeof _saleNoSuffix === 'function') ? _saleNoSuffix() : '')
+  const batchId = dateKey + '_' + (uid || 'x') + '_' + Date.now()
+  const reason = (_ssuMode === 'set') ? 'SET 덮어쓰기' : 'ADD 증가'
+  const memo = _ssuFileName || ''
+
+  // 코드별: storeStock sizesMap(무변경) + 이력 라인(delta≠0). op = 1(storeStock) + 라인수.
+  const codeUnits = {}
+  codes.forEach(code => {
+    const sizesMap = {}, lines = []
+    Object.keys(byCode[code]).forEach(sz => {
+      const v = byCode[code][sz]
+      sizesMap[sz] = (_ssuMode === 'set') ? v : firebase.firestore.FieldValue.increment(v)   // 🔴 storeStock write 무변경(SET=절대 / ADD=increment)
+      const delta = (_ssuMode === 'set') ? (v - Number((oldIdx[code] || {})[sz] || 0)) : v    // SET=new−old · ADD=+qty
+      if (delta !== 0) lines.push({ size: sz, delta: delta })
+    })
+    codeUnits[code] = { sizesMap: sizesMap, lines: lines }
+  })
+
+  // op-count 청크(≤450, 500-op 한계 안전 마진). 코드 경계로만 분할 → 한 코드의 재고+이력 절대 분리 안 함(입고 스캔 store.js:1876 패턴).
+  const CHUNK_LIMIT = 450
+  const chunks = []
+  { let ops = 0, cur = []
+    codes.forEach(code => {
+      const u = 1 + codeUnits[code].lines.length
+      if (cur.length && ops + u > CHUNK_LIMIT) { chunks.push(cur); cur = []; ops = 0 }
+      cur.push(code); ops += u
+    })
+    if (cur.length) chunks.push(cur)
+  }
+
+  const btn = document.getElementById('ssuConfirmBtn'); if (btn) btn.disabled = true
+  let lineDocCount = 0
   try {
-    // 문서당 1 write → 배치, 500개씩 청크 (한 문서를 한 배치에서 두 번 쓰지 않음)
-    for (let i = 0; i < codes.length; i += 500) {
-      const chunk = codes.slice(i, i + 500)
+    for (const chunkCodes of chunks) {
       const batch = db.batch()
-      chunk.forEach(code => {
+      chunkCodes.forEach(code => {
         const ref = db.collection('storeStock').doc(storeStockDocId(store, code))
-        const sizesMap = {}
-        Object.keys(byCode[code]).forEach(sz => {
-          const v = byCode[code][sz]
-          sizesMap[sz] = (_ssuMode === 'set') ? v : firebase.firestore.FieldValue.increment(v)   // SET=절대 / ADD=increment
+        batch.set(ref, { storeId: store, productCode: code, sizes: codeUnits[code].sizesMap, updatedAt: nowIso }, { merge: true })   // 🔴 storeStock write 무변경
+        codeUnits[code].lines.forEach(ln => {
+          batch.set(db.collection('storeInbound').doc(), {   // auto-id (owner 결정 5: 단순 멱등 = 입고 스캔 미러)
+            storeId: store, productCode: code, size: ln.size,
+            moveType: 'upload', stockDelta: ln.delta, defectDelta: 0, qty: Math.abs(ln.delta),
+            inboundNo: uploadNo, inboundType: '재고 업로드', reason: reason, memo: memo,
+            workerUid: uid, workerName: workerName, confirmedAt: nowIso, dateKey: dateKey, batchId: batchId
+          })
+          lineDocCount++
         })
-        batch.set(ref, { storeId: store, productCode: code, sizes: sizesMap, updatedAt: nowIso }, { merge: true })
       })
       await batch.commit()
     }
   } catch (e) {
     console.error('confirmStoreStockUpload 실패:', e.message)
-    showToast('매장 재고 저장 실패 — 다시 시도해주세요.', 'error')
+    showToast('매장 재고 저장 실패 — 다시 시도해주세요. (일부 청크만 반영됐을 수 있음)', 'error')
     if (btn) btn.disabled = false
     return
   }
@@ -919,7 +963,7 @@ async function confirmStoreStockUpload() {
   const rowCount = validData.length
   const modeLabel = _ssuMode === 'set' ? 'SET(덮어쓰기)' : 'ADD(증가)'
   showToast(`매장 재고 반영: ${_storeNameById(store)} — ${codes.length}품번 / ${rowCount}행 (${modeLabel})`, 'success')
-  if (typeof logActivity === 'function') logActivity('upload', '매장재고', `${modeLabel} — 매장 ${_storeNameById(store)}(${store}) : ${codes.length}품번 ${rowCount}행`)
+  if (typeof logActivity === 'function') logActivity('upload', '매장재고', `${modeLabel} — 매장 ${_storeNameById(store)}(${store}) : ${codes.length}품번 ${rowCount}행 · ${uploadNo} · 이력 ${lineDocCount}건`)
   closeStoreStockUploadModal(true)
   if (typeof renderStoreTab === 'function') renderStoreTab()
 }
@@ -2178,6 +2222,7 @@ function openInbHistoryModal() {
       + '<option value="__defect-out__">불량→정상</option>'            // 6c
       + '<option value="__defect-outbound__">불량반출</option>'        // 6c
       + '<option value="__location-move__">위치이동</option>'          // 위치 이동(재고 무변경)
+      + '<option value="__upload__">재고 업로드</option>'              // 재고 엑셀 업로드
   }
   const statusSel = document.getElementById('inbHistStatus'); if (statusSel) statusSel.value = 'all'
   modal.showModal()
@@ -2249,6 +2294,7 @@ function _mvTypeLabel(r) {                                                      
   if (mt === 'defect-out') return '불량→정상'      // 6c
   if (mt === 'defect-outbound') return '불량반출'  // 6c
   if (mt === 'location-move') return '위치이동'    // 위치 이동(재고 무변경)
+  if (mt === 'upload') return '재고 업로드'         // 재고 엑셀 업로드(원장 기록)
   return (r && r.inboundType) || INB_LEGACY_TYPE
 }
 // 사유/메모 표시: 재고수정·불량전환(전환은 사유 필수) = reason 우선 · 위치이동 = from→to (+메모) · 입고/반출 = memo
@@ -2269,7 +2315,7 @@ function _inbHistApplyFilters() {
   const typeF = (document.getElementById('inbHistType') || {}).value || ''
   const statusF = (document.getElementById('inbHistStatus') || {}).value || 'all'
   // moveType 기반 특수 필터(__x__) → 정확히 그 유형만. 일반 값 → 실제 입고유형(moveType 'inbound')만.
-  const MV_FILTERS = { '__adjust__': 'adjust', '__outbound__': 'outbound', '__defect-in__': 'defect-in', '__defect-out__': 'defect-out', '__defect-outbound__': 'defect-outbound', '__location-move__': 'location-move' }
+  const MV_FILTERS = { '__adjust__': 'adjust', '__outbound__': 'outbound', '__defect-in__': 'defect-in', '__defect-out__': 'defect-out', '__defect-outbound__': 'defect-outbound', '__location-move__': 'location-move', '__upload__': 'upload' }
   const rows = (_inbHistRows || []).filter(r => {
     if (_mvType(r) === 'baseline') return false   // 6d: 기준(baseline) 이동은 입출고 내역이 아님 → 품목 원장에서만 표시
     if (MV_FILTERS[typeF]) { if (_mvType(r) !== MV_FILTERS[typeF]) return false }
@@ -2298,16 +2344,20 @@ function _inbHistApplyFilters() {
   body.innerHTML = rows.map(r => {
     const cancelled = r.cancelled === true
     const rowCls = cancelled ? ' class="inbhist-cancelled-row"' : ''
-    const isLocMove = _mvType(r) === 'location-move'   // 위치이동 = 재고 무변경 · 🔴 취소 불가(Q4)
-    // 🔴 위치이동은 취소 불가(옛 위치를 복원하지 못하는 반쪽 취소 방지) — 취소 버튼 대신 힌트
-    const canCancel = !isLocMove && ((myGrade >= 3) || (myStore && myStore === r.storeId))
+    const _rmt = _mvType(r)
+    const isLocMove = _rmt === 'location-move'   // 위치이동 = 재고 무변경 · 🔴 취소 불가(Q4)
+    const isUpload = _rmt === 'upload'           // 🔴 재고 업로드 = 취소 불가(재업로드 SET/재고수정으로 조정)
+    // 🔴 위치이동·업로드는 취소 버튼 대신 힌트 — 일반 취소가 올바르게 되돌리지 못하는 경우 차단
+    const canCancel = !isLocMove && !isUpload && ((myGrade >= 3) || (myStore && myStore === r.storeId))
     const actionCell = cancelled
       ? `<span class="inbhist-cancel-badge" title="${esc('취소: ' + (r.cancelledByName || '') + ' (' + _inbHistDateTime(r.cancelledAt, 'full') + ') · ' + (r.cancelReason || ''))}">취소됨</span>`
       : (isLocMove
           ? '<span class="inbhist-noperm" title="위치이동은 취소 대신 반대로 다시 이동하세요">이동</span>'
-          : (canCancel
-              ? `<button class="inbhist-cancel-btn" onclick="requestInbCancel('${esc(r._id)}')">취소</button>`
-              : '<span class="inbhist-noperm">-</span>'))
+          : (isUpload
+              ? '<span class="inbhist-noperm" title="재고 업로드는 취소 대신 재업로드(SET) 또는 재고수정으로 조정하세요">업로드</span>'
+              : (canCancel
+                  ? `<button class="inbhist-cancel-btn" onclick="requestInbCancel('${esc(r._id)}')">취소</button>`
+                  : '<span class="inbhist-noperm">-</span>')))
     const sq = _mvSignedQty(r)
     const dq = _mvDefectDelta(r)   // 6c 불량증감
     return `<tr${rowCls}>
@@ -2364,6 +2414,7 @@ function requestInbCancel(docId) {
   if (row.cancelled === true) { showToast('이미 취소된 내역입니다', 'warning'); _inbHistoryLoad(); return }
   // 🔴 위치이동은 취소 불가(Q4) — 일반 취소는 옛 위치를 복원하지 못함(반쪽 취소). 되돌리려면 반대로 다시 이동.
   if (_mvType(row) === 'location-move') { showToast('위치이동은 취소할 수 없습니다 — 반대로 다시 이동하세요', 'warning'); return }
+  if (_mvType(row) === 'upload') { showToast('재고 업로드는 취소할 수 없습니다 — 재업로드(SET) 또는 재고수정으로 조정하세요', 'warning'); return }
   // 권한 방어(버튼 게이트 + 서버 규칙 외 추가) — 관리자 OR 본인 매장만
   const g = (typeof _currentUserGrade !== 'undefined' && _currentUserGrade) ? _currentUserGrade : 1
   const ms = (typeof _currentUserStoreId !== 'undefined' && _currentUserStoreId) ? _currentUserStoreId : ''
