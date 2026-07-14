@@ -88,6 +88,7 @@ function _storeSubPanelHtml(sub) {
         ${replenishBtn}
         ${uploadBtn}
         ${baselineBtn}
+        <button class="btn btn-outline" onclick="downloadStoreStockExcel()">📥 엑셀 다운로드</button>
         <button class="btn btn-outline" onclick="renderStoreStockView()">↻ 새로고침</button>
       </div>
       <div id="storeStockViewBody" class="store-stock-view">
@@ -973,6 +974,7 @@ async function renderStoreStockView() {
     return
   }
   const headSizes = SIZES.map(sz => `<th class="ssv-num">${esc(sz)}</th>`).join('')
+  let grandTotal = 0   // 총재고 = 화면 합계 컬럼 총합(동일 데이터셋)
   const rows = codes.map(code => {
     const sizes = map[code] || {}
     const p = _ssvFindProduct(code)
@@ -988,6 +990,7 @@ async function renderStoreStockView() {
       const v = Number(sizes[sz] || 0); total += v
       return `<td class="ssv-num${v < 0 ? ' ssv-neg' : ''}">${v}</td>`
     }).join('')
+    grandTotal += total
     return `<tr>
       <td><span class="code-link" onclick="openStoreStockDetail('${esc(code)}')">${esc(code)}</span></td>
       <td>${nameCell}</td>
@@ -1004,7 +1007,7 @@ async function renderStoreStockView() {
       <span class="ssv-search-hint">바코드 정확일치 → 상세 · 품번 부분일치 → 목록</span>
     </div>
     <div id="ssvAuxPanel" class="ssv-aux-panel"></div>
-    <div class="ssv-meta">${esc(_storeNameById(store))} · 총 ${codes.length}품번</div>
+    <div class="ssv-meta">${esc(_storeNameById(store))} · 총 ${codes.length}품번 · 총재고 ${grandTotal.toLocaleString()}개</div>
     <div class="ssv-table-wrap">
       <table class="data-table ssv-table">
         <thead><tr><th style="width:150px">품번</th><th>상품명</th>${headSizes}<th class="ssv-num">합계</th></tr></thead>
@@ -1013,6 +1016,35 @@ async function renderStoreStockView() {
     </div>`
   if (typeof makeStoreColumnsResizable === 'function') makeStoreColumnsResizable(body.querySelector('.ssv-table'), 'ssv')   // B2 컬럼 리사이즈
 }
+
+// 📥 재고현황 엑셀 다운로드 — 화면 테이블과 EXACT 미러(현재 매장·전 품번·정렬 동일). READ-ONLY(재고 write 0).
+//   데이터 소스 = _storeStockIndex[현재뷰 매장](renderStoreStockView 가 채운 캐시 = 화면과 동일). 컬럼=품번|상품명|XS..F|합계.
+function downloadStoreStockExcel() {
+  if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
+  const store = _ssvStore || ((typeof resolveActiveStore === 'function') ? resolveActiveStore() : '')
+  if (!store) { showToast('매장이 선택되지 않았습니다', 'warning'); return }
+  const idx = (typeof _storeStockIndex !== 'undefined' && _storeStockIndex[store]) ? _storeStockIndex[store] : {}
+  const codes = Object.keys(idx).sort()   // 화면과 동일 정렬(Object.keys().sort())
+  if (!codes.length) { showToast('내보낼 재고가 없습니다', 'warning'); return }
+  const aoa = [['품번', '상품명', ...SIZES, '합계']]
+  codes.forEach(code => {
+    const sizes = idx[code] || {}
+    const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(code) : null
+    const name = p ? (p.nameKr || p.nameEn || '') : ''   // 화면과 동일(뱃지/삭제표시는 텍스트 아님 → 제외)
+    let total = 0
+    const sizeVals = SIZES.map(sz => { const v = Number(sizes[sz] || 0); total += v; return v })   // 숫자 그대로
+    aoa.push([code, name, ...sizeVals, total])
+  })
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  ws['!cols'] = [{ wch: 18 }, { wch: 26 }].concat(SIZES.map(() => ({ wch: 6 })), [{ wch: 8 }])
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '재고현황')
+  const storeName = _storeNameById(store) || store || '매장'
+  const stamp = (typeof kstDateKey === 'function') ? kstDateKey().replace(/-/g, '') : new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  XLSX.writeFile(wb, `재고현황_${storeName}_${stamp}.xlsx`)
+  if (typeof logActivity === 'function') logActivity('export', '매장재고', `재고현황 엑셀 — ${storeName}(${store}) : ${codes.length}품번`)
+}
+window.downloadStoreStockExcel = downloadStoreStockExcel
 
 // ── 공유 상품 상세 모달 — 이미지 + 상품명 + 정상가 + 사이즈별 재고·로케이션 (매장별, 읽기 전용) ──
 // 판매 리스트(3b) + 매장별 재고현황(1f) 두 곳에서 동일 모달 사용(분기 방지). storeId 미지정 시 resolveActiveStore.
