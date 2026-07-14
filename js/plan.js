@@ -701,6 +701,18 @@ function genPlanCode() {
 window.genPlanCode = genPlanCode
 
 
+// 신규기획 등록일(작성일) → 'yyyy-mm-dd'. formatDateTime(utils.js)과 동일 basis(createdAt ISO 앞 10자) →
+//   상세 모달의 작성일 표시와 필터 기준이 정확히 일치. Firestore Timestamp/Date/ISO 문자열 모두 처리.
+//   없으면 '' → 날짜 필터에서 '항상 포함'(레거시 createdAt 없는 항목 무숨김, 소유주 결정).
+function _planCreatedDate(p) {
+  let c = (p && (p.createdAt || p.registeredAt)) || ''
+  if (!c) return ''
+  if (typeof c === 'object' && typeof c.toDate === 'function') c = c.toDate()
+  if (c instanceof Date) c = c.toISOString()
+  if (typeof c !== 'string') return ''
+  return c.slice(0, 10)
+}
+
 function searchPlan() {
   const raw    = document.getElementById('npKeyword').value
   const keywords = parseKeywords(raw)
@@ -735,18 +747,21 @@ function searchPlan() {
     if (season !== 'all' && String(p.season) !== season) return false
     if (gender !== 'all' && p.gender !== gender)       return false
 
-    // 일정 단계 + 날짜 필터
-    if (phase !== 'all' || dateFrom || dateTo) {
-      if (!p.schedule) return false
-      const phases = phase === 'all' ? SCHEDULE_DEFS.map(d => d.key) : [phase]
-      const matched = phases.some(pk => {
-        const ph = p.schedule[pk]
-        if (!ph || !ph.start || !ph.end) return false
-        if (dateFrom && ph.end < dateFrom) return false
-        if (dateTo   && ph.start > dateTo) return false
-        return true
-      })
-      if (!matched) return false
+    // 🔴 등록일(작성일) 날짜 필터 — createdAt 기준(일정 스케줄 날짜 아님). date-only · open-ended.
+    //   시작일만=이후 · 종료일만=이전 · 둘다=포함범위(양끝 포함) · 없음=미필터.
+    //   createdAt 없는 레거시 항목 = 항상 포함(무숨김). 빈 일정 항목도 이제 정상 노출.
+    if (dateFrom || dateTo) {
+      const cd = _planCreatedDate(p)   // 'yyyy-mm-dd' (상세 작성일 표시와 동일 basis)
+      if (cd) {
+        if (dateFrom && cd < dateFrom) return false
+        if (dateTo   && cd > dateTo)   return false
+      }
+    }
+
+    // 일정 단계 필터 — 선택한 단계가 일정에 설정된(시작·완료예정일 모두 존재) 항목만 (날짜 필터와 독립 결합)
+    if (phase !== 'all') {
+      const ph = p.schedule && p.schedule[phase]
+      if (!ph || !ph.start || !ph.end) return false
     }
 
     return true
