@@ -117,6 +117,70 @@
     }).join('\n');
   }
 
+  // 복종(product type) → 정규 키. p.type 우선(one piece/onepiece 변형 정규화), 없으면 품번 typeCode 폴백.
+  function _c24TypeKey(p) {
+    var t = String((p && p.type) || '').toLowerCase().replace(/[\s._-]+/g, '');
+    var known = { onepiece: 'onepiece', bikini: 'bikini', monokini: 'monokini', coverup: 'coverup', rashguard: 'rashguard' };
+    if (known[t]) return known[t];
+    var code = String((p && p.productCode) || '');
+    var tc = /^[A-Za-z0-9]{13}$/.test(code) ? code.slice(3, 5).toUpperCase() : '';
+    var byTc = { ON: 'onepiece', MO: 'monokini', BK: 'bikini', RG: 'rashguard' };   // 품번 typeCode 보충
+    return byTc[tc] || '';
+  }
+
+  // 레그컷 → Cafe24 코드(406 노멀/407 미들/408 하이). EN·EN+개행·한글 모두 정규화. 로우컷/없음 → '' (401에서 멈춤)
+  function _c24LegCutCode(p) {
+    var n = String((p && p.legCut) || '').toLowerCase().replace(/\s+/g, '');   // "middle\ncut"·"middle cut" → "middlecut"
+    if (n === 'normalcut' || n === '노멀컷') return '406';
+    if (n === 'middlecut' || n === '미들컷') return '407';
+    if (n === 'highcut' || n === '하이컷') return '408';
+    return '';
+  }
+
+  // 분류번호(5) 코드 배열 산출. 신호=품번 positional(classCode=slice0,2 / gender=slice2,3 / typeCode=slice3,5) + brand + type + legCut.
+  //   반환 {codes:[..]} 또는 {codes:null, reason} (미매핑 → 5/6/7 공란 + 경고, 추측 금지). BEST 392·COLLAB 415/424~426 절대 미방출.
+  function _c24Category(p, warns) {
+    var code = String((p && p.productCode) || '').trim();
+    var code13 = /^[A-Za-z0-9]{13}$/.test(code);
+    var classCode = code13 ? code.slice(0, 2).toUpperCase() : '';
+    var genderCode = code13 ? code.slice(2, 3).toUpperCase()
+      : (function () { var g = String((p && p.gender) || '').toUpperCase(); return /^[WMGBNKU]$/.test(g) ? g : ''; })();
+    var brand = String((p && p.brand) || '').trim();
+    var isNoir = brand === '르망고 느와' || classCode.charAt(0) === 'N';
+    var isAcc = classCode.charAt(1) === 'G';   // 굿즈(LG/NG) = ACC
+    var base = isAcc ? ['428', '390'] : ['428', '390', '391'];   // 🔴 ACC = NEW(391) 제외
+    function fail(reason) { if (warns) warns.push('category'); return { codes: null, reason: reason }; }
+
+    if (isNoir) {   // 느와 → NOIR 브랜치 전용(WOMEN/MEN 미적용)
+      if (isAcc) return { codes: base.concat(['393', '395', '439']) };   // 느와 ACC(439). 395 포함=가정(§보고)
+      var tkn = _c24TypeKey(p);
+      var noirLeaf = { onepiece: '396', bikini: '397', monokini: '398', coverup: '399' }[tkn];
+      if (noirLeaf) return { codes: base.concat(['393', '395', noirLeaf]) };
+      return fail('느와-복종불명');
+    }
+    if (isAcc) {   // 비-느와 ACC(굿즈) → 414|리프 (ALL 레벨 없음)
+      var tc = code13 ? code.slice(3, 5).toUpperCase() : '';
+      var accLeaf = tc === 'SC' ? '420' : tc === 'BG' ? '422' : '423';   // 수모420/백422/기타423 (고글421 신호없음→기타)
+      return { codes: base.concat(['414', accLeaf]) };
+    }
+    if (genderCode === 'W') {   // 여성 → 394|400|리프
+      var tkw = _c24TypeKey(p);
+      if (tkw === 'onepiece') { var lc = _c24LegCutCode(p); return { codes: base.concat(lc ? ['394', '400', '401', lc] : ['394', '400', '401']) }; }
+      var wLeaf = { bikini: ['402', '435'], monokini: ['402', '436'], rashguard: ['403'], coverup: ['404'] }[tkw];
+      if (wLeaf) return { codes: base.concat(['394', '400']).concat(wLeaf) };
+      return fail('여성-복종불명');
+    }
+    if (genderCode === 'M') {   // 남성 → 405|409|리프 (브리프만 신호 있음)
+      var tcm = code13 ? code.slice(3, 5).toUpperCase() : '';
+      if (tcm === 'BR') return { codes: base.concat(['405', '409', '411']) };
+      return fail('남성-복종불명(숏브리프410/5in쇼츠412 신호없음)');
+    }
+    if (genderCode === 'G') return { codes: base.concat(['413', '416', '417']) };   // 키즈 여아
+    if (genderCode === 'B') return { codes: base.concat(['413', '416', '418']) };   // 키즈 남아
+    if (genderCode === 'K') return { codes: base.concat(['413', '416']) };          // 키즈(세부 성별불명 → ALL까지)
+    return fail(genderCode === 'N' || genderCode === 'U' ? '공용(브랜치 없음)' : '성별불명');
+  }
+
   // 간략설명(14) 국가 헤더 HTML — 한국=verbatim, 중국=best-effort(전공정 라인 제외, work order), 그외=null(comment-text 생략)
   function _c24HeaderHtml(country) {
     var d = DATA(); if (!d) return null;
@@ -157,6 +221,8 @@
     var nameEn = String((p && p.nameEn) || '').trim();
     var price = String(parseInt((p && p.salePrice), 10) || 0);
     var abbrev = _c24ColorAbbrev(p, warns);
+    var cat = _c24Category(p, warns);        // 분류번호(5/6/7)
+    var catCodes = cat.codes;
 
     // 상품명(8)/영문명(9): 이름 + (약어) + (뒤4)
     var name8 = nameKr + (abbrev ? (' ' + abbrev) : '') + '(' + last4 + ')';
@@ -217,7 +283,9 @@
     C[1]  = code;          // 2 자체 상품코드
     C[2]  = 'N';           // 3 진열상태
     C[3]  = 'N';           // 4 판매상태
-    // 5~7 상품분류 번호/신상품/추천 = '' (owner assigns in Cafe24 admin)
+    C[4]  = catCodes ? catCodes.join('|') : '';                                    // 5 상품분류 번호(auto)
+    C[5]  = catCodes ? catCodes.map(function () { return 'N'; }).join('|') : '';    // 6 신상품영역(코드당 N)
+    C[6]  = C[5];                                                                   // 7 추천상품영역(=6)
     C[7]  = name8;         // 8 상품명
     C[8]  = name9;         // 9 영문 상품명
     C[9]  = isCap ? '' : name8;  // 10 상품명(관리용)
@@ -290,7 +358,7 @@
     C[95] = '1';           // 96 추가항목09_오늘배송출발 사용여부
     C[96] = '14';          // 97 추가항목10_오늘배송출발 시간설정
 
-    return { cells: C, warns: warns };
+    return { cells: C, warns: warns, catReason: cat.reason || '' };
   }
 
   // ---- CSV 셀 인용 (RFC4180: 콤마·따옴표·개행 → "…" + "" 이스케이프) ----
@@ -308,7 +376,7 @@
     products.forEach(function (p) {
       var r = buildCafe24Row(p);
       rows.push(r.cells);
-      if (r.warns.length) warnRows.push({ code: p.productCode || '(무품번)', warns: r.warns });
+      if (r.warns.length) warnRows.push({ code: p.productCode || '(무품번)', warns: r.warns, catReason: r.catReason || '' });
     });
     var csv = rows.map(function (r) { return r.map(_c24Cell).join(','); }).join('\r\n');
     return { csv: '﻿' + csv, warnRows: warnRows, count: products.length };
@@ -332,6 +400,7 @@
   }
 
   var WARN_LABEL = {
+    category: '분류 미매핑(성별/복종 신호 부족 → 5/6/7 공란)',
     color: '색상 약어 없음(상품명 약어 생략)',
     origin: '원산지 미매핑(제조국 확인 필요)',
     backstyle: '백스타일 영문 폴백(요약설명 확인)',
@@ -341,7 +410,7 @@
     madeDate: '제조일자 파싱 실패',
     comment: '디자이너 코멘트 없음(간략설명 비어있음)'
   };
-  var WARN_ORDER = ['color', 'origin', 'backstyle', 'detailUrl', 'mainImage', 'nameEn', 'madeDate', 'comment'];
+  var WARN_ORDER = ['category', 'color', 'origin', 'backstyle', 'detailUrl', 'mainImage', 'nameEn', 'madeDate', 'comment'];
 
   // 경고 요약 모달 (동적 <dialog>, 자체 close·복사 textarea)
   function _c24ShowWarnings(mode, count, warnRows) {
@@ -351,7 +420,9 @@
       var seen = {};
       w.warns.forEach(function (k) {
         if (seen[k]) return; seen[k] = 1;
-        if (agg[k]) agg[k].push(w.code);
+        if (!agg[k]) return;
+        if (k === 'category' && w.catReason) agg[k].push(w.code + '(' + w.catReason + ')');
+        else agg[k].push(w.code);
       });
     });
     var lines = [];
@@ -447,6 +518,7 @@
     isCap: _c24IsCap, last4: _c24Last4, sizes: _c24Sizes,
     colorAbbrev: _c24ColorAbbrev, backStyleKr: _c24BackStyleKr, legCutKr: _c24LegCutKr,
     madeDate: _c24MadeDate, originInfo: _c24OriginInfo, material: _c24Material,
-    brief: _c24Brief, cell: _c24Cell
+    brief: _c24Brief, cell: _c24Cell,
+    category: _c24Category, typeKey: _c24TypeKey, legCutCode: _c24LegCutCode
   };
 })();
