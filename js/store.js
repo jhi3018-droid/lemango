@@ -1017,32 +1017,43 @@ async function renderStoreStockView() {
   if (typeof makeStoreColumnsResizable === 'function') makeStoreColumnsResizable(body.querySelector('.ssv-table'), 'ssv')   // B2 컬럼 리사이즈
 }
 
-// 📥 재고현황 엑셀 다운로드 — 화면 테이블과 EXACT 미러(현재 매장·전 품번·정렬 동일). READ-ONLY(재고 write 0).
-//   데이터 소스 = _storeStockIndex[현재뷰 매장](renderStoreStockView 가 채운 캐시 = 화면과 동일). 컬럼=품번|상품명|XS..F|합계.
+// 📥 재고현황 엑셀 다운로드 — LONG 포맷(품번×사이즈 1행 + 바코드). 화면 재고와 EXACT 미러. READ-ONLY(재고 write 0).
+//   행 = (바코드 등록 OR 재고≠0)인 (품번,사이즈)만 — 둘 다 없으면 skip(빈행 7배 방지). 데이터=_storeStockIndex[현재뷰 매장](화면 동일).
+//   컬럼=품번|상품명|사이즈|바코드|수량. 🔴 바코드=텍스트 서식(13자리 앞자리0/지수표기 방지). 수량=숫자(0 유지). Σ수량 == 화면 총재고.
 function downloadStoreStockExcel() {
   if (typeof XLSX === 'undefined') { showToast('SheetJS 로딩 중...', 'warning'); return }
   const store = _ssvStore || ((typeof resolveActiveStore === 'function') ? resolveActiveStore() : '')
   if (!store) { showToast('매장이 선택되지 않았습니다', 'warning'); return }
   const idx = (typeof _storeStockIndex !== 'undefined' && _storeStockIndex[store]) ? _storeStockIndex[store] : {}
-  const codes = Object.keys(idx).sort()   // 화면과 동일 정렬(Object.keys().sort())
+  const codes = Object.keys(idx).sort()   // 화면과 동일 상품 정렬(Object.keys().sort())
   if (!codes.length) { showToast('내보낼 재고가 없습니다', 'warning'); return }
-  const aoa = [['품번', '상품명', ...SIZES, '합계']]
+  const aoa = [['품번', '상품명', '사이즈', '바코드', '수량']]
   codes.forEach(code => {
     const sizes = idx[code] || {}
     const p = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(code) : null
-    const name = p ? (p.nameKr || p.nameEn || '') : ''   // 화면과 동일(뱃지/삭제표시는 텍스트 아님 → 제외)
-    let total = 0
-    const sizeVals = SIZES.map(sz => { const v = Number(sizes[sz] || 0); total += v; return v })   // 숫자 그대로
-    aoa.push([code, name, ...sizeVals, total])
+    const name = (p && (p.nameKr || p.nameEn)) ? (p.nameKr || p.nameEn) : code   // 이름 없으면 품번 표시
+    SIZES.forEach(sz => {                                       // 상품 내 SIZES 순서(XS→F)
+      const qty = Number(sizes[sz] || 0)                        // 화면과 동일 수량(숫자, 0 유지)
+      const bc = (p && p.barcodes && p.barcodes[sz]) ? String(p.barcodes[sz]).trim() : ''
+      if (!bc && qty === 0) return                              // 바코드도 재고도 없으면 skip
+      aoa.push([code, name, sz, bc, qty])
+    })
   })
+  if (aoa.length === 1) { showToast('내보낼 재고가 없습니다', 'warning'); return }   // 전 품목이 skip된 경우
   const ws = XLSX.utils.aoa_to_sheet(aoa)
-  ws['!cols'] = [{ wch: 18 }, { wch: 26 }].concat(SIZES.map(() => ({ wch: 6 })), [{ wch: 8 }])
+  // 🔴 바코드 컬럼(D) = 텍스트 서식 — 13자리 숫자 문자열의 지수표기/앞자리0 손실 방지(문자열 t='s' + 표시서식 '@')
+  const range = XLSX.utils.decode_range(ws['!ref'])
+  for (let r = 1; r <= range.e.r; r++) {                        // r=1(헤더 제외)부터
+    const cell = ws[XLSX.utils.encode_cell({ r: r, c: 3 })]     // 컬럼 D = 바코드
+    if (cell) { cell.t = 's'; cell.z = '@' }
+  }
+  ws['!cols'] = [{ wch: 18 }, { wch: 26 }, { wch: 6 }, { wch: 16 }, { wch: 8 }]
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, '재고현황')
   const storeName = _storeNameById(store) || store || '매장'
   const stamp = (typeof kstDateKey === 'function') ? kstDateKey().replace(/-/g, '') : new Date().toISOString().slice(0, 10).replace(/-/g, '')
   XLSX.writeFile(wb, `재고현황_${storeName}_${stamp}.xlsx`)
-  if (typeof logActivity === 'function') logActivity('export', '매장재고', `재고현황 엑셀 — ${storeName}(${store}) : ${codes.length}품번`)
+  if (typeof logActivity === 'function') logActivity('export', '매장재고', `재고현황 엑셀(LONG) — ${storeName}(${store}) : ${aoa.length - 1}행`)
 }
 window.downloadStoreStockExcel = downloadStoreStockExcel
 
