@@ -263,6 +263,6 @@ function viewTrashedProduct(code) {
   if (!_trashCanAccess()) { showToast('권한이 없습니다.', 'warning'); return }
   const p = State.allProducts.find(x => x.productCode === code)
   if (!p || !p.deleted) { showToast('대상 상품을 찾을 수 없습니다.', 'error'); return }
-  if (typeof openDetailModal === 'function') openDetailModal(code, { readOnly: true })
+  if (typeof openDetailModal === 'function') openDetailModal(code, { readOnly: true, fromTrash: true })   // 🔴 fromTrash=휴지통 메뉴 전용: 복원/영구삭제 버튼 노출(분석 화면과 구분)
 }
 window.viewTrashedProduct = viewTrashedProduct

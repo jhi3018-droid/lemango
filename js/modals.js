@@ -239,6 +239,8 @@ let _detailPendingCode = null  // 상세 모달 품번 생성 패널에서 임�
 async function openDetailModal(productCode, opts) {
   opts = opts || {}
   const readOnly = !!opts.readOnly
+  // 🔴 fromTrash = 휴지통 메뉴에서 열림(복원/영구삭제 파괴적 액션 허용). 분석 화면(매트릭스 등)은 readOnly 만 → 파괴적 액션 절대 노출 금지.
+  const fromTrash = !!opts.fromTrash
   const p = State.allProducts.find(x => x.productCode === productCode)
   if (!p) return
   _detailCode = productCode
@@ -253,8 +255,11 @@ async function openDetailModal(productCode, opts) {
   // Read-only flag (used by _dUpdateHeaderBtns + toggleDetailEdit guards)
   if (readOnly) modal.dataset.readonly = '1'
   else delete modal.dataset.readonly
-  // Inject/remove read-only banner
-  _renderDetailReadOnlyBanner(p, readOnly)
+  // fromTrash flag (used by _dUpdateHeaderBtns to gate 복원/영구삭제 = 휴지통 메뉴 전용)
+  if (fromTrash) modal.dataset.fromtrash = '1'
+  else delete modal.dataset.fromtrash
+  // Inject/remove read-only banner (fromTrash=휴지통 배너 · 그 외 삭제상품=중립 [삭제된 상품] 표시)
+  _renderDetailReadOnlyBanner(p, readOnly, fromTrash)
   _dUpdateHeaderBtns('view')
   // 품번확정 버튼 상태 — 읽기전용(휴지통)에서는 항상 숨김 (이전 false-PASS 수정)
   const lockBtn = document.getElementById('dLockCodeBtn')
@@ -1189,6 +1194,9 @@ window.deleteProduct = deleteProduct
 async function dRestoreFromDetail() {
   const code = _detailCode
   if (!code) return
+  // 🔴 방어적 가드: 파괴적/상태변경 액션은 휴지통 메뉴(fromTrash)에서만. 분석 화면(매트릭스 등) 진입점 이중 차단.
+  const _dm = document.getElementById('detailModal')
+  if (!_dm || _dm.dataset.fromtrash !== '1') return
   // Permission re-check via trash module
   if (typeof _trashCanAccess === 'function' && !_trashCanAccess()) {
     showToast('권한이 없습니다.', 'warning'); return
@@ -1206,6 +1214,9 @@ window.dRestoreFromDetail = dRestoreFromDetail
 function dPermDeleteFromDetail() {
   const code = _detailCode
   if (!code) return
+  // 🔴 방어적 가드: 영구삭제는 휴지통 메뉴(fromTrash)에서만 도달 가능. 분석 화면 진입점 절대 차단.
+  const _dm = document.getElementById('detailModal')
+  if (!_dm || _dm.dataset.fromtrash !== '1') return
   if (typeof _trashCanAccess === 'function' && !_trashCanAccess()) {
     showToast('권한이 없습니다.', 'warning'); return
   }
@@ -1221,6 +1232,7 @@ function _dUpdateHeaderBtns(mode) {
   // mode: 'view' | 'edit'
   const modal = document.getElementById('detailModal')
   const readOnly = modal && modal.dataset.readonly === '1'
+  const fromTrash = modal && modal.dataset.fromtrash === '1'
   document.querySelectorAll('#detailModal .d-view-btn').forEach(b => {
     if (readOnly) { b.style.display = 'none'; return }
     b.style.display = mode === 'view' ? 'inline-block' : 'none'
@@ -1230,9 +1242,9 @@ function _dUpdateHeaderBtns(mode) {
     if (b.id === 'dDeleteBtn' && b.dataset.hidden === '1') { b.style.display = 'none'; return }
     b.style.display = mode === 'edit' ? 'inline-block' : 'none'
   })
-  // d-trash-btn group: visible ONLY in read-only (휴지통 조회) mode
+  // d-trash-btn group (복원/영구삭제): 🔴 휴지통 메뉴(fromTrash)에서만 노출. 분석 화면(매트릭스 등 readOnly-only)은 파괴적 액션 절대 금지.
   document.querySelectorAll('#detailModal .d-trash-btn').forEach(b => {
-    b.style.display = readOnly ? 'inline-block' : 'none'
+    b.style.display = (readOnly && fromTrash) ? 'inline-block' : 'none'
   })
   // Other write-action buttons (not in d-view/d-edit/d-trash groups)
   if (readOnly) {
@@ -1251,7 +1263,7 @@ function _dUpdateHeaderBtns(mode) {
 
 // Read-only header indicator: shows compact pill in modal header when product is in trash.
 // (Previously this was a large body-width banner; redesigned to be header-inline per UX feedback.)
-function _renderDetailReadOnlyBanner(p, readOnly) {
+function _renderDetailReadOnlyBanner(p, readOnly, fromTrash) {
   const modal = document.getElementById('detailModal')
   if (!modal) return
   // Clean up legacy body banner from any prior version (defensive)
@@ -1260,7 +1272,12 @@ function _renderDetailReadOnlyBanner(p, readOnly) {
   // Compact header pill
   const indicator = document.getElementById('dTrashIndicator')
   if (!indicator) return
-  if (!readOnly) {
+  // 🔴 배너 표시 규칙:
+  //   - !readOnly → 숨김(일반 편집뷰)
+  //   - readOnly && fromTrash(휴지통 메뉴) → "휴지통 — 조회전용"(복원/영구삭제 동반, 변경 없음)
+  //   - readOnly && !fromTrash && p.deleted(분석 화면서 삭제된 상품) → 중립 "[삭제된 상품]" 표시만(파괴적 액션 없음)
+  //   - readOnly && !fromTrash && live 상품(매트릭스 정상 상품) → 숨김(깨끗한 뷰)
+  if (!readOnly || (!fromTrash && !p.deleted)) {
     indicator.style.display = 'none'
     indicator.title = ''
     return
@@ -1271,7 +1288,7 @@ function _renderDetailReadOnlyBanner(p, readOnly) {
   let tipParts = []
   if (at) tipParts.push('삭제일: ' + at)
   if (by) tipParts.push('삭제자: ' + by)
-  indicator.textContent = '🗑️ 휴지통 — 조회전용'
+  indicator.textContent = fromTrash ? '🗑️ 휴지통 — 조회전용' : '🗑️ 삭제된 상품'
   indicator.title = tipParts.join(' / ')
   indicator.style.display = ''
 }
@@ -1302,9 +1319,9 @@ window._dSyncLockWarn = _dSyncLockWarn
 
 function toggleDetailEdit() {
   const modal = document.getElementById('detailModal')
-  // Read-only guard (휴지통 조회 모드) — block any attempt to enter edit mode
+  // Read-only guard — block any attempt to enter edit mode (휴지통 메뉴 = 조회전용 · 분석 화면 = 조회전용)
   if (modal && modal.dataset.readonly === '1') {
-    showToast('읽기 전용 모드입니다 (휴지통 조회).', 'info')
+    showToast(modal.dataset.fromtrash === '1' ? '읽기 전용 모드입니다 (휴지통 조회).' : '읽기 전용 모드입니다 (조회 전용).', 'info')
     return
   }
   const willEdit = !modal.classList.contains('edit-mode')
