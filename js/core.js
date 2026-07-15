@@ -1830,6 +1830,7 @@ const TAB_LABELS = {
   orgchart:  '조직도',
   mypage:    '개인정보',
   store:     '🏬 매장',
+  salesmgmt: '💰 매출관리',
   hradmin:   '인사관리',
   trash:     '🗑️ 휴지통'
 }

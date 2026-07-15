@@ -264,6 +264,12 @@ function _slDocRds(lines) {
   ;(lines || []).forEach(l => { if (l && l.rd) s.add(l.rd) })
   return [...s].sort()
 }
+// 라인들의 distinct 품번 배열 → 문서 레벨 인덱스(codes). 주문 조회 by 품번(array-contains, Phase 3).
+function _slDocCodes(lines) {
+  const s = new Set()
+  ;(lines || []).forEach(l => { if (l && l.c) s.add(l.c) })
+  return [...s].sort()
+}
 
 // 주문 → L1 문서(신규)
 function _slBuildDoc(inc, uploadId, nowIso) {
@@ -271,6 +277,7 @@ function _slBuildDoc(inc, uploadId, nowIso) {
     ch: inc.ch, ono: inc.ono, od: inc.od || '', mall: inc.mall || '',
     lines: inc.lines.map(_slCleanLine),
     rds: _slDocRds(inc.lines),
+    codes: _slDocCodes(inc.lines),
     up: uploadId, ut: nowIso, ct: nowIso, notes: []
   }
   if (inc.bid) doc.bid = inc.bid
@@ -337,6 +344,7 @@ function _slMergeOrder(existing, inc, uploadId, nowIso) {
   const doc = Object.assign({}, existing)
   doc.lines = outLines
   doc.rds = _slDocRds(outLines)   // 반품일 인덱스 갱신(병합으로 rd 추가/변경 반영)
+  doc.codes = _slDocCodes(outLines)   // 품번 인덱스 갱신(라인 추가 반영)
   // 주문 스칼라 최신값 반영(present 한 것만)
   if (inc.od) doc.od = inc.od
   if (inc.mall) doc.mall = inc.mall
@@ -627,7 +635,14 @@ async function renderSalesUploadHistory(force) {
 // =============================================
 // ===== 메뉴 셸 (매출관리 탭) =====
 // =============================================
-const SL_SUBS = [{ key: 'summary', label: '일자별 요약' }, { key: 'history', label: '업로드 내역' }]
+const SL_SUBS = [
+  { key: 'summary', label: '일자별 요약' },
+  { key: 'matrix', label: '전체' },
+  { key: 'malls', label: '쇼핑몰별' },
+  { key: 'partner', label: '파트너별' },
+  { key: 'orders', label: '주문 조회' },
+  { key: 'history', label: '업로드 내역' }
+]
 
 function renderSalesMgmtTab() {
   const page = document.getElementById('salesMgmtPage'); if (!page) return
@@ -655,6 +670,20 @@ function renderSalesMgmtTab() {
         </div>
         <div id="slSummaryBody"><div class="sl-hist-loading">불러오는 중…</div></div>
       </div>
+      <div class="store-panel${_slActiveSub === 'matrix' ? '' : ' store-panel-hidden'}" id="slPanel_matrix">
+        <div class="sl-mx-toolbar"><span class="store-title-sm">전체 (품번×채널)</span><button class="btn btn-outline" onclick="downloadSalesMatrix()">📥 엑셀</button></div>
+        <div id="slMatrixBody"><div class="sl-hist-loading">불러오는 중…</div></div>
+      </div>
+      <div class="store-panel${_slActiveSub === 'malls' ? '' : ' store-panel-hidden'}" id="slPanel_malls">
+        <div class="sl-mx-toolbar"><span class="store-title-sm">쇼핑몰별 (사방넷)</span><button class="btn btn-outline" onclick="downloadSalesMalls()">📥 엑셀</button></div>
+        <div id="slMallsBody"><div class="sl-hist-loading">불러오는 중…</div></div>
+      </div>
+      <div class="store-panel${_slActiveSub === 'partner' ? '' : ' store-panel-hidden'}" id="slPanel_partner">
+        <div id="slPartnerBody"></div>
+      </div>
+      <div class="store-panel${_slActiveSub === 'orders' ? '' : ' store-panel-hidden'}" id="slPanel_orders">
+        <div id="slOrdersBody"></div>
+      </div>
       <div class="store-panel${_slActiveSub === 'history' ? '' : ' store-panel-hidden'}" id="slPanel_history">
         <div class="sl-hist-toolbar"><button class="btn btn-outline" onclick="renderSalesUploadHistory(true)">↻ 새로고침</button></div>
         <div class="sl-hist-wrap">
@@ -670,8 +699,16 @@ function renderSalesMgmtTab() {
         </div>
       </div>
     </div>`
-  if (_slActiveSub === 'summary') renderSalesSummary()
-  else renderSalesUploadHistory(false)
+  _slRenderSub(_slActiveSub)
+}
+
+function _slRenderSub(sub) {
+  if (sub === 'summary') renderSalesSummary()
+  else if (sub === 'matrix') renderSalesMatrix()
+  else if (sub === 'malls') renderSalesMalls()
+  else if (sub === 'partner') renderSalesPartner()
+  else if (sub === 'orders') renderSalesOrdersTab()
+  else if (sub === 'history') renderSalesUploadHistory(false)
 }
 
 function switchSalesMgmtSub(sub) {
@@ -683,8 +720,7 @@ function switchSalesMgmtSub(sub) {
   document.querySelectorAll('#salesMgmtPage .store-panel').forEach(p => {
     p.classList.toggle('store-panel-hidden', p.id !== 'slPanel_' + sub)
   })
-  if (sub === 'summary') renderSalesSummary()
-  else if (sub === 'history') renderSalesUploadHistory(false)
+  _slRenderSub(sub)
 }
 
 // =============================================
@@ -705,20 +741,21 @@ function _slMonthRange(m) { const y = +m.slice(0, 4), mo = +m.slice(5, 7); retur
 function _slDaysInRange(s, e) { const out = []; let t = _slParseDK(s); const te = _slParseDK(e); if (isNaN(t) || isNaN(te)) return out; let g = 0; while (t <= te && g < 1200) { out.push(_slFmtDK(t)); t += 86400000; g++ } return out }
 function _slInR(dk, s, e) { return dk && dk >= s && dk <= e }
 
-// ---- 적립금 라인 분배(largest-remainder, Σ=pu 정확) ----
-function _slLinePtsMap(o) {
-  const lines = o.lines || [], n = lines.length, pu = _slNum(o.pu || 0)
-  const out = new Array(n).fill(0)
-  if (!pu || !n) return out
+// ---- 총액을 라인 rv 가중으로 정수 분배(largest-remainder, Σ=total 정확) ----
+function _slAllocByRv(lines, total) {
+  const n = (lines || []).length, out = new Array(n).fill(0)
+  if (!total || !n) return out
   const tot = lines.reduce((s, l) => s + _slNum(l.rv || 0), 0)
   if (tot <= 0) return out
-  const raw = lines.map(l => pu * _slNum(l.rv || 0) / tot)
+  const raw = lines.map(l => total * _slNum(l.rv || 0) / tot)
   raw.forEach((x, i) => { out[i] = Math.floor(x) })
-  let rem = pu - out.reduce((a, b) => a + b, 0)
+  let rem = total - out.reduce((a, b) => a + b, 0)
   const order = raw.map((x, i) => ({ i, f: x - Math.floor(x), rv: _slNum(lines[i].rv || 0) })).sort((a, b) => b.f - a.f || b.rv - a.rv)
   for (let k = 0; k < order.length && rem > 0; k++) { out[order[k].i]++; rem-- }
   return out
 }
+// 적립금 라인 분배(주문 pu 를 rv 가중, Σ=pu 정확)
+function _slLinePtsMap(o) { return _slAllocByRv(o.lines || [], _slNum(o.pu || 0)) }
 
 // ---- 반품액 라인 분배 ----
 // gross=true(L2 채널 총액, §1.4 대사): 사방넷 배송비 포함 · 카페24 U(실제환불금액) authoritative.
@@ -773,19 +810,23 @@ function _slAggDay(orders, day) {
 }
 
 // L3 기간×품번: { grp, items:{품번:{q,amt,pts,rq,ramt[,malls]}} }
+// 🔴 amt=gross(배송비 포함=L2/요약 동일 기준 → 매트릭스 Σ = 요약 정확 대사). 사방넷=라인 배송비 직접 · 카페24=주문 배송비를 rv 가중 분배.
 function _slAggShard(orders, grp, pStart, pEnd) {
   const items = {}
   const get = code => items[code] || (items[code] = { q: 0, amt: 0, pts: 0, rq: 0, ramt: 0 })
   orders.forEach(o => {
     const og = (o.ch === SL_CH.c24) ? 'c24' : 'sb'
     if (og !== grp) return
-    const pts = _slLinePtsMap(o), ram = _slOrderRamtMap(o, false)   // L3=품번 상품 기준(배송 제외)
+    const pts = _slLinePtsMap(o), ram = _slOrderRamtMap(o, true)   // gross(배송 포함) — L2/요약 대사
     const saleIn = _slInR(o.od, pStart, pEnd)
+    const shipMap = (og === 'c24' && saleIn) ? _slAllocByRv(o.lines || [], _slNum(o.ship || 0)) : null   // 카페24 주문 배송비 rv 가중 분배
     ;(o.lines || []).forEach((l, i) => {
       const code = l.c || '(미상)'
       if (saleIn) {
-        const it = get(code); it.q += _slNum(l.q); it.amt += _slNum(l.rv); it.pts += pts[i]
-        if (grp === 'sb') { it.malls = it.malls || {}; const m = it.malls[o.mall || '(미상)'] || (it.malls[o.mall || '(미상)'] = { q: 0, amt: 0 }); m.q += _slNum(l.q); m.amt += _slNum(l.rv) }
+        const lineShip = (og === 'sb') ? _slNum(l.sh || 0) : (shipMap ? shipMap[i] : 0)   // 사방넷=라인 배송비 · 카페24=분배분
+        const amt = _slNum(l.rv) + lineShip
+        const it = get(code); it.q += _slNum(l.q); it.amt += amt; it.pts += pts[i]
+        if (grp === 'sb') { it.malls = it.malls || {}; const m = it.malls[o.mall || '(미상)'] || (it.malls[o.mall || '(미상)'] = { q: 0, amt: 0 }); m.q += _slNum(l.q); m.amt += amt }
       }
       if (_slInR(l.rd, pStart, pEnd)) { const it = get(code); it.rq += _slNum(l.q); it.ramt += ram[i] }
     })
@@ -837,14 +878,20 @@ async function _slRecomputeDaysAndShards(dayArr, onProg) {
   return { days: dayArr.length, months: months.size, weeks: weeks.size }
 }
 
-// rds 인덱스 backfill(전 컬렉션 스캔, additive·멱등). Phase 1 doc 은 rds 없음 → 재계산 도구가 1회 채움. 이후 merge 가 유지.
+// rds/codes 인덱스 backfill(전 컬렉션 스캔, additive·멱등). Phase 1/2 doc 은 필드 없을 수 있음 → 재계산 도구가 1회 채움. 이후 merge 가 유지.
+function _slArrEq(a, b) { a = a || []; b = b || []; return a.length === b.length && a.every((x, i) => x === b[i]) }
 async function _slBackfillRds(onProg) {
   const snap = await db.collection('salesOrders').get()
   const upd = []
-  snap.forEach(d => { const data = d.data(); const want = _slDocRds(data.lines); const cur = data.rds || []
-    if (want.length !== cur.length || want.some((x, i) => x !== cur[i])) upd.push({ id: d.id, rds: want }) })
+  snap.forEach(d => {
+    const data = d.data(), wantR = _slDocRds(data.lines), wantC = _slDocCodes(data.lines)
+    const patch = {}
+    if (!_slArrEq(wantR, data.rds)) patch.rds = wantR
+    if (!_slArrEq(wantC, data.codes)) patch.codes = wantC
+    if (Object.keys(patch).length) upd.push({ id: d.id, patch })
+  })
   for (let i = 0; i < upd.length; i += 450) {
-    const b = db.batch(); upd.slice(i, i + 450).forEach(u => b.update(db.collection('salesOrders').doc(u.id), { rds: u.rds })); await b.commit()
+    const b = db.batch(); upd.slice(i, i + 450).forEach(u => b.update(db.collection('salesOrders').doc(u.id), u.patch)); await b.commit()
     if (onProg) onProg(Math.min(i + 450, upd.length), upd.length)
   }
   return upd.length
@@ -971,6 +1018,254 @@ async function runSalesRecompute() {
   _slBusy = false
 }
 
+// =============================================
+// ===== Phase 3: 품번×채널 매트릭스 탭 (전체/쇼핑몰별/파트너/주문조회) =====
+// =============================================
+// 🔴 화면 READ 전용(L1/L3/storeSales 조회, 쓰기 없음 · merge 의 codes[] 유지 제외). 리스너 금지.
+//   매트릭스 Σ = 일자별 요약(같은 기간·기준) 정확 대사(_slAggShard=aggDay 와 동일 gross 기준).
+//   매장(POS) 열 = storeSales 뷰타임 조인(single-truth, L2/L3 미저장) — 매출 조회 netting 원리 재사용.
+
+let _slMxStart = '', _slMxEnd = '', _slMxUnit = 'amt', _slMxSearch = ''
+let _slMatrixRows = [], _slMallsData = null, _slOrdersFound = []
+
+// 상품명 조회(State.allProducts, 렌더마다 신선)
+function _slNameMap() {
+  const m = {}; const list = (typeof State !== 'undefined' && State.allProducts) ? State.allProducts : []
+  list.forEach(p => { if (p && p.productCode) m[String(p.productCode).toUpperCase()] = p.nameKr || '' })
+  return m
+}
+
+async function _slReadShard(coll, id) { try { const d = await db.collection(coll).doc(id).get(); return d.exists ? d.data() : null } catch (e) { return null } }
+
+// 하이브리드: 정확히 한 달/한 주면 L3 shard · 그 외(일/범위)는 L1 스캔(_slAggShard=동일 기준).
+async function _slMatrixItems(grp, pStart, pEnd) {
+  const mk = _slMonthKey(pStart)
+  if (pStart === mk + '-01' && pEnd === _slMonthRange(mk)[1]) { const d = await _slReadShard('salesM', mk + '_' + grp); if (d && d.items) return d.items }
+  if (_slWeekStart(pStart) === pStart && _slWeekRange(pStart)[1] === pEnd) { const d = await _slReadShard('salesW', pStart + '_' + grp); if (d && d.items) return d.items }
+  const orders = await _slFetchPeriodOrders(pStart, pEnd)
+  return _slAggShard(orders, grp, pStart, pEnd).items
+}
+
+// 🔴 매장(POS) per-품번 순액 = storeSales 판매 − 취소(void). 매출 조회 netting 재사용:
+//   판매=dateKey range(전 매장) · 취소=_shFetchVoidsByOrig(originalSaleId, 날짜무관) → 라인 lineTotal 로 per-품번 상쇄.
+//   Σ = _shComputeAgg 의 remainingTotal(soldTotal−voidedTotal) 과 동치(라인 lineTotal 합=totals.total).
+async function _slStorePos(pStart, pEnd) {
+  const items = {}
+  if (typeof db === 'undefined' || !db) return items
+  let snap
+  try { snap = await db.collection('storeSales').where('dateKey', '>=', pStart).where('dateKey', '<=', pEnd).get() }
+  catch (e) { console.warn('storeSales 조회 실패(매장 열 생략):', e && e.message); return { _err: true } }
+  const saleIds = []
+  const add = (code, q, amt) => { const c = String(code || '(미상)').toUpperCase(); const it = items[c] || (items[c] = { q: 0, amt: 0 }); it.q += q; it.amt += amt }   // 대문자 정규화 = c24/sb codes(대문자)와 동일 키 → 매트릭스 행 분리 방지
+  snap.forEach(d => {
+    const o = d.data(); if (!o || o.type !== 'sale') return
+    saleIds.push(d.id)
+    ;(o.lines || []).forEach(l => add(l.productCode, _slNum(l.qty), _slNum(l.lineTotal)))
+  })
+  let voids = []
+  try { voids = (typeof _shFetchVoidsByOrig === 'function') ? await _shFetchVoidsByOrig(saleIds) : [] } catch (e) { voids = [] }
+  voids.forEach(v => (v.lines || []).forEach(l => add(l.productCode, -_slNum(l.qty), -_slNum(l.lineTotal))))
+  return items
+}
+
+// ---- 기간 컨트롤(매트릭스 탭 공용 상태) ----
+async function _slMxEnsurePeriod() {
+  if (_slMxStart && _slMxEnd) return
+  const latest = await _slLatestDataDate()
+  _slMxStart = _slMxEnd = latest || (typeof kstDateKey === 'function' ? kstDateKey() : new Date().toISOString().slice(0, 10))
+}
+function _slMxControlsHtml(idp, renderFn) {
+  return `<div class="sl-mx-controls">
+    <label class="inbhist-ctl">시작 <input type="date" id="${idp}Start" class="inbhist-date" value="${esc(_slMxStart)}" onchange="_slMxSetDates('${idp}','${renderFn}')"></label>
+    <label class="inbhist-ctl">끝 <input type="date" id="${idp}End" class="inbhist-date" value="${esc(_slMxEnd)}" onchange="_slMxSetDates('${idp}','${renderFn}')"></label>
+    <button class="btn btn-outline btn-sm" onclick="_slMxPreset('day','${renderFn}')">최신일</button>
+    <button class="btn btn-outline btn-sm" onclick="_slMxPreset('week','${renderFn}')">주</button>
+    <button class="btn btn-outline btn-sm" onclick="_slMxPreset('month','${renderFn}')">월</button>
+    <span class="sl-mx-range">${esc(_slMxStart)} ~ ${esc(_slMxEnd)}</span>
+    <label class="inbhist-ctl">품번 <input type="text" id="${idp}Search" class="inbhist-store" value="${esc(_slMxSearch)}" placeholder="부분일치" oninput="_slMxSearchInput(this,'${renderFn}')"></label>
+    <button class="btn btn-outline btn-sm" onclick="_slMxToggleUnit('${renderFn}')">${_slMxUnit === 'amt' ? '금액▾' : '수량▾'}</button>
+    <button class="btn btn-outline" onclick="${renderFn}()">↻</button>
+  </div>`
+}
+function _slMxSetDates(idp, renderFn) {
+  const s = (document.getElementById(idp + 'Start') || {}).value, e = (document.getElementById(idp + 'End') || {}).value
+  if (s) _slMxStart = s; if (e) _slMxEnd = e
+  if (_slMxStart > _slMxEnd) { const t = _slMxStart; _slMxStart = _slMxEnd; _slMxEnd = t }
+  if (typeof window[renderFn] === 'function') window[renderFn]()
+}
+async function _slMxPreset(kind, renderFn) {
+  const latest = await _slLatestDataDate() || _slMxEnd || (typeof kstDateKey === 'function' ? kstDateKey() : '')
+  if (kind === 'day') { _slMxStart = _slMxEnd = latest }
+  else if (kind === 'week') { _slMxStart = _slWeekStart(latest); _slMxEnd = _slWeekRange(_slMxStart)[1] }
+  else if (kind === 'month') { const r = _slMonthRange(_slMonthKey(latest)); _slMxStart = r[0]; _slMxEnd = r[1] }
+  if (typeof window[renderFn] === 'function') window[renderFn]()
+}
+let _slMxSearchTimer = null
+function _slMxSearchInput(el, renderFn) { _slMxSearch = el.value || ''; clearTimeout(_slMxSearchTimer); _slMxSearchTimer = setTimeout(() => { if (typeof window[renderFn] === 'function') window[renderFn]() }, 250) }
+function _slMxToggleUnit(renderFn) { _slMxUnit = _slMxUnit === 'amt' ? 'qty' : 'amt'; if (typeof window[renderFn] === 'function') window[renderFn]() }
+
+// ---- 전체 탭 (품번 × 합계/카페24/사방넷/매장) ----
+async function renderSalesMatrix() {
+  const panel = document.getElementById('slMatrixBody'); if (!panel) return
+  await _slMxEnsurePeriod()
+  panel.innerHTML = _slMxControlsHtml('mxA', 'renderSalesMatrix') + '<div class="sl-hist-loading">불러오는 중…</div>'
+  const s = _slMxStart, e = _slMxEnd, unit = _slMxUnit
+  let c24, sb, pos
+  try { c24 = await _slMatrixItems('c24', s, e); sb = await _slMatrixItems('sb', s, e); pos = await _slStorePos(s, e) }
+  catch (err) { panel.innerHTML = _slMxControlsHtml('mxA', 'renderSalesMatrix') + `<div class="sl-hist-empty">조회 실패: ${esc(err.message)}</div>`; return }
+  const posErr = pos && pos._err; if (posErr) delete pos._err
+  const nameMap = _slNameMap()
+  const codes = new Set([...Object.keys(c24), ...Object.keys(sb), ...Object.keys(pos)])
+  const net = (it) => unit === 'qty' ? ((it.q || 0) - (it.rq || 0)) : ((it.amt || 0) - (it.ramt || 0))
+  let rows = [...codes].map(code => {
+    const cV = net(c24[code] || {}), sV = net(sb[code] || {}), pV = unit === 'qty' ? ((pos[code] || {}).q || 0) : ((pos[code] || {}).amt || 0)
+    return { code, name: nameMap[code.toUpperCase()] || '', c: cV, s: sV, p: pV, tot: cV + sV + pV }
+  })
+  const q = (_slMxSearch || '').trim().toUpperCase()
+  if (q) rows = rows.filter(r => r.code.toUpperCase().includes(q) || (r.name || '').toUpperCase().includes(q))
+  rows.sort((a, b) => b.tot - a.tot || a.code.localeCompare(b.code))
+  _slMatrixRows = rows
+  const fmt = v => (v || 0).toLocaleString()
+  const t = rows.reduce((a, r) => { a.c += r.c; a.s += r.s; a.p += r.p; a.tot += r.tot; return a }, { c: 0, s: 0, p: 0, tot: 0 })
+  const unitLbl = unit === 'amt' ? '금액(순액=매출+배송−반품)' : '수량(순=판매−반품)'
+  panel.innerHTML = _slMxControlsHtml('mxA', 'renderSalesMatrix') + `
+    <div class="sl-sum-basis">${esc(s)} ~ ${esc(e)} · ${unitLbl} · 배송비 포함·반품 차감(일자별 요약과 동일 기준) · 카페24=공홈+파트너 통합(공홈/파트너 분리=파트너 마스터 후 Phase4)${posErr ? ' · ⚠️ 매장 열 조회 권한/오류로 생략' : ''}</div>
+    <div class="sl-hist-wrap">
+      <table class="data-table inbhist-table sl-mx-table">
+        <thead><tr><th>품번</th><th>상품명</th><th class="sl-c">합계</th><th class="sl-c">카페24</th><th class="sl-c">사방넷</th><th class="sl-c">매장</th></tr></thead>
+        <tbody>${rows.length ? rows.map(r => `<tr>
+          <td><a class="sl-code-link" onclick="_slOpenProduct('${esc(r.code)}')">${esc(r.code)}</a></td>
+          <td class="sl-mx-name">${esc(r.name)}</td>
+          <td class="sl-c sl-net"><b>${fmt(r.tot)}</b></td><td class="sl-c">${fmt(r.c)}</td><td class="sl-c">${fmt(r.s)}</td><td class="sl-c">${fmt(r.p)}</td>
+        </tr>`).join('') : `<tr><td colspan="6" class="sl-hist-empty">데이터 없음 — 집계 재계산이 필요할 수 있습니다.</td></tr>`}</tbody>
+        <tfoot><tr class="sl-sum-foot"><td colspan="2">합계 (${rows.length}품번)</td><td class="sl-c sl-net"><b>${fmt(t.tot)}</b></td><td class="sl-c">${fmt(t.c)}</td><td class="sl-c">${fmt(t.s)}</td><td class="sl-c">${fmt(t.p)}</td></tr></tfoot>
+      </table>
+    </div>`
+}
+
+// ---- 쇼핑몰별 탭 (품번 × 사방넷 몰) ----
+async function renderSalesMalls() {
+  const panel = document.getElementById('slMallsBody'); if (!panel) return
+  await _slMxEnsurePeriod()
+  panel.innerHTML = _slMxControlsHtml('mxM', 'renderSalesMalls') + '<div class="sl-hist-loading">불러오는 중…</div>'
+  const s = _slMxStart, e = _slMxEnd, unit = _slMxUnit
+  let sb
+  try { sb = await _slMatrixItems('sb', s, e) } catch (err) { panel.innerHTML = _slMxControlsHtml('mxM', 'renderSalesMalls') + `<div class="sl-hist-empty">조회 실패: ${esc(err.message)}</div>`; return }
+  const nameMap = _slNameMap()
+  const mallSet = new Set()
+  Object.keys(sb).forEach(code => { const m = sb[code].malls || {}; Object.keys(m).forEach(x => mallSet.add(x)) })
+  const malls = [...mallSet].sort()
+  const val = mm => unit === 'qty' ? (mm.q || 0) : (mm.amt || 0)
+  let rows = Object.keys(sb).map(code => {
+    const it = sb[code], mm = it.malls || {}
+    const cells = malls.map(x => val(mm[x] || {}))
+    const tot = unit === 'qty' ? ((it.q || 0) - (it.rq || 0)) : ((it.amt || 0) - (it.ramt || 0))
+    return { code, name: nameMap[code.toUpperCase()] || '', cells, tot }
+  })
+  const q = (_slMxSearch || '').trim().toUpperCase()
+  if (q) rows = rows.filter(r => r.code.toUpperCase().includes(q) || (r.name || '').toUpperCase().includes(q))
+  rows.sort((a, b) => b.tot - a.tot || a.code.localeCompare(b.code))
+  _slMallsData = { malls, rows, unit }
+  const fmt = v => (v || 0).toLocaleString()
+  const colTot = malls.map((_, ci) => rows.reduce((a, r) => a + (r.cells[ci] || 0), 0))
+  panel.innerHTML = _slMxControlsHtml('mxM', 'renderSalesMalls') + `
+    <div class="sl-sum-basis">${esc(s)} ~ ${esc(e)} · ${unit === 'amt' ? '금액(배송 포함·반품 차감)' : '수량(순)'} · 사방넷 쇼핑몰별(원본 몰명) · 합계=사방넷 순액</div>
+    <div class="sl-hist-wrap">
+      <table class="data-table inbhist-table sl-mx-table">
+        <thead><tr><th>품번</th><th>상품명</th><th class="sl-c">사방넷 합계</th>${malls.map(m => `<th class="sl-c">${esc(m)}</th>`).join('')}</tr></thead>
+        <tbody>${rows.length ? rows.map(r => `<tr>
+          <td><a class="sl-code-link" onclick="_slOpenProduct('${esc(r.code)}')">${esc(r.code)}</a></td><td class="sl-mx-name">${esc(r.name)}</td>
+          <td class="sl-c sl-net"><b>${fmt(r.tot)}</b></td>${r.cells.map(v => `<td class="sl-c">${v ? fmt(v) : '-'}</td>`).join('')}
+        </tr>`).join('') : `<tr><td colspan="${3 + malls.length}" class="sl-hist-empty">사방넷 데이터 없음</td></tr>`}</tbody>
+        <tfoot><tr class="sl-sum-foot"><td colspan="2">합계</td><td class="sl-c sl-net"><b>${fmt(rows.reduce((a, r) => a + r.tot, 0))}</b></td>${colTot.map(v => `<td class="sl-c">${fmt(v)}</td>`).join('')}</tr></tfoot>
+      </table>
+    </div>`
+}
+
+// ---- 파트너별 탭 (Phase 3 = shell) ----
+function renderSalesPartner() {
+  const panel = document.getElementById('slPartnerBody'); if (!panel) return
+  panel.innerHTML = `<div class="sl-hist-empty" style="padding:40px">🚧 파트너 마스터(고객ID↔업체명) 등록 후 사용 가능합니다 — 다음 단계(Phase 4).<br><br>카페24 원본에 주문자ID가 있어, 업체 목록만 등록하면 업체별 매입 리포트가 열립니다.</div>`
+}
+
+// ---- 주문 조회 탭 (주문번호 exact / 품번 부분 → L1 주문 목록 + 라인 상세) ----
+async function renderSalesOrdersTab() {
+  const panel = document.getElementById('slOrdersBody'); if (!panel) return
+  panel.innerHTML = `
+    <div class="sl-mx-controls">
+      <label class="inbhist-ctl">검색 <input type="text" id="soQuery" class="inbhist-store" placeholder="주문번호(정확) 또는 품번" onkeydown="if(event.key==='Enter')searchSalesOrders()"></label>
+      <button class="btn btn-new" onclick="searchSalesOrders()">🔍 검색</button>
+      <span class="sl-warn-info">주문번호=양 채널 정확일치 · 품번=포함 주문(codes 인덱스)</span>
+    </div>
+    <div id="slOrdersResult"><div class="sl-hist-empty">주문번호 또는 품번을 입력하고 검색하세요.</div></div>`
+}
+async function searchSalesOrders() {
+  const q = _slStr((document.getElementById('soQuery') || {}).value); const res = document.getElementById('slOrdersResult'); if (!res) return
+  if (!q) { res.innerHTML = '<div class="sl-hist-empty">검색어를 입력하세요.</div>'; return }
+  res.innerHTML = '<div class="sl-hist-loading">검색 중…</div>'
+  const found = {}
+  try {
+    const s1 = await db.collection('salesOrders').where('ono', '==', q).get()   // 주문번호 정확(양 채널, ono 단일필드)
+    s1.forEach(d => { found[d.id] = d.data() })
+    if (Object.keys(found).length < 200) {
+      const s2 = await db.collection('salesOrders').where('codes', 'array-contains', q.toUpperCase()).limit(200).get()   // 품번 포함
+      s2.forEach(d => { if (!found[d.id]) found[d.id] = d.data() })
+    }
+  } catch (err) { res.innerHTML = `<div class="sl-hist-empty">검색 실패: ${esc(err.message)} (품번 검색은 [집계 재계산]으로 codes 인덱스 생성 후 가능)</div>`; return }
+  const list = Object.entries(found).map(([id, o]) => Object.assign({ _id: id }, o)).sort((a, b) => String(b.od || '').localeCompare(String(a.od || '')))
+  _slOrdersFound = list
+  if (!list.length) { res.innerHTML = '<div class="sl-hist-empty">일치하는 주문이 없습니다. (품번 검색이 안 되면 [일자별 요약]→[집계 재계산] 1회 필요)</div>'; return }
+  const chLbl = c => c === SL_CH.c24 ? '카페24' : '사방넷'
+  const fmt = v => (v || 0).toLocaleString()
+  res.innerHTML = `<div class="sl-hist-wrap"><table class="data-table inbhist-table sl-mx-table">
+    <thead><tr><th style="width:20px"></th><th>주문번호</th><th>주문일</th><th>채널</th><th>쇼핑몰</th><th class="sl-c">라인</th><th class="sl-c">매출</th><th>반품</th></tr></thead>
+    <tbody>${list.map((o, i) => {
+      // 매출 표시 = Σ(rv + 라인배송) [+ 카페24 주문배송 1회]. 사방넷은 배송비가 라인(l.sh)·주문(o.ship) 양쪽 적재라 o.ship 재가산 금지(이중계상) — 라인 상세 합과 일치.
+      const gross = (o.lines || []).reduce((s, l) => s + _slNum(l.rv) + _slNum(l.sh || 0), 0) + (o.ch === SL_CH.c24 ? _slNum(o.ship || 0) : 0)
+      const hasRet = (o.rds || []).length > 0 || (o.lines || []).some(l => l.rd)
+      return `<tr class="sl-ord-row" onclick="_slToggleOrder(${i})"><td>▸</td>
+        <td>${esc(o.ono || '')}</td><td>${esc(o.od || '')}</td><td>${chLbl(o.ch)}</td><td>${esc(o.mall || '')}</td>
+        <td class="sl-c">${(o.lines || []).length}</td><td class="sl-c">${fmt(gross)}</td><td>${hasRet ? '<span class="sl-hist-warn">반품</span>' : '-'}</td></tr>
+        <tr class="sl-ord-detail inb-hidden" id="slOrdDet${i}"><td colspan="8">${_slOrderDetailHtml(o)}</td></tr>`
+    }).join('')}</tbody></table></div>`
+}
+function _slOrderDetailHtml(o) {
+  const fmt = v => (v || 0).toLocaleString()
+  const lines = (o.lines || []).map(l => `<tr>
+    <td><a class="sl-code-link" onclick="_slOpenProduct('${esc(l.c)}')">${esc(l.c)}</a></td><td>${esc(l.o || '')}</td><td class="sl-c">${l.q}</td>
+    <td class="sl-c">${fmt(_slNum(l.rv) + _slNum(l.sh || 0))}</td><td>${l.rd ? esc(l.rd) : '-'}</td></tr>`).join('')
+  const notes = (o.notes || []).map(n => `${esc((n.t || '').slice(0, 16))} ${esc(n.s || '')}`).join(' · ')
+  const meta = []
+  if (o.cash !== undefined) meta.push(`현금 ${fmt(o.cash)}`); if (o.pu) meta.push(`적립금 ${fmt(o.pu)}`); if (o.grade) meta.push(esc(o.grade)); if (o.bid) meta.push('ID:' + esc(o.bid))
+  return `<div class="sl-ord-det-box">
+    <table class="data-table sl-ord-lines"><thead><tr><th>품번</th><th>옵션</th><th class="sl-c">수량</th><th class="sl-c">매출액</th><th>반품일</th></tr></thead><tbody>${lines}</tbody></table>
+    ${meta.length ? `<div class="sl-ord-meta">${meta.join(' · ')}</div>` : ''}
+    ${notes ? `<div class="sl-ord-notes">변경: ${notes}</div>` : ''}
+  </div>`
+}
+function _slToggleOrder(i) { const el = document.getElementById('slOrdDet' + i); if (el) el.classList.toggle('inb-hidden') }
+function _slOpenProduct(code) { if (typeof openDetailModal === 'function') openDetailModal(code, { readOnly: true }); else showToast('상품 상세를 열 수 없습니다.', 'warning') }
+
+// ---- 엑셀(현재 탭·현재 기간 미러) ----
+function downloadSalesMatrix() {
+  if (!_slMatrixRows.length) { showToast('데이터 없음', 'warning'); return }
+  const aoa = [['품번', '상품명', '합계', '카페24', '사방넷', '매장']]
+  _slMatrixRows.forEach(r => aoa.push([r.code, r.name, r.tot, r.c, r.s, r.p]))
+  _slExcel(aoa, `매출_전체_${_slMxStart}~${_slMxEnd}`)
+}
+function downloadSalesMalls() {
+  if (!_slMallsData) { showToast('데이터 없음', 'warning'); return }
+  const { malls, rows } = _slMallsData
+  const aoa = [['품번', '상품명', '사방넷합계', ...malls]]
+  rows.forEach(r => aoa.push([r.code, r.name, r.tot, ...r.cells]))
+  _slExcel(aoa, `매출_쇼핑몰별_${_slMxStart}~${_slMxEnd}`)
+}
+function _slExcel(aoa, fname) {
+  if (typeof XLSX === 'undefined') { showToast('엑셀 모듈 로드 실패', 'error'); return }
+  const ws = XLSX.utils.aoa_to_sheet(aoa); const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '매출'); XLSX.writeFile(wb, fname + '.xlsx')
+}
+
 // ---- window 노출 ----
 window.renderSalesMgmtTab = renderSalesMgmtTab
 window.switchSalesMgmtSub = switchSalesMgmtSub
@@ -989,9 +1284,27 @@ window.recomputeSalesRange = recomputeSalesRange
 window._slAggDay = _slAggDay
 window._slAggShard = _slAggShard
 window._slLinePtsMap = _slLinePtsMap
+window._slAllocByRv = _slAllocByRv
 window._slOrderRamtMap = _slOrderRamtMap
 window._slWeekStart = _slWeekStart
 window._slDocRds = _slDocRds
+window._slDocCodes = _slDocCodes
+// Phase 3: 매트릭스/쇼핑몰별/파트너/주문조회
+window.renderSalesMatrix = renderSalesMatrix
+window.renderSalesMalls = renderSalesMalls
+window.renderSalesPartner = renderSalesPartner
+window.renderSalesOrdersTab = renderSalesOrdersTab
+window.searchSalesOrders = searchSalesOrders
+window.downloadSalesMatrix = downloadSalesMatrix
+window.downloadSalesMalls = downloadSalesMalls
+window._slMxSetDates = _slMxSetDates
+window._slMxPreset = _slMxPreset
+window._slMxSearchInput = _slMxSearchInput
+window._slMxToggleUnit = _slMxToggleUnit
+window._slToggleOrder = _slToggleOrder
+window._slOpenProduct = _slOpenProduct
+window._slStorePos = _slStorePos
+window._slMatrixItems = _slMatrixItems
 // 병합/파싱 순수 로직(테스트/재사용 노출)
 window._slMergeOrder = _slMergeOrder
 window._slParseCafe24 = _slParseCafe24
