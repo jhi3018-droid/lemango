@@ -178,6 +178,12 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // salesD/salesW/salesM — 매출 집계(L2 일별 · L3 주/월×채널그룹, Phase 2). L1 에서 재도출되는 파생 데이터.
+    //   read : 승인자 전원 (매출 조회 전 직원 방침) · write: 관리자(재계산 도구가 재도출·overwrite)
+    match /salesD/{docId} { allow read: if isApproved(); allow write: if isAdmin(); }
+    match /salesW/{docId} { allow read: if isApproved(); allow write: if isAdmin(); }
+    match /salesM/{docId} { allow read: if isApproved(); allow write: if isAdmin(); }
+
     // notifications
     match /notifications/{docId} {
       allow read, write: if isApproved();

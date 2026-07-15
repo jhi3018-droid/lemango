@@ -17,7 +17,7 @@ const SL_NOTE_MAX = 5   // 주문당 변경노트 보관 상한
 let _slParsed = null      // { type, orders:[...], warn:{...}, fileName }
 let _slBusy = false       // 확정 중복 가드
 let _slUploads = []        // 업로드 내역 캐시(조회 시 1회 read)
-let _slActiveSub = 'history'
+let _slActiveSub = 'summary'
 
 // =============================================
 // ===== 공통 헬퍼 =====
@@ -258,11 +258,19 @@ function _slCleanLine(l) {
   return o
 }
 
+// 라인들의 반품일(rd) distinct 정렬 배열 → 문서 레벨 인덱스 필드(rds). 집계 재계산이 array-contains 로 반품 주문 조회(Phase 2).
+function _slDocRds(lines) {
+  const s = new Set()
+  ;(lines || []).forEach(l => { if (l && l.rd) s.add(l.rd) })
+  return [...s].sort()
+}
+
 // 주문 → L1 문서(신규)
 function _slBuildDoc(inc, uploadId, nowIso) {
   const doc = {
     ch: inc.ch, ono: inc.ono, od: inc.od || '', mall: inc.mall || '',
     lines: inc.lines.map(_slCleanLine),
+    rds: _slDocRds(inc.lines),
     up: uploadId, ut: nowIso, ct: nowIso, notes: []
   }
   if (inc.bid) doc.bid = inc.bid
@@ -328,6 +336,7 @@ function _slMergeOrder(existing, inc, uploadId, nowIso) {
 
   const doc = Object.assign({}, existing)
   doc.lines = outLines
+  doc.rds = _slDocRds(outLines)   // 반품일 인덱스 갱신(병합으로 rd 추가/변경 반영)
   // 주문 스칼라 최신값 반영(present 한 것만)
   if (inc.od) doc.od = inc.od
   if (inc.mall) doc.mall = inc.mall
@@ -496,15 +505,22 @@ async function confirmSalesLedgerUpload() {
       snap.forEach(d => { existing[d.id] = d.data() })
     }
 
-    // 2) 병합 계산
+    // 2) 병합 계산 + 영향 일자 수집(증분 재계산용: 변경 주문의 주문일 + 반품일)
     const toWrite = []
+    const affectedDays = new Set()
     let cNew = 0, cMerge = 0, cSame = 0, cReturns = 0
     p.orders.forEach(o => {
-      const res = _slMergeOrder(existing[o.key] || null, o, uploadId, nowIso)
+      const ex = existing[o.key] || null
+      const res = _slMergeOrder(ex, o, uploadId, nowIso)
       cReturns += res.returns
-      if (res.action === 'new') { cNew++; toWrite.push({ id: o.key, doc: res.doc }) }
-      else if (res.action === 'merge') { cMerge++; toWrite.push({ id: o.key, doc: res.doc }) }
-      else cSame++
+      if (res.action === 'new' || res.action === 'merge') {
+        toWrite.push({ id: o.key, doc: res.doc })
+        if (res.action === 'new') cNew++; else cMerge++
+        if (res.doc.od) affectedDays.add(res.doc.od)
+        ;(res.doc.lines || []).forEach(l => { if (l.rd) affectedDays.add(l.rd) })
+        // 🔴 옛 날짜(병합 전)도 수집 — od/rd 이동 시 옛 salesD/shard stale 방지(F2)
+        if (ex) { if (ex.od) affectedDays.add(ex.od); (ex.rds || []).forEach(d => affectedDays.add(d)) }
+      } else cSame++
     })
 
     // 3) write (op-count 청킹 ≤450). 무변경(cSame) = write 없음.
@@ -529,8 +545,17 @@ async function confirmSalesLedgerUpload() {
     await db.collection('salesUploads').doc(uploadId).set(uploadRec)
 
     if (typeof logActivity === 'function') logActivity('upload', '매출원장', `${p.type} — ${p.fileName} : 신규 ${cNew} · 병합 ${cMerge} · 무변경 ${cSame} · 반품 ${cReturns}`)
-    _slRenderResult({ cNew, cMerge, cSame, cReturns, writes: toWrite.length })
     _slUploads = []   // 캐시 무효화 → 다음 조회 시 재로드
+
+    // 5) 증분 재계산 — 영향받은 일자의 salesD + 걸치는 월/주 shard 만 재도출(touched-only). 무변경(0 write)=0 재계산.
+    //    🔴 L1 은 이미 커밋됨(진실). 재계산 실패해도 L1 안전 → [집계 재계산]으로 복구 가능(예외 흡수).
+    let recalcNote = ''
+    if (toWrite.length && affectedDays.size) {
+      const btn2 = document.getElementById('slConfirmBtn'); if (btn2) btn2.textContent = '집계 갱신 중…'
+      try { const rr = await _slRecomputeDaysAndShards([...affectedDays].sort()); recalcNote = `집계 갱신: ${rr.days}일` }
+      catch (re) { console.error('증분 재계산 실패:', re && re.message); recalcNote = '⚠️ 집계 갱신 실패 — [집계 재계산] 필요' }
+    }
+    _slRenderResult({ cNew, cMerge, cSame, cReturns, writes: toWrite.length, recalcNote })
   } catch (e) {
     console.error('confirmSalesLedgerUpload 실패:', e && e.message)
     showToast('원장 반영 실패 — 다시 시도해주세요. (병합은 재업로드로 안전 재개됩니다)', 'error')
@@ -552,8 +577,11 @@ function _slRenderResult(r) {
         <div class="sl-rc"><span>변경없음</span><b>${r.cSame}</b></div>
         <div class="sl-rc sl-rc-ret"><span>반품 감지</span><b>${r.cReturns}</b></div>
       </div>
-      <div class="sl-result-note">쓰기 ${r.writes}건 (변경없음은 쓰지 않음).</div>
-      <div class="sl-pv-actions"><button class="btn btn-new" onclick="closeSalesUploadModal();switchSalesMgmtSub('history')">확인</button></div>
+      <div class="sl-result-note">쓰기 ${r.writes}건 (변경없음은 쓰지 않음).${r.recalcNote ? ' · ' + esc(r.recalcNote) : ''}</div>
+      <div class="sl-pv-actions">
+        <button class="btn btn-outline" onclick="closeSalesUploadModal();switchSalesMgmtSub('summary')">일자별 요약 보기</button>
+        <button class="btn btn-new" onclick="closeSalesUploadModal();switchSalesMgmtSub('history')">확인</button>
+      </div>
     </div>`
 }
 
@@ -599,7 +627,7 @@ async function renderSalesUploadHistory(force) {
 // =============================================
 // ===== 메뉴 셸 (매출관리 탭) =====
 // =============================================
-const SL_SUBS = [{ key: 'history', label: '업로드 내역' }]
+const SL_SUBS = [{ key: 'summary', label: '일자별 요약' }, { key: 'history', label: '업로드 내역' }]
 
 function renderSalesMgmtTab() {
   const page = document.getElementById('salesMgmtPage'); if (!page) return
@@ -615,9 +643,19 @@ function renderSalesMgmtTab() {
       </div>
     </div>
     <div class="store-subtabs">${subBar}</div>
-    <div class="sl-note-phase">원본 주문내역(카페24/사방넷)을 주문 원장에 적재합니다. 매출 집계·리포트 화면은 다음 단계에서 추가됩니다.</div>
+    <div class="sl-note-phase">원본 주문내역(카페24/사방넷)을 주문 원장에 적재 → 일자별 매출 집계. 품번×채널 매트릭스는 다음 단계에서 추가됩니다.</div>
     <div class="store-panels">
-      <div class="store-panel" id="slPanel_history">
+      <div class="store-panel${_slActiveSub === 'summary' ? '' : ' store-panel-hidden'}" id="slPanel_summary">
+        <div class="sl-sum-controls">
+          <label class="inbhist-ctl">시작일 <input type="date" id="slSumStart" class="inbhist-date" onchange="renderSalesSummary()"></label>
+          <label class="inbhist-ctl">마지막일 <input type="date" id="slSumEnd" class="inbhist-date" onchange="renderSalesSummary()"></label>
+          <button class="btn btn-outline" onclick="renderSalesSummary()">↻ 조회</button>
+          ${canUpload ? `<button class="btn btn-new" id="slRecalcBtn" onclick="runSalesRecompute()">🔄 집계 재계산</button>` : ''}
+          <button class="btn btn-outline" onclick="downloadSalesSummary()">📥 엑셀</button>
+        </div>
+        <div id="slSummaryBody"><div class="sl-hist-loading">불러오는 중…</div></div>
+      </div>
+      <div class="store-panel${_slActiveSub === 'history' ? '' : ' store-panel-hidden'}" id="slPanel_history">
         <div class="sl-hist-toolbar"><button class="btn btn-outline" onclick="renderSalesUploadHistory(true)">↻ 새로고침</button></div>
         <div class="sl-hist-wrap">
           <table class="data-table inbhist-table sl-hist-table">
@@ -632,7 +670,8 @@ function renderSalesMgmtTab() {
         </div>
       </div>
     </div>`
-  renderSalesUploadHistory(false)
+  if (_slActiveSub === 'summary') renderSalesSummary()
+  else renderSalesUploadHistory(false)
 }
 
 function switchSalesMgmtSub(sub) {
@@ -641,7 +680,295 @@ function switchSalesMgmtSub(sub) {
     const on = btn.getAttribute('onclick') && btn.getAttribute('onclick').indexOf("'" + sub + "'") >= 0
     btn.classList.toggle('store-subtab-active', !!on)
   })
-  if (sub === 'history') renderSalesUploadHistory(false)
+  document.querySelectorAll('#salesMgmtPage .store-panel').forEach(p => {
+    p.classList.toggle('store-panel-hidden', p.id !== 'slPanel_' + sub)
+  })
+  if (sub === 'summary') renderSalesSummary()
+  else if (sub === 'history') renderSalesUploadHistory(false)
+}
+
+// =============================================
+// ===== Phase 2: 집계층(L2/L3) + 증분 재계산 + 일자별 요약 =====
+// =============================================
+// 🔴 파생 데이터 원칙: L2(salesD)/L3(salesM/salesW) 는 항상 L1(salesOrders)에서 재도출 가능(재계산 도구가 증명).
+//   판매=주문일(od) 귀속 · 반품=반품일(라인 rd) 귀속. 적립금(pts)=주문 pu 를 라인 rv 가중 분배(Σ=pu).
+//   재계산=touched shard 전체 재도출(증분-가산 금지 → 멱등). L1 은 재계산이 절대 변경 안 함(rds 인덱스 backfill 은 additive 예외).
+//   🔴 리스너 금지 · op-count 청킹 · 복합인덱스 불요(od range=단일필드, rds array-contains=단일필드, grp=클라 필터).
+
+// ---- 날짜 유틸(달력 날짜 산술 — UTC getUTC* 사용, Intl/로컬 금지) ----
+function _slMonthKey(dk) { return String(dk || '').slice(0, 7) }                 // 'YYYY-MM'
+function _slParseDK(dk) { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dk || ''); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : NaN }
+function _slFmtDK(t) { const d = new Date(t); return d.getUTCFullYear() + '-' + _slPad(d.getUTCMonth() + 1) + '-' + _slPad(d.getUTCDate()) }
+function _slWeekStart(dk) { const t = _slParseDK(dk); if (isNaN(t)) return dk; const off = (new Date(t).getUTCDay() + 6) % 7; return _slFmtDK(t - off * 86400000) }   // 월요일 dateKey
+function _slWeekRange(ws) { const t = _slParseDK(ws); return [ws, _slFmtDK(t + 6 * 86400000)] }
+function _slMonthRange(m) { const y = +m.slice(0, 4), mo = +m.slice(5, 7); return [m + '-01', m + '-' + _slPad(new Date(Date.UTC(y, mo, 0)).getUTCDate())] }
+function _slDaysInRange(s, e) { const out = []; let t = _slParseDK(s); const te = _slParseDK(e); if (isNaN(t) || isNaN(te)) return out; let g = 0; while (t <= te && g < 1200) { out.push(_slFmtDK(t)); t += 86400000; g++ } return out }
+function _slInR(dk, s, e) { return dk && dk >= s && dk <= e }
+
+// ---- 적립금 라인 분배(largest-remainder, Σ=pu 정확) ----
+function _slLinePtsMap(o) {
+  const lines = o.lines || [], n = lines.length, pu = _slNum(o.pu || 0)
+  const out = new Array(n).fill(0)
+  if (!pu || !n) return out
+  const tot = lines.reduce((s, l) => s + _slNum(l.rv || 0), 0)
+  if (tot <= 0) return out
+  const raw = lines.map(l => pu * _slNum(l.rv || 0) / tot)
+  raw.forEach((x, i) => { out[i] = Math.floor(x) })
+  let rem = pu - out.reduce((a, b) => a + b, 0)
+  const order = raw.map((x, i) => ({ i, f: x - Math.floor(x), rv: _slNum(lines[i].rv || 0) })).sort((a, b) => b.f - a.f || b.rv - a.rv)
+  for (let k = 0; k < order.length && rem > 0; k++) { out[order[k].i]++; rem-- }
+  return out
+}
+
+// ---- 반품액 라인 분배 ----
+// gross=true(L2 채널 총액, §1.4 대사): 사방넷 배송비 포함 · 카페24 U(실제환불금액) authoritative.
+// gross=false(L3 품번 상품): 사방넷 배송 제외.
+function _slOrderRamtMap(o, gross) {
+  const lines = o.lines || [], out = new Array(lines.length).fill(0)
+  const ret = []; lines.forEach((l, i) => { if (l.rd) ret.push(i) })
+  if (!ret.length) return out
+  if (o.ch === SL_CH.sb) { ret.forEach(i => { out[i] = _slNum(lines[i].rv || 0) + (gross ? _slNum(lines[i].sh || 0) : 0) }); return out }   // 사방넷: 판매(+배송) 역전
+  // 🔴 카페24: §1.4 U(ref, 실제환불금액)=authoritative → ref 를 rv 가중 분배(rf 혼용 금지 = 과대계상 방지, Σ=U). ref 없을 때만 rf/rv 폴백.
+  const ref = _slNum(o.ref || 0)
+  if (ref > 0) {
+    const tot = ret.reduce((s, i) => s + _slNum(lines[i].rv || 0), 0)
+    if (tot > 0) {
+      const raw = ret.map(i => ref * _slNum(lines[i].rv || 0) / tot)
+      const fl = raw.map(x => Math.floor(x)); let rem = ref - fl.reduce((a, b) => a + b, 0)
+      const order = ret.map((idx, k) => ({ k, f: raw[k] - Math.floor(raw[k]), rv: _slNum(lines[idx].rv || 0) })).sort((a, b) => b.f - a.f || b.rv - a.rv)
+      for (let j = 0; j < order.length && rem > 0; j++) { fl[order[j].k]++; rem-- }
+      ret.forEach((idx, k) => { out[idx] = fl[k] })
+      return out
+    }
+  }
+  ret.forEach(i => { out[i] = _slNum(lines[i].rf || 0) || _slNum(lines[i].rv || 0) })   // ref 없음 → 라인 환불금액 or 판매 역전
+  return out
+}
+
+// ---- 순수 집계기 ----
+function _slZeroGrp(withMalls) { const g = { sq: 0, samt: 0, pts: 0, rq: 0, ramt: 0 }; if (withMalls) g.malls = {}; return g }
+function _slMallBucket(g, mall) { return g.malls[mall] || (g.malls[mall] = { q: 0, amt: 0, rq: 0, ramt: 0 }) }
+
+// L2 일별: { d, c24:{sq,samt,pts,rq,ramt}, sb:{...,malls} }
+function _slAggDay(orders, day) {
+  const res = { d: day, c24: _slZeroGrp(false), sb: _slZeroGrp(true) }
+  orders.forEach(o => {
+    const grp = (o.ch === SL_CH.c24) ? 'c24' : 'sb'
+    const b = res[grp], pts = _slLinePtsMap(o), ram = _slOrderRamtMap(o, true)   // 🔴 gross(배송비 포함 = §1.4 대사)
+    const saleIn = o.od === day
+    if (saleIn && grp === 'c24') b.samt += _slNum(o.ship || 0)   // 카페24 배송비(Q)=주문단위 1회
+    ;(o.lines || []).forEach((l, i) => {
+      if (saleIn) {
+        const ls = _slNum(l.rv) + _slNum(l.sh || 0)   // 사방넷 라인 배송비 folded(카페24 l.sh 없음 → o.ship 로 별도 1회)
+        b.sq += _slNum(l.q); b.samt += ls; b.pts += pts[i]
+        if (grp === 'sb') { const m = _slMallBucket(b, o.mall || '(미상)'); m.q += _slNum(l.q); m.amt += ls }
+      }
+      if (l.rd === day) {
+        b.rq += _slNum(l.q); b.ramt += ram[i]
+        if (grp === 'sb') { const m = _slMallBucket(b, o.mall || '(미상)'); m.rq += _slNum(l.q); m.ramt += ram[i] }
+      }
+    })
+  })
+  return res
+}
+
+// L3 기간×품번: { grp, items:{품번:{q,amt,pts,rq,ramt[,malls]}} }
+function _slAggShard(orders, grp, pStart, pEnd) {
+  const items = {}
+  const get = code => items[code] || (items[code] = { q: 0, amt: 0, pts: 0, rq: 0, ramt: 0 })
+  orders.forEach(o => {
+    const og = (o.ch === SL_CH.c24) ? 'c24' : 'sb'
+    if (og !== grp) return
+    const pts = _slLinePtsMap(o), ram = _slOrderRamtMap(o, false)   // L3=품번 상품 기준(배송 제외)
+    const saleIn = _slInR(o.od, pStart, pEnd)
+    ;(o.lines || []).forEach((l, i) => {
+      const code = l.c || '(미상)'
+      if (saleIn) {
+        const it = get(code); it.q += _slNum(l.q); it.amt += _slNum(l.rv); it.pts += pts[i]
+        if (grp === 'sb') { it.malls = it.malls || {}; const m = it.malls[o.mall || '(미상)'] || (it.malls[o.mall || '(미상)'] = { q: 0, amt: 0 }); m.q += _slNum(l.q); m.amt += _slNum(l.rv) }
+      }
+      if (_slInR(l.rd, pStart, pEnd)) { const it = get(code); it.rq += _slNum(l.q); it.ramt += ram[i] }
+    })
+  })
+  return { grp: grp, items: items }
+}
+
+// ---- L1 조회(재계산용, 리스너 없음) ----
+async function _slFetchByOd(pStart, pEnd) {
+  const snap = await db.collection('salesOrders').where('od', '>=', pStart).where('od', '<=', pEnd).get()
+  const map = {}; snap.forEach(d => { map[d.id] = d.data() }); return map
+}
+async function _slFetchByRdsAny(days) {
+  const map = {}
+  for (let i = 0; i < days.length; i += 10) {
+    const chunk = days.slice(i, i + 10)
+    const snap = await db.collection('salesOrders').where('rds', 'array-contains-any', chunk).get()
+    snap.forEach(d => { map[d.id] = d.data() })
+  }
+  return map
+}
+async function _slFetchPeriodOrders(pStart, pEnd) {
+  const byOd = await _slFetchByOd(pStart, pEnd)
+  const byRd = await _slFetchByRdsAny(_slDaysInRange(pStart, pEnd))
+  const merged = Object.assign({}, byRd, byOd)   // union(od 우선, 같은 doc 중복 제거)
+  return Object.values(merged)
+}
+
+// ---- 재계산(touched shard 전체 재도출) ----
+async function _slRecomputeDay(day) {
+  const orders = await _slFetchPeriodOrders(day, day)
+  const body = _slAggDay(orders, day); body.ut = new Date().toISOString()
+  await db.collection('salesD').doc(day).set(body)
+}
+async function _slRecomputeShard(coll, labelField, docId, grp, pStart, pEnd, periodLabel) {
+  const orders = await _slFetchPeriodOrders(pStart, pEnd)
+  const agg = _slAggShard(orders, grp, pStart, pEnd)
+  const body = { grp: grp, items: agg.items, ut: new Date().toISOString() }
+  body[labelField] = periodLabel
+  await db.collection(coll).doc(docId).set(body)
+}
+// 주어진 day 집합 → salesD + 걸치는 월/주 shard(×grp) 재계산
+async function _slRecomputeDaysAndShards(dayArr, onProg) {
+  const months = new Set(), weeks = new Set()
+  let done = 0
+  for (const d of dayArr) { await _slRecomputeDay(d); months.add(_slMonthKey(d)); weeks.add(_slWeekStart(d)); if (onProg) onProg(++done, dayArr.length) }
+  for (const m of months) { const [s, e] = _slMonthRange(m); for (const g of ['c24', 'sb']) await _slRecomputeShard('salesM', 'm', m + '_' + g, g, s, e, m) }
+  for (const w of weeks) { const [s, e] = _slWeekRange(w); for (const g of ['c24', 'sb']) await _slRecomputeShard('salesW', 'w', w + '_' + g, g, s, e, w) }
+  return { days: dayArr.length, months: months.size, weeks: weeks.size }
+}
+
+// rds 인덱스 backfill(전 컬렉션 스캔, additive·멱등). Phase 1 doc 은 rds 없음 → 재계산 도구가 1회 채움. 이후 merge 가 유지.
+async function _slBackfillRds(onProg) {
+  const snap = await db.collection('salesOrders').get()
+  const upd = []
+  snap.forEach(d => { const data = d.data(); const want = _slDocRds(data.lines); const cur = data.rds || []
+    if (want.length !== cur.length || want.some((x, i) => x !== cur[i])) upd.push({ id: d.id, rds: want }) })
+  for (let i = 0; i < upd.length; i += 450) {
+    const b = db.batch(); upd.slice(i, i + 450).forEach(u => b.update(db.collection('salesOrders').doc(u.id), { rds: u.rds })); await b.commit()
+    if (onProg) onProg(Math.min(i + 450, upd.length), upd.length)
+  }
+  return upd.length
+}
+
+// 🔴 관리자 재계산 도구: 범위 전체 재빌드(backfill → 영향일 판정 → 재계산). 멱등(재실행=동일 결과).
+async function recomputeSalesRange(startDate, endDate, onProg) {
+  if (typeof db === 'undefined' || !db) throw new Error('no db')
+  if (onProg) onProg('rds 인덱스 확인 중…')
+  await _slBackfillRds()
+  if (onProg) onProg('영향 일자 수집 중…')
+  const byOd = await _slFetchByOd(startDate, endDate)
+  const days = new Set()
+  Object.values(byOd).forEach(o => { if (_slInR(o.od, startDate, endDate)) days.add(o.od) })
+  const byRd = await _slFetchByRdsAny(_slDaysInRange(startDate, endDate))
+  Object.values(byRd).forEach(o => { (o.rds || []).forEach(d => { if (_slInR(d, startDate, endDate)) days.add(d) }) })
+  const dayArr = [...days].sort()
+  const r = await _slRecomputeDaysAndShards(dayArr, (a, b) => { if (onProg) onProg(`재계산 ${a}/${b}일`) })
+  return r
+}
+
+// ---- 일자별 요약 뷰(L2 salesD 만 read) ----
+async function _slLatestDataDate() {
+  try {
+    const snap = await db.collection('salesD').orderBy(firebase.firestore.FieldPath.documentId(), 'desc').limit(1).get()
+    let dk = ''; snap.forEach(d => { dk = d.id }); return dk
+  } catch (e) { return '' }
+}
+async function _slLoadSalesDaily(start, end) {
+  const snap = await db.collection('salesD')
+    .orderBy(firebase.firestore.FieldPath.documentId())
+    .startAt(start).endAt(end).get()
+  const arr = []; snap.forEach(d => arr.push(d.data())); return arr
+}
+
+let _slSummaryRows = []
+
+async function renderSalesSummary() {
+  const panel = document.getElementById('slSummaryBody'); if (!panel) return
+  let start = (document.getElementById('slSumStart') || {}).value
+  let end = (document.getElementById('slSumEnd') || {}).value
+  if (!start || !end) {
+    const latest = await _slLatestDataDate()
+    start = end = latest || (typeof kstDateKey === 'function' ? kstDateKey() : new Date().toISOString().slice(0, 10))
+    const si = document.getElementById('slSumStart'), ei = document.getElementById('slSumEnd')
+    if (si) si.value = start; if (ei) ei.value = end
+  }
+  if (start > end) { const t = start; start = end; end = t }
+  panel.innerHTML = '<div class="sl-hist-loading">불러오는 중…</div>'
+  let rows
+  try { rows = await _slLoadSalesDaily(start, end) } catch (e) { panel.innerHTML = '<div class="sl-hist-empty">조회 실패: ' + esc(e.message) + '</div>'; return }
+  _slSummaryRows = rows
+  if (!rows.length) { panel.innerHTML = `<div class="sl-hist-empty">해당 기간 집계 데이터가 없습니다. 관리자라면 [집계 재계산]으로 생성하세요.</div>`; return }
+  const fmt = v => (v || 0).toLocaleString()
+  let tC = { s: 0, r: 0, p: 0 }, tS = { s: 0, r: 0 }
+  const body = rows.map(d => {
+    const c = d.c24 || {}, s = d.sb || {}
+    const cNet = (c.samt || 0) - (c.ramt || 0), sNet = (s.samt || 0) - (s.ramt || 0)
+    tC.s += c.samt || 0; tC.r += c.ramt || 0; tC.p += c.pts || 0; tS.s += s.samt || 0; tS.r += s.ramt || 0
+    return `<tr>
+      <td>${esc(d.d)}</td>
+      <td class="sl-c">${fmt(c.samt)}</td><td class="sl-c">${fmt(c.ramt)}</td><td class="sl-c">${fmt(cNet)}</td><td class="sl-c sl-pts">${fmt(c.pts)}</td>
+      <td class="sl-c">${fmt(s.samt)}</td><td class="sl-c">${fmt(s.ramt)}</td><td class="sl-c">${fmt(sNet)}</td>
+      <td class="sl-c sl-net"><b>${fmt(cNet + sNet)}</b></td>
+    </tr>`
+  }).join('')
+  const totNet = (tC.s - tC.r) + (tS.s - tS.r)
+  panel.innerHTML = `
+    <div class="sl-sum-basis">📅 주문일 기준 · 반품=반품완료일 귀속 · 매장(POS) 미포함(Phase3 조인). 매출=기존 매출공식과 동일 기준(카페24 상품구매−추가할인+배송비 · 사방넷 결제금액+배송비). 적립금분=별도 표시(현금≈순액−적립금분).</div>
+    <div class="sl-hist-wrap">
+      <table class="data-table inbhist-table sl-sum-table">
+        <thead>
+          <tr><th rowspan="2">날짜</th><th colspan="4">카페24</th><th colspan="3">사방넷</th><th rowspan="2">합계 순액</th></tr>
+          <tr><th>매출</th><th>반품</th><th>순액</th><th>적립금분</th><th>매출</th><th>반품</th><th>순액</th></tr>
+        </thead>
+        <tbody>${body}</tbody>
+        <tfoot><tr class="sl-sum-foot">
+          <td>합계</td>
+          <td class="sl-c">${fmt(tC.s)}</td><td class="sl-c">${fmt(tC.r)}</td><td class="sl-c">${fmt(tC.s - tC.r)}</td><td class="sl-c sl-pts">${fmt(tC.p)}</td>
+          <td class="sl-c">${fmt(tS.s)}</td><td class="sl-c">${fmt(tS.r)}</td><td class="sl-c">${fmt(tS.s - tS.r)}</td>
+          <td class="sl-c sl-net"><b>${fmt(totNet)}</b></td>
+        </tr></tfoot>
+      </table>
+    </div>`
+}
+
+function downloadSalesSummary() {
+  if (!_slSummaryRows.length) { showToast('내려받을 데이터가 없습니다.', 'warning'); return }
+  if (typeof XLSX === 'undefined') { showToast('엑셀 모듈 로드 실패', 'error'); return }
+  const aoa = [['날짜', '카페24 매출', '카페24 반품', '카페24 순액', '카페24 적립금분', '사방넷 매출', '사방넷 반품', '사방넷 순액', '합계 순액']]
+  _slSummaryRows.forEach(d => {
+    const c = d.c24 || {}, s = d.sb || {}
+    aoa.push([d.d, c.samt || 0, c.ramt || 0, (c.samt || 0) - (c.ramt || 0), c.pts || 0, s.samt || 0, s.ramt || 0, (s.samt || 0) - (s.ramt || 0), (c.samt || 0) - (c.ramt || 0) + (s.samt || 0) - (s.ramt || 0)])
+  })
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '일자별매출')
+  const s = _slSummaryRows[0].d, e = _slSummaryRows[_slSummaryRows.length - 1].d
+  XLSX.writeFile(wb, `매출요약_${s}~${e}.xlsx`)
+}
+
+// 관리자 재계산 실행(현재 요약 뷰의 기간)
+async function runSalesRecompute() {
+  if (!_slIsAdmin()) { showToast('권한이 없습니다.', 'warning'); return }
+  if (_slBusy) return
+  let start = (document.getElementById('slSumStart') || {}).value
+  let end = (document.getElementById('slSumEnd') || {}).value
+  if (!start || !end) { showToast('기간을 선택하세요.', 'warning'); return }
+  if (start > end) { const t = start; start = end; end = t }
+  const days = _slDaysInRange(start, end).length
+  const ok = await korConfirm(`${start} ~ ${end} (${days}일) 구간의 집계를 L1 원장에서 재계산합니다.\n\n(멱등 — 재실행해도 동일 결과. L1 원장은 변경되지 않습니다.)`, '재계산', '취소')
+  if (!ok) return
+  _slBusy = true
+  const btn = document.getElementById('slRecalcBtn'); if (btn) { btn.disabled = true; btn.textContent = '재계산 중…' }
+  try {
+    const r = await recomputeSalesRange(start, end, msg => { if (btn) btn.textContent = msg })
+    showToast(`집계 재계산 완료 — ${r.days}일 · 월 ${r.months} · 주 ${r.weeks} shard`, 'success')
+    if (typeof logActivity === 'function') logActivity('setting', '매출집계', `재계산 ${start}~${end} : ${r.days}일/${r.months}월/${r.weeks}주`)
+    await renderSalesSummary()
+  } catch (e) {
+    console.error('runSalesRecompute:', e && e.message)
+    showToast('재계산 실패 — 다시 시도해주세요. (L1 원장은 안전)', 'error')
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '🔄 집계 재계산' }
+  _slBusy = false
 }
 
 // ---- window 노출 ----
@@ -653,6 +980,18 @@ window.handleSalesLedgerFile = handleSalesLedgerFile
 window.confirmSalesLedgerUpload = confirmSalesLedgerUpload
 window.renderSalesUploadHistory = renderSalesUploadHistory
 window._slCopyText = _slCopyText
+// Phase 2: 집계 뷰/재계산
+window.renderSalesSummary = renderSalesSummary
+window.downloadSalesSummary = downloadSalesSummary
+window.runSalesRecompute = runSalesRecompute
+window.recomputeSalesRange = recomputeSalesRange
+// 순수 집계 로직(테스트/재사용)
+window._slAggDay = _slAggDay
+window._slAggShard = _slAggShard
+window._slLinePtsMap = _slLinePtsMap
+window._slOrderRamtMap = _slOrderRamtMap
+window._slWeekStart = _slWeekStart
+window._slDocRds = _slDocRds
 // 병합/파싱 순수 로직(테스트/재사용 노출)
 window._slMergeOrder = _slMergeOrder
 window._slParseCafe24 = _slParseCafe24

@@ -6441,3 +6441,15 @@ td[data-editable]:hover { background: #FAEEDA; }
 .sl-rc b { font-size: 20px; color: var(--primary, #1a1a2e); }
 .sl-rc-ret b { color: var(--warning, #f0a500); }
 .sl-result-note { font-size: 12px; color: var(--text-sub, #6b6b6b); margin-bottom: 14px; }
+
+/* ===== 매출관리 Phase 2 — 일자별 요약 ===== */
+.sl-sum-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.sl-sum-basis { font-size: 11px; color: var(--text-sub, #6b6b6b); background: var(--bg, #f5f4f1);
+  border-left: 3px solid var(--accent, #c9a96e); padding: 6px 10px; margin-bottom: 8px; border-radius: 4px; }
+.sl-sum-table { width: auto; min-width: 100%; table-layout: auto; }
+.sl-sum-table th, .sl-sum-table td { white-space: nowrap; text-align: center; }
+.sl-sum-table td:first-child, .sl-sum-table th:first-child { text-align: left; }
+.sl-sum-table .sl-c { text-align: right; }
+.sl-sum-table .sl-pts { color: var(--warning, #f0a500); }
+.sl-sum-table .sl-net b { color: var(--primary, #1a1a2e); }
+.sl-sum-table tfoot .sl-sum-foot td { font-weight: 700; border-top: 2px solid var(--border, #e8e6e0); background: var(--bg, #f5f4f1); }
