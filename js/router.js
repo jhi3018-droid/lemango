@@ -160,7 +160,7 @@ const _renderedTabs = new Set()
 function triggerTabRender(tab) {
   // 데이터가 아직 로드 안 됐으면 스킵 (init에서 일괄 렌더)
   // dashboard, board, members는 allProducts 불필요
-  if (!State.allProducts.length && !['dashboard', 'board', 'orgchart', 'mypage', 'hradmin', 'store'].includes(tab)) return
+  if (!State.allProducts.length && !['dashboard', 'board', 'orgchart', 'mypage', 'hradmin', 'store', 'salesmgmt'].includes(tab)) return
   if (_renderedTabs.has(tab)) return
   _renderedTabs.add(tab)
 
@@ -193,6 +193,7 @@ function triggerTabRender(tab) {
     case 'hradmin':   if (typeof renderHrAdminTab === 'function') renderHrAdminTab(); break
     case 'trash':     if (typeof renderTrashTab === 'function') renderTrashTab(); break
     case 'store':     if (typeof renderStoreTab === 'function') renderStoreTab(); break
+    case 'salesmgmt': if (typeof renderSalesMgmtTab === 'function') renderSalesMgmtTab(); break
   }
   // 첫 렌더 시 dirty 플래그 해제 → applyTabState의 중복 재렌더 방지
   if (State[tab]) State[tab].needsRerender = false

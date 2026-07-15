@@ -112,6 +112,7 @@
       <button class="tab-btn" data-tab="sales">매출현황</button>
       <button class="tab-btn" data-tab="plan">신규기획</button>
       <button class="tab-btn" data-tab="store">🏬 매장</button>
+      <button class="tab-btn" data-tab="salesmgmt">💰 매출관리</button>
       <button class="tab-btn" data-tab="event">행사일정</button>
       <button class="tab-btn" data-tab="work">업무일정</button>
       <button class="tab-btn" data-tab="board">게시판</button>
@@ -710,6 +711,11 @@
   <!-- ===== 매장 탭 (POS) ===== -->
   <section class="tab-content" id="tab-store">
     <div class="store-page" id="storePage"></div>
+  </section>
+
+  <!-- ===== 매출관리 탭 (매출 원장 L1) ===== -->
+  <section class="tab-content" id="tab-salesmgmt">
+    <div class="store-page" id="salesMgmtPage"></div>
   </section>
 
   <!-- ===== 개인정보 탭 ===== -->
@@ -2387,6 +2393,15 @@
   </form>
 </dialog>
 
+<!-- ===== 매출관리: 주문내역 업로드 모달 ===== -->
+<dialog id="slUploadModal" class="srm-modal sl-upload-modal">
+  <div class="srm-header">
+    <span class="srm-title">📤 주문내역 업로드 (매출 원장)</span>
+    <button class="srm-close" onclick="closeSalesUploadModal()">✕</button>
+  </div>
+  <div class="srm-body" id="slUploadBody"></div>
+</dialog>
+
 <!-- 토스트 알림 (appContainer 밖 — 로그인 페이지에서도 표시) -->
 <div id="toast" class="toast"></div>
 
@@ -3161,6 +3176,7 @@
 <script src="js/backup.js"></script>
 <script src="js/trash.js"></script>
 <script src="js/store.js"></script>
+<script src="js/sales-ledger.js"></script>
 <!-- 카페24 등록 CSV: cafe24-data.js(생성된 상수) → cafe24.js(로직). core/utils/color-master/product-code 뒤 로드. -->
 <script src="js/cafe24-data.js"></script>
 <script src="js/cafe24.js"></script>

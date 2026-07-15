@@ -163,6 +163,21 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // salesOrders — 매출 관리 L1 주문 원장 (원본 주문내역 → 병합). salesOrders/{채널_주문번호}
+    //   read : 승인자 전원 (매출 조회는 전 직원 개방 방침)
+    //   write: 관리자(grade>=3)만 (업로드=admin 주도). 병합=set(merge-in-memory) → create/update 모두 관리자.
+    //   ⚠️ 규칙은 배열 내부/문서 간 합계 정합을 검증 불가 — 병합 정확성은 클라 트랜잭션(멱등 set) 이 authoritative.
+    match /salesOrders/{docId} {
+      allow read: if isApproved();
+      allow write: if isAdmin();
+    }
+
+    // salesUploads — 매출 업로드 내역(감사/추적). 관리자만 기록.
+    match /salesUploads/{docId} {
+      allow read: if isApproved();
+      allow write: if isAdmin();
+    }
+
     // notifications
     match /notifications/{docId} {
       allow read, write: if isApproved();

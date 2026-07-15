@@ -986,6 +986,7 @@ const TAB_PERMISSIONS = {
   dashboard: 1, product: 1, stock: 1, sales: 1, plan: 1,
   event: 1, work: 1, board: 1, orgchart: 1, mypage: 1,
   store: 1,   // POS 매장 탭 — 조회는 전 직원 개방(권한 방침), 작업 화면은 내부에서 게이트(Phase 3~). 물류 발주 확인(R2)=매장 서브탭(07-07 이전)
+  salesmgmt: 1,   // 매출관리 — 조회는 승인 직원 전원, 업로드(주문내역 → L1 원장)는 내부에서 grade≥3 게이트
   hradmin: 2, trash: 3, settings: 4,
   // members: 제거됨 — hradmin 의 sub-panel(memberListPanel)로 통합. 진입은 hradmin 권한으로 충분
   // trash: 휴지통 — 소프트 삭제된 상품 복원/영구삭제 (Grade 3+ admin only)
