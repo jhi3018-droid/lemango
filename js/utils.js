@@ -1448,16 +1448,32 @@ window.copySizeGuideHtml = function() {
 
   const sizeSpec = normalizeSizeSpecRead((p.sizeSpec && typeof p.sizeSpec === 'object' && !Array.isArray(p.sizeSpec)) ? p.sizeSpec : {})   // 레거시 XXL→2XL, F 문자열→객체
   const sizes = SIZE_SPEC_SIZES   // 캐논 SIZES 단일 소스(별도 하드코딩 목록 제거)
+
+  // 🔴 HTML 복사 전용: 값이 0/빈값인 사이즈(행)·측정부위(열)를 복사 출력에서 제외.
+  //   화면 보기 테이블(buildSizeSpecView·getActiveParts)은 무접촉 — 여기서 로컬 재계산만.
+  //   0 판정: null/undefined/공백/숫자 0(문자 '0'·'0.0' 포함) → 빈값 취급. 비숫자 문자열은 유지.
+  const _sizeSpecEmpty = function(v) {
+    if (v === null || v === undefined) return true
+    const s = String(v).trim()
+    if (s === '') return true
+    const n = Number(s)
+    return !isNaN(n) && n === 0
+  }
+  // 행 제외: 모든 부위가 0/빈값인 사이즈는 생략
   const activeSizes = sizes.filter(function(sz) {
     const s = sizeSpec[sz]
-    return s && SIZE_SPEC_PARTS.some(function(pt) { return s[pt.key] })
+    return s && SIZE_SPEC_PARTS.some(function(pt) { return !_sizeSpecEmpty(s[pt.key]) })
+  })
+  // 열 제외: 전 사이즈에서 값이 0/빈값인 측정부위는 생략 (full-grid 기준 → 행/열 순서 무관)
+  const activeParts = SIZE_SPEC_PARTS.filter(function(pt) {
+    return sizes.some(function(sz) {
+      const s = sizeSpec[sz]
+      return s && !_sizeSpecEmpty(s[pt.key])
+    })
   })
 
-  // 값이 있는 측정부위만 — 보기 테이블과 동일 기준 (getActiveParts, item-level)
-  const activeParts = getActiveParts(sizeSpec, activeSizes)
-
   if (activeSizes.length === 0 || activeParts.length === 0) {
-    showToast('사이즈 규격이 입력되지 않았습니다.', 'warning')
+    showToast('복사할 사이즈 데이터가 없습니다.', 'warning')
     return
   }
 
