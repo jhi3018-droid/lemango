@@ -306,6 +306,9 @@ async function _fsReloadSharedSettings() {
       _storeDiscounts.length = 0; fsData.storeDiscounts.forEach(r => _storeDiscounts.push(r))
       localStorage.setItem('lemango_store_discounts_v1', JSON.stringify(_storeDiscounts))
     }
+    if (Array.isArray(fsData.salesPartners) && typeof _slSetPartners === 'function') {
+      _slSetPartners(fsData.salesPartners, true)   // 매출관리 Phase4 파트너 마스터(sales-ledger.js 소유, fromSync=true=재저장 안 함)
+    }
     if (Array.isArray(fsData.planPhases)) {
       _planPhases = fsData.planPhases
       localStorage.setItem('lemango_plan_phases_v1', JSON.stringify(_planPhases))
@@ -607,6 +610,10 @@ window._onSharedDataChanged = function(docId, data) {
             if (typeof renderStoreDiscountPanel === 'function') renderStoreDiscountPanel()
           }
           console.log('[RealtimeSync] 매장 할인 동기화')
+          break
+        case 'salesPartners':
+          if (typeof _slSetPartners === 'function') _slSetPartners(parsed || [], true)   // 매출관리 Phase4 파트너 마스터(재렌더는 _slSetPartners 내부에서 조건부)
+          console.log('[RealtimeSync] 파트너 마스터 동기화')
           break
         case 'workCategories':
           _workCategories.length = 0

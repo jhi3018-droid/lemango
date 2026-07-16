@@ -28,7 +28,7 @@ service cloud.firestore {
     //   docId == 'stores' 를 명시적으로 제외해야 한다(그렇지 않으면 approved 누구나 stores 쓰기 가능).
     match /sharedData/{docId} {
       allow read: if isApproved();
-      allow write: if isApproved() && docId != 'stores' && docId != 'inboundTypes' && docId != 'storeDiscounts';
+      allow write: if isApproved() && docId != 'stores' && docId != 'inboundTypes' && docId != 'storeDiscounts' && docId != 'salesPartners';
     }
 
     // sharedData/stores — 매장 설정(POS). 조회는 승인자 전원, 쓰기는 관리자(grade>=3)만.
@@ -45,6 +45,12 @@ service cloud.firestore {
 
     // sharedData/storeDiscounts — 매장 할인 규칙(POS Phase 5-1). 조회는 승인자 전원(판매 시 적용), 쓰기는 관리자만. (stores/inboundTypes 와 동일 OR-union 패턴)
     match /sharedData/storeDiscounts {
+      allow read: if isApproved();
+      allow write: if isAdmin();
+    }
+
+    // sharedData/salesPartners — 매출관리 파트너 마스터(Phase 4, 주문자ID↔업체 명단). 조회는 승인자 전원(리포트), 쓰기는 관리자만(grade>=3). (stores/inboundTypes 와 동일 OR-union 패턴)
+    match /sharedData/salesPartners {
       allow read: if isApproved();
       allow write: if isAdmin();
     }

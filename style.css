@@ -6474,3 +6474,23 @@ td[data-editable]:hover { background: #FAEEDA; }
 .sl-ord-lines .sl-c { text-align: right; }
 .sl-ord-meta { font-size: 12px; color: var(--text-sub, #555); }
 .sl-ord-notes { font-size: 11px; color: var(--text-sub, #888); margin-top: 4px; }
+
+/* ===== 매출관리 Phase 4 — 공홈/파트너 분리 + 파트너 마스터 ===== */
+.sl-pt-col { background: rgba(201, 169, 110, 0.08); }   /* 파트너 컬럼 살짝 강조(공홈과 구분) */
+.sl-sum-table th.sl-pt-col, .sl-mx-table th.sl-pt-col { background: rgba(201, 169, 110, 0.16); }
+.sl-pt-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.sl-pt-summary { font-size: 13px; font-weight: 600; color: var(--primary, #1a1a2e); }
+.sl-pt-head-actions { display: flex; gap: 6px; align-items: center; }
+.sl-pt-uplabel { cursor: pointer; }
+.sl-pt-dirty { font-size: 12px; color: var(--danger, #e05252); background: rgba(224, 82, 82, 0.08);
+  border-left: 3px solid var(--danger, #e05252); padding: 6px 10px; margin-bottom: 8px; border-radius: 4px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sl-pt-manage { border: 1px solid var(--border, #e8e6e0); border-radius: 6px; padding: 10px; margin-bottom: 12px; background: var(--bg, #f5f4f1); }
+.sl-pt-manage-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.sl-pt-add { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.sl-pt-table { width: auto; min-width: 100%; table-layout: auto; }
+.sl-pt-table th, .sl-pt-table td { white-space: nowrap; font-size: 12px; }
+.sl-pt-badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.sl-pt-badge.on { background: rgba(76, 175, 125, 0.15); color: var(--success, #4caf7d); }
+.sl-pt-badge.off { background: rgba(150, 150, 150, 0.15); color: var(--text-sub, #888); }
+.sl-pt-editrow td { background: rgba(201, 169, 110, 0.06); }

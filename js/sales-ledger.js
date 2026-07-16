@@ -90,6 +90,75 @@ function _slProductCodeSet() {
 }
 
 // =============================================
+// ===== 파트너 마스터 (Phase 4) — 주문자ID(bid) ↔ 업체 명단 =====
+// =============================================
+// 저장 = sharedData/salesPartners (기존 OR-union 설정 패턴 · admin-write). 엔트리 { id, name, grade, active, src:'file'|'manual', ut }.
+//   🔴 분류 = 집계-타임(파생 데이터 원칙): c24 주문의 bid(주문자ID) ∈ 활성 마스터 → 파트너(pt) · else 공홈(gh). grade=표시 전용.
+//   마스터 변경 → 집계 stale → [집계 재계산] 필요(작업지시 확정). 오너 결정: 181명 전원 파트너(일반회원 포함 — bid∈마스터가 기준, 등급 무관).
+//   Cafe24 로그인 ID 대소문자 무관 → _slPidNorm(trim+lower) 로 매칭(마스터·bid 동일 정규화).
+function _slPidNorm(id) { return String(id == null ? '' : id).trim().toLowerCase() }
+
+let _salesPartners = (() => {
+  try { if (typeof localStorage === 'undefined') return []; const s = localStorage.getItem('lemango_sales_partners_v1'); return s ? JSON.parse(s) : [] } catch { return [] }
+})()
+let _slPartnerUpdatedAt = (() => { try { return (typeof localStorage !== 'undefined' && localStorage.getItem('lemango_sales_partners_ut_v1')) || '' } catch { return '' } })()
+
+// 활성 파트너 id Set(정규화) — 분류/후보검출 단일 소스
+function _slPartnerActiveSet() {
+  const set = new Set()
+  ;(_salesPartners || []).forEach(p => { if (p && p.active !== false && p.id) set.add(_slPidNorm(p.id)) })
+  return set
+}
+// 전체(비활성 포함) 정규화 id → 엔트리 (표시/관리용)
+function _slPartnerMap() {
+  const m = {}
+  ;(_salesPartners || []).forEach(p => { if (p && p.id) m[_slPidNorm(p.id)] = p })
+  return m
+}
+// bid → 활성 파트너명(없으면 '')
+function _slPartnerName(bid) { const p = _slPartnerMap()[_slPidNorm(bid)]; return (p && p.active !== false) ? (p.name || p.id) : '' }
+// 주문이 파트너 매입인가(c24 + bid ∈ 활성 마스터)
+function _slOrderIsPartner(o, ptSet) { return !!(o && o.ch === SL_CH.c24 && o.bid && ptSet && ptSet.has(_slPidNorm(o.bid))) }
+// 새 파트너 후보 = grade 에 'Partner' 포함(Global Partner 포함)인데 bid 가 활성 마스터에 없음
+function _slCollectCandidate(o, ptSet, out) {
+  if (!o || o.ch !== SL_CH.c24 || !o.bid) return
+  if (ptSet && ptSet.has(_slPidNorm(o.bid))) return
+  if (String(o.grade || '').indexOf('Partner') >= 0) out[o.bid] = String(o.grade || '')
+}
+
+// 메모리/localStorage 반영(동기화·CRUD 공용). fromSync=true → 재저장 안 함(에코 방지).
+function _slSetPartners(arr, fromSync) {
+  _salesPartners = Array.isArray(arr) ? arr : []
+  try { if (typeof localStorage !== 'undefined') localStorage.setItem('lemango_sales_partners_v1', JSON.stringify(_salesPartners)) } catch (e) {}
+  if (typeof document !== 'undefined' && _slActiveSub === 'partner' && document.getElementById('slPartnerBody')) { try { renderSalesPartner() } catch (e) {} }
+}
+async function saveSalesPartners() {
+  _slPartnerUpdatedAt = new Date().toISOString()
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('lemango_sales_partners_v1', JSON.stringify(_salesPartners))
+      localStorage.setItem('lemango_sales_partners_ut_v1', _slPartnerUpdatedAt)
+    }
+  } catch (e) {}
+  if (typeof _fsSync === 'function') {
+    await _fsSync('salesPartners', _salesPartners)
+    if (!window._lastSharedSaveTime) window._lastSharedSaveTime = {}
+    window._lastSharedSaveTime['salesPartners'] = Date.now()
+  }
+}
+// 세션 시작 시 마스터 없으면 1회 로드(리스너 아님 · 재계산/분류 정확성 보장). _slPartnerLoaded=한번 시도하면 재조회 안 함(빈 마스터 반복 read 방지).
+let _slPartnerLoaded = false
+async function _slEnsurePartnerMaster() {
+  if ((_salesPartners || []).length || _slPartnerLoaded) return
+  if (typeof db === 'undefined' || !db) return
+  _slPartnerLoaded = true
+  try {
+    const d = await db.collection('sharedData').doc('salesPartners').get()
+    if (d.exists && d.data().data) { _slSetPartners(JSON.parse(d.data().data), true); _slPartnerUpdatedAt = d.data().updatedAt || _slPartnerUpdatedAt }
+  } catch (e) { _slPartnerLoaded = false }
+}
+
+// =============================================
 // ===== 파일 읽기 + 타입 자동 감지 =====
 // =============================================
 function _slReadWorkbookRows(data, isCsv) {
@@ -139,7 +208,7 @@ const SL_SB = {
 // ===== 파서 (→ 주문 배열 + 경고) =====
 // =============================================
 function _slNewWarn() {
-  return { unmatched: new Set(), dateFail: [], anomaly: [], newMalls: new Set(), friends: 0, malls: {} }
+  return { unmatched: new Set(), dateFail: [], anomaly: [], newMalls: new Set(), friends: 0, malls: {}, newPartners: new Set() }
 }
 
 // 카페24 파싱: 주문번호로 그룹핑. 라인 매출 rv = P − Y. 주문 필드 cash(S)/pu(W)/grade/bid/ship(ΣQ)/ref(maxU).
@@ -148,6 +217,7 @@ function _slParseCafe24(rows) {
   const headers = rows[0] || []
   const M = _slC24ColMap(headers)
   const codeSet = _slProductCodeSet()
+  const ptSet = (typeof _slPartnerActiveSet === 'function') ? _slPartnerActiveSet() : new Set()   // 새 파트너 후보 검출용(현재 마스터)
   const orders = {}   // orderNo → order obj
   const hasBuyer = M.buyerId >= 0
 
@@ -181,7 +251,13 @@ function _slParseCafe24(rows) {
         cash: _slNum(row[M.S]), pu: _slNum(row[M.W]),
         ship: 0, ref: 0, lines: []
       }
-      if (hasBuyer) { const bid = _slStr(row[M.buyerId]); if (bid) o.bid = bid }
+      if (hasBuyer) {
+        const bid = _slStr(row[M.buyerId])
+        if (bid) {
+          o.bid = bid
+          if (!ptSet.has(_slPidNorm(bid)) && _slStr(row[M.grade]).indexOf('Partner') >= 0) warn.newPartners.add(bid + ' (' + _slStr(row[M.grade]) + ')')
+        }
+      }
     }
     o.ship += _slNum(row[M.Q])                              // 총배송비: 첫 품목만 값 → 합=Q
     o.ref = Math.max(o.ref, _slNum(row[M.U]))               // 실제환불금액: 주문당 MAX(기존 공식 동일)
@@ -446,6 +522,7 @@ function _slRenderPreview() {
   if (w.dateFail.length) warnBlocks.push(_slWarnBlock('날짜/주문번호 문제', w.dateFail.length, w.dateFail, '해당 행 문제(주문번호 없는 행은 제외)'))
   if (w.anomaly.length) warnBlocks.push(_slWarnBlock('금액 이상치', w.anomaly.length, w.anomaly, '음수 매출(원장엔 기록됨)'))
   if (p.type === SL_CH.sb && w.newMalls.size) warnBlocks.push(_slWarnBlock('쇼핑몰명 목록', w.newMalls.size, [...w.newMalls], '채널 마스터 부재 — 향후 별칭 등록용'))
+  if (p.type === SL_CH.c24 && w.newPartners && w.newPartners.size) warnBlocks.push(_slWarnBlock('🤝 새 파트너 후보', w.newPartners.size, [...w.newPartners], "회원등급이 'Partner'인데 파트너 명단에 없음 — [파트너별] 탭에서 명단 갱신 후 [집계 재계산] 권장(현재는 공홈 분류)"))
   if (p.type === SL_CH.c24 && w.friends) warnBlocks.push(`<div class="sl-warn"><div class="sl-warn-h">🎁 프렌즈·적립금 주문 <b>${w.friends}</b>건 <span class="sl-warn-info">(적립금 매출 별도 표시)</span></div></div>`)
 
   body.innerHTML = `
@@ -548,6 +625,7 @@ async function confirmSalesLedgerUpload() {
       cntNew: cNew, cntMerge: cMerge, cntSame: cSame, cntReturns: cReturns,
       unmatched: [...p.warn.unmatched].slice(0, 300), dateFail: p.warn.dateFail.slice(0, 300),
       anomaly: p.warn.anomaly.slice(0, 300), malls: p.warn.malls, friends: p.warn.friends || 0,
+      newPartners: p.warn.newPartners ? [...p.warn.newPartners].slice(0, 300) : [],
       workerUid: uid, workerName: workerName, at: nowIso
     }
     await db.collection('salesUploads').doc(uploadId).set(uploadRec)
@@ -786,22 +864,26 @@ function _slOrderRamtMap(o, gross) {
 function _slZeroGrp(withMalls) { const g = { sq: 0, samt: 0, pts: 0, rq: 0, ramt: 0 }; if (withMalls) g.malls = {}; return g }
 function _slMallBucket(g, mall) { return g.malls[mall] || (g.malls[mall] = { q: 0, amt: 0, rq: 0, ramt: 0 }) }
 
-// L2 일별: { d, c24:{sq,samt,pts,rq,ramt}, sb:{...,malls} }
-function _slAggDay(orders, day) {
-  const res = { d: day, c24: _slZeroGrp(false), sb: _slZeroGrp(true) }
+// L2 일별: { d, c24:{sq,samt,pts,rq,ramt}, sb:{...,malls}, gh:{...}, pt:{...} }
+// 🔴 gh/pt = 카페24(c24) 공홈/파트너 분해(가산적) — 모든 c24 기여를 c24 총계 + (gh|pt) 양쪽에 더함 → gh+pt == c24 정확 보존(Phase4 split conservation).
+function _slAggDay(orders, day, ptSet) {
+  const res = { d: day, c24: _slZeroGrp(false), sb: _slZeroGrp(true), gh: _slZeroGrp(false), pt: _slZeroGrp(false) }
   orders.forEach(o => {
     const grp = (o.ch === SL_CH.c24) ? 'c24' : 'sb'
     const b = res[grp], pts = _slLinePtsMap(o), ram = _slOrderRamtMap(o, true)   // 🔴 gross(배송비 포함 = §1.4 대사)
+    const sp = (grp === 'c24') ? (_slOrderIsPartner(o, ptSet) ? res.pt : res.gh) : null   // 공홈/파트너 분해 대상(카페24만)
     const saleIn = o.od === day
-    if (saleIn && grp === 'c24') b.samt += _slNum(o.ship || 0)   // 카페24 배송비(Q)=주문단위 1회
+    if (saleIn && grp === 'c24') { b.samt += _slNum(o.ship || 0); sp.samt += _slNum(o.ship || 0) }   // 카페24 배송비(Q)=주문단위 1회
     ;(o.lines || []).forEach((l, i) => {
       if (saleIn) {
         const ls = _slNum(l.rv) + _slNum(l.sh || 0)   // 사방넷 라인 배송비 folded(카페24 l.sh 없음 → o.ship 로 별도 1회)
         b.sq += _slNum(l.q); b.samt += ls; b.pts += pts[i]
+        if (sp) { sp.sq += _slNum(l.q); sp.samt += ls; sp.pts += pts[i] }
         if (grp === 'sb') { const m = _slMallBucket(b, o.mall || '(미상)'); m.q += _slNum(l.q); m.amt += ls }
       }
       if (l.rd === day) {
         b.rq += _slNum(l.q); b.ramt += ram[i]
+        if (sp) { sp.rq += _slNum(l.q); sp.ramt += ram[i] }
         if (grp === 'sb') { const m = _slMallBucket(b, o.mall || '(미상)'); m.rq += _slNum(l.q); m.ramt += ram[i] }
       }
     })
@@ -811,27 +893,42 @@ function _slAggDay(orders, day) {
 
 // L3 기간×품번: { grp, items:{품번:{q,amt,pts,rq,ramt[,malls]}} }
 // 🔴 amt=gross(배송비 포함=L2/요약 동일 기준 → 매트릭스 Σ = 요약 정확 대사). 사방넷=라인 배송비 직접 · 카페24=주문 배송비를 rv 가중 분배.
-function _slAggShard(orders, grp, pStart, pEnd) {
+// 🔴 c24 shard: items[code] 에 gh/pt 분해(가산적, gh+pt==item 총계) 추가 + ptBy(파트너별 per-bid per-품번) 사이드맵.
+//   ptBy = { bidNorm: { name, items:{ code:{q,amt,rq,ramt} } } } — 파트너 주문 subset(sparse), 파트너별 탭 소스. sb grp 은 무변경.
+function _slAggShard(orders, grp, pStart, pEnd, ptSet) {
   const items = {}
+  const ptBy = {}
   const get = code => items[code] || (items[code] = { q: 0, amt: 0, pts: 0, rq: 0, ramt: 0 })
+  const side = (it, key) => it[key] || (it[key] = { q: 0, amt: 0, rq: 0, ramt: 0 })
   orders.forEach(o => {
     const og = (o.ch === SL_CH.c24) ? 'c24' : 'sb'
     if (og !== grp) return
     const pts = _slLinePtsMap(o), ram = _slOrderRamtMap(o, true)   // gross(배송 포함) — L2/요약 대사
     const saleIn = _slInR(o.od, pStart, pEnd)
     const shipMap = (og === 'c24' && saleIn) ? _slAllocByRv(o.lines || [], _slNum(o.ship || 0)) : null   // 카페24 주문 배송비 rv 가중 분배
+    const isPt = og === 'c24' && _slOrderIsPartner(o, ptSet)
+    const sideKey = isPt ? 'pt' : 'gh'
+    let pmap = null
+    if (isPt) { const bn = _slPidNorm(o.bid); pmap = ptBy[bn] || (ptBy[bn] = { name: _slPartnerName(o.bid) || o.bid, items: {} }) }
+    const pget = code => pmap.items[code] || (pmap.items[code] = { q: 0, amt: 0, rq: 0, ramt: 0 })
     ;(o.lines || []).forEach((l, i) => {
       const code = l.c || '(미상)'
       if (saleIn) {
         const lineShip = (og === 'sb') ? _slNum(l.sh || 0) : (shipMap ? shipMap[i] : 0)   // 사방넷=라인 배송비 · 카페24=분배분
         const amt = _slNum(l.rv) + lineShip
         const it = get(code); it.q += _slNum(l.q); it.amt += amt; it.pts += pts[i]
+        if (og === 'c24') { const s = side(it, sideKey); s.q += _slNum(l.q); s.amt += amt }
+        if (isPt) { const pi = pget(code); pi.q += _slNum(l.q); pi.amt += amt }
         if (grp === 'sb') { it.malls = it.malls || {}; const m = it.malls[o.mall || '(미상)'] || (it.malls[o.mall || '(미상)'] = { q: 0, amt: 0 }); m.q += _slNum(l.q); m.amt += amt }
       }
-      if (_slInR(l.rd, pStart, pEnd)) { const it = get(code); it.rq += _slNum(l.q); it.ramt += ram[i] }
+      if (_slInR(l.rd, pStart, pEnd)) {
+        const it = get(code); it.rq += _slNum(l.q); it.ramt += ram[i]
+        if (og === 'c24') { const s = side(it, sideKey); s.rq += _slNum(l.q); s.ramt += ram[i] }
+        if (isPt) { const pi = pget(code); pi.rq += _slNum(l.q); pi.ramt += ram[i] }
+      }
     })
   })
-  return { grp: grp, items: items }
+  return { grp: grp, items: items, ptBy: grp === 'c24' ? ptBy : undefined }
 }
 
 // ---- L1 조회(재계산용, 리스너 없음) ----
@@ -856,25 +953,29 @@ async function _slFetchPeriodOrders(pStart, pEnd) {
 }
 
 // ---- 재계산(touched shard 전체 재도출) ----
-async function _slRecomputeDay(day) {
+async function _slRecomputeDay(day, ptSet) {
   const orders = await _slFetchPeriodOrders(day, day)
-  const body = _slAggDay(orders, day); body.ut = new Date().toISOString()
+  const body = _slAggDay(orders, day, ptSet); body.ut = new Date().toISOString()
   await db.collection('salesD').doc(day).set(body)
 }
-async function _slRecomputeShard(coll, labelField, docId, grp, pStart, pEnd, periodLabel) {
+async function _slRecomputeShard(coll, labelField, docId, grp, pStart, pEnd, periodLabel, ptSet) {
   const orders = await _slFetchPeriodOrders(pStart, pEnd)
-  const agg = _slAggShard(orders, grp, pStart, pEnd)
+  const agg = _slAggShard(orders, grp, pStart, pEnd, ptSet)
   const body = { grp: grp, items: agg.items, ut: new Date().toISOString() }
   body[labelField] = periodLabel
+  if (grp === 'c24' && agg.ptBy) body.ptBy = agg.ptBy   // 파트너별 per-bid per-품번(파트너별 탭 소스)
+  // 🔴 shard 크기 가드(Firestore 1MB 한계 · ptBy 추가로 팽창 가능) — 경고만(sub-shard 분리=문서화된 후속)
+  try { const sz = JSON.stringify(body).length; if (sz > 900000) console.warn('[salesLedger] 대용량 shard:', docId, sz, 'bytes — ptBy sub-shard 분리 검토 필요') } catch (e) {}
   await db.collection(coll).doc(docId).set(body)
 }
-// 주어진 day 집합 → salesD + 걸치는 월/주 shard(×grp) 재계산
-async function _slRecomputeDaysAndShards(dayArr, onProg) {
+// 주어진 day 집합 → salesD + 걸치는 월/주 shard(×grp) 재계산. ptSet 미전달 시 마스터 자동 로드.
+async function _slRecomputeDaysAndShards(dayArr, onProg, ptSet) {
+  if (!ptSet) { await _slEnsurePartnerMaster(); ptSet = _slPartnerActiveSet() }
   const months = new Set(), weeks = new Set()
   let done = 0
-  for (const d of dayArr) { await _slRecomputeDay(d); months.add(_slMonthKey(d)); weeks.add(_slWeekStart(d)); if (onProg) onProg(++done, dayArr.length) }
-  for (const m of months) { const [s, e] = _slMonthRange(m); for (const g of ['c24', 'sb']) await _slRecomputeShard('salesM', 'm', m + '_' + g, g, s, e, m) }
-  for (const w of weeks) { const [s, e] = _slWeekRange(w); for (const g of ['c24', 'sb']) await _slRecomputeShard('salesW', 'w', w + '_' + g, g, s, e, w) }
+  for (const d of dayArr) { await _slRecomputeDay(d, ptSet); months.add(_slMonthKey(d)); weeks.add(_slWeekStart(d)); if (onProg) onProg(++done, dayArr.length) }
+  for (const m of months) { const [s, e] = _slMonthRange(m); for (const g of ['c24', 'sb']) await _slRecomputeShard('salesM', 'm', m + '_' + g, g, s, e, m, ptSet) }
+  for (const w of weeks) { const [s, e] = _slWeekRange(w); for (const g of ['c24', 'sb']) await _slRecomputeShard('salesW', 'w', w + '_' + g, g, s, e, w, ptSet) }
   return { days: dayArr.length, months: months.size, weeks: weeks.size }
 }
 
@@ -900,16 +1001,20 @@ async function _slBackfillRds(onProg) {
 // 🔴 관리자 재계산 도구: 범위 전체 재빌드(backfill → 영향일 판정 → 재계산). 멱등(재실행=동일 결과).
 async function recomputeSalesRange(startDate, endDate, onProg) {
   if (typeof db === 'undefined' || !db) throw new Error('no db')
+  if (onProg) onProg('파트너 마스터 확인 중…')
+  await _slEnsurePartnerMaster()
+  const ptSet = _slPartnerActiveSet()   // 🔴 이번 재계산 전체에 고정된 분류 기준(마스터 스냅샷)
   if (onProg) onProg('rds 인덱스 확인 중…')
   await _slBackfillRds()
   if (onProg) onProg('영향 일자 수집 중…')
   const byOd = await _slFetchByOd(startDate, endDate)
-  const days = new Set()
-  Object.values(byOd).forEach(o => { if (_slInR(o.od, startDate, endDate)) days.add(o.od) })
+  const days = new Set(), cand = {}
+  Object.values(byOd).forEach(o => { if (_slInR(o.od, startDate, endDate)) days.add(o.od); _slCollectCandidate(o, ptSet, cand) })
   const byRd = await _slFetchByRdsAny(_slDaysInRange(startDate, endDate))
   Object.values(byRd).forEach(o => { (o.rds || []).forEach(d => { if (_slInR(d, startDate, endDate)) days.add(d) }) })
   const dayArr = [...days].sort()
-  const r = await _slRecomputeDaysAndShards(dayArr, (a, b) => { if (onProg) onProg(`재계산 ${a}/${b}일`) })
+  const r = await _slRecomputeDaysAndShards(dayArr, (a, b) => { if (onProg) onProg(`재계산 ${a}/${b}일`) }, ptSet)
+  r.candidates = Object.keys(cand).map(bid => bid + (cand[bid] ? ' (' + cand[bid] + ')' : ''))   // 새 파트너 후보(마스터 갱신 신호)
   return r
 }
 
@@ -925,6 +1030,19 @@ async function _slLoadSalesDaily(start, end) {
     .orderBy(firebase.firestore.FieldPath.documentId())
     .startAt(start).endAt(end).get()
   const arr = []; snap.forEach(d => arr.push(d.data())); return arr
+}
+
+// 🔴 공홈/파트너 분해 fallback — 재계산 전(구 shard=gh/pt 부재) = 전액 공홈(파트너 0). 재계산 후 실제 분리.
+//   → gh+pt == c24 항상 보존(무손실). 재계산은 '파트너 몫을 pt 로 이동'만 함.
+function _slSplitBlock(c) {
+  c = c || {}
+  if (c.gh || c.pt) return { gh: c.gh || _slZeroGrp(false), pt: c.pt || _slZeroGrp(false) }
+  return { gh: c, pt: _slZeroGrp(false) }
+}
+function _slItemSplit(it) {
+  it = it || {}
+  if (it.gh || it.pt) return { gh: it.gh || {}, pt: it.pt || {} }
+  return { gh: it, pt: {} }
 }
 
 let _slSummaryRows = []
@@ -946,31 +1064,37 @@ async function renderSalesSummary() {
   _slSummaryRows = rows
   if (!rows.length) { panel.innerHTML = `<div class="sl-hist-empty">해당 기간 집계 데이터가 없습니다. 관리자라면 [집계 재계산]으로 생성하세요.</div>`; return }
   const fmt = v => (v || 0).toLocaleString()
-  let tC = { s: 0, r: 0, p: 0 }, tS = { s: 0, r: 0 }
+  let tG = { s: 0, r: 0 }, tP = { s: 0, r: 0 }, tCp = 0, tS = { s: 0, r: 0 }
   const body = rows.map(d => {
     const c = d.c24 || {}, s = d.sb || {}
-    const cNet = (c.samt || 0) - (c.ramt || 0), sNet = (s.samt || 0) - (s.ramt || 0)
-    tC.s += c.samt || 0; tC.r += c.ramt || 0; tC.p += c.pts || 0; tS.s += s.samt || 0; tS.r += s.ramt || 0
+    const sp = _slSplitBlock(c)   // 공홈/파트너(재계산 전=전액 공홈)
+    const ghS = sp.gh.samt || 0, ghR = sp.gh.ramt || 0, ptS = sp.pt.samt || 0, ptR = sp.pt.ramt || 0
+    const sNet = (s.samt || 0) - (s.ramt || 0)
+    tG.s += ghS; tG.r += ghR; tP.s += ptS; tP.r += ptR; tCp += c.pts || 0; tS.s += s.samt || 0; tS.r += s.ramt || 0
     return `<tr>
       <td>${esc(d.d)}</td>
-      <td class="sl-c">${fmt(c.samt)}</td><td class="sl-c">${fmt(c.ramt)}</td><td class="sl-c">${fmt(cNet)}</td><td class="sl-c sl-pts">${fmt(c.pts)}</td>
+      <td class="sl-c">${fmt(ghS)}</td><td class="sl-c">${fmt(ghR)}</td><td class="sl-c">${fmt(ghS - ghR)}</td>
+      <td class="sl-c sl-pt-col">${fmt(ptS)}</td><td class="sl-c sl-pt-col">${fmt(ptR)}</td><td class="sl-c sl-pt-col">${fmt(ptS - ptR)}</td>
+      <td class="sl-c sl-pts">${fmt(c.pts)}</td>
       <td class="sl-c">${fmt(s.samt)}</td><td class="sl-c">${fmt(s.ramt)}</td><td class="sl-c">${fmt(sNet)}</td>
-      <td class="sl-c sl-net"><b>${fmt(cNet + sNet)}</b></td>
+      <td class="sl-c sl-net"><b>${fmt((ghS - ghR) + (ptS - ptR) + sNet)}</b></td>
     </tr>`
   }).join('')
-  const totNet = (tC.s - tC.r) + (tS.s - tS.r)
+  const totNet = (tG.s - tG.r) + (tP.s - tP.r) + (tS.s - tS.r)
   panel.innerHTML = `
-    <div class="sl-sum-basis">📅 주문일 기준 · 반품=반품완료일 귀속 · 매장(POS) 미포함(Phase3 조인). 매출=기존 매출공식과 동일 기준(카페24 상품구매−추가할인+배송비 · 사방넷 결제금액+배송비). 적립금분=별도 표시(현금≈순액−적립금분).</div>
+    <div class="sl-sum-basis">📅 주문일 기준 · 반품=반품완료일 귀속 · 매장(POS) 미포함(Phase3 조인). 카페24=<b>공홈</b>(자사몰)+<b>파트너</b>(주문자ID∈파트너 명단) 분리 · 매출=기존 매출공식과 동일 기준(상품구매−추가할인+배송비 · 사방넷 결제금액+배송비). 적립금분=카페24 전체 기준 별도 표시. <b>공홈+파트너 = 카페24 총액(무손실)</b> · 파트너 분리는 [파트너별] 명단 등록 + [집계 재계산] 후 반영.</div>
     <div class="sl-hist-wrap">
       <table class="data-table inbhist-table sl-sum-table">
         <thead>
-          <tr><th rowspan="2">날짜</th><th colspan="4">카페24</th><th colspan="3">사방넷</th><th rowspan="2">합계 순액</th></tr>
-          <tr><th>매출</th><th>반품</th><th>순액</th><th>적립금분</th><th>매출</th><th>반품</th><th>순액</th></tr>
+          <tr><th rowspan="2">날짜</th><th colspan="7">카페24</th><th colspan="3">사방넷</th><th rowspan="2">합계 순액</th></tr>
+          <tr><th>공홈 매출</th><th>공홈 반품</th><th>공홈 순액</th><th class="sl-pt-col">파트너 매출</th><th class="sl-pt-col">파트너 반품</th><th class="sl-pt-col">파트너 순액</th><th>적립금분</th><th>매출</th><th>반품</th><th>순액</th></tr>
         </thead>
         <tbody>${body}</tbody>
         <tfoot><tr class="sl-sum-foot">
           <td>합계</td>
-          <td class="sl-c">${fmt(tC.s)}</td><td class="sl-c">${fmt(tC.r)}</td><td class="sl-c">${fmt(tC.s - tC.r)}</td><td class="sl-c sl-pts">${fmt(tC.p)}</td>
+          <td class="sl-c">${fmt(tG.s)}</td><td class="sl-c">${fmt(tG.r)}</td><td class="sl-c">${fmt(tG.s - tG.r)}</td>
+          <td class="sl-c sl-pt-col">${fmt(tP.s)}</td><td class="sl-c sl-pt-col">${fmt(tP.r)}</td><td class="sl-c sl-pt-col">${fmt(tP.s - tP.r)}</td>
+          <td class="sl-c sl-pts">${fmt(tCp)}</td>
           <td class="sl-c">${fmt(tS.s)}</td><td class="sl-c">${fmt(tS.r)}</td><td class="sl-c">${fmt(tS.s - tS.r)}</td>
           <td class="sl-c sl-net"><b>${fmt(totNet)}</b></td>
         </tr></tfoot>
@@ -981,10 +1105,11 @@ async function renderSalesSummary() {
 function downloadSalesSummary() {
   if (!_slSummaryRows.length) { showToast('내려받을 데이터가 없습니다.', 'warning'); return }
   if (typeof XLSX === 'undefined') { showToast('엑셀 모듈 로드 실패', 'error'); return }
-  const aoa = [['날짜', '카페24 매출', '카페24 반품', '카페24 순액', '카페24 적립금분', '사방넷 매출', '사방넷 반품', '사방넷 순액', '합계 순액']]
+  const aoa = [['날짜', '공홈 매출', '공홈 반품', '공홈 순액', '파트너 매출', '파트너 반품', '파트너 순액', '카페24 적립금분', '사방넷 매출', '사방넷 반품', '사방넷 순액', '합계 순액']]
   _slSummaryRows.forEach(d => {
-    const c = d.c24 || {}, s = d.sb || {}
-    aoa.push([d.d, c.samt || 0, c.ramt || 0, (c.samt || 0) - (c.ramt || 0), c.pts || 0, s.samt || 0, s.ramt || 0, (s.samt || 0) - (s.ramt || 0), (c.samt || 0) - (c.ramt || 0) + (s.samt || 0) - (s.ramt || 0)])
+    const c = d.c24 || {}, s = d.sb || {}, sp = _slSplitBlock(c)
+    const ghS = sp.gh.samt || 0, ghR = sp.gh.ramt || 0, ptS = sp.pt.samt || 0, ptR = sp.pt.ramt || 0, sN = (s.samt || 0) - (s.ramt || 0)
+    aoa.push([d.d, ghS, ghR, ghS - ghR, ptS, ptR, ptS - ptR, c.pts || 0, s.samt || 0, s.ramt || 0, sN, (ghS - ghR) + (ptS - ptR) + sN])
   })
   const ws = XLSX.utils.aoa_to_sheet(aoa)
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '일자별매출')
@@ -1007,7 +1132,7 @@ async function runSalesRecompute() {
   const btn = document.getElementById('slRecalcBtn'); if (btn) { btn.disabled = true; btn.textContent = '재계산 중…' }
   try {
     const r = await recomputeSalesRange(start, end, msg => { if (btn) btn.textContent = msg })
-    showToast(`집계 재계산 완료 — ${r.days}일 · 월 ${r.months} · 주 ${r.weeks} shard`, 'success')
+    showToast(`집계 재계산 완료 — ${r.days}일 · 월 ${r.months} · 주 ${r.weeks} shard` + ((r.candidates && r.candidates.length) ? ` · ⚠️ 새 파트너 후보 ${r.candidates.length}명` : ''), 'success')
     if (typeof logActivity === 'function') logActivity('setting', '매출집계', `재계산 ${start}~${end} : ${r.days}일/${r.months}월/${r.weeks}주`)
     await renderSalesSummary()
   } catch (e) {
@@ -1043,7 +1168,9 @@ async function _slMatrixItems(grp, pStart, pEnd) {
   if (pStart === mk + '-01' && pEnd === _slMonthRange(mk)[1]) { const d = await _slReadShard('salesM', mk + '_' + grp); if (d && d.items) return d.items }
   if (_slWeekStart(pStart) === pStart && _slWeekRange(pStart)[1] === pEnd) { const d = await _slReadShard('salesW', pStart + '_' + grp); if (d && d.items) return d.items }
   const orders = await _slFetchPeriodOrders(pStart, pEnd)
-  return _slAggShard(orders, grp, pStart, pEnd).items
+  let ptSet = null
+  if (grp === 'c24') { await _slEnsurePartnerMaster(); ptSet = _slPartnerActiveSet() }   // L1 스캔 경로도 gh/pt 분해(마스터-타임)
+  return _slAggShard(orders, grp, pStart, pEnd, ptSet).items
 }
 
 // 🔴 매장(POS) per-품번 순액 = storeSales 판매 − 취소(void). 매출 조회 netting 재사용:
@@ -1118,27 +1245,29 @@ async function renderSalesMatrix() {
   const codes = new Set([...Object.keys(c24), ...Object.keys(sb), ...Object.keys(pos)])
   const net = (it) => unit === 'qty' ? ((it.q || 0) - (it.rq || 0)) : ((it.amt || 0) - (it.ramt || 0))
   let rows = [...codes].map(code => {
-    const cV = net(c24[code] || {}), sV = net(sb[code] || {}), pV = unit === 'qty' ? ((pos[code] || {}).q || 0) : ((pos[code] || {}).amt || 0)
-    return { code, name: nameMap[code.toUpperCase()] || '', c: cV, s: sV, p: pV, tot: cV + sV + pV }
+    const csp = _slItemSplit(c24[code])   // 공홈/파트너(재계산 전=전액 공홈)
+    const ghV = net(csp.gh), ptV = net(csp.pt), sV = net(sb[code] || {})
+    const pV = unit === 'qty' ? ((pos[code] || {}).q || 0) : ((pos[code] || {}).amt || 0)
+    return { code, name: nameMap[code.toUpperCase()] || '', gh: ghV, pt: ptV, s: sV, p: pV, tot: ghV + ptV + sV + pV }
   })
   const q = (_slMxSearch || '').trim().toUpperCase()
   if (q) rows = rows.filter(r => r.code.toUpperCase().includes(q) || (r.name || '').toUpperCase().includes(q))
   rows.sort((a, b) => b.tot - a.tot || a.code.localeCompare(b.code))
   _slMatrixRows = rows
   const fmt = v => (v || 0).toLocaleString()
-  const t = rows.reduce((a, r) => { a.c += r.c; a.s += r.s; a.p += r.p; a.tot += r.tot; return a }, { c: 0, s: 0, p: 0, tot: 0 })
+  const t = rows.reduce((a, r) => { a.gh += r.gh; a.pt += r.pt; a.s += r.s; a.p += r.p; a.tot += r.tot; return a }, { gh: 0, pt: 0, s: 0, p: 0, tot: 0 })
   const unitLbl = unit === 'amt' ? '금액(순액=매출+배송−반품)' : '수량(순=판매−반품)'
   panel.innerHTML = _slMxControlsHtml('mxA', 'renderSalesMatrix') + `
-    <div class="sl-sum-basis">${esc(s)} ~ ${esc(e)} · ${unitLbl} · 배송비 포함·반품 차감(일자별 요약과 동일 기준) · 카페24=공홈+파트너 통합(공홈/파트너 분리=파트너 마스터 후 Phase4)${posErr ? ' · ⚠️ 매장 열 조회 권한/오류로 생략' : ''}</div>
+    <div class="sl-sum-basis">${esc(s)} ~ ${esc(e)} · ${unitLbl} · 배송비 포함·반품 차감(일자별 요약과 동일 기준) · 카페24=<b>공홈+파트너</b> 분리(공홈+파트너=카페24 총액 · 파트너 분리는 명단 등록+재계산 후)${posErr ? ' · ⚠️ 매장 열 조회 권한/오류로 생략' : ''}</div>
     <div class="sl-hist-wrap">
       <table class="data-table inbhist-table sl-mx-table">
-        <thead><tr><th>품번</th><th>상품명</th><th class="sl-c">합계</th><th class="sl-c">카페24</th><th class="sl-c">사방넷</th><th class="sl-c">매장</th></tr></thead>
+        <thead><tr><th>품번</th><th>상품명</th><th class="sl-c">합계</th><th class="sl-c">공홈</th><th class="sl-c sl-pt-col">파트너</th><th class="sl-c">사방넷</th><th class="sl-c">매장</th></tr></thead>
         <tbody>${rows.length ? rows.map(r => `<tr>
           <td><a class="sl-code-link" onclick="_slOpenProduct('${esc(r.code)}')">${esc(r.code)}</a></td>
           <td class="sl-mx-name">${esc(r.name)}</td>
-          <td class="sl-c sl-net"><b>${fmt(r.tot)}</b></td><td class="sl-c">${fmt(r.c)}</td><td class="sl-c">${fmt(r.s)}</td><td class="sl-c">${fmt(r.p)}</td>
-        </tr>`).join('') : `<tr><td colspan="6" class="sl-hist-empty">데이터 없음 — 집계 재계산이 필요할 수 있습니다.</td></tr>`}</tbody>
-        <tfoot><tr class="sl-sum-foot"><td colspan="2">합계 (${rows.length}품번)</td><td class="sl-c sl-net"><b>${fmt(t.tot)}</b></td><td class="sl-c">${fmt(t.c)}</td><td class="sl-c">${fmt(t.s)}</td><td class="sl-c">${fmt(t.p)}</td></tr></tfoot>
+          <td class="sl-c sl-net"><b>${fmt(r.tot)}</b></td><td class="sl-c">${fmt(r.gh)}</td><td class="sl-c sl-pt-col">${fmt(r.pt)}</td><td class="sl-c">${fmt(r.s)}</td><td class="sl-c">${fmt(r.p)}</td>
+        </tr>`).join('') : `<tr><td colspan="7" class="sl-hist-empty">데이터 없음 — 집계 재계산이 필요할 수 있습니다.</td></tr>`}</tbody>
+        <tfoot><tr class="sl-sum-foot"><td colspan="2">합계 (${rows.length}품번)</td><td class="sl-c sl-net"><b>${fmt(t.tot)}</b></td><td class="sl-c">${fmt(t.gh)}</td><td class="sl-c sl-pt-col">${fmt(t.pt)}</td><td class="sl-c">${fmt(t.s)}</td><td class="sl-c">${fmt(t.p)}</td></tr></tfoot>
       </table>
     </div>`
 }
@@ -1182,10 +1311,258 @@ async function renderSalesMalls() {
     </div>`
 }
 
-// ---- 파트너별 탭 (Phase 3 = shell) ----
-function renderSalesPartner() {
+// =============================================
+// ===== 파트너별 탭 (Phase 4) — 명단 관리 + 업체별 매입 리포트 =====
+// =============================================
+let _slPartnerManageOpen = false, _slPartnerSearch = '', _slPartnerEditId = null, _slMasterDirty = false
+let _slPartnerReport = null   // { cols:[{key,name}], rows:[{code,name,cells[],tot}], unit }
+
+async function renderSalesPartner() {
   const panel = document.getElementById('slPartnerBody'); if (!panel) return
-  panel.innerHTML = `<div class="sl-hist-empty" style="padding:40px">🚧 파트너 마스터(고객ID↔업체명) 등록 후 사용 가능합니다 — 다음 단계(Phase 4).<br><br>카페24 원본에 주문자ID가 있어, 업체 목록만 등록하면 업체별 매입 리포트가 열립니다.</div>`
+  await _slEnsurePartnerMaster()
+  await _slMxEnsurePeriod()
+  const isAdmin = _slIsAdmin()
+  const total = (_salesPartners || []).length
+  const activeN = (_salesPartners || []).filter(p => p && p.active !== false).length
+  const ut = _slPartnerUpdatedAt ? ((typeof kstFormat === 'function') ? kstFormat(_slPartnerUpdatedAt, 'full') : String(_slPartnerUpdatedAt).slice(0, 16)) : '—'
+  let html = `<div class="sl-pt-head">
+    <div class="sl-pt-summary">🤝 파트너 명단 <b>${total}</b>명 (활성 ${activeN}) · 최종 갱신 ${esc(ut)}</div>
+    <div class="sl-pt-head-actions">
+      ${isAdmin ? `<label class="btn btn-outline btn-sm sl-pt-uplabel">🤝 명단 업로드<input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="handlePartnerFile(this)"></label>
+      <button class="btn btn-outline btn-sm" onclick="_slTogglePartnerManage()">${_slPartnerManageOpen ? '▲ 명단 관리 닫기' : '👥 명단 관리'}</button>` : ''}
+    </div>
+  </div>`
+  if (_slMasterDirty && isAdmin) html += `<div class="sl-pt-dirty">⚠️ 파트너 명단이 변경되었습니다. 집계에 반영하려면 <button class="btn btn-new btn-sm" onclick="runFullRecompute()">🔄 전체 기간 재계산</button> (또는 [일자별 요약]에서 기간 지정 후 재계산)</div>`
+  if (isAdmin && _slPartnerManageOpen) html += _slPartnerManageHtml()
+  html += _slMxControlsHtml('mxP', 'renderSalesPartner')
+  html += `<div id="slPartnerReportBody"><div class="sl-hist-loading">불러오는 중…</div></div>`
+  panel.innerHTML = html
+  await _slRenderPartnerReport()
+}
+
+// 업체별 매입 리포트(품번 × 업체) — 하이브리드: 정확 월/주=shard ptBy · 그 외=L1 스캔(od-range, 클라 bid 필터)
+async function _slPartnerItems(pStart, pEnd) {
+  const mk = _slMonthKey(pStart)
+  if (pStart === mk + '-01' && pEnd === _slMonthRange(mk)[1]) { const d = await _slReadShard('salesM', mk + '_c24'); if (d && d.ptBy) return d.ptBy }
+  if (_slWeekStart(pStart) === pStart && _slWeekRange(pStart)[1] === pEnd) { const d = await _slReadShard('salesW', pStart + '_c24'); if (d && d.ptBy) return d.ptBy }
+  await _slEnsurePartnerMaster()
+  const orders = await _slFetchPeriodOrders(pStart, pEnd)
+  return _slAggShard(orders, 'c24', pStart, pEnd, _slPartnerActiveSet()).ptBy || {}
+}
+async function _slRenderPartnerReport() {
+  const body = document.getElementById('slPartnerReportBody'); if (!body) return
+  const s = _slMxStart, e = _slMxEnd, unit = _slMxUnit
+  let ptBy
+  try { ptBy = await _slPartnerItems(s, e) } catch (err) { body.innerHTML = `<div class="sl-hist-empty">조회 실패: ${esc(err.message)}</div>`; return }
+  const nameMap = _slNameMap(), pmap = _slPartnerMap()
+  const colKeys = Object.keys(ptBy)
+  const cols = colKeys.map(k => ({ key: k, name: (pmap[k] && pmap[k].name) || ptBy[k].name || k })).sort((a, b) => a.name.localeCompare(b.name))
+  const codeSet = new Set()
+  colKeys.forEach(k => Object.keys(ptBy[k].items || {}).forEach(c => codeSet.add(c)))
+  const val = it => unit === 'qty' ? ((it.q || 0) - (it.rq || 0)) : ((it.amt || 0) - (it.ramt || 0))
+  let rows = [...codeSet].map(code => {
+    const cells = cols.map(col => val((ptBy[col.key].items || {})[code] || {}))
+    return { code, name: nameMap[code.toUpperCase()] || '', cells, tot: cells.reduce((a, b) => a + b, 0) }
+  })
+  const q = (_slMxSearch || '').trim().toUpperCase()
+  if (q) rows = rows.filter(r => r.code.toUpperCase().includes(q) || (r.name || '').toUpperCase().includes(q))
+  rows.sort((a, b) => b.tot - a.tot || a.code.localeCompare(b.code))
+  _slPartnerReport = { cols, rows, unit }
+  const fmt = v => (v || 0).toLocaleString()
+  const colTot = cols.map((_, ci) => rows.reduce((a, r) => a + (r.cells[ci] || 0), 0))
+  const grand = colTot.reduce((a, b) => a + b, 0)
+  if (!cols.length) { body.innerHTML = `<div class="sl-hist-empty">${esc(s)} ~ ${esc(e)} · 파트너 매입 데이터가 없습니다.${(_salesPartners || []).length ? ' (기간 내 파트너 주문 없음 — 정확 월/주가 아니면 L1 스캔, 그 외 [집계 재계산] 필요)' : ' 먼저 파트너 명단을 등록하세요.'}</div>`; return }
+  body.innerHTML = `
+    <div class="sl-sum-basis">${esc(s)} ~ ${esc(e)} · ${unit === 'amt' ? '금액(순액=매출+배송−반품)' : '수량(순=판매−반품)'} · 업체=주문자ID∈파트너 명단 · 열=기간 내 매입 있는 업체만</div>
+    <div class="sl-hist-wrap"><table class="data-table inbhist-table sl-mx-table">
+      <thead><tr><th>품번</th><th>상품명</th><th class="sl-c">합계</th>${cols.map(c => `<th class="sl-c">${esc(c.name)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map(r => `<tr>
+        <td><a class="sl-code-link" onclick="_slOpenProduct('${esc(r.code)}')">${esc(r.code)}</a></td><td class="sl-mx-name">${esc(r.name)}</td>
+        <td class="sl-c sl-net"><b>${fmt(r.tot)}</b></td>${r.cells.map(v => `<td class="sl-c">${v ? fmt(v) : '-'}</td>`).join('')}
+      </tr>`).join('')}</tbody>
+      <tfoot><tr class="sl-sum-foot"><td colspan="2">합계 (${rows.length}품번)</td><td class="sl-c sl-net"><b>${fmt(grand)}</b></td>${colTot.map(v => `<td class="sl-c">${fmt(v)}</td>`).join('')}</tr></tfoot>
+    </table></div>
+    <div class="sl-mx-toolbar"><button class="btn btn-outline btn-sm" onclick="downloadSalesPartner()">📥 엑셀</button></div>`
+}
+function downloadSalesPartner() {
+  if (!_slPartnerReport || !_slPartnerReport.cols.length) { showToast('데이터 없음', 'warning'); return }
+  const { cols, rows } = _slPartnerReport
+  const aoa = [['품번', '상품명', '합계', ...cols.map(c => c.name)]]
+  rows.forEach(r => aoa.push([r.code, r.name, r.tot, ...r.cells]))
+  _slExcel(aoa, `매출_파트너별_${_slMxStart}~${_slMxEnd}`)
+}
+
+// ---- 명단 관리(CRUD) — grade≥3. 삭제 없음(비활성 토글). ----
+function _slKnownGrades() { const s = new Set(['Partner Blue Class', 'Partner Red Class', 'Partner Orange Class', 'Partner Green Class']); (_salesPartners || []).forEach(p => { if (p && p.grade) s.add(p.grade) }); return [...s] }
+function _slPartnerRowsHtml() {
+  const q = (_slPartnerSearch || '').trim().toLowerCase()
+  let list = (_salesPartners || []).slice()
+  if (q) list = list.filter(p => String(p.id || '').toLowerCase().includes(q) || String(p.name || '').toLowerCase().includes(q))
+  list.sort((a, b) => String(a.name || a.id || '').localeCompare(String(b.name || b.id || '')))
+  if (!list.length) return '<tr><td colspan="6" class="sl-hist-empty">명단이 비어 있습니다.</td></tr>'
+  return list.map(p => {
+    const k = _slPidNorm(p.id)
+    const on = p.active !== false
+    if (_slPartnerEditId === k) {
+      return `<tr class="sl-pt-editrow">
+        <td>${esc(p.id)}</td>
+        <td><input type="text" id="slPtEditName" class="inbhist-store" value="${esc(p.name || '')}"></td>
+        <td><input type="text" id="slPtEditGrade" class="inbhist-store" value="${esc(p.grade || '')}" list="slPtGrades"></td>
+        <td>${on ? '활성' : '비활성'}</td><td>${esc((p.ut || '').slice(0, 10))}</td>
+        <td><button class="btn btn-new btn-sm" onclick="_slPartnerSaveEdit('${esc(k)}')">저장</button> <button class="btn btn-outline btn-sm" onclick="_slPartnerCancelEdit()">취소</button></td>
+      </tr>`
+    }
+    return `<tr>
+      <td>${esc(p.id)}</td><td>${esc(p.name || '')}</td><td>${esc(p.grade || '')}</td>
+      <td><span class="sl-pt-badge ${on ? 'on' : 'off'}">${on ? '활성' : '비활성'}</span></td>
+      <td>${esc((p.ut || '').slice(0, 10))}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="_slPartnerStartEdit('${esc(k)}')">수정</button>
+        <button class="btn btn-outline btn-sm" onclick="_slPartnerToggleActive('${esc(k)}')">${on ? '비활성' : '활성'}</button></td>
+    </tr>`
+  }).join('')
+}
+function _slPartnerManageHtml() {
+  const grades = _slKnownGrades()
+  return `<div class="sl-pt-manage">
+    <datalist id="slPtGrades">${grades.map(g => `<option value="${esc(g)}">`).join('')}</datalist>
+    <div class="sl-pt-manage-top">
+      <input type="text" class="inbhist-store" placeholder="아이디/이름 검색" value="${esc(_slPartnerSearch)}" oninput="_slPartnerSearchInput(this)">
+      <span class="sl-warn-info">삭제는 비활성으로 대체(이력 안전). 변경 후 [집계 재계산] 필요.</span>
+    </div>
+    <div class="sl-pt-add">
+      <input type="text" id="slPtNewId" class="inbhist-store" placeholder="아이디(주문자ID)">
+      <input type="text" id="slPtNewName" class="inbhist-store" placeholder="이름/업체명">
+      <input type="text" id="slPtNewGrade" class="inbhist-store" placeholder="등급(선택)" list="slPtGrades">
+      <button class="btn btn-new btn-sm" onclick="_slPartnerAdd()">+ 추가</button>
+    </div>
+    <div class="sl-hist-wrap"><table class="data-table inbhist-table sl-pt-table">
+      <thead><tr><th>아이디</th><th>이름</th><th>등급</th><th>활성</th><th>등록/갱신</th><th>작업</th></tr></thead>
+      <tbody id="slPtTbody">${_slPartnerRowsHtml()}</tbody>
+    </table></div>
+  </div>`
+}
+function _slTogglePartnerManage() { _slPartnerManageOpen = !_slPartnerManageOpen; _slPartnerEditId = null; renderSalesPartner() }
+function _slPartnerSearchInput(el) { _slPartnerSearch = el.value || ''; const tb = document.getElementById('slPtTbody'); if (tb) tb.innerHTML = _slPartnerRowsHtml() }
+function _slPartnerStartEdit(k) { _slPartnerEditId = k; renderSalesPartner() }
+function _slPartnerCancelEdit() { _slPartnerEditId = null; renderSalesPartner() }
+async function _slPartnerCommit(action) {
+  try { await saveSalesPartners() } catch (e) { showToast('저장 실패 — 다시 시도해주세요.', 'error'); return }
+  if (typeof logActivity === 'function') logActivity('setting', '파트너마스터', `${action} — ${(_salesPartners || []).length}명`)
+  _slMasterDirty = true
+  showToast(`파트너 명단 ${action} 완료 — 반영하려면 [집계 재계산]`, 'success')
+  renderSalesPartner()
+}
+async function _slPartnerSaveEdit(k) {
+  const p = (_salesPartners || []).find(x => _slPidNorm(x.id) === k); if (!p) return
+  p.name = _slStr((document.getElementById('slPtEditName') || {}).value)
+  p.grade = _slStr((document.getElementById('slPtEditGrade') || {}).value)
+  p.ut = new Date().toISOString()
+  _slPartnerEditId = null
+  await _slPartnerCommit('수정')
+}
+async function _slPartnerToggleActive(k) {
+  const p = (_salesPartners || []).find(x => _slPidNorm(x.id) === k); if (!p) return
+  p.active = p.active === false ? true : false; p.ut = new Date().toISOString()
+  await _slPartnerCommit(p.active ? '활성화' : '비활성화')
+}
+async function _slPartnerAdd() {
+  if (!_slIsAdmin()) { showToast('권한이 없습니다.', 'warning'); return }
+  const id = _slStr((document.getElementById('slPtNewId') || {}).value)
+  const nm = _slStr((document.getElementById('slPtNewName') || {}).value)
+  const gr = _slStr((document.getElementById('slPtNewGrade') || {}).value)
+  if (!id) { showToast('아이디를 입력하세요.', 'warning'); return }
+  const k = _slPidNorm(id)
+  if ((_salesPartners || []).some(p => _slPidNorm(p.id) === k)) { showToast('이미 등록된 아이디입니다.', 'warning'); return }
+  _salesPartners.push({ id: id, name: nm, grade: gr, active: true, src: 'manual', ut: new Date().toISOString() })
+  await _slPartnerCommit('추가')
+}
+
+// ---- 명단 파일 업로드(3-col 서명: 아이디/이름/회원등급) — 전체 교체 + 수동추가 보존 확인 ----
+function _slDetectPartnerHeaders(headers) {
+  const H = (headers || []).map(h => _slStr(h))
+  const has = n => H.some(h => h === n || h.includes(n))
+  return has('아이디') && has('이름') && has('회원등급')
+}
+function _slParsePartnerRows(rows) {
+  const H = (rows[0] || []).map(h => _slStr(h))
+  const find = names => { for (const n of names) { let i = H.findIndex(h => h === n); if (i >= 0) return i; i = H.findIndex(h => h.includes(n)); if (i >= 0) return i } return -1 }
+  const ci = find(['아이디', 'ID', 'id']), cn = find(['이름', '성명', 'name']), cg = find(['회원등급', '등급', 'grade'])
+  const map = {}, order = [], dupes = new Set()
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r]; if (!row) continue
+    const id = ci >= 0 ? _slStr(row[ci]) : ''; if (!id) continue
+    const key = _slPidNorm(id)
+    if (map[key]) dupes.add(id); else order.push(key)   // 중복 ID = 마지막 값 우선
+    map[key] = { id: id, name: cn >= 0 ? _slStr(row[cn]) : '', grade: cg >= 0 ? _slStr(row[cg]) : '' }
+  }
+  return { entries: order.map(k => map[k]), dupes: [...dupes] }
+}
+async function handlePartnerFile(input) {
+  const file = input.files && input.files[0]; if (!file) return
+  if (!_slIsAdmin()) { showToast('권한이 없습니다 (관리자 전용).', 'warning'); input.value = ''; return }
+  const isCsv = /\.csv$/i.test(file.name)
+  const reader = new FileReader()
+  reader.onload = async ev => {
+    let rows
+    try { rows = _slReadWorkbookRows(ev.target.result, isCsv) } catch (err) { showToast('파일 읽기 실패: ' + err.message, 'error'); return }
+    input.value = ''
+    if (!_slDetectPartnerHeaders(rows[0] || [])) { showToast('파트너 명단 형식이 아닙니다 — 헤더에 아이디·이름·회원등급 필요.', 'warning'); return }
+    const { entries, dupes } = _slParsePartnerRows(rows)
+    if (!entries.length) { showToast('명단 데이터가 없습니다.', 'warning'); return }
+    const nowIso = new Date().toISOString()
+    const oldMap = _slPartnerMap()
+    const fileKeys = new Set(entries.map(en => _slPidNorm(en.id)))
+    // 파일 = 전체 교체. 기존 비활성 플래그는 지속 항목에 한해 보존(수동 override 존중).
+    const merged = entries.map(en => {
+      const prev = oldMap[_slPidNorm(en.id)]
+      return { id: en.id, name: en.name, grade: en.grade, active: (prev && prev.active === false) ? false : true, src: 'file', ut: nowIso }
+    })
+    // 파일에 없는 수동추가(src:'manual') 항목 = 유지/제거 확인
+    const manualOrphans = (_salesPartners || []).filter(p => p && p.src === 'manual' && !fileKeys.has(_slPidNorm(p.id)))
+    let keepManual = true
+    if (manualOrphans.length) {
+      keepManual = await korConfirm(`업로드 파일에 없는 '수동 추가' 항목 ${manualOrphans.length}건이 있습니다.\n예: ${manualOrphans.slice(0, 5).map(p => p.id).join(', ')}\n\n[유지]하면 명단에 남기고, [제거]하면 삭제합니다.`, '유지', '제거')
+    }
+    if (keepManual) manualOrphans.forEach(p => merged.push(p))
+    const preservedDeact = merged.filter(m => m.active === false).length
+    const ok = await korConfirm(`파트너 명단을 ${merged.length}명으로 갱신합니다.\n· 파일 ${entries.length}명${dupes.length ? ` (중복 ID ${dupes.length}건 — 마지막 값 사용: ${dupes.slice(0, 3).join(', ')})` : ''}\n· 비활성 유지 ${preservedDeact}명${manualOrphans.length ? ` · 수동추가 ${keepManual ? '유지' : '제거'} ${manualOrphans.length}건` : ''}\n\n반영 후 [집계 재계산]이 필요합니다.`, '갱신', '취소')
+    if (!ok) return
+    _salesPartners = merged
+    try { await saveSalesPartners() } catch (e) { showToast('명단 저장 실패 — 다시 시도해주세요.', 'error'); return }
+    if (typeof logActivity === 'function') logActivity('setting', '파트너마스터', `명단 업로드 ${merged.length}명 (파일 ${entries.length}${dupes.length ? ` · 중복 ${dupes.length}` : ''})`)
+    _slMasterDirty = true
+    showToast(`파트너 명단 ${merged.length}명 갱신 완료 — [집계 재계산] 필요`, 'success')
+    renderSalesPartner()
+  }
+  if (isCsv) reader.readAsText(file, 'UTF-8'); else reader.readAsArrayBuffer(file)
+}
+
+// ---- 전체 기간 재계산(마스터 변경 반영) ----
+async function _slFullDataRange() {
+  let min = '', max = ''
+  try {
+    const a = await db.collection('salesOrders').where('od', '>=', '2000-01-01').orderBy('od').limit(1).get(); a.forEach(d => min = d.data().od || '')
+    const b = await db.collection('salesOrders').where('od', '>=', '2000-01-01').orderBy('od', 'desc').limit(1).get(); b.forEach(d => max = d.data().od || '')
+  } catch (e) { console.warn('_slFullDataRange:', e && e.message) }
+  return [min, max]
+}
+async function runFullRecompute() {
+  if (!_slIsAdmin()) { showToast('권한이 없습니다.', 'warning'); return }
+  if (_slBusy) return
+  const [min, max] = await _slFullDataRange()
+  if (!min || !max) { showToast('원장 데이터가 없습니다. [일자별 요약]에서 기간을 지정해 재계산하세요.', 'warning'); return }
+  const days = _slDaysInRange(min, max).length
+  const ok = await korConfirm(`전체 기간 ${min} ~ ${max} (${days}일)\n집계를 재계산하여 공홈/파트너 분리를 반영합니다.\n(멱등 — 재실행해도 동일 · L1 원장 불변)`, '재계산', '취소')
+  if (!ok) return
+  _slBusy = true
+  try {
+    const r = await recomputeSalesRange(min, max, () => {})
+    _slMasterDirty = false
+    showToast(`재계산 완료 — ${r.days}일` + ((r.candidates && r.candidates.length) ? ` · ⚠️ 새 파트너 후보 ${r.candidates.length}명` : ''), 'success')
+    if (typeof logActivity === 'function') logActivity('setting', '매출집계', `전체 재계산 ${min}~${max}: ${r.days}일`)
+    renderSalesPartner()
+  } catch (e) { console.error('runFullRecompute:', e && e.message); showToast('재계산 실패 — 다시 시도해주세요. (L1 원장은 안전)', 'error') }
+  _slBusy = false
 }
 
 // ---- 주문 조회 탭 (주문번호 exact / 품번 부분 → L1 주문 목록 + 라인 상세) ----
@@ -1249,8 +1626,8 @@ function _slOpenProduct(code) { if (typeof openDetailModal === 'function') openD
 // ---- 엑셀(현재 탭·현재 기간 미러) ----
 function downloadSalesMatrix() {
   if (!_slMatrixRows.length) { showToast('데이터 없음', 'warning'); return }
-  const aoa = [['품번', '상품명', '합계', '카페24', '사방넷', '매장']]
-  _slMatrixRows.forEach(r => aoa.push([r.code, r.name, r.tot, r.c, r.s, r.p]))
+  const aoa = [['품번', '상품명', '합계', '공홈', '파트너', '사방넷', '매장']]
+  _slMatrixRows.forEach(r => aoa.push([r.code, r.name, r.tot, r.gh, r.pt, r.s, r.p]))
   _slExcel(aoa, `매출_전체_${_slMxStart}~${_slMxEnd}`)
 }
 function downloadSalesMalls() {
@@ -1294,6 +1671,26 @@ window.renderSalesMatrix = renderSalesMatrix
 window.renderSalesMalls = renderSalesMalls
 window.renderSalesPartner = renderSalesPartner
 window.renderSalesOrdersTab = renderSalesOrdersTab
+// Phase 4: 파트너 마스터 + 명단 관리 + 업체별 리포트
+window._slSetPartners = _slSetPartners
+window.saveSalesPartners = saveSalesPartners
+window._slPartnerActiveSet = _slPartnerActiveSet
+window._slPartnerMap = _slPartnerMap
+window._slOrderIsPartner = _slOrderIsPartner
+window._slCollectCandidate = _slCollectCandidate
+window._slPidNorm = _slPidNorm
+window._slDetectPartnerHeaders = _slDetectPartnerHeaders
+window._slParsePartnerRows = _slParsePartnerRows
+window.handlePartnerFile = handlePartnerFile
+window.downloadSalesPartner = downloadSalesPartner
+window.runFullRecompute = runFullRecompute
+window._slTogglePartnerManage = _slTogglePartnerManage
+window._slPartnerSearchInput = _slPartnerSearchInput
+window._slPartnerStartEdit = _slPartnerStartEdit
+window._slPartnerCancelEdit = _slPartnerCancelEdit
+window._slPartnerSaveEdit = _slPartnerSaveEdit
+window._slPartnerToggleActive = _slPartnerToggleActive
+window._slPartnerAdd = _slPartnerAdd
 window.searchSalesOrders = searchSalesOrders
 window.downloadSalesMatrix = downloadSalesMatrix
 window.downloadSalesMalls = downloadSalesMalls
