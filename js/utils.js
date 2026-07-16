@@ -372,8 +372,11 @@ function typeBadge(type) {
   return `<span class="badge badge-${t.replace(' ','-')}">${type || '-'}</span>`
 }
 
+// 🔴 날짜 필터 표준(17a28f3): open-ended(시작만=이후·끝만=이전·둘다=포함범위·없음=미필터) · date-only inclusive(끝=T23:59:59) ·
+//   🔴 §4 무음 제외 금지: dateStr 없는(빈/미측정) 항목은 기간 필터가 켜져 있어도 숨기지 않고 포함(return true).
+//   사용처: 상품조회(products.js p[dateType]) · 재고관리(stock.js registDate) · 매출현황(sales.js registDate) 공용.
 function isInRange(dateStr, from, to) {
-  if (!dateStr) return !from && !to
+  if (!dateStr) return true
   const d = new Date(dateStr)
   if (from && d < new Date(from)) return false
   if (to   && d > new Date(to + 'T23:59:59')) return false

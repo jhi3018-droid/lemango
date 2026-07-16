@@ -30,11 +30,11 @@ function _trashApplyFilters(items) {
     }
     if (_trashDateFrom) {
       const at = String(p.deletedAt || '').slice(0, 10)
-      if (!at || at < _trashDateFrom) return false
+      if (at && at < _trashDateFrom) return false   // 🔴 §4: 삭제일 없는 항목은 무음 제외 안 함(포함)
     }
     if (_trashDateTo) {
       const at = String(p.deletedAt || '').slice(0, 10)
-      if (!at || at > _trashDateTo) return false
+      if (at && at > _trashDateTo) return false
     }
     if (_trashDeleter && p.deletedBy !== _trashDeleter) return false
     return true
