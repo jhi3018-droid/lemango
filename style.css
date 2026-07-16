@@ -6119,6 +6119,31 @@ td[data-editable]:hover { background: #FAEEDA; }
 .sale-line-cart-chip { color: #2f6f8f; }
 .sale-promo-chip-cart { background: #e7eff7; color: #2f6f8f; }
 
+/* 매장 할인 — 일괄 등록 + 그룹 표 UI (관리 UI만) */
+.disc-search-bar { margin: 6px 0 8px; }
+.disc-search-input { width: 100%; box-sizing: border-box; font-size: 12px; }
+.disc-groups { display: flex; flex-direction: column; gap: 8px; }
+.disc-group { border: 1px solid var(--border, #e8e6e0); border-radius: 6px; overflow: hidden; }
+.disc-group-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--bg, #f5f4f1); border-bottom: 1px solid var(--border, #e8e6e0); }
+.disc-group-name { font-weight: 700; font-size: 12.5px; color: var(--primary, #1a1a2e); }
+.disc-group-count { font-size: 11px; color: var(--text-sub, #888); }
+.disc-group-head .set-item-action { margin-left: 2px; }
+.disc-group-head .store-toggle-btn ~ .set-item-del, .disc-group-head .set-item-action:first-of-type { margin-left: auto; }
+.disc-group-body { display: flex; flex-direction: column; }
+.disc-group-body .disc-item { border-bottom: 1px solid var(--border, #f0efea); }
+.disc-group-body .disc-item:last-child { border-bottom: none; }
+.disc-bulk-card { margin-top: 12px; }
+.disc-bulk-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
+.disc-bulk-form .set-edit-input { font-size: 12px; }
+.disc-bulk-codes { min-height: 40px; resize: vertical; font-family: inherit; }
+.disc-bulk-excel { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.disc-excel-label { cursor: pointer; }
+.disc-bulk-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.disc-preview-table { width: auto; min-width: 100%; table-layout: auto; }
+.disc-preview-table th, .disc-preview-table td { white-space: nowrap; font-size: 12px; }
+.disc-pv-bad td { background: rgba(224, 82, 82, 0.08); }
+.disc-pv-dup td { background: rgba(240, 165, 0, 0.10); }
+
 /* 판매 최종 확정 사전 확인 다이얼로그 (POS Phase 3c) */
 .sale-confirm-body { padding: 18px 22px 20px; }
 .sale-confirm-row { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 14px; color: var(--text-secondary); }

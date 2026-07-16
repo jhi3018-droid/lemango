@@ -423,8 +423,9 @@ function renderStoreDiscountPanel() {
         <button class="set-edit-save" onclick="saveStoreDiscountEdit(${i})">저장</button>
         <button class="set-edit-cancel" onclick="renderStoreDiscountPanel()">취소</button>
       </div>` : ''
-  const sdListHtml = _sdList.map(({ r, i }) => `
-    <div class="set-item store-item disc-item${r.active === false ? ' store-item-inactive' : ''}" id="discItem_${i}">
+  // 규칙 아이템(그룹 멤버) — 기존 view+editrow 구조 유지(edit/toggle/delete 무변경) + 검색용 data 속성.
+  const renderItem = (r, i) => `
+    <div class="set-item store-item disc-item${r.active === false ? ' store-item-inactive' : ''}" id="discItem_${i}" data-disc-code="${esc((r.condition && r.condition.productCode) || '')}" data-disc-name="${esc(r.name || '')}">
       <div class="set-item-view">
         <span class="set-item-label" style="font-weight:600">${esc(r.name || '(이름없음)')}</span>
         <span class="store-id-tag" title="규칙 ID (수정 불가)">${esc(r.id)}</span>
@@ -433,26 +434,97 @@ function renderStoreDiscountPanel() {
         ${actions(i, r)}
       </div>
       ${editRow(i, r)}
-    </div>`).join('') || '<div class="set-empty">할인 규칙 없음</div>'
+    </div>`
+
+  // 그룹핑 — group 필드로 묶음(없으면 개별 규칙 pseudo-group). 그룹 순서=첫 멤버 order, 개별 규칙=마지막.
+  const groupsMap = {}
+  _sdList.forEach(({ r, i }) => { const k = _discGroupKey(r); (groupsMap[k] = groupsMap[k] || []).push({ r, i }) })
+  const groupKeys = Object.keys(groupsMap).sort((a, b) => {
+    if (a === _DISC_UNGROUPED) return 1; if (b === _DISC_UNGROUPED) return -1
+    return (groupsMap[a][0].r.order || 0) - (groupsMap[b][0].r.order || 0)
+  })
+  _discGroupKeysCache = groupKeys
+  const groupsHtml = groupKeys.map((k, gi) => {
+    const members = groupsMap[k]
+    const activeN = members.filter(m => m.r.active !== false).length
+    const label = _discGroupLabel(k), isGroup = k !== _DISC_UNGROUPED
+    const gActions = (canManage && isGroup) ? `
+      <button class="set-item-action store-toggle-btn" onclick="toggleDiscountGroup(${gi})" title="그룹 전체 활성/비활성">${activeN > 0 ? '&#128309;' : '&#9898;'}</button>
+      <button class="set-item-action set-item-del" onclick="removeDiscountGroup(${gi})" title="그룹 전체 삭제">&#10005;</button>` : ''
+    return `<div class="disc-group" data-disc-group="${esc(label)}">
+      <div class="disc-group-head">
+        <span class="disc-group-name">${isGroup ? '📦 ' : ''}${esc(label)}</span>
+        <span class="disc-group-count">${members.length}개${activeN < members.length ? ` · 활성 ${activeN}` : ''}</span>
+        ${gActions}
+      </div>
+      <div class="disc-group-body">${members.map(({ r, i }) => renderItem(r, i)).join('')}</div>
+    </div>`
+  }).join('') || '<div class="set-empty">할인 규칙 없음</div>'
+
+  const searchBar = `<div class="disc-search-bar"><input type="text" class="set-edit-input disc-search-input" placeholder="🔍 품번 / 규칙명 / 그룹명 검색" value="${esc(_discSearch)}" oninput="_discSearchInput(this)"></div>`
 
   const addRow = canManage ? `
     <div class="set-add-row disc-add-row">
       ${editFields({ storeScope: _discDefaultScope() }).split('disc-f-').join('disc-add-')}
       <button class="btn btn-new set-add-btn" onclick="addStoreDiscount()">+ 규칙 추가</button>
     </div>` : ''
+
+  // 다중 품번 / 엑셀 일괄 등록(상품 규칙 전용) 또는 엑셀 미리보기
+  const bulkScopeSel = _discDefaultScope()
+  const bulkStoreOpts = storeOptsAll.replace('value="' + bulkScopeSel + '"', 'value="' + bulkScopeSel + '" selected')
+  const pv = _discBulkPreview
+  const bulkCard = !canManage ? '' : (pv ? `
+    <div class="set-card set-card-wide disc-bulk-card">
+      <div class="set-card-header"><span class="set-card-title">📋 엑셀 미리보기</span><span class="set-card-count">${pv.filter(x => x.ok).length}/${pv.length} 유효</span></div>
+      <div class="sl-hist-wrap"><table class="data-table inbhist-table disc-preview-table">
+        <thead><tr><th>상태</th><th>품번</th><th>방식</th><th>값</th><th>기간</th><th>매장</th><th>규칙명(그룹)</th></tr></thead>
+        <tbody>${pv.map(x => `<tr class="${x.ok ? (x.dup ? 'disc-pv-dup' : 'disc-pv-ok') : 'disc-pv-bad'}">
+          <td>${x.ok ? (x.dup ? '⚠️ ' + esc(x.status) : '✅ OK') : '❌ ' + esc(x.status)}</td>
+          <td>${esc(x.code)}</td><td>${esc(String(x.method || ''))}</td><td>${esc(String(x.value || ''))}</td>
+          <td>${esc((x.start || '') + (x.end ? '~' + x.end : '')) || '상시'}</td><td>${esc(String(x.scope || '전 매장'))}</td><td>${esc(x.name || '')}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+      <div class="disc-bulk-actions">
+        <button class="btn btn-new" onclick="confirmDiscountExcel()">✅ ${pv.filter(x => x.ok).length}건 추가</button>
+        <button class="btn btn-outline" onclick="cancelDiscountExcel()">취소</button>
+        <button class="btn btn-outline" onclick="copyDiscExcelWarnings()">⚠️ 경고 복사</button>
+      </div>
+    </div>` : `
+    <div class="set-card set-card-wide disc-bulk-card">
+      <div class="set-card-header"><span class="set-card-title">📋 다중 품번 / 엑셀 일괄 등록 (상품 규칙)</span></div>
+      <div class="disc-bulk-form">
+        <input type="text" id="discBulkName" class="set-edit-input" placeholder="규칙명(그룹명)" style="flex:1 1 140px">
+        <textarea id="discBulkCodes" class="set-edit-input disc-bulk-codes" placeholder="품번 여러 개 — 쉼표/공백/줄바꿈 구분 (예: ABC123, DEF456)" rows="2" style="flex:2 1 260px"></textarea>
+        <select id="discBulkMethod" class="set-edit-input" style="flex:0 0 110px"><option value="percent">％ 할인</option><option value="fixed">특정가</option></select>
+        <input type="number" id="discBulkValue" class="set-edit-input" placeholder="값(%/원)" min="1" style="flex:0 0 100px">
+        <input type="date" id="discBulkStart" class="set-edit-input" title="시작일(비우면 상시)" style="flex:0 0 140px">
+        <input type="date" id="discBulkEnd" class="set-edit-input" title="종료일(비우면 상시)" style="flex:0 0 140px">
+        <select id="discBulkScope" class="set-edit-input" style="flex:0 0 110px">${bulkStoreOpts}</select>
+        <button class="btn btn-new set-add-btn" onclick="discBulkAdd()">+ 다중 규칙 추가</button>
+      </div>
+      <div class="disc-bulk-excel">
+        <button class="btn btn-outline btn-sm" onclick="downloadDiscountTemplate()">📥 양식 다운로드</button>
+        <label class="btn btn-outline btn-sm disc-excel-label">📤 할인 엑셀 업로드<input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleDiscountExcel(this)"></label>
+        <span class="sl-warn-info">엑셀 열: 품번·할인방식(%/특정가)·값·시작일·종료일·매장·규칙명(그룹). 여러 그룹 혼합 가능.</span>
+      </div>
+    </div>`)
+
   const note = canManage
-    ? `<div class="disc-help">조건: <b>상품/브랜드/카테고리</b>(라인 %/특정가) · <b>총액(카트)</b>(%/정액, 소계 ≥ 기준 시 라인 분배). 판매 스캔마다 자동 적용 — 라인은 최대 절감 1개, 총액은 라인+카트 병존. 신규 규칙 매장 기본값=현재 선택 매장.</div>`
+    ? `<div class="disc-help">조건: <b>상품/브랜드/카테고리</b>(라인 %/특정가) · <b>총액(카트)</b>(%/정액). 판매 스캔마다 자동 적용 — 라인은 최대 절감 1개. <b>그룹</b>=규칙명으로 묶임(다중/엑셀 등록); 그룹 ON/OFF·삭제는 멤버 규칙 배치 처리(엔진 무변경). 신규 규칙 매장 기본값=현재 선택 매장.</div>`
     : `<div class="disc-help">할인 규칙 관리(추가·수정·삭제)는 시스템 관리자(grade 4+)만 가능합니다. 현재 활성 규칙 조회만 가능합니다.</div>`
 
   body.innerHTML = `<div class="set-grid">
     <div class="set-card set-card-wide">
       <div class="set-card-header"><span class="set-card-title">🏷 매장 할인 규칙</span><span class="set-card-count">${_sdList.length}</span></div>
-      <div class="set-list set-list-scroll">${sdListHtml}</div>
+      ${searchBar}
+      <div class="set-list set-list-scroll disc-groups">${groupsHtml}</div>
       ${addRow}
+      ${bulkCard}
       ${prodDatalist}
       ${note}
     </div>
   </div>`
+  _discApplySearch()
 }
 
 // ===== 매장 할인 규칙 CRUD (POS Phase 5-1 — settings.js 에서 이전, renderStoreDiscountPanel 로 재렌더) =====
@@ -636,7 +708,240 @@ async function removeStoreDiscount(idx) {
   logActivity('setting', '매장할인', `할인규칙 삭제: ${r.name} (${r.id})`)
 }
 
+// ===== 매장 할인 — 일괄 등록(다중 품번 + 엑셀) + 그룹 표 UI (관리 UI/저장만 · 엔진 무접촉) =====
+// 🔴 group 필드는 엔진(_ruleMatchesLine/_ruleUnitDiscount/getActiveDiscounts)이 절대 읽지 않음 → 매칭/적용 무영향(순수 표시/관리용).
+//   일괄 생성 규칙 = 단일 add 규칙과 동일 shape({name,condition:{type:'product',productCode},benefit,period,storeScope}) + 선택적 group.
+const _DISC_UNGROUPED = '__ungrouped__'
+let _discSearch = ''
+let _discBulkPreview = null      // 엑셀 미리보기: [{code,method,value,...,status,ok,rule?,dup?}]
+let _discGroupKeysCache = []     // 그룹 액션 onclick 이 인덱스로 참조(그룹명 escape 불필요·인젝션 안전)
+
+function _discGroupKey(r) { return (r && r.group && String(r.group).trim()) ? String(r.group).trim() : _DISC_UNGROUPED }
+function _discGroupLabel(k) { return k === _DISC_UNGROUPED ? '개별 규칙' : k }
+function _discGroupMembers(k) { return (typeof _storeDiscounts !== 'undefined' ? _storeDiscounts : []).filter(r => _discGroupKey(r) === k) }
+
+// 할인방식 정규화 — 상품 규칙은 percent/fixed(특정가)만(엔진 _ruleUnitDiscount 지원). '정액'(amount)은 카트/콤보 전용이라 상품 일괄엔 미지원.
+function _discNormMethod(m) {
+  const s = String(m == null ? '' : m).trim().toLowerCase()
+  if (s === '%' || s === '％' || s === 'percent' || s === '퍼센트' || s === 'percentage' || s === '％ 할인' || s === '%할인') return 'percent'
+  if (s === '특정가' || s === 'fixed' || s === '고정가' || s === 'price') return 'fixed'
+  return ''
+}
+// 매장 정규화 — 빈값/'전 매장'→'all', 매장명 또는 id → id.
+function _discNormScope(s) {
+  s = String(s == null ? '' : s).trim()
+  if (!s || s === 'all' || s === '전 매장' || s === '전매장') return 'all'
+  const stores = (typeof getActiveStores === 'function') ? getActiveStores() : []
+  const byId = stores.find(x => x && x.id === s); if (byId) return byId.id
+  const byName = stores.find(x => x && x.name === s); if (byName) return byName.id
+  return s
+}
+// 🔴 상품 규칙 빌더 — _discReadFields 의 product 경로와 동일 shape/검증(품번 존재·%1~100·특정가≥1·YYYY-MM-DD·역전). 엔진-facing 규칙 shape 불변.
+function _discBuildProductRule(o) {
+  const code = String(o.code || '').trim()
+  if (!code) return { ok: false, msg: '품번 없음', code }
+  const prod = (typeof _ssvFindProduct === 'function') ? _ssvFindProduct(code) : null
+  if (!prod) return { ok: false, msg: '품번미존재', code, missing: true }
+  const method = _discNormMethod(o.method)
+  if (!method) return { ok: false, msg: '할인방식 오류(% 또는 특정가)', code }
+  const raw = String(o.value == null ? '' : o.value).trim()
+  if (!/^\d+$/.test(raw)) return { ok: false, msg: '값은 0 이상 정수', code }
+  const v = parseInt(raw, 10)
+  let benefit
+  if (method === 'percent') { if (v < 1 || v > 100) return { ok: false, msg: '％ 1~100', code }; benefit = { type: 'percent', value: v } }
+  else { if (v < 1) return { ok: false, msg: '특정가 ≥1', code }; benefit = { type: 'fixed', price: v } }
+  const start = String(o.start || '').trim(), end = String(o.end || '').trim()
+  if (start && !/^\d{4}-\d{2}-\d{2}$/.test(start)) return { ok: false, msg: '시작일 형식(YYYY-MM-DD)', code }
+  if (end && !/^\d{4}-\d{2}-\d{2}$/.test(end)) return { ok: false, msg: '종료일 형식(YYYY-MM-DD)', code }
+  if (start && end && start > end) return { ok: false, msg: '날짜 역전', code }
+  const rule = { name: String(o.name || '').trim() || '(이름없음)', condition: { type: 'product', productCode: code }, benefit: benefit, period: { start: start, end: end }, storeScope: _discNormScope(o.scope) }
+  if (o.group) rule.group = String(o.group).trim()
+  return { ok: true, rule: rule, code: code, prod: prod }
+}
+// 동일 품번+기간+매장 활성 규칙 존재? (중복 할인 경고 — 엔진은 라인당 최대 1개만 적용하므로 이중할인 아님, 경고만)
+function _discDupActive(rule) {
+  const c = rule.condition || {}, p = rule.period || {}
+  return (typeof _storeDiscounts !== 'undefined' ? _storeDiscounts : []).some(r =>
+    r && r.active !== false && r.condition && r.condition.type === 'product' && r.condition.productCode === c.productCode &&
+    String((r.period || {}).start || '') === String(p.start || '') && String((r.period || {}).end || '') === String(p.end || '') &&
+    JSON.stringify(r.storeScope || 'all') === JSON.stringify(rule.storeScope || 'all'))
+}
+// 배치 커밋 — 각 규칙에 id(generateDiscountId 순차)/active:true/order 부여 후 1회 저장. 🔴 doc-size 가드(sharedData 단일문서 1MB).
+async function _discBulkCommit(rules) {
+  if (!rules || !rules.length) return false
+  let cur = 0
+  try { cur = JSON.stringify(_storeDiscounts).length } catch (e) {}
+  const add = rules.reduce((a, r) => a + JSON.stringify(r).length + 48, 0)   // +48 = id/active/order 여유
+  if (cur + add > 900000) { showToast(`저장 용량 초과 위험(예상 ${Math.round((cur + add) / 1024)}KB / 1MB 한도). 규칙 수를 줄이세요.`, 'error'); return false }
+  let order = _storeDiscounts.length ? Math.max(..._storeDiscounts.map(r => r.order || 0)) : 0
+  const ids = []
+  rules.forEach(rule => { const id = generateDiscountId(); _storeDiscounts.push(Object.assign({ id: id, active: true, order: ++order }, rule)); ids.push(id) })
+  saveStoreDiscounts(); renderStoreDiscountPanel()
+  return ids
+}
+
+// ── 다중 품번 폼 ──
+async function discBulkAdd() {
+  if (!_discCanManage()) { showToast('할인 규칙 관리 권한이 없습니다(시스템 관리자 전용).', 'warning'); return }
+  const name = (document.getElementById('discBulkName')?.value || '').trim()
+  if (!name) { showToast('규칙명(그룹명)을 입력하세요.', 'warning'); return }
+  const method = document.getElementById('discBulkMethod')?.value || 'percent'
+  const value = document.getElementById('discBulkValue')?.value || ''
+  const start = document.getElementById('discBulkStart')?.value || ''
+  const end = document.getElementById('discBulkEnd')?.value || ''
+  const scope = document.getElementById('discBulkScope')?.value || 'all'
+  // 공유 필드(방식/값/기간) 1회 검증 — 폼은 방식/값/기간이 단일이라 여기서 막으면 전 품번에 동일 적용.
+  const methodN = _discNormMethod(method)
+  if (!methodN) { showToast('할인방식(% 또는 특정가)을 선택하세요.', 'warning'); return }
+  const raw = String(value).trim()
+  if (!/^\d+$/.test(raw)) { showToast('값은 0 이상 정수여야 합니다.', 'warning'); return }
+  const vNum = parseInt(raw, 10)
+  if (methodN === 'percent' && (vNum < 1 || vNum > 100)) { showToast('％ 할인은 1~100 사이여야 합니다.', 'warning'); return }
+  if (methodN === 'fixed' && vNum < 1) { showToast('특정가는 1원 이상이어야 합니다.', 'warning'); return }
+  if (start && end && start > end) { showToast('시작일이 종료일보다 늦습니다.', 'warning'); return }
+  const tokens = [...new Set((document.getElementById('discBulkCodes')?.value || '').split(/[\s,]+/).map(t => t.trim()).filter(Boolean))]
+  if (!tokens.length) { showToast('품번을 1개 이상 입력하세요.', 'warning'); return }
+  const ok = [], missing = [], dups = []
+  tokens.forEach(code => {
+    const res = _discBuildProductRule({ name, group: name, code, method, value, start, end, scope })
+    if (res.ok) { if (_discDupActive(res.rule)) dups.push(code); ok.push(res.rule) }
+    else if (res.missing) missing.push(code)
+  })
+  if (!ok.length) { showToast(`유효한 품번이 없습니다.${missing.length ? ` (미존재 ${missing.length}: ${missing.slice(0, 6).join(', ')})` : ''}`, 'warning'); return }
+  let msg = `그룹 "${name}" — ${ok.length}개 규칙을 추가합니다.`
+  if (missing.length) msg += `\n⚠️ 미존재 품번 ${missing.length}개 제외: ${missing.slice(0, 8).join(', ')}`
+  if (dups.length) msg += `\n⚠️ 동일 품번+기간+매장 활성 규칙 존재 ${dups.length}개(중복 등록 — 엔진은 라인당 최대 1개만 적용): ${dups.slice(0, 6).join(', ')}`
+  if (!await korConfirm(msg, '추가', '취소')) return
+  const ids = await _discBulkCommit(ok)
+  if (!ids) return
+  showToast(`그룹 "${name}" ${ids.length}개 규칙 추가 완료.`, 'success')
+  logActivity('setting', '매장할인', `일괄 추가: 그룹 ${name} ${ids.length}건${missing.length ? ` (미존재 ${missing.length} 제외)` : ''}`)
+  ;['discBulkName', 'discBulkCodes', 'discBulkValue', 'discBulkStart', 'discBulkEnd'].forEach(id => { const e = document.getElementById(id); if (e) e.value = '' })
+}
+
+// ── 엑셀 업로드 ──
+function downloadDiscountTemplate() {
+  if (typeof XLSX === 'undefined') { showToast('엑셀 모듈 로드 실패', 'error'); return }
+  const header = ['품번', '할인방식(% 또는 특정가)', '값', '시작일(YYYY-MM-DD)', '종료일(YYYY-MM-DD)', '매장(전 매장 또는 매장명)', '규칙명(그룹)']
+  const example = ['(예시)품번입력', '%', '20', '2026-07-01', '2026-07-31', '전 매장', '여름세일']
+  const ws = XLSX.utils.aoa_to_sheet([header, example])
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '매장할인')
+  XLSX.writeFile(wb, '르망고_매장할인_양식.xlsx')
+}
+function _discColIndex(header) {
+  const H = (header || []).map(h => String(h == null ? '' : h).trim())
+  const find = cands => { for (const c of cands) { let i = H.findIndex(h => h === c); if (i >= 0) return i; i = H.findIndex(h => h.includes(c)); if (i >= 0) return i } return -1 }
+  return { code: find(['품번']), method: find(['할인방식', '방식']), value: find(['값', '할인값']), start: find(['시작']), end: find(['종료', '마지막']), scope: find(['매장']), name: find(['규칙명', '그룹']) }
+}
+function handleDiscountExcel(input) {
+  if (!_discCanManage()) { showToast('할인 규칙 관리 권한이 없습니다(시스템 관리자 전용).', 'warning'); input.value = ''; return }
+  const file = input.files && input.files[0]; if (!file) return
+  const reader = new FileReader()
+  reader.onload = e => {
+    let rows
+    try { const wb = XLSX.read(e.target.result, { type: 'array' }); const ws = wb.Sheets[wb.SheetNames[0]]; rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false }) }
+    catch (err) { showToast('파일 읽기 실패: ' + err.message, 'error'); return }
+    input.value = ''
+    _discParseExcel(rows)
+  }
+  reader.readAsArrayBuffer(file)
+}
+function _discParseExcel(rows) {
+  if (!rows || rows.length < 2) { showToast('데이터 행이 없습니다.', 'warning'); return }
+  const M = _discColIndex(rows[0] || [])
+  if (M.code < 0) { showToast('품번 열을 찾을 수 없습니다(헤더 확인).', 'warning'); return }
+  const seen = new Set(), parsed = []
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r]; if (!row) continue
+    const code = String(row[M.code] || '').trim(); if (!code) continue
+    const name = (M.name >= 0 ? String(row[M.name] || '').trim() : '') || '엑셀 일괄'
+    const o = { code, method: M.method >= 0 ? row[M.method] : '', value: M.value >= 0 ? row[M.value] : '', start: M.start >= 0 ? String(row[M.start] || '').trim() : '', end: M.end >= 0 ? String(row[M.end] || '').trim() : '', scope: M.scope >= 0 ? row[M.scope] : '', name: name, group: name }
+    const key = code + '|' + o.start + '|' + o.end + '|' + String(o.scope) + '|' + name
+    if (seen.has(key)) { parsed.push(Object.assign({}, o, { status: '파일중복', ok: false })); continue }
+    seen.add(key)
+    const res = _discBuildProductRule({ name: name, group: name, code: code, method: o.method, value: o.value, start: o.start, end: o.end, scope: o.scope })
+    if (res.ok) { const dup = _discDupActive(res.rule); parsed.push(Object.assign({}, o, { status: dup ? 'OK(중복활성)' : 'OK', ok: true, rule: res.rule, dup: dup })) }
+    else parsed.push(Object.assign({}, o, { status: res.msg, ok: false }))
+  }
+  _discBulkPreview = parsed
+  renderStoreDiscountPanel()
+}
+async function confirmDiscountExcel() {
+  if (!_discBulkPreview) return
+  const ok = _discBulkPreview.filter(x => x.ok).map(x => x.rule)
+  if (!ok.length) { showToast('반영할 유효 행이 없습니다.', 'warning'); return }
+  const bad = _discBulkPreview.length - ok.length
+  if (!await korConfirm(`유효 ${ok.length}행을 규칙으로 추가합니다.${bad ? `\n(오류/제외 ${bad}행은 반영 안 함)` : ''}`, '추가', '취소')) return
+  const ids = await _discBulkCommit(ok)
+  if (!ids) return
+  _discBulkPreview = null
+  showToast(`엑셀 일괄 ${ids.length}개 규칙 추가 완료.`, 'success')
+  logActivity('setting', '매장할인', `엑셀 일괄 추가: ${ids.length}건`)
+  renderStoreDiscountPanel()
+}
+function cancelDiscountExcel() { _discBulkPreview = null; renderStoreDiscountPanel() }
+function copyDiscExcelWarnings() {
+  if (!_discBulkPreview) return
+  const bad = _discBulkPreview.filter(x => !x.ok)
+  const text = bad.map(x => `${x.code}\t${x.status}`).join('\n')
+  const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select()
+  try { document.execCommand('copy'); showToast('경고 목록 복사됨', 'success') } catch (e) { showToast('복사 실패', 'warning') }
+  document.body.removeChild(ta)
+}
+
+// ── 그룹 액션(배치) — 개별 토글/삭제를 그룹 전체에 적용 ──
+async function toggleDiscountGroup(gi) {
+  if (!_discCanManage()) { showToast('할인 규칙 관리 권한이 없습니다(시스템 관리자 전용).', 'warning'); return }
+  const key = _discGroupKeysCache[gi]; if (key == null) return
+  const members = _discGroupMembers(key); if (!members.length) return
+  const anyActive = members.some(r => r.active !== false)
+  const target = !anyActive   // 하나라도 활성 → 전부 OFF · 전부 OFF → 전부 ON
+  if (!await korConfirm(`그룹 "${_discGroupLabel(key)}"의 ${members.length}개 규칙을 모두 ${target ? '활성화' : '비활성화'}합니다.`, target ? '활성화' : '비활성화', '취소')) return
+  members.forEach(r => { r.active = target })
+  saveStoreDiscounts(); renderStoreDiscountPanel()
+  showToast(`그룹 ${members.length}개 규칙 ${target ? '활성화' : '비활성화'} 완료.`, 'success')
+  logActivity('setting', '매장할인', `그룹 ${target ? '활성화' : '비활성화'}: ${_discGroupLabel(key)} (${members.length}건)`)
+}
+async function removeDiscountGroup(gi) {
+  if (!_discCanManage()) { showToast('할인 규칙 관리 권한이 없습니다(시스템 관리자 전용).', 'warning'); return }
+  const key = _discGroupKeysCache[gi]; if (key == null) return
+  const members = _discGroupMembers(key); if (!members.length) return
+  if (!await korConfirm(`그룹 "${_discGroupLabel(key)}"의 ${members.length}개 규칙을 모두 삭제합니다.\n\n과거 판매 기록은 영향 없음(적용값 스냅샷). 향후 적용만 중단.`, '삭제', '취소')) return
+  const ids = new Set(members.map(r => r.id))
+  for (let i = _storeDiscounts.length - 1; i >= 0; i--) { if (ids.has(_storeDiscounts[i].id)) _storeDiscounts.splice(i, 1) }   // in-place(참조 안전)
+  saveStoreDiscounts(); renderStoreDiscountPanel()
+  showToast(`그룹 ${members.length}개 규칙 삭제 완료.`, 'success')
+  logActivity('setting', '매장할인', `그룹 삭제: ${_discGroupLabel(key)} (${members.length}건)`)
+}
+
+// ── 검색(품번/규칙명/그룹명) — 재렌더 없이 표시 토글(포커스 보존) ──
+function _discSearchInput(el) { _discSearch = el.value || ''; _discApplySearch() }
+function _discApplySearch() {
+  const q = (_discSearch || '').trim().toLowerCase()
+  document.querySelectorAll('#storeDiscountBody .disc-group').forEach(g => {
+    let visible = 0
+    g.querySelectorAll('.disc-item').forEach(it => {
+      const code = (it.getAttribute('data-disc-code') || '').toLowerCase()
+      const nm = (it.getAttribute('data-disc-name') || '').toLowerCase()
+      const gname = (g.getAttribute('data-disc-group') || '').toLowerCase()
+      const match = !q || code.includes(q) || nm.includes(q) || gname.includes(q)
+      it.style.display = match ? '' : 'none'
+      if (match) visible++
+    })
+    g.style.display = (q && visible === 0) ? 'none' : ''
+  })
+}
+
 window.renderStoreDiscountPanel = renderStoreDiscountPanel
+window.discBulkAdd = discBulkAdd
+window.downloadDiscountTemplate = downloadDiscountTemplate
+window.handleDiscountExcel = handleDiscountExcel
+window.confirmDiscountExcel = confirmDiscountExcel
+window.cancelDiscountExcel = cancelDiscountExcel
+window.copyDiscExcelWarnings = copyDiscExcelWarnings
+window.toggleDiscountGroup = toggleDiscountGroup
+window.removeDiscountGroup = removeDiscountGroup
+window._discSearchInput = _discSearchInput
 window.addStoreDiscount = addStoreDiscount
 window.editStoreDiscount = editStoreDiscount
 window.saveStoreDiscountEdit = saveStoreDiscountEdit
