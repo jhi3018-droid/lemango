@@ -1159,6 +1159,19 @@ function _slNameMap() {
   list.forEach(p => { if (p && p.productCode) m[String(p.productCode).toUpperCase()] = p.nameKr || '' })
   return m
 }
+// ②: 품번 → 상품 객체 맵(대표 이미지 썸네일용, 인메모리 — 추가 Firestore read 없음). 렌더마다 신선(_slNameMap 미러).
+function _slProdMap() {
+  const m = {}; const list = (typeof State !== 'undefined' && State.allProducts) ? State.allProducts : []
+  list.forEach(p => { if (p && p.productCode) m[String(p.productCode).toUpperCase()] = p })
+  return m
+}
+// ②: 매트릭스 썸네일 셀(매출현황/상품조회 패턴 재사용 — class="thumb" · loading="lazy" · placeholder onerror). 클릭=품번 셀과 동일 상세 모달(_slOpenProduct) → 행당 갤러리 JSON 미부착(800+행 perf).
+function _slThumbCell(code, pmap) {
+  const p = pmap[String(code).toUpperCase()]
+  const ph = (typeof PLACEHOLDER_IMG !== 'undefined') ? PLACEHOLDER_IMG : 'assets/logo-placeholder.png'
+  const url = (p && typeof getThumbUrl === 'function' ? getThumbUrl(p) : null) || ph
+  return `<td class="sl-thumb-cell"><img src="${url}" class="thumb sl-thumb" loading="lazy" onerror="this.onerror=null;this.src='${ph}'" onclick="_slOpenProduct('${esc(code)}')" /></td>`
+}
 
 async function _slReadShard(coll, id) { try { const d = await db.collection(coll).doc(id).get(); return d.exists ? d.data() : null } catch (e) { return null } }
 
@@ -1241,7 +1254,7 @@ async function renderSalesMatrix() {
   try { c24 = await _slMatrixItems('c24', s, e); sb = await _slMatrixItems('sb', s, e); pos = await _slStorePos(s, e) }
   catch (err) { panel.innerHTML = _slMxControlsHtml('mxA', 'renderSalesMatrix') + `<div class="sl-hist-empty">조회 실패: ${esc(err.message)}</div>`; return }
   const posErr = pos && pos._err; if (posErr) delete pos._err
-  const nameMap = _slNameMap()
+  const nameMap = _slNameMap(), prodMap = _slProdMap()
   const codes = new Set([...Object.keys(c24), ...Object.keys(sb), ...Object.keys(pos)])
   const net = (it) => unit === 'qty' ? ((it.q || 0) - (it.rq || 0)) : ((it.amt || 0) - (it.ramt || 0))
   let rows = [...codes].map(code => {
@@ -1261,13 +1274,14 @@ async function renderSalesMatrix() {
     <div class="sl-sum-basis">${esc(s)} ~ ${esc(e)} · ${unitLbl} · 배송비 포함·반품 차감(일자별 요약과 동일 기준) · 카페24=<b>공홈+파트너</b> 분리(공홈+파트너=카페24 총액 · 파트너 분리는 명단 등록+재계산 후)${posErr ? ' · ⚠️ 매장 열 조회 권한/오류로 생략' : ''}</div>
     <div class="sl-hist-wrap">
       <table class="data-table inbhist-table sl-mx-table">
-        <thead><tr><th>품번</th><th>상품명</th><th class="sl-c">합계</th><th class="sl-c">공홈</th><th class="sl-c sl-pt-col">파트너</th><th class="sl-c">사방넷</th><th class="sl-c">매장</th></tr></thead>
+        <thead><tr><th class="sl-thumb-th">이미지</th><th>품번</th><th>상품명</th><th class="sl-c">합계</th><th class="sl-c">공홈</th><th class="sl-c sl-pt-col">파트너</th><th class="sl-c">사방넷</th><th class="sl-c">매장</th></tr></thead>
         <tbody>${rows.length ? rows.map(r => `<tr>
+          ${_slThumbCell(r.code, prodMap)}
           <td><a class="sl-code-link" onclick="_slOpenProduct('${esc(r.code)}')">${esc(r.code)}</a></td>
           <td class="sl-mx-name">${esc(r.name)}</td>
           <td class="sl-c sl-net"><b>${fmt(r.tot)}</b></td><td class="sl-c">${fmt(r.gh)}</td><td class="sl-c sl-pt-col">${fmt(r.pt)}</td><td class="sl-c">${fmt(r.s)}</td><td class="sl-c">${fmt(r.p)}</td>
-        </tr>`).join('') : `<tr><td colspan="7" class="sl-hist-empty">데이터 없음 — 집계 재계산이 필요할 수 있습니다.</td></tr>`}</tbody>
-        <tfoot><tr class="sl-sum-foot"><td colspan="2">합계 (${rows.length}품번)</td><td class="sl-c sl-net"><b>${fmt(t.tot)}</b></td><td class="sl-c">${fmt(t.gh)}</td><td class="sl-c sl-pt-col">${fmt(t.pt)}</td><td class="sl-c">${fmt(t.s)}</td><td class="sl-c">${fmt(t.p)}</td></tr></tfoot>
+        </tr>`).join('') : `<tr><td colspan="8" class="sl-hist-empty">데이터 없음 — 집계 재계산이 필요할 수 있습니다.</td></tr>`}</tbody>
+        <tfoot><tr class="sl-sum-foot"><td colspan="3">합계 (${rows.length}품번)</td><td class="sl-c sl-net"><b>${fmt(t.tot)}</b></td><td class="sl-c">${fmt(t.gh)}</td><td class="sl-c sl-pt-col">${fmt(t.pt)}</td><td class="sl-c">${fmt(t.s)}</td><td class="sl-c">${fmt(t.p)}</td></tr></tfoot>
       </table>
     </div>`
 }
@@ -1280,7 +1294,7 @@ async function renderSalesMalls() {
   const s = _slMxStart, e = _slMxEnd, unit = _slMxUnit
   let sb
   try { sb = await _slMatrixItems('sb', s, e) } catch (err) { panel.innerHTML = _slMxControlsHtml('mxM', 'renderSalesMalls') + `<div class="sl-hist-empty">조회 실패: ${esc(err.message)}</div>`; return }
-  const nameMap = _slNameMap()
+  const nameMap = _slNameMap(), prodMap = _slProdMap()
   const mallSet = new Set()
   Object.keys(sb).forEach(code => { const m = sb[code].malls || {}; Object.keys(m).forEach(x => mallSet.add(x)) })
   const malls = [...mallSet].sort()
@@ -1301,12 +1315,13 @@ async function renderSalesMalls() {
     <div class="sl-sum-basis">${esc(s)} ~ ${esc(e)} · ${unit === 'amt' ? '금액(배송 포함·반품 차감)' : '수량(순)'} · 사방넷 쇼핑몰별(원본 몰명) · 합계=사방넷 순액</div>
     <div class="sl-hist-wrap">
       <table class="data-table inbhist-table sl-mx-table">
-        <thead><tr><th>품번</th><th>상품명</th><th class="sl-c">사방넷 합계</th>${malls.map(m => `<th class="sl-c">${esc(m)}</th>`).join('')}</tr></thead>
+        <thead><tr><th class="sl-thumb-th">이미지</th><th>품번</th><th>상품명</th><th class="sl-c">사방넷 합계</th>${malls.map(m => `<th class="sl-c">${esc(m)}</th>`).join('')}</tr></thead>
         <tbody>${rows.length ? rows.map(r => `<tr>
+          ${_slThumbCell(r.code, prodMap)}
           <td><a class="sl-code-link" onclick="_slOpenProduct('${esc(r.code)}')">${esc(r.code)}</a></td><td class="sl-mx-name">${esc(r.name)}</td>
           <td class="sl-c sl-net"><b>${fmt(r.tot)}</b></td>${r.cells.map(v => `<td class="sl-c">${v ? fmt(v) : '-'}</td>`).join('')}
-        </tr>`).join('') : `<tr><td colspan="${3 + malls.length}" class="sl-hist-empty">사방넷 데이터 없음</td></tr>`}</tbody>
-        <tfoot><tr class="sl-sum-foot"><td colspan="2">합계</td><td class="sl-c sl-net"><b>${fmt(rows.reduce((a, r) => a + r.tot, 0))}</b></td>${colTot.map(v => `<td class="sl-c">${fmt(v)}</td>`).join('')}</tr></tfoot>
+        </tr>`).join('') : `<tr><td colspan="${4 + malls.length}" class="sl-hist-empty">사방넷 데이터 없음</td></tr>`}</tbody>
+        <tfoot><tr class="sl-sum-foot"><td colspan="3">합계</td><td class="sl-c sl-net"><b>${fmt(rows.reduce((a, r) => a + r.tot, 0))}</b></td>${colTot.map(v => `<td class="sl-c">${fmt(v)}</td>`).join('')}</tr></tfoot>
       </table>
     </div>`
 }
@@ -1354,7 +1369,7 @@ async function _slRenderPartnerReport() {
   const s = _slMxStart, e = _slMxEnd, unit = _slMxUnit
   let ptBy
   try { ptBy = await _slPartnerItems(s, e) } catch (err) { body.innerHTML = `<div class="sl-hist-empty">조회 실패: ${esc(err.message)}</div>`; return }
-  const nameMap = _slNameMap(), pmap = _slPartnerMap()
+  const nameMap = _slNameMap(), pmap = _slPartnerMap(), prodMap = _slProdMap()
   const colKeys = Object.keys(ptBy)
   const cols = colKeys.map(k => ({ key: k, name: (pmap[k] && pmap[k].name) || ptBy[k].name || k })).sort((a, b) => a.name.localeCompare(b.name))
   const codeSet = new Set()
@@ -1375,12 +1390,13 @@ async function _slRenderPartnerReport() {
   body.innerHTML = `
     <div class="sl-sum-basis">${esc(s)} ~ ${esc(e)} · ${unit === 'amt' ? '금액(순액=매출+배송−반품)' : '수량(순=판매−반품)'} · 업체=주문자ID∈파트너 명단 · 열=기간 내 매입 있는 업체만</div>
     <div class="sl-hist-wrap"><table class="data-table inbhist-table sl-mx-table">
-      <thead><tr><th>품번</th><th>상품명</th><th class="sl-c">합계</th>${cols.map(c => `<th class="sl-c">${esc(c.name)}</th>`).join('')}</tr></thead>
+      <thead><tr><th class="sl-thumb-th">이미지</th><th>품번</th><th>상품명</th><th class="sl-c">합계</th>${cols.map(c => `<th class="sl-c">${esc(c.name)}</th>`).join('')}</tr></thead>
       <tbody>${rows.map(r => `<tr>
+        ${_slThumbCell(r.code, prodMap)}
         <td><a class="sl-code-link" onclick="_slOpenProduct('${esc(r.code)}')">${esc(r.code)}</a></td><td class="sl-mx-name">${esc(r.name)}</td>
         <td class="sl-c sl-net"><b>${fmt(r.tot)}</b></td>${r.cells.map(v => `<td class="sl-c">${v ? fmt(v) : '-'}</td>`).join('')}
       </tr>`).join('')}</tbody>
-      <tfoot><tr class="sl-sum-foot"><td colspan="2">합계 (${rows.length}품번)</td><td class="sl-c sl-net"><b>${fmt(grand)}</b></td>${colTot.map(v => `<td class="sl-c">${fmt(v)}</td>`).join('')}</tr></tfoot>
+      <tfoot><tr class="sl-sum-foot"><td colspan="3">합계 (${rows.length}품번)</td><td class="sl-c sl-net"><b>${fmt(grand)}</b></td>${colTot.map(v => `<td class="sl-c">${fmt(v)}</td>`).join('')}</tr></tfoot>
     </table></div>
     <div class="sl-mx-toolbar"><button class="btn btn-outline btn-sm" onclick="downloadSalesPartner()">📥 엑셀</button></div>`
 }

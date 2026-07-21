@@ -141,7 +141,7 @@ const PRODUCT_COLUMNS = [
     const tag = t.isTemp ? '<span class="table-thumb-tag">임시</span>' : ''
     return `<td><div class="${cls}"><img src="${t.url}" class="thumb" loading="lazy" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'" onclick='openModal(0, ${allJson})' />${tag}</div></td>`
   } },
-  { key:'brand',      label:'브랜드',    fixed:false, thAttr:'data-key="brand"', td:p=>`<td><span style="font-size:12px">${p.brand}</span></td>` },
+  { key:'brand',      label:'브랜드',    fixed:false, thAttr:'data-key="brand"', td:p=>`<td><span style="font-size:12px">${p.brand||''}</span></td>` },
   { key:'productCode',label:'품번',      fixed:true,  thAttr:'data-key="productCode" style="width:145px"', td:p=>`<td><span class="code-link" onclick="openDetailModal('${p.productCode}')">${p.productCode}</span></td>` },
   { key:'nameKr',     label:'상품명',    fixed:false, thAttr:'data-key="nameKr"', td:p=>`<td data-editable="nameKr" style="max-width:160px;overflow:hidden;text-overflow:ellipsis" title="${p.nameKr}">${p.nameKr}</td>` },
   { key:'colorKr',    label:'색상',      fixed:false, thAttr:'data-key="colorKr"', td:p=>`<td>${p.colorKr||'-'}</td>` },

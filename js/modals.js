@@ -482,7 +482,8 @@ function buildDetailCommonSections(item, mode) {
   const A = mode === 'plan' ? 'data-pkey' : 'data-key'
   const s = (typeof _settings !== 'undefined' && _settings) ? _settings : {}
   const escv = v => String(v == null ? '' : v).replace(/"/g, '&quot;')
-  const mkOpts = (arr, cur) => (arr || []).map(it => { const [v, l] = Array.isArray(it) ? it : [it, it]; return `<option value="${v}"${cur === v ? ' selected' : ''}>${l}</option>` }).join('')
+  // 🔴 ①: 첫 옵션 '— 미선택 —'(value '') → 값 설정 후 다시 공란으로 되돌릴 수 있음. 저장 시 ''(빈값)=미설정과 동일(다운스트림 정규화). cur 빈값이면 미선택 selected.
+  const mkOpts = (arr, cur) => `<option value=""${cur ? '' : ' selected'}>— 미선택 —</option>` + (arr || []).map(it => { const [v, l] = Array.isArray(it) ? it : [it, it]; return `<option value="${v}"${cur === v ? ' selected' : ''}>${l}</option>` }).join('')
   const F = (label, key, val, type = 'text', opts = '', spanClass = '', dispOverride = '') => {
     let inputVal
     if (type === 'number') { const st = String(val ?? '').replace(/[^\d.-]/g, ''); inputVal = (st === '-' || st === '') ? '' : st }
@@ -672,7 +673,7 @@ function buildDetailContent(p) {
   const liningOpts      = mkOpts(_settings.linings,        p.lining||'')
   const capRingOpts     = mkOpts(_settings.capRings,       p.capRing||'')
   const fabricOpts      = mkOpts(_settings.fabricTypes,    p.fabricType||'')
-  const brandOpts       = mkOpts(_settings.brands,         p.brand)
+  const brandOpts       = `<option value=""${p.brand ? '' : ' selected'}>— 미선택 —</option>` + mkOpts(_settings.brands, p.brand)
   const saleStatusOpts  = mkOpts(_settings.saleStatuses,   p.saleStatus||'판매중')
 
   // Assignee options from _allUsers

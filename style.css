@@ -6489,6 +6489,10 @@ td[data-editable]:hover { background: #FAEEDA; }
 .sl-mx-table .sl-c { text-align: right; }
 .sl-mx-table th.sl-c { text-align: right; }
 .sl-mx-name { max-width: 260px; overflow: hidden; text-overflow: ellipsis; color: var(--text-sub, #555); }
+/* ②: 매출관리 매트릭스 대표 이미지 썸네일 열(매출현황 .thumb 재사용, 밀집 매트릭스용 소형) */
+.sl-thumb-th { width: 44px; text-align: center; }
+.sl-thumb-cell { text-align: center; padding: 2px !important; }
+.sl-thumb { width: 36px; height: 46px; }
 .sl-code-link { color: var(--primary, #1a1a2e); cursor: pointer; text-decoration: underline; text-decoration-style: dotted; }
 .sl-code-link:hover { color: var(--accent, #c9a96e); }
 .sl-ord-row { cursor: pointer; }

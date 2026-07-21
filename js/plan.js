@@ -1620,7 +1620,7 @@ function buildPlanDetailContent(item) {
     </div>`
   }
 
-  const brandOpts  = _settings.brands.map(b => `<option value="${b}"${item.brand===b?' selected':''}>${b}</option>`).join('')
+  const brandOpts  = `<option value=""${item.brand ? '' : ' selected'}>— 미선택 —</option>` + _settings.brands.map(b => `<option value="${b}"${item.brand===b?' selected':''}>${b}</option>`).join('')
   const typeOpts   = _settings.types.map(([v,l]) => `<option value="${v}"${item.type===v?' selected':''}>${l}</option>`).join('')
   const genderOpts = (typeof PCODE_GENDERS !== 'undefined' ? PCODE_GENDERS : [])
     .map(([v,l]) => `<option value="${v}"${item.gender===v?' selected':''}>${l}</option>`).join('')
