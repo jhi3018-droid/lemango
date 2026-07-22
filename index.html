@@ -2425,6 +2425,23 @@
   </div>
 </dialog>
 
+<!-- 🗄️ 매출 업로드 경고 아카이브(완전 숨김) -->
+<dialog id="slArchiveModal" class="srm-modal sl-resolve-modal">
+  <div class="srm-header">
+    <span class="srm-title">🗄️ 경고 아카이브</span>
+    <button class="srm-close" onclick="closeSlArchiveModal()">✕</button>
+  </div>
+  <div class="srm-body">
+    <div id="slArchiveInfo" class="sl-resolve-info"></div>
+    <label class="sl-resolve-label" for="slArchiveReason">사유 (선택)</label>
+    <textarea id="slArchiveReason" class="sl-resolve-ta" rows="3" placeholder="예: 날짜 형식 인식 후 재업로드·재계산 완료 (기록용, 선택)"></textarea>
+    <div class="sl-pv-actions">
+      <button class="btn btn-outline" onclick="closeSlArchiveModal()">취소</button>
+      <button class="btn btn-new" id="slArchiveConfirmBtn" onclick="_slArchiveConfirm()">경고 아카이브</button>
+    </div>
+  </div>
+</dialog>
+
 <!-- 토스트 알림 (appContainer 밖 — 로그인 페이지에서도 표시) -->
 <div id="toast" class="toast"></div>
 

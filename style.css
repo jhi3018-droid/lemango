@@ -6438,6 +6438,18 @@ td[data-editable]:hover { background: #FAEEDA; }
 .sl-vf-status { font-size: 12px; color: var(--text-secondary); }
 .sl-vf-hidden { display: none; }
 .sl-verify-pre { white-space: pre-wrap; word-break: break-word; font-family: 'Consolas', 'D2Coding', monospace; font-size: 12px; line-height: 1.5; background: var(--bg); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px; padding: 12px; max-height: 60vh; overflow: auto; margin: 0; }
+
+/* 🗄️ 업로드 경고 아카이브 */
+.sl-resolve-modal { width: 440px; max-width: 92vw; }
+.sl-resolve-modal .srm-body { padding: 16px; }
+.sl-resolve-info { font-size: 13px; margin-bottom: 12px; }
+.sl-resolve-sub { color: var(--text-secondary); font-size: 12px; }
+.sl-resolve-label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--text-secondary); }
+.sl-resolve-ta { width: 100%; box-sizing: border-box; resize: vertical; border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-size: 13px; margin-bottom: 12px; }
+.sl-hist-resolve { white-space: nowrap; }
+.sl-arch-toggle { margin-left: 8px; opacity: 0.6; }
+.sl-hist-archived { background: rgba(128, 128, 128, 0.06); }
+.sl-hist-arch-warn { color: var(--text-sub); font-size: 12px; }
 .sl-up-intro { text-align: center; padding: 12px 0; }
 .sl-up-note { font-size: 13px; color: var(--text, #1a1a2e); line-height: 1.6; margin-bottom: 16px; }
 .sl-up-filebtn { display: inline-block; cursor: pointer; }

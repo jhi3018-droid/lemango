@@ -178,10 +178,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // salesUploads — 매출 업로드 내역(감사/추적). 관리자만 기록.
+    // salesUploads — 매출 업로드 내역(감사/추적). 관리자만 기록. 🔴 append-only(족보 보존) — 삭제 금지, 정정완료 표시는 update 로.
     match /salesUploads/{docId} {
       allow read: if isApproved();
-      allow write: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if false;
     }
 
     // salesD/salesW/salesM — 매출 집계(L2 일별 · L3 주/월×채널그룹, Phase 2). L1 에서 재도출되는 파생 데이터.

@@ -728,14 +728,30 @@ async function loadSalesUploads(force) {
 
 async function renderSalesUploadHistory(force) {
   const tbody = document.getElementById('slHistBody'); if (!tbody) return
-  tbody.innerHTML = `<tr><td colspan="9" class="sl-hist-loading">불러오는 중…</td></tr>`
+  tbody.innerHTML = `<tr><td colspan="10" class="sl-hist-loading">불러오는 중…</td></tr>`
   const list = await loadSalesUploads(force)
-  if (!list.length) { tbody.innerHTML = `<tr><td colspan="9" class="sl-hist-empty">업로드 내역이 없습니다.</td></tr>`; return }
+  if (!list.length) { tbody.innerHTML = `<tr><td colspan="10" class="sl-hist-empty">업로드 내역이 없습니다.</td></tr>`; return }
+  const canAct = _slIsAdmin()
+  const showArch = _slShowArchived
   tbody.innerHTML = list.map(u => {
     const typeLabel = u.type === SL_CH.c24 ? '카페24' : (u.type === SL_CH.sb ? '사방넷' : esc(u.type || ''))
     const when = (typeof kstFormat === 'function') ? kstFormat(u.at, 'full') : esc(String(u.at || '').slice(0, 16))
     const warnCnt = (u.unmatchedCount != null ? u.unmatchedCount : (u.unmatched ? u.unmatched.length : 0)) + (u.dateFailCount != null ? u.dateFailCount : (u.dateFail ? u.dateFail.length : 0)) + (u.anomalyCount != null ? u.anomalyCount : (u.anomaly ? u.anomaly.length : 0))
-    return `<tr>
+    const archived = !!u.archived
+    // 🔴 기본 화면: 아카이브 레코드의 경고는 완전 비표시(0·흐림/배지 없음). 이력 자체(파일/행/신규·병합)는 유지.
+    let warnCell, actCell
+    if (archived && !showArch) {
+      warnCell = '-'; actCell = '-'
+    } else if (archived && showArch) {
+      const at = u.archivedAt ? ((typeof kstFormat === 'function') ? kstFormat(u.archivedAt, 'date') : String(u.archivedAt).slice(0, 10)) : ''
+      const tip = esc('아카이브: ' + (u.archivedReason || '(사유없음)') + ' — ' + (u.archivedByName || '') + ' ' + at)
+      warnCell = `<span class="sl-hist-arch-warn" title="${tip}">${warnCnt || 0} (보관)</span>`
+      actCell = canAct ? `<button class="btn btn-outline btn-sm" onclick="_slUnarchiveUpload('${esc(u.uploadId || '')}')">아카이브 해제</button>` : '-'
+    } else {
+      warnCell = warnCnt ? `<span class="sl-hist-warn">${warnCnt}</span>` : '-'
+      actCell = (warnCnt > 0 && canAct) ? `<button class="btn btn-outline btn-sm" onclick="openSlArchiveModal('${esc(u.uploadId || '')}')">경고 아카이브</button>` : '-'
+    }
+    return `<tr class="${archived && showArch ? 'sl-hist-archived' : ''}">
       <td>${when}</td>
       <td>${typeLabel}</td>
       <td class="sl-hist-file" title="${esc(u.fileName || '')}">${esc(u.fileName || '')}</td>
@@ -743,10 +759,59 @@ async function renderSalesUploadHistory(force) {
       <td class="sl-c">${u.orders || 0}</td>
       <td class="sl-c">${u.cntNew || 0} / ${u.cntMerge || 0} / ${u.cntSame || 0}</td>
       <td class="sl-c">${u.cntReturns || 0}</td>
-      <td class="sl-c">${warnCnt ? `<span class="sl-hist-warn">${warnCnt}</span>` : '-'}</td>
+      <td class="sl-c">${warnCell}</td>
       <td>${esc(u.workerName || '')}</td>
+      <td class="sl-hist-resolve">${actCell}</td>
     </tr>`
   }).join('')
+}
+function _slToggleArchivedView() { _slShowArchived = !_slShowArchived; const b = document.getElementById('slArchToggleBtn'); if (b) b.textContent = _slShowArchived ? '아카이브 숨기기' : '아카이브 보기'; renderSalesUploadHistory(false) }
+
+// ---- 업로드 경고 아카이브(완전 숨김, 되돌리기 가능) — append-only annotation, 삭제 없음(족보 보존) ----
+let _slShowArchived = false
+let _slArchiveTargetId = null
+function openSlArchiveModal(uploadId) {
+  if (!_slIsAdmin()) { showToast('관리자 전용입니다.', 'warning'); return }
+  const u = (_slUploads || []).find(x => x.uploadId === uploadId); if (!u) { showToast('업로드 내역을 찾을 수 없습니다.', 'warning'); return }
+  _slArchiveTargetId = uploadId
+  const warnCnt = (u.dateFailCount != null ? u.dateFailCount : (u.dateFail || []).length) + (u.unmatchedCount != null ? u.unmatchedCount : (u.unmatched || []).length) + (u.anomalyCount != null ? u.anomalyCount : (u.anomaly || []).length)
+  const info = document.getElementById('slArchiveInfo')
+  if (info) info.innerHTML = `<b>${esc(u.fileName || u.type || '')}</b><br><span class="sl-resolve-sub">경고 ${warnCnt}건 — 이 레코드의 경고를 아카이브합니다. 이후 업로드 내역·검증 도구에서 <b>완전히 사라집니다</b>(0 집계). 이력(파일/행/신규·병합)은 보존되며, [아카이브 보기]에서 되돌릴 수 있습니다.</span>`
+  const ta = document.getElementById('slArchiveReason'); if (ta) ta.value = u.archivedReason || ''
+  const m = document.getElementById('slArchiveModal'); if (m) { if (!m.open) m.showModal(); if (typeof centerModal === 'function') centerModal(m) }
+}
+function closeSlArchiveModal() { _slArchiveTargetId = null; const m = document.getElementById('slArchiveModal'); if (m && m.open) m.close() }
+async function _slArchiveConfirm() {
+  if (!_slIsAdmin()) { showToast('관리자 전용', 'warning'); return }
+  const id = _slArchiveTargetId; if (!id) return
+  const reason = (((document.getElementById('slArchiveReason') || {}).value) || '').trim()   // 사유 선택(감사용)
+  if (typeof db === 'undefined' || !db) { showToast('DB 연결 없음', 'error'); return }
+  const btn = document.getElementById('slArchiveConfirmBtn'); if (btn) { btn.disabled = true; btn.textContent = '처리 중…' }
+  const uid = (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) ? firebase.auth().currentUser.uid : ''
+  const name = (typeof formatUserName === 'function') ? formatUserName(_currentUserName, (typeof _currentUserPosition !== 'undefined' ? _currentUserPosition : '')) : ((typeof _currentUserName !== 'undefined' && _currentUserName) || '')
+  const at = new Date().toISOString()
+  try {
+    await db.collection('salesUploads').doc(id).update({ archived: true, archivedReason: reason, archivedBy: uid, archivedByName: name, archivedAt: at })
+    const u = (_slUploads || []).find(x => x.uploadId === id); if (u) { u.archived = true; u.archivedReason = reason; u.archivedBy = uid; u.archivedByName = name; u.archivedAt = at }
+    if (typeof logActivity === 'function') logActivity('setting', '매출업로드 경고 아카이브', `${id}: ${reason.slice(0, 80)}`)
+    showToast('경고를 아카이브했습니다.', 'success')
+    closeSlArchiveModal(); renderSalesUploadHistory(false)
+  } catch (e) { console.error('archive upload:', e && e.message); showToast('저장 실패 — 다시 시도해주세요.', 'error') }
+  if (btn) { btn.disabled = false; btn.textContent = '경고 아카이브' }
+}
+async function _slUnarchiveUpload(uploadId) {
+  if (!_slIsAdmin()) { showToast('관리자 전용', 'warning'); return }
+  if (typeof db === 'undefined' || !db) { showToast('DB 연결 없음', 'error'); return }
+  const ok = await korConfirm('이 레코드의 경고 아카이브를 해제합니다.\n(경고가 다시 집계·표시됩니다. 레코드는 삭제되지 않습니다.)', '아카이브 해제', '닫기')
+  if (!ok) return
+  const at = new Date().toISOString()
+  try {
+    await db.collection('salesUploads').doc(uploadId).update({ archived: false, archivedAt: at })
+    const u = (_slUploads || []).find(x => x.uploadId === uploadId); if (u) { u.archived = false; u.archivedAt = at }
+    if (typeof logActivity === 'function') logActivity('setting', '매출업로드 아카이브 해제', uploadId)
+    showToast('아카이브를 해제했습니다.', 'success')
+    renderSalesUploadHistory(false)
+  } catch (e) { console.error('unarchive upload:', e && e.message); showToast('처리 실패 — 다시 시도해주세요.', 'error') }
 }
 
 // =============================================
@@ -803,16 +868,16 @@ function renderSalesMgmtTab() {
         <div id="slOrdersBody"></div>
       </div>
       <div class="store-panel${_slActiveSub === 'history' ? '' : ' store-panel-hidden'}" id="slPanel_history">
-        <div class="sl-hist-toolbar"><button class="btn btn-outline" onclick="renderSalesUploadHistory(true)">↻ 새로고침</button></div>
+        <div class="sl-hist-toolbar"><button class="btn btn-outline" onclick="renderSalesUploadHistory(true)">↻ 새로고침</button>${canUpload ? '<button class="btn btn-outline btn-sm sl-arch-toggle" id="slArchToggleBtn" onclick="_slToggleArchivedView()">아카이브 보기</button>' : ''}</div>
         <div class="sl-hist-wrap">
           <table class="data-table inbhist-table sl-hist-table">
             <thead><tr>
               <th style="width:130px">시각</th><th style="width:64px">유형</th><th>파일</th>
               <th style="width:60px">행</th><th style="width:60px">주문</th>
               <th style="width:120px">신규/병합/무변경</th><th style="width:60px">반품</th>
-              <th style="width:52px">경고</th><th style="width:90px">작업자</th>
+              <th style="width:52px">경고</th><th style="width:90px">작업자</th><th style="width:120px">정정</th>
             </tr></thead>
-            <tbody id="slHistBody"><tr><td colspan="9" class="sl-hist-loading">불러오는 중…</td></tr></tbody>
+            <tbody id="slHistBody"><tr><td colspan="10" class="sl-hist-loading">불러오는 중…</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1671,21 +1736,26 @@ async function salesVerify(fromDate, toDate, onProg) {
   // ---- 1) 업로드 내역 총괄 ----
   prog('업로드 내역 집계 중…')
   const ups = await loadSalesUploads(true)
-  let uRows = 0, uNew = 0, uMerge = 0, uSame = 0, uRet = 0, uDateFail = 0, uUnmatched = 0, uAnom = 0
+  let uRows = 0, uNew = 0, uMerge = 0, uSame = 0, uRet = 0
+  // 🔴 아카이브된 레코드의 경고는 전량 제외(0 집계·완전 비표시). 이력 자체(행/신규/병합)는 아카이브와 무관하게 유지.
+  let uDateFail = 0, uUnmatched = 0, uAnom = 0
   const dfTop = []
   ups.forEach(u => {
     uRows += u.rows || 0; uNew += u.cntNew || 0; uMerge += u.cntMerge || 0; uSame += u.cntSame || 0; uRet += u.cntReturns || 0
-    const df = (u.dateFailCount != null ? u.dateFailCount : (u.dateFail || []).length); uDateFail += df
-    uUnmatched += (u.unmatchedCount != null ? u.unmatchedCount : (u.unmatched || []).length)
-    uAnom += (u.anomalyCount != null ? u.anomalyCount : (u.anomaly || []).length)
+    if (u.archived) return   // 아카이브 = 경고 없음으로 간주(완전 제외)
+    const df = (u.dateFailCount != null ? u.dateFailCount : (u.dateFail || []).length)
+    const un = (u.unmatchedCount != null ? u.unmatchedCount : (u.unmatched || []).length)
+    const an = (u.anomalyCount != null ? u.anomalyCount : (u.anomaly || []).length)
+    uDateFail += df; uUnmatched += un; uAnom += an
     if (df > 0) dfTop.push({ f: u.fileName || u.type || '?', df: df, at: u.at || '' })
   })
-  push('【1】 업로드 내역 총괄 — ' + ups.length + '개 파일')
+  const archivedFiles = ups.filter(u => u.archived).length
+  push('【1】 업로드 내역 총괄 — ' + ups.length + '개 파일' + (archivedFiles ? ' (경고 아카이브 ' + archivedFiles + '개 레코드 제외)' : ''))
   push('  · 총 행 ' + _slVfNum(uRows) + ' · 신규 ' + _slVfNum(uNew) + ' · 병합 ' + _slVfNum(uMerge) + ' · 변경없음 ' + _slVfNum(uSame) + ' · 반품 ' + _slVfNum(uRet))
-  push('  · ⚠️ 날짜 파싱 실패(누적) ' + _slVfNum(uDateFail) + ' · 미매칭 품번 ' + _slVfNum(uUnmatched) + ' · 이상치 ' + _slVfNum(uAnom))
+  push('  · ⚠️ 날짜 파싱 실패 ' + _slVfNum(uDateFail) + ' · 미매칭 품번 ' + _slVfNum(uUnmatched) + ' · 이상치 ' + _slVfNum(uAnom) + '  (아카이브분 제외)')
   if (dfTop.length) {
     dfTop.sort((a, b) => b.df - a.df)
-    push('  · 날짜 실패 상위 파일:')
+    push('  · 날짜 실패 상위 파일 — 정정 후 [업로드 내역]에서 [경고 아카이브] 가능:')
     dfTop.slice(0, 10).forEach(x => push('     - ' + x.f + ' : ' + x.df + '건 (' + String(x.at).slice(0, 10) + ')'))
   }
   push('')
@@ -1791,9 +1861,9 @@ async function salesVerify(fromDate, toDate, onProg) {
   push('  · 활동 0일 = ' + gapDays.length + '일' + (gapDays.length ? ' (' + _slVfRanges(gapDays) + ')' : ''))
   push('')
 
-  // ---- 6) 요약 판정 (복사용) ----
+  // ---- 6) 요약 판정 (복사용) — 🔴 업로드 경고는 아카이브분 완전 제외 ----
   push('【6】 요약 판정 (복사용)')
-  push('  · 업로드 날짜파싱 실패 누적: ' + uDateFail)
+  push('  · 업로드 날짜파싱 실패 ' + uDateFail + (archivedFiles ? ' (아카이브 ' + archivedFiles + '개 레코드 제외)' : ''))
   push('  · L1 빈 od: ' + emptyOd.length + ' · od 범위밖: ' + outWin.length + ' · rd 이상: ' + rdAnom.length)
   push('  · L1↔L2 불일치: ' + l2Mismatch + ' · L2↔L3 불일치: ' + l3Mismatch)
   const bad = (emptyOd.length || outWin.length || rdAnom.length || l2Mismatch || l3Mismatch || uDateFail)
@@ -1803,7 +1873,7 @@ async function salesVerify(fromDate, toDate, onProg) {
   const text = R.join('\n')
   _slVerifyText = text
   try { console.log(text) } catch (e) {}
-  return { text: text, orders: orders.length, emptyOd: emptyOd.length, outWin: outWin.length, rdAnom: rdAnom.length, l2Mismatch: l2Mismatch, l3Mismatch: l3Mismatch, dateFail: uDateFail, aborted: _slVerifyAbort }
+  return { text: text, orders: orders.length, emptyOd: emptyOd.length, outWin: outWin.length, rdAnom: rdAnom.length, l2Mismatch: l2Mismatch, l3Mismatch: l3Mismatch, dateFail: uDateFail, archivedFiles: archivedFiles, aborted: _slVerifyAbort }
 }
 
 // =============================================
@@ -2054,6 +2124,12 @@ window._slAbortVerify = _slAbortVerify
 window._slVerifyCopy = _slVerifyCopy
 window.salesDiagnose = salesDiagnose
 window.runSalesDiagnose = runSalesDiagnose
+// 업로드 경고 아카이브(완전 숨김)
+window.openSlArchiveModal = openSlArchiveModal
+window.closeSlArchiveModal = closeSlArchiveModal
+window._slArchiveConfirm = _slArchiveConfirm
+window._slUnarchiveUpload = _slUnarchiveUpload
+window._slToggleArchivedView = _slToggleArchivedView
 window._slTogglePartnerManage = _slTogglePartnerManage
 window._slPartnerSearchInput = _slPartnerSearchInput
 window._slPartnerStartEdit = _slPartnerStartEdit
