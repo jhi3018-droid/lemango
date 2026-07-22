@@ -1156,6 +1156,31 @@ function _slItemSplit(it) {
 
 let _slSummaryRows = []
 
+// =============================================
+// ===== 틀고정(freeze-panes) 공통 — 매출관리 매트릭스/요약 테이블 (화면 전용) =====
+// =============================================
+// 🔴 순수 표시: 숫자/집계/엑셀 무변경. 합계행은 thead 로 이동해 헤더와 함께 블록 sticky(세로 고정),
+//   좌측 고정열(이미지/품번/상품명/합계 또는 날짜)은 JS 로 left offset 계산해 sticky-left(가로 고정). 교차=양방향.
+let _slFreezeResizeBound = false
+function _slBindFreezeResize() {
+  if (_slFreezeResizeBound) return; _slFreezeResizeBound = true
+  let t = null
+  window.addEventListener('resize', () => { if (t) clearTimeout(t); t = setTimeout(() => { document.querySelectorAll('#salesMgmtPage .sl-freeze-wrap').forEach(w => { if (w.offsetParent) _slApplyFreeze(w) }) }, 150) })
+}
+function _slApplyFreeze(wrap) {
+  if (!wrap || !wrap.offsetParent) return   // 숨김 상태면 skip(표시 시 재적용)
+  const table = wrap.querySelector('table.sl-freeze'); if (!table) return
+  // ① 뷰포트 기준 높이 — 가로 스크롤바가 화면 안(컨테이너 하단)에 항상 보이도록
+  try { const top = wrap.getBoundingClientRect().top; wrap.style.maxHeight = Math.max(220, Math.floor((window.innerHeight || 800) - top - 44)) + 'px' } catch (e) {}
+  // ② 좌측 고정열 left offset(누적 폭) 계산 후 sticky 적용
+  const cells = table.querySelectorAll('.sl-fz[data-fzcol]'); if (!cells.length) return
+  let maxCol = -1; cells.forEach(c => { const i = +c.getAttribute('data-fzcol'); if (i > maxCol) maxCol = i })
+  const off = []; let acc = 0
+  for (let i = 0; i <= maxCol; i++) { const h = table.querySelector('.sl-fz[data-fzcol="' + i + '"]'); off[i] = acc; acc += h ? h.getBoundingClientRect().width : 0 }
+  cells.forEach(c => { const i = +c.getAttribute('data-fzcol'); c.style.position = 'sticky'; c.style.left = off[i] + 'px'; if (i === maxCol) c.classList.add('sl-fz-edge') })
+}
+function _slFreezeRender(panel) { if (!panel) return; const w = panel.querySelector('.sl-freeze-wrap'); if (!w) return; _slBindFreezeResize(); if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => _slApplyFreeze(w)); else _slApplyFreeze(w) }
+
 async function renderSalesSummary() {
   const panel = document.getElementById('slSummaryBody'); if (!panel) return
   let start = (document.getElementById('slSumStart') || {}).value
@@ -1181,7 +1206,7 @@ async function renderSalesSummary() {
     const sNet = (s.samt || 0) - (s.ramt || 0)
     tG.s += ghS; tG.r += ghR; tP.s += ptS; tP.r += ptR; tCp += c.pts || 0; tS.s += s.samt || 0; tS.r += s.ramt || 0
     return `<tr>
-      <td>${esc(d.d)}</td>
+      <td class="sl-fz" data-fzcol="0">${esc(d.d)}</td>
       <td class="sl-c">${fmt(ghS)}</td><td class="sl-c">${fmt(ghR)}</td><td class="sl-c">${fmt(ghS - ghR)}</td>
       <td class="sl-c sl-pt-col">${fmt(ptS)}</td><td class="sl-c sl-pt-col">${fmt(ptR)}</td><td class="sl-c sl-pt-col">${fmt(ptS - ptR)}</td>
       <td class="sl-c sl-pts">${fmt(c.pts)}</td>
@@ -1192,23 +1217,24 @@ async function renderSalesSummary() {
   const totNet = (tG.s - tG.r) + (tP.s - tP.r) + (tS.s - tS.r)
   panel.innerHTML = `
     <div class="sl-sum-basis">📅 주문일 기준 · 반품=반품완료일 귀속 · 매장(POS) 미포함(Phase3 조인). 카페24=<b>공홈</b>(자사몰)+<b>파트너</b>(주문자ID∈파트너 명단) 분리 · 매출=기존 매출공식과 동일 기준(상품구매−추가할인+배송비 · 사방넷 결제금액+배송비). 적립금분=카페24 전체 기준 별도 표시. <b>공홈+파트너 = 카페24 총액(무손실)</b> · 파트너 분리는 [파트너별] 명단 등록 + [집계 재계산] 후 반영.</div>
-    <div class="sl-hist-wrap">
-      <table class="data-table inbhist-table sl-sum-table">
+    <div class="sl-hist-wrap sl-freeze-wrap">
+      <table class="data-table inbhist-table sl-sum-table sl-freeze" data-fz="1">
         <thead>
-          <tr><th rowspan="2">날짜</th><th colspan="7">카페24</th><th colspan="3">사방넷</th><th rowspan="2">합계 순액</th></tr>
+          <tr><th rowspan="2" class="sl-fz" data-fzcol="0">날짜</th><th colspan="7">카페24</th><th colspan="3">사방넷</th><th rowspan="2">합계 순액</th></tr>
           <tr><th>공홈 매출</th><th>공홈 반품</th><th>공홈 순액</th><th class="sl-pt-col">파트너 매출</th><th class="sl-pt-col">파트너 반품</th><th class="sl-pt-col">파트너 순액</th><th>적립금분</th><th>매출</th><th>반품</th><th>순액</th></tr>
+          <tr class="sl-total-row sl-sum-foot">
+            <td class="sl-fz" data-fzcol="0">합계</td>
+            <td class="sl-c">${fmt(tG.s)}</td><td class="sl-c">${fmt(tG.r)}</td><td class="sl-c">${fmt(tG.s - tG.r)}</td>
+            <td class="sl-c sl-pt-col">${fmt(tP.s)}</td><td class="sl-c sl-pt-col">${fmt(tP.r)}</td><td class="sl-c sl-pt-col">${fmt(tP.s - tP.r)}</td>
+            <td class="sl-c sl-pts">${fmt(tCp)}</td>
+            <td class="sl-c">${fmt(tS.s)}</td><td class="sl-c">${fmt(tS.r)}</td><td class="sl-c">${fmt(tS.s - tS.r)}</td>
+            <td class="sl-c sl-net"><b>${fmt(totNet)}</b></td>
+          </tr>
         </thead>
         <tbody>${body}</tbody>
-        <tfoot><tr class="sl-sum-foot">
-          <td>합계</td>
-          <td class="sl-c">${fmt(tG.s)}</td><td class="sl-c">${fmt(tG.r)}</td><td class="sl-c">${fmt(tG.s - tG.r)}</td>
-          <td class="sl-c sl-pt-col">${fmt(tP.s)}</td><td class="sl-c sl-pt-col">${fmt(tP.r)}</td><td class="sl-c sl-pt-col">${fmt(tP.s - tP.r)}</td>
-          <td class="sl-c sl-pts">${fmt(tCp)}</td>
-          <td class="sl-c">${fmt(tS.s)}</td><td class="sl-c">${fmt(tS.r)}</td><td class="sl-c">${fmt(tS.s - tS.r)}</td>
-          <td class="sl-c sl-net"><b>${fmt(totNet)}</b></td>
-        </tr></tfoot>
       </table>
     </div>`
+  _slFreezeRender(panel)
 }
 
 function downloadSalesSummary() {
@@ -1279,7 +1305,7 @@ function _slThumbCell(code, pmap) {
   const p = pmap[String(code).toUpperCase()]
   const ph = (typeof PLACEHOLDER_IMG !== 'undefined') ? PLACEHOLDER_IMG : 'assets/logo-placeholder.png'
   const url = (p && typeof getThumbUrl === 'function' ? getThumbUrl(p) : null) || ph
-  return `<td class="sl-thumb-cell"><img src="${url}" class="thumb sl-thumb" loading="lazy" onerror="this.onerror=null;this.src='${ph}'" onclick="_slOpenProduct('${esc(code)}')" /></td>`
+  return `<td class="sl-thumb-cell sl-fz" data-fzcol="0"><img src="${url}" class="thumb sl-thumb" loading="lazy" onerror="this.onerror=null;this.src='${ph}'" onclick="_slOpenProduct('${esc(code)}')" /></td>`
 }
 
 async function _slReadShard(coll, id) { try { const d = await db.collection(coll).doc(id).get(); return d.exists ? d.data() : null } catch (e) { return null } }
@@ -1381,18 +1407,19 @@ async function renderSalesMatrix() {
   const unitLbl = unit === 'amt' ? '금액(순액=매출+배송−반품)' : '수량(순=판매−반품)'
   panel.innerHTML = _slMxControlsHtml('mxA', 'renderSalesMatrix') + `
     <div class="sl-sum-basis">${esc(s)} ~ ${esc(e)} · ${unitLbl} · 배송비 포함·반품 차감(일자별 요약과 동일 기준) · 카페24=<b>공홈+파트너</b> 분리(공홈+파트너=카페24 총액 · 파트너 분리는 명단 등록+재계산 후)${posErr ? ' · ⚠️ 매장 열 조회 권한/오류로 생략' : ''}</div>
-    <div class="sl-hist-wrap">
-      <table class="data-table inbhist-table sl-mx-table">
-        <thead><tr><th class="sl-thumb-th">이미지</th><th>품번</th><th>상품명</th><th class="sl-c">합계</th><th class="sl-c">공홈</th><th class="sl-c sl-pt-col">파트너</th><th class="sl-c">사방넷</th><th class="sl-c">매장</th></tr></thead>
+    <div class="sl-hist-wrap sl-freeze-wrap">
+      <table class="data-table inbhist-table sl-mx-table sl-freeze" data-fz="4">
+        <thead><tr><th class="sl-thumb-th sl-fz" data-fzcol="0">이미지</th><th class="sl-fz" data-fzcol="1">품번</th><th class="sl-fz" data-fzcol="2">상품명</th><th class="sl-c sl-fz" data-fzcol="3">합계</th><th class="sl-c">공홈</th><th class="sl-c sl-pt-col">파트너</th><th class="sl-c">사방넷</th><th class="sl-c">매장</th></tr>
+          <tr class="sl-total-row"><td class="sl-fz" data-fzcol="0"></td><td class="sl-fz" data-fzcol="1"></td><td class="sl-mx-name sl-fz" data-fzcol="2">합계 (${rows.length}품번)</td><td class="sl-c sl-net sl-fz" data-fzcol="3"><b>${fmt(t.tot)}</b></td><td class="sl-c">${fmt(t.gh)}</td><td class="sl-c sl-pt-col">${fmt(t.pt)}</td><td class="sl-c">${fmt(t.s)}</td><td class="sl-c">${fmt(t.p)}</td></tr></thead>
         <tbody>${rows.length ? rows.map(r => `<tr>
           ${_slThumbCell(r.code, prodMap)}
-          <td><a class="sl-code-link" onclick="_slOpenProduct('${esc(r.code)}')">${esc(r.code)}</a></td>
-          <td class="sl-mx-name">${esc(r.name)}</td>
-          <td class="sl-c sl-net"><b>${fmt(r.tot)}</b></td><td class="sl-c">${fmt(r.gh)}</td><td class="sl-c sl-pt-col">${fmt(r.pt)}</td><td class="sl-c">${fmt(r.s)}</td><td class="sl-c">${fmt(r.p)}</td>
+          <td class="sl-fz" data-fzcol="1"><a class="sl-code-link" onclick="_slOpenProduct('${esc(r.code)}')">${esc(r.code)}</a></td>
+          <td class="sl-mx-name sl-fz" data-fzcol="2" title="${esc(r.name)}">${esc(r.name)}</td>
+          <td class="sl-c sl-net sl-fz" data-fzcol="3"><b>${fmt(r.tot)}</b></td><td class="sl-c">${fmt(r.gh)}</td><td class="sl-c sl-pt-col">${fmt(r.pt)}</td><td class="sl-c">${fmt(r.s)}</td><td class="sl-c">${fmt(r.p)}</td>
         </tr>`).join('') : `<tr><td colspan="8" class="sl-hist-empty">데이터 없음 — 집계 재계산이 필요할 수 있습니다.</td></tr>`}</tbody>
-        <tfoot><tr class="sl-sum-foot"><td colspan="3">합계 (${rows.length}품번)</td><td class="sl-c sl-net"><b>${fmt(t.tot)}</b></td><td class="sl-c">${fmt(t.gh)}</td><td class="sl-c sl-pt-col">${fmt(t.pt)}</td><td class="sl-c">${fmt(t.s)}</td><td class="sl-c">${fmt(t.p)}</td></tr></tfoot>
       </table>
     </div>`
+  _slFreezeRender(panel)
 }
 
 // ---- 쇼핑몰별 탭 (품번 × 사방넷 몰) ----
@@ -1422,17 +1449,18 @@ async function renderSalesMalls() {
   const colTot = malls.map((_, ci) => rows.reduce((a, r) => a + (r.cells[ci] || 0), 0))
   panel.innerHTML = _slMxControlsHtml('mxM', 'renderSalesMalls') + `
     <div class="sl-sum-basis">${esc(s)} ~ ${esc(e)} · ${unit === 'amt' ? '금액(배송 포함·반품 차감)' : '수량(순)'} · 사방넷 쇼핑몰별(원본 몰명) · 합계=사방넷 순액</div>
-    <div class="sl-hist-wrap">
-      <table class="data-table inbhist-table sl-mx-table">
-        <thead><tr><th class="sl-thumb-th">이미지</th><th>품번</th><th>상품명</th><th class="sl-c">사방넷 합계</th>${malls.map(m => `<th class="sl-c">${esc(m)}</th>`).join('')}</tr></thead>
+    <div class="sl-hist-wrap sl-freeze-wrap">
+      <table class="data-table inbhist-table sl-mx-table sl-freeze" data-fz="4">
+        <thead><tr><th class="sl-thumb-th sl-fz" data-fzcol="0">이미지</th><th class="sl-fz" data-fzcol="1">품번</th><th class="sl-fz" data-fzcol="2">상품명</th><th class="sl-c sl-fz" data-fzcol="3">사방넷 합계</th>${malls.map(m => `<th class="sl-c">${esc(m)}</th>`).join('')}</tr>
+          <tr class="sl-total-row"><td class="sl-fz" data-fzcol="0"></td><td class="sl-fz" data-fzcol="1"></td><td class="sl-mx-name sl-fz" data-fzcol="2">합계</td><td class="sl-c sl-net sl-fz" data-fzcol="3"><b>${fmt(rows.reduce((a, r) => a + r.tot, 0))}</b></td>${colTot.map(v => `<td class="sl-c">${fmt(v)}</td>`).join('')}</tr></thead>
         <tbody>${rows.length ? rows.map(r => `<tr>
           ${_slThumbCell(r.code, prodMap)}
-          <td><a class="sl-code-link" onclick="_slOpenProduct('${esc(r.code)}')">${esc(r.code)}</a></td><td class="sl-mx-name">${esc(r.name)}</td>
-          <td class="sl-c sl-net"><b>${fmt(r.tot)}</b></td>${r.cells.map(v => `<td class="sl-c">${v ? fmt(v) : '-'}</td>`).join('')}
+          <td class="sl-fz" data-fzcol="1"><a class="sl-code-link" onclick="_slOpenProduct('${esc(r.code)}')">${esc(r.code)}</a></td><td class="sl-mx-name sl-fz" data-fzcol="2" title="${esc(r.name)}">${esc(r.name)}</td>
+          <td class="sl-c sl-net sl-fz" data-fzcol="3"><b>${fmt(r.tot)}</b></td>${r.cells.map(v => `<td class="sl-c">${v ? fmt(v) : '-'}</td>`).join('')}
         </tr>`).join('') : `<tr><td colspan="${4 + malls.length}" class="sl-hist-empty">사방넷 데이터 없음</td></tr>`}</tbody>
-        <tfoot><tr class="sl-sum-foot"><td colspan="3">합계</td><td class="sl-c sl-net"><b>${fmt(rows.reduce((a, r) => a + r.tot, 0))}</b></td>${colTot.map(v => `<td class="sl-c">${fmt(v)}</td>`).join('')}</tr></tfoot>
       </table>
     </div>`
+  _slFreezeRender(panel)
 }
 
 // =============================================
@@ -1498,16 +1526,17 @@ async function _slRenderPartnerReport() {
   if (!cols.length) { body.innerHTML = `<div class="sl-hist-empty">${esc(s)} ~ ${esc(e)} · 파트너 매입 데이터가 없습니다.${(_salesPartners || []).length ? ' (기간 내 파트너 주문 없음 — 정확 월/주가 아니면 L1 스캔, 그 외 [집계 재계산] 필요)' : ' 먼저 파트너 명단을 등록하세요.'}</div>`; return }
   body.innerHTML = `
     <div class="sl-sum-basis">${esc(s)} ~ ${esc(e)} · ${unit === 'amt' ? '금액(순액=매출+배송−반품)' : '수량(순=판매−반품)'} · 업체=주문자ID∈파트너 명단 · 열=기간 내 매입 있는 업체만</div>
-    <div class="sl-hist-wrap"><table class="data-table inbhist-table sl-mx-table">
-      <thead><tr><th class="sl-thumb-th">이미지</th><th>품번</th><th>상품명</th><th class="sl-c">합계</th>${cols.map(c => `<th class="sl-c">${esc(c.name)}</th>`).join('')}</tr></thead>
+    <div class="sl-hist-wrap sl-freeze-wrap"><table class="data-table inbhist-table sl-mx-table sl-freeze" data-fz="4">
+      <thead><tr><th class="sl-thumb-th sl-fz" data-fzcol="0">이미지</th><th class="sl-fz" data-fzcol="1">품번</th><th class="sl-fz" data-fzcol="2">상품명</th><th class="sl-c sl-fz" data-fzcol="3">합계</th>${cols.map(c => `<th class="sl-c">${esc(c.name)}</th>`).join('')}</tr>
+        <tr class="sl-total-row"><td class="sl-fz" data-fzcol="0"></td><td class="sl-fz" data-fzcol="1"></td><td class="sl-mx-name sl-fz" data-fzcol="2">합계 (${rows.length}품번)</td><td class="sl-c sl-net sl-fz" data-fzcol="3"><b>${fmt(grand)}</b></td>${colTot.map(v => `<td class="sl-c">${fmt(v)}</td>`).join('')}</tr></thead>
       <tbody>${rows.map(r => `<tr>
         ${_slThumbCell(r.code, prodMap)}
-        <td><a class="sl-code-link" onclick="_slOpenProduct('${esc(r.code)}')">${esc(r.code)}</a></td><td class="sl-mx-name">${esc(r.name)}</td>
-        <td class="sl-c sl-net"><b>${fmt(r.tot)}</b></td>${r.cells.map(v => `<td class="sl-c">${v ? fmt(v) : '-'}</td>`).join('')}
+        <td class="sl-fz" data-fzcol="1"><a class="sl-code-link" onclick="_slOpenProduct('${esc(r.code)}')">${esc(r.code)}</a></td><td class="sl-mx-name sl-fz" data-fzcol="2" title="${esc(r.name)}">${esc(r.name)}</td>
+        <td class="sl-c sl-net sl-fz" data-fzcol="3"><b>${fmt(r.tot)}</b></td>${r.cells.map(v => `<td class="sl-c">${v ? fmt(v) : '-'}</td>`).join('')}
       </tr>`).join('')}</tbody>
-      <tfoot><tr class="sl-sum-foot"><td colspan="3">합계 (${rows.length}품번)</td><td class="sl-c sl-net"><b>${fmt(grand)}</b></td>${colTot.map(v => `<td class="sl-c">${fmt(v)}</td>`).join('')}</tr></tfoot>
     </table></div>
     <div class="sl-mx-toolbar"><button class="btn btn-outline btn-sm" onclick="downloadSalesPartner()">📥 엑셀</button></div>`
+  _slFreezeRender(body)
 }
 function downloadSalesPartner() {
   if (!_slPartnerReport || !_slPartnerReport.cols.length) { showToast('데이터 없음', 'warning'); return }
