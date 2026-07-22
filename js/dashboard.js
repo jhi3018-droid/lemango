@@ -686,7 +686,7 @@ async function renderBestList() {
         <span class="best-code">${p.productCode}</span>
         <span class="best-name">${p.nameKr}</span>
       </div>
-      <span class="best-sales">${r.qty.toLocaleString()}개</span>
+      <span class="best-sales">${r.qty.toLocaleString()}개<span class="best-amt"> · ${Math.round((r.amt || 0) / 10000).toLocaleString()}만원</span></span>
     </div>`
   }).join('') : '<div style="color:#bbb;font-size:12px;padding:10px 0">판매 데이터 없음 — 매출관리 [집계 재계산] 후 표시</div>')
 }
@@ -700,6 +700,9 @@ function goToSales(code) {
 // 🔴 전월비 = 실데이터(L2 salesD). 구 renderSalesSummary(Math.random 가짜 + 매출관리 동명 함수와 충돌)를 대체·개명.
 //   당월(1일~오늘) vs 전월(1일~같은날, 공정비교) 채널 순액(매출−반품·배송 포함). Math.random 완전 제거.
 async function renderDashSalesSummary() {
+  // 🔴 헤더 라벨 = 당월 자동(KST, _slMonthCompare 당월과 동일 소스) — 구 하드코딩 "2026년 3월 기준" 대체
+  const lblEl = document.getElementById('salesSummaryLabel')
+  if (lblEl) { const t = (typeof kstDateKey === 'function' && kstDateKey()) || new Date().toISOString().slice(0, 10); lblEl.textContent = (+t.slice(0, 4)) + '년 ' + (+t.slice(5, 7)) + '월 기준' }
   const el = document.getElementById('salesSummary'); if (!el) return
   let mc
   try { mc = (typeof _slMonthCompare === 'function') ? await _slMonthCompare() : null } catch (e) { mc = null }

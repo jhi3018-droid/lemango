@@ -1216,18 +1216,18 @@ async function _slFillProdSalesBox(code) {
 // 대시보드 BEST — 품번별 순수량 랭킹(period: all=캐시 전기간 · month=이번달 · season=SS/FW). 메모.
 async function _slProdRanking(period) {
   if (_slRankCache[period]) return _slRankCache[period]
-  const qty = {}
+  const qty = {}, amt = {}   // 🔴 순액(매출−반품·배송 포함) 병기 — 동일 shard, 추가 read 0
   if (period === 'all') {
     const c = await _slLoadProdSalesCache()
-    Object.keys(c.byCode).forEach(code => { const e = c.byCode[code]; qty[code] = _slNetQ(e.gh) + _slNetQ(e.pt) + _slNetQ(e.sb) })
+    Object.keys(c.byCode).forEach(code => { const e = c.byCode[code]; qty[code] = _slNetQ(e.gh) + _slNetQ(e.pt) + _slNetQ(e.sb); amt[code] = _slNetA(e.gh) + _slNetA(e.pt) + _slNetA(e.sb) })
   } else {
     const today = (typeof kstDateKey === 'function' && kstDateKey()) || new Date().toISOString().slice(0, 10)
     let months
     if (period === 'season') { const mo = +today.slice(5, 7); const y = today.slice(0, 4); const startMo = mo <= 6 ? 1 : 7, endMo = mo <= 6 ? 6 : 12; months = []; for (let m = startMo; m <= Math.min(mo, endMo); m++) months.push(y + '-' + _slPad(m)) }
     else months = [today.slice(0, 7)]   // 이번 달
-    for (const mk of months) for (const g of ['c24', 'sb']) { const d = await _slReadShard('salesM', mk + '_' + g); if (d && d.items) Object.keys(d.items).forEach(code => { const it = d.items[code]; qty[code] = (qty[code] || 0) + ((it.q || 0) - (it.rq || 0)) }) }
+    for (const mk of months) for (const g of ['c24', 'sb']) { const d = await _slReadShard('salesM', mk + '_' + g); if (d && d.items) Object.keys(d.items).forEach(code => { const it = d.items[code]; qty[code] = (qty[code] || 0) + ((it.q || 0) - (it.rq || 0)); amt[code] = (amt[code] || 0) + ((it.amt || 0) - (it.ramt || 0)) }) }
   }
-  const ranked = Object.keys(qty).map(code => ({ code: code, qty: qty[code] })).filter(x => x.qty > 0).sort((a, b) => b.qty - a.qty).slice(0, 10)
+  const ranked = Object.keys(qty).map(code => ({ code: code, qty: qty[code], amt: amt[code] || 0 })).filter(x => x.qty > 0).sort((a, b) => b.qty - a.qty).slice(0, 10)   // 정렬=수량(불변)
   _slRankCache[period] = ranked
   return ranked
 }
