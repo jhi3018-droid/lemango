@@ -6,14 +6,19 @@ function renderDashboard() {
   renderDashFree()
   renderDashActivity()
   if (typeof renderFavoritesList === 'function') renderFavoritesList()
-  renderBestList()
-  renderSalesSummary()
-  renderMiniChart()
   renderDashCalendar()
   checkEventAlerts()
   checkPlanAlerts()
   checkBirthdayAlerts()
+  _dashRenderSalesWidgets()   // 🔴 판매 위젯(BEST/차트/전월비/재고알림) = 매출관리(L2/L3) 단일 소스: 캐시 1회 로드 후 렌더
+}
+// 매출관리 판매현황 캐시(salesM 컬렉션 1회)를 먼저 로드한 뒤 캐시 의존 위젯 렌더. 리스너 없음.
+async function _dashRenderSalesWidgets() {
+  try { if (typeof _slLoadProdSalesCache === 'function') await _slLoadProdSalesCache() } catch (e) {}
+  renderMiniChart()
   checkLowStockAlerts()
+  renderBestList()          // async(내부에서 period shard/캐시 read)
+  renderDashSalesSummary()  // async(전월비 L2 salesD 재도출)
 }
 
 // ===== 알림 자동 생성: 재고 부족 =====
@@ -23,7 +28,7 @@ function checkLowStockAlerts() {
     if (p.deleted) return
     if (!p.stock || p.saleStatus === '종료' || p.productionStatus === '생산중단') return
     const totalStock = SIZES.reduce((s, sz) => s + (p.stock[sz] || 0), 0)
-    const totalSales = _platforms.reduce((s, pl) => s + (p.sales?.[pl] || 0), 0)
+    const totalSales = (typeof _slProdNetQty === 'function') ? _slProdNetQty(p.productCode) : 0   // 🔴 매출관리 캐시(판매 이력 존재)
     if (totalStock > 0 && totalStock <= LOW_THRESHOLD && totalSales > 0) {
       addNotification('plan_deadline', `⚠️ 재고 부족: ${p.productCode}`, `${p.nameKr || ''} 잔여재고 ${totalStock}개`, '#stock')
     }
@@ -658,39 +663,21 @@ window.changeBestPeriod = function(period) {
   renderBestList()
 }
 
-function _getSalesInPeriod(p, period) {
-  if (period === 'all') return getTotalSales(p)
-  const now = new Date()
-  let from
-  if (period === 'month') {
-    from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
-  } else if (period === 'season') {
-    // 현재 시즌: SS(1~6월) or FW(7~12월) 시작일
-    const m = now.getMonth()
-    from = new Date(now.getFullYear(), m < 6 ? 0 : 6, 1).toISOString().slice(0, 10)
-  }
-  return (p.revenueLog || [])
-    .filter(r => r.type === 'sale' && r.date >= from)
-    .reduce((s, r) => s + (r.qty || 0), 0)
-}
-
-function renderBestList() {
+async function renderBestList() {
+  const container = document.getElementById('bestList')
+  if (!container) return
   const periodLabels = { all: '전체', month: '이번 달', season: '이번 시즌' }
   const periodBtns = ['all', 'month', 'season'].map(k =>
     `<button class="best-period-btn${_bestPeriod === k ? ' active' : ''}" onclick="changeBestPeriod('${k}')">${periodLabels[k]}</button>`
   ).join('')
-
-  // BEST TOP10: exclude soft-deleted (current best-sellers, not historical)
-  const top10 = State.allProducts.filter(p => !p.deleted)
-    .map(p => ({ ...p, _periodSales: _getSalesInPeriod(p, _bestPeriod) }))
-    .sort((a, b) => b._periodSales - a._periodSales)
-    .slice(0, 10)
-
-  const container = document.getElementById('bestList')
-  if (!container) return
-  container.innerHTML = `<div class="best-period-row">${periodBtns}</div>` + top10.map((p, i) => {
-    const thumb = getThumbUrl(p) || PLACEHOLDER_IMG
-    const rankClass = i < 3 ? `rank-${i + 1}` : ''
+  // 🔴 매출관리 L3 랭킹(순수량, 품번별) — p.revenueLog 미사용
+  let ranked = []
+  try { if (typeof _slProdRanking === 'function') ranked = await _slProdRanking(_bestPeriod) || [] } catch (e) { ranked = [] }
+  if (document.getElementById('bestList') !== container) return
+  const pmap = {}; State.allProducts.forEach(p => { if (p && p.productCode) pmap[String(p.productCode).toUpperCase()] = p })
+  const rows = ranked.map(r => ({ p: pmap[String(r.code).toUpperCase()], code: r.code, qty: r.qty })).filter(r => r.p && !r.p.deleted).slice(0, 10)
+  container.innerHTML = `<div class="best-period-row">${periodBtns}</div>` + (rows.length ? rows.map((r, i) => {
+    const p = r.p, thumb = getThumbUrl(p) || PLACEHOLDER_IMG, rankClass = i < 3 ? `rank-${i + 1}` : ''
     return `<div class="best-item" onclick="goToSales('${p.productCode}')">
       <span class="rank ${rankClass}">${i + 1}</span>
       <img src="${thumb}" class="best-thumb" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'" />
@@ -699,9 +686,9 @@ function renderBestList() {
         <span class="best-code">${p.productCode}</span>
         <span class="best-name">${p.nameKr}</span>
       </div>
-      <span class="best-sales">${p._periodSales.toLocaleString()}개</span>
+      <span class="best-sales">${r.qty.toLocaleString()}개</span>
     </div>`
-  }).join('')
+  }).join('') : '<div style="color:#bbb;font-size:12px;padding:10px 0">판매 데이터 없음 — 매출관리 [집계 재계산] 후 표시</div>')
 }
 
 function goToSales(code) {
@@ -710,29 +697,26 @@ function goToSales(code) {
   searchSales()
 }
 
-function renderSalesSummary() {
-  const all = State.allProducts
-  const brands = [
-    { name: '르망고',    items: all.filter(p => p.brand === '르망고') },
-    { name: '르망고 느와', items: all.filter(p => p.brand === '르망고 느와') },
-    { name: '전체',      items: all }
-  ]
-  const rows = brands.map(b => {
-    const curr = b.items.reduce((s,p) => s + getTotalSales(p) * (p.salePrice || 0), 0)
-    const prev = Math.round(curr * (0.8 + Math.random() * 0.4))
-    const diff = curr - prev
-    return { name: b.name, prev, curr, diff }
-  })
-  document.getElementById('salesSummary').innerHTML = `
+// 🔴 전월비 = 실데이터(L2 salesD). 구 renderSalesSummary(Math.random 가짜 + 매출관리 동명 함수와 충돌)를 대체·개명.
+//   당월(1일~오늘) vs 전월(1일~같은날, 공정비교) 채널 순액(매출−반품·배송 포함). Math.random 완전 제거.
+async function renderDashSalesSummary() {
+  const el = document.getElementById('salesSummary'); if (!el) return
+  let mc
+  try { mc = (typeof _slMonthCompare === 'function') ? await _slMonthCompare() : null } catch (e) { mc = null }
+  if (document.getElementById('salesSummary') !== el) return
+  if (!mc) { el.innerHTML = '<div style="color:#bbb;font-size:12px;padding:8px 0">전월비 데이터 없음</div>'; return }
+  const man = v => (Math.round((v || 0) / 10000)).toLocaleString() + '만원'
+  const row = (name, prev, curr) => { const diff = curr - prev; return `<tr>
+    <td>${name}</td><td>${man(prev)}</td><td>${man(curr)}</td>
+    <td class="${diff >= 0 ? 'positive' : 'negative'}">${diff >= 0 ? '+' : ''}${man(diff)}</td></tr>` }
+  el.innerHTML = `
+    <div class="dash-cmp-note">전월 ${mc.prevLabel} vs 당월 ${mc.curLabel} · 순액(매출−반품)</div>
     <table class="summary-table">
       <thead><tr><th></th><th>전월</th><th>당월</th><th>증감</th></tr></thead>
-      <tbody>${rows.map(r => `
-        <tr>
-          <td>${r.name}</td>
-          <td>${(r.prev/10000).toFixed(0)}만원</td>
-          <td>${(r.curr/10000).toFixed(0)}만원</td>
-          <td class="${r.diff >= 0 ? 'positive' : 'negative'}">${r.diff >= 0 ? '+' : ''}${(r.diff/10000).toFixed(0)}만원</td>
-        </tr>`).join('')}
+      <tbody>
+        ${row('카페24', mc.prev.c24, mc.cur.c24)}
+        ${row('사방넷', mc.prev.sb, mc.cur.sb)}
+        ${row('전체', mc.prev.total, mc.cur.total)}
       </tbody>
     </table>`
 }
@@ -741,15 +725,15 @@ function renderMiniChart() {
   const canvas = document.getElementById('salesChart')
   if (!canvas) return
   const ctx = canvas.getContext('2d')
-  const platforms = _platforms
-  const totals = platforms.map(pl =>
-    State.allProducts.reduce((s,p) => s + (p.sales?.[pl] || 0), 0)
-  )
+  // 🔴 매출관리 캐시(공홈/파트너/사방넷 순수량) — p.sales 미사용
+  const pt = (typeof _slProdSalesCache !== 'undefined' && _slProdSalesCache && _slProdSalesCache.platTotals) ? _slProdSalesCache.platTotals : { gh: 0, pt: 0, sb: 0 }
+  const platforms = ['공홈', '파트너', '사방넷']
+  const totals = [pt.gh || 0, pt.pt || 0, pt.sb || 0]
   const max = Math.max(...totals) || 1
   const w = canvas.width, h = canvas.height
   const barW = 44, gap = (w - platforms.length * barW) / (platforms.length + 1)
   const CHART_COLORS = ['#1a1a2e','#c9a96e','#4caf7d','#f0a500','#e05252','#7b68ee','#20b2aa','#ff7f50','#9370db','#3cb371']
-  const colors = _platforms.map((_, i) => CHART_COLORS[i % CHART_COLORS.length])
+  const colors = platforms.map((_, i) => CHART_COLORS[i % CHART_COLORS.length])
   ctx.clearRect(0, 0, w, h)
   ctx.strokeStyle = '#eeebe5'; ctx.lineWidth = 1
   for (let i = 1; i <= 4; i++) {

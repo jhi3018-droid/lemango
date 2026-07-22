@@ -671,6 +671,7 @@ async function confirmSalesLedgerUpload() {
 
     if (typeof logActivity === 'function') logActivity('upload', '매출원장', `${p.type} — ${p.fileName} : 신규 ${cNew} · 병합 ${cMerge} · 무변경 ${cSame} · 반품 ${cReturns}`)
     _slUploads = []   // 캐시 무효화 → 다음 조회 시 재로드
+    _slInvalidateProdSalesCache()   // 🔴 상품상세/대시보드 판매현황 캐시 무효화(L3 변경)
 
     // 5) 증분 재계산 — 영향받은 일자의 salesD + 걸치는 월/주 shard 만 재도출(touched-only). 무변경(0 write)=0 재계산.
     //    🔴 L1 은 이미 커밋됨(진실). 재계산 실패해도 L1 안전 → [집계 재계산]으로 복구 가능(예외 흡수).
@@ -680,6 +681,7 @@ async function confirmSalesLedgerUpload() {
       try { const rr = await _slRecomputeDaysAndShards([...affectedDays].sort()); recalcNote = `집계 갱신: ${rr.days}일` }
       catch (re) { console.error('증분 재계산 실패:', re && re.message); recalcNote = '⚠️ 집계 갱신 실패 — [집계 재계산] 필요' }
     }
+    _slInvalidateProdSalesCache()   // 🔴 재계산 완료 후 재무효화 — 재계산 도중 동시 read 로 실린 부분 shard 캐시 제거(최신 shard 기준 재로드 보장)
     _slRenderResult({ cNew, cMerge, cSame, cReturns, writes: toWrite.length, recalcNote })
   } catch (e) {
     console.error('confirmSalesLedgerUpload 실패:', e && e.message)
@@ -1123,6 +1125,7 @@ async function recomputeSalesRange(startDate, endDate, onProg) {
   Object.values(byRd).forEach(o => { (o.rds || []).forEach(d => { if (_slInR(d, startDate, endDate)) days.add(d) }) })
   const dayArr = [...days].sort()
   const r = await _slRecomputeDaysAndShards(dayArr, (a, b) => { if (onProg) onProg(`재계산 ${a}/${b}일`) }, ptSet)
+  _slInvalidateProdSalesCache()   // 🔴 판매현황 캐시 무효화(shard 재빌드)
   r.candidates = Object.keys(cand).map(bid => bid + (cand[bid] ? ' (' + cand[bid] + ')' : ''))   // 새 파트너 후보(마스터 갱신 신호)
   return r
 }
@@ -1153,6 +1156,97 @@ function _slItemSplit(it) {
   it = it || {}
   if (it.gh || it.pt) return { gh: it.gh || {}, pt: it.pt || {} }
   return { gh: it, pt: {} }
+}
+
+// =============================================
+// ===== Stage A: 상품상세/대시보드 판매현황 = 매출관리(L2/L3) 단일 소스 (READ-ONLY, 세션 캐시) =====
+// =============================================
+// 🔴 p.sales/revenueLog 대체 — L3 월 shard 전체(salesM 컬렉션)를 1회 로드해 품번별 전기간 집계 캐시.
+//   리스너 금지 · L1/L2/L3 write 0 · 업로드/재계산 시 무효화. 모달/대시보드는 캐시만 읽음(반복 열기 추가 read 0).
+let _slProdSalesCache = null    // { byCode:{CODE:{gh,pt,sb}}, platTotals:{gh,pt,sb}, ready }
+let _slRankCache = {}           // period → [{code,qty}] (대시보드 BEST 메모)
+function _slZ4() { return { q: 0, amt: 0, rq: 0, ramt: 0 } }
+function _slAdd4(dst, src) { dst.q += src.q || 0; dst.amt += src.amt || 0; dst.rq += src.rq || 0; dst.ramt += src.ramt || 0 }
+function _slNetQ(g) { return (g.q || 0) - (g.rq || 0) }   // 순수량 = 판매 − 반품
+function _slNetA(g) { return (g.amt || 0) - (g.ramt || 0) } // 순액 = 매출 − 반품(배송 포함)
+
+async function _slLoadProdSalesCache(force) {
+  if (_slProdSalesCache && !force) return _slProdSalesCache
+  const byCode = {}, platTotals = { gh: 0, pt: 0, sb: 0 }
+  if (typeof db !== 'undefined' && db) {
+    try {
+      const snap = await db.collection('salesM').get()   // 🔴 전체 월 shard 1회 = 품번별 전기간 소스(리스너 없음)
+      snap.forEach(doc => {
+        const data = doc.data(); const grp = data.grp || (String(doc.id).endsWith('_sb') ? 'sb' : 'c24')
+        const items = data.items || {}
+        Object.keys(items).forEach(code => {
+          const it = items[code]
+          const e = byCode[code] || (byCode[code] = { gh: _slZ4(), pt: _slZ4(), sb: _slZ4() })
+          if (grp === 'c24') { _slAdd4(e.gh, it.gh || {}); _slAdd4(e.pt, it.pt || {}) }   // 카페24 = 공홈/파트너
+          else { _slAdd4(e.sb, it) }                                                       // 사방넷 = 전체
+        })
+      })
+      Object.values(byCode).forEach(e => { platTotals.gh += _slNetQ(e.gh); platTotals.pt += _slNetQ(e.pt); platTotals.sb += _slNetQ(e.sb) })
+    } catch (err) { console.warn('_slLoadProdSalesCache:', err && err.message) }
+  }
+  _slProdSalesCache = { byCode: byCode, platTotals: platTotals, ready: true }
+  return _slProdSalesCache
+}
+function _slInvalidateProdSalesCache() { _slProdSalesCache = null; _slRankCache = {} }   // 업로드/재계산 후 호출
+function _slProdSalesFor(code) { const c = _slProdSalesCache; const e = c && c.byCode[String(code || '').toUpperCase()]; return e || { gh: _slZ4(), pt: _slZ4(), sb: _slZ4() } }
+function _slProdNetQty(code) { const e = _slProdSalesFor(code); return _slNetQ(e.gh) + _slNetQ(e.pt) + _slNetQ(e.sb) }
+
+// 상품상세 "판매 현황" box 채우기(캐시 로드 후) — 🔴 매출관리 단일 소스, p.sales 폴백 없음
+async function _slFillProdSalesBox(code) {
+  const box = document.getElementById('dSalesBox'); if (!box) return
+  let cache
+  try { cache = await _slLoadProdSalesCache() } catch (e) { cache = null }
+  if (document.getElementById('dSalesBox') !== box) return   // 그 사이 모달 재오픈 → 폐기
+  const e = _slProdSalesFor(code)
+  const gh = _slNetQ(e.gh), pt = _slNetQ(e.pt), sb = _slNetQ(e.sb), tot = gh + pt + sb
+  const amt = _slNetA(e.gh) + _slNetA(e.pt) + _slNetA(e.sb)
+  const empty = !(cache && cache.ready) || Object.keys(cache.byCode || {}).length === 0
+  const badge = (label, n, cls) => `<div class="dstock-badge${cls || ''}"><span class="dstock-size">${label}</span><span class="dstock-num">${(n || 0).toLocaleString()}</span></div>`
+  box.innerHTML =
+    `<div class="dstock-row">${badge('공홈', gh)}${badge('파트너', pt)}${badge('사방넷', sb)}${badge('합계', tot, ' dsales-total')}</div>` +
+    `<div class="dsales-amt">순액 <b>₩${amt.toLocaleString()}</b> <span class="dsales-amt-note">(배송 포함·반품 차감 · 매출관리 전기간)</span></div>` +
+    (empty ? `<div class="dsales-hint">⚠️ 매출관리 집계 없음 — [매출관리 → 집계 재계산] 후 표시</div>` : '')
+}
+
+// 대시보드 BEST — 품번별 순수량 랭킹(period: all=캐시 전기간 · month=이번달 · season=SS/FW). 메모.
+async function _slProdRanking(period) {
+  if (_slRankCache[period]) return _slRankCache[period]
+  const qty = {}
+  if (period === 'all') {
+    const c = await _slLoadProdSalesCache()
+    Object.keys(c.byCode).forEach(code => { const e = c.byCode[code]; qty[code] = _slNetQ(e.gh) + _slNetQ(e.pt) + _slNetQ(e.sb) })
+  } else {
+    const today = (typeof kstDateKey === 'function' && kstDateKey()) || new Date().toISOString().slice(0, 10)
+    let months
+    if (period === 'season') { const mo = +today.slice(5, 7); const y = today.slice(0, 4); const startMo = mo <= 6 ? 1 : 7, endMo = mo <= 6 ? 6 : 12; months = []; for (let m = startMo; m <= Math.min(mo, endMo); m++) months.push(y + '-' + _slPad(m)) }
+    else months = [today.slice(0, 7)]   // 이번 달
+    for (const mk of months) for (const g of ['c24', 'sb']) { const d = await _slReadShard('salesM', mk + '_' + g); if (d && d.items) Object.keys(d.items).forEach(code => { const it = d.items[code]; qty[code] = (qty[code] || 0) + ((it.q || 0) - (it.rq || 0)) }) }
+  }
+  const ranked = Object.keys(qty).map(code => ({ code: code, qty: qty[code] })).filter(x => x.qty > 0).sort((a, b) => b.qty - a.qty).slice(0, 10)
+  _slRankCache[period] = ranked
+  return ranked
+}
+
+// 대시보드 전월비 — 당월(1일~오늘) vs 전월(1일~같은날, 공정비교) 채널 순액. L2 salesD 재도출(2 range 쿼리).
+function _slPrevMonthRange(today) {
+  const y = +today.slice(0, 4), m = +today.slice(5, 7), d = +today.slice(8, 10)
+  let py = y, pm = m - 1; if (pm < 1) { pm = 12; py-- }
+  const prevLast = new Date(Date.UTC(py, pm, 0)).getUTCDate()   // 전월 말일
+  const pd = Math.min(d, prevLast)                              // 같은 날(월말 클램프)
+  return { curStart: today.slice(0, 7) + '-01', curEnd: today, prevStart: py + '-' + _slPad(pm) + '-01', prevEnd: py + '-' + _slPad(pm) + '-' + _slPad(pd) }
+}
+async function _slMonthCompare() {
+  const today = (typeof kstDateKey === 'function' && kstDateKey()) || new Date().toISOString().slice(0, 10)
+  const r = _slPrevMonthRange(today)
+  const sumNet = rows => { let c24 = 0, sb = 0; (rows || []).forEach(d => { const c = d.c24 || {}, s = d.sb || {}; c24 += (c.samt || 0) - (c.ramt || 0); sb += (s.samt || 0) - (s.ramt || 0) }); return { c24: c24, sb: sb, total: c24 + sb } }
+  let cur = { c24: 0, sb: 0, total: 0 }, prev = { c24: 0, sb: 0, total: 0 }
+  try { cur = sumNet(await _slLoadSalesDaily(r.curStart, r.curEnd)); prev = sumNet(await _slLoadSalesDaily(r.prevStart, r.prevEnd)) } catch (e) { console.warn('_slMonthCompare:', e && e.message) }
+  return { cur: cur, prev: prev, curLabel: r.curStart.slice(5) + '~' + r.curEnd.slice(5), prevLabel: r.prevStart.slice(5) + '~' + r.prevEnd.slice(5) }
 }
 
 let _slSummaryRows = []
@@ -2163,6 +2257,14 @@ window._slAbortVerify = _slAbortVerify
 window._slVerifyCopy = _slVerifyCopy
 window.salesDiagnose = salesDiagnose
 window.runSalesDiagnose = runSalesDiagnose
+// Stage A: 상품상세/대시보드 판매현황 단일 소스(매출관리 L2/L3, READ-ONLY 세션캐시)
+window._slLoadProdSalesCache = _slLoadProdSalesCache
+window._slInvalidateProdSalesCache = _slInvalidateProdSalesCache
+window._slProdSalesFor = _slProdSalesFor
+window._slProdNetQty = _slProdNetQty
+window._slFillProdSalesBox = _slFillProdSalesBox
+window._slProdRanking = _slProdRanking
+window._slMonthCompare = _slMonthCompare
 // 업로드 경고 아카이브(완전 숨김)
 window.openSlArchiveModal = openSlArchiveModal
 window.closeSlArchiveModal = closeSlArchiveModal

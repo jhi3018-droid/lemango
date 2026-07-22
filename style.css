@@ -1661,6 +1661,15 @@ body.col-resize-active * { cursor: col-resize !important; }
 .dstock-num { font-size: 20px; font-weight: 700; font-family: 'Inter'; }
 .dstock-num.zero { color: var(--danger); }
 
+/* Stage A: 상품상세 판매 현황(매출관리 기준) + 대시보드 전월비 */
+.dsection-sub { font-size: 11px; font-weight: 500; color: var(--text-sub, #888); margin-left: 6px; }
+.dsales-total { background: var(--table-header); }
+.dsales-amt { margin-top: 8px; font-size: 13px; color: var(--text-main, #1a1a2e); }
+.dsales-amt b { color: var(--primary, #1a1a2e); }
+.dsales-amt-note { font-size: 11px; color: var(--text-sub, #888); }
+.dsales-hint { margin-top: 6px; font-size: 12px; color: var(--warning, #f0a500); }
+.dash-cmp-note { font-size: 11px; color: var(--text-sub, #888); margin-bottom: 6px; }
+
 /* ===== 신규등록 버튼 ===== */
 .btn-new {
   background: #1a6b3a;

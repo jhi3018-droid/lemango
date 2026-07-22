@@ -303,6 +303,8 @@ async function openDetailModal(productCode, opts) {
 
   // 오른쪽 상세 내용
   document.getElementById('dDetailContent').innerHTML = buildDetailContent(p)
+  // 🔴 판매 현황 = 매출관리(L2/L3) 단일 소스로 비동기 채움(세션 캐시 · p.sales 미사용). 휴지통/읽기전용 모달도 동일 경로.
+  if (typeof _slFillProdSalesBox === 'function') _slFillProdSalesBox(p.productCode)
   // 🔴 B2b: 품번 코드 디자인 picker 드롭다운 초기화(패널 제거 → 기본정보 인라인). 현재 디자인 placeholder 표기.
   if (typeof filterDetailDesignList === 'function' && document.getElementById('dCgDesignDropdown')) {
     const dcur = document.getElementById('dCgDesign')?.value
@@ -852,22 +854,8 @@ function buildDetailContent(p) {
     </div>
 
     <div class="dsection">
-      <div class="dsection-title">판매 현황</div>
-      <div style="padding:10px 12px">
-        <div class="dstock-row">
-          ${platforms.map(pl => {
-            const n = p.sales?.[pl] || 0
-            return `<div class="dstock-badge">
-              <span class="dstock-size">${pl}</span>
-              <span class="dstock-num">${n}</span>
-            </div>`
-          }).join('')}
-          <div class="dstock-badge" style="background:var(--table-header)">
-            <span class="dstock-size">합계</span>
-            <span class="dstock-num">${getTotalSales(p)}</span>
-          </div>
-        </div>
-      </div>
+      <div class="dsection-title">판매 현황 <span class="dsection-sub">매출관리 기준</span></div>
+      <div style="padding:10px 12px" id="dSalesBox"><div class="dstock-row"><span class="sl-hist-loading">불러오는 중…</span></div></div>
     </div>
 
     <div class="dsection">
