@@ -2417,6 +2417,10 @@
       <button class="btn btn-outline" onclick="_slVerifyCopy()">📋 결과 복사</button>
       <span id="slVfStatus" class="sl-vf-status"></span>
     </div>
+    <div class="sl-verify-controls">
+      <label class="inbhist-ctl">🔬 정밀 진단 <input type="text" id="slVfDiag" class="inbhist-store" placeholder="2026-06-26(일자·사방넷) 또는 2026-06(월·카페24)"></label>
+      <button class="btn btn-outline" onclick="runSalesDiagnose()">진단 실행</button>
+    </div>
     <pre id="slVerifyBody" class="sl-verify-pre">기간을 비우면 전체, 지정하면 해당 구간만 검증합니다. [검증 실행]을 누르세요.  ※ READ-ONLY — 데이터에 절대 쓰지 않습니다. 정정은 재업로드/재계산으로만.</pre>
   </div>
 </dialog>

@@ -863,12 +863,16 @@ function _slInR(dk, s, e) { return dk && dk >= s && dk <= e }
 function _slAllocByRv(lines, total) {
   const n = (lines || []).length, out = new Array(n).fill(0)
   if (!total || !n) return out
-  const tot = lines.reduce((s, l) => s + _slNum(l.rv || 0), 0)
-  if (tot <= 0) return out
-  const raw = lines.map(l => total * _slNum(l.rv || 0) / tot)
+  let tot = lines.reduce((s, l) => s + _slNum(l.rv || 0), 0)
+  // 🔴 Σline_rv>0 = rv 가중(기존과 byte-identical) · Σrv≤0(적립금 전액결제 등 rv0 주문) = **균등 분배**(총액 보존).
+  //   구 `if(tot<=0)return out`(전량 0)은 주문 배송비/적립금을 유실 → L3(_slAggShard 분배)이 L2(_slAggDay 일괄가산)보다 작아지는 대사 불일치의 근본원인.
+  let weights
+  if (tot > 0) weights = lines.map(l => _slNum(l.rv || 0))
+  else { weights = lines.map(() => 1); tot = n }
+  const raw = weights.map(w => total * w / tot)
   raw.forEach((x, i) => { out[i] = Math.floor(x) })
   let rem = total - out.reduce((a, b) => a + b, 0)
-  const order = raw.map((x, i) => ({ i, f: x - Math.floor(x), rv: _slNum(lines[i].rv || 0) })).sort((a, b) => b.f - a.f || b.rv - a.rv)
+  const order = raw.map((x, i) => ({ i, f: x - Math.floor(x), rv: weights[i] })).sort((a, b) => b.f - a.f || b.rv - a.rv)
   for (let k = 0; k < order.length && rem > 0; k++) { out[order[k].i]++; rem-- }
   return out
 }
@@ -1689,9 +1693,11 @@ async function salesVerify(fromDate, toDate, onProg) {
   // ---- 2) L1 전체 스캔 + 날짜 분포/이상(범위 밖 오류도 잡으려면 전량 스캔 필수) ----
   prog('L1 원장 전체 스캔 중…')
   const snap = await db.collection('salesOrders').get()
-  const orders = []; snap.forEach(d => orders.push(d.data()))
-  const dayBucket = new Map()   // day → Map(key→order) : od 또는 rd 로 그 날에 관여하는 주문(대사 도출용)
-  const addDay = (day, o) => { if (!day) return; let m = dayBucket.get(day); if (!m) { m = new Map(); dayBucket.set(day, m) } m.set(o.key || (o.ch + '_' + o.ono), o) }
+  const orders = []; snap.forEach(d => { const o = d.data(); o._id = d.id; orders.push(o) })
+  const dayBucket = new Map()   // day → Map(docId→order) : od 또는 rd 로 그 날에 관여하는 주문(대사 도출용)
+  // 🔴 dedup 키 = **문서 ID**(= recompute _slFetchPeriodOrders 와 동일 identity). 구 `o.key||ch+ono` 는 저장 doc 에 key 필드가 없어 ch+ono 로 붕괴
+  //   → 사방넷 '같은 주문번호·다른 쇼핑몰' 2건을 1건으로 합쳐 판매수 −1 오대사(recompute 는 정확). 문서 ID 키잉으로 parity 확보.
+  const addDay = (day, o) => { if (!day) return; let m = dayBucket.get(day); if (!m) { m = new Map(); dayBucket.set(day, m) } m.set(o._id || o.key || (o.ch + '_' + o.ono), o) }
   const monthCh = {}
   let minOd = '', maxOd = ''
   const emptyOd = [], outWin = [], rdAnom = []
@@ -1800,6 +1806,75 @@ async function salesVerify(fromDate, toDate, onProg) {
   return { text: text, orders: orders.length, emptyOd: emptyOd.length, outWin: outWin.length, rdAnom: rdAnom.length, l2Mismatch: l2Mismatch, l3Mismatch: l3Mismatch, dateFail: uDateFail, aborted: _slVerifyAbort }
 }
 
+// =============================================
+// ===== 🔬 정밀 진단 (READ-ONLY) — 특정 일자(사방넷)/월(카페24) 불일치 원인 dump =====
+// =============================================
+// target = 'YYYY-MM-DD'(그 날 od 문서 per-doc/per-mall 분해 + salesD 대조) | 'YYYY-MM'(그 달 c24 품번별 L2재도출 vs L3 shard + 배송비 유실 주문 색출).
+// 🔴 READ-ONLY: .get() 만. 리스터 없음. 관리자 전용.
+async function salesDiagnose(target) {
+  if (!_slIsAdmin()) throw new Error('정밀 진단은 관리자 전용입니다.')
+  if (typeof db === 'undefined' || !db) throw new Error('DB 연결 없음')
+  await _slEnsurePartnerMaster()
+  const ptSet = _slPartnerActiveSet()
+  const R = []; const push = (s) => R.push(s == null ? '' : String(s))
+  const num = n => (n || 0).toLocaleString()
+  target = String(target || '').trim()
+  push('==== 🔬 정밀 진단: ' + target + ' (READ-ONLY) ====')
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(target)) {
+    // ---- 일자 진단(사방넷 판매수 ±1 규명) ----
+    const day = target
+    const byOd = await _slFetchByOd(day, day)   // od==day 전 문서(문서ID keyed = recompute 와 동일)
+    const docs = Object.entries(byOd).map(([id, o]) => Object.assign({ _id: id }, o))
+    const stored = await _slReadShard('salesD', day)   // salesD 저장본
+    for (const g of ['sb', 'c24']) {
+      const gd = docs.filter(o => (g === 'c24' ? o.ch === SL_CH.c24 : o.ch === SL_CH.sb))
+      let sq = 0; gd.forEach(o => (o.lines || []).forEach(l => { sq += _slNum(l.q) }))
+      const sv = (stored && stored[g]) || {}
+      push('')
+      push('【' + g + '】 od==' + day + ' 문서 ' + gd.length + '건 · 도출 판매수(문서ID keyed) ' + sq + ' vs salesD 저장 ' + (sv.sq || 0) + (sq === (sv.sq || 0) ? ' ✅' : ' ✗ 불일치'))
+      // 같은 (ch,ono) 다중 문서 색출 = verify 붕괴/L1 중복 후보
+      const byOno = {}; gd.forEach(o => { (byOno[o.ono] = byOno[o.ono] || []).push(o) })
+      const multi = Object.entries(byOno).filter(([, arr]) => arr.length > 1)
+      if (multi.length) {
+        push('  🔎 같은 주문번호 다중 문서(' + multi.length + '개 ono) — verify 구버전이 1건으로 붕괴시키던 대상:')
+        multi.forEach(([ono, arr]) => arr.forEach(o => push('     ono ' + ono + ' · 몰 "' + (o.mall || '') + '" · docId ' + o._id + ' · Σq ' + _slNum((o.lines || []).reduce((s, l) => s + _slNum(l.q), 0)) + ' → ' + (arr.length > 1 ? '(별개 몰=정상 2건 / 같은 몰=L1 중복 의심)' : ''))))
+      } else if (g === 'sb') push('  (같은 주문번호 다중 문서 없음)')
+    }
+  } else if (/^\d{4}-\d{2}$/.test(target)) {
+    // ---- 월 진단(c24 매출 L2 vs L3 shard 규명 + 배송비 유실 주문 색출) ----
+    const mk = target, [ms, me] = _slMonthRange(mk)
+    const orders = await _slFetchPeriodOrders(ms, me)
+    const c24 = orders.filter(o => o.ch === SL_CH.c24 && _slInR(o.od, ms, me))
+    // L2 재도출(품번 무관 총액): Σ(ship + Σ(rv+sh))
+    let l2 = 0; c24.forEach(o => { l2 += _slNum(o.ship || 0); (o.lines || []).forEach(l => { l2 += _slNum(l.rv) + _slNum(l.sh || 0) }) })
+    // L3 재도출(수정 alloc) + 저장 shard
+    const agg = _slAggShard(orders, 'c24', ms, me, ptSet)
+    let l3re = 0; Object.values(agg.items).forEach(it => { l3re += it.amt || 0 })
+    const shard = await _slReadShard('salesM', mk + '_c24')
+    let l3st = 0; if (shard && shard.items) Object.values(shard.items).forEach(it => { l3st += it.amt || 0 })
+    push('')
+    push('【c24 ' + mk + '】 매출 대조:')
+    push('  L2 재도출(_slAggDay 기준·배송비 일괄) = ' + num(l2))
+    push('  L3 재도출(현재 코드 _slAggShard)       = ' + num(l3re) + (l3re === l2 ? ' ✅ 일치' : ' ✗ (' + num(l2 - l3re) + ' 차)'))
+    push('  L3 저장 shard(salesM/' + mk + '_c24)     = ' + num(l3st) + (l3st === l2 ? ' ✅' : ' ✗ (재계산 필요)'))
+    // 배송비 유실 주문 색출: c24 + ship>0 + Σline_rv<=0 (구 alloc 이 0으로 유실하던 주문)
+    const culprits = c24.filter(o => _slNum(o.ship || 0) > 0 && (o.lines || []).reduce((s, l) => s + _slNum(l.rv || 0), 0) <= 0)
+    let lost = 0; culprits.forEach(o => { lost += _slNum(o.ship || 0) })
+    push('')
+    push('  🔎 배송비 유실 주문(ship>0 & Σline_rv≤0) = ' + culprits.length + '건 · 유실 배송비 합 ' + num(lost) + ' (= 구버전 L2−L3 차)')
+    culprits.slice(0, 30).forEach(o => push('     ono ' + o.ono + ' · ship ' + num(_slNum(o.ship || 0)) + ' · Σrv ' + num((o.lines || []).reduce((s, l) => s + _slNum(l.rv || 0), 0)) + ' · pu ' + num(_slNum(o.pu || 0))))
+    if (culprits.length > 30) push('     …외 ' + (culprits.length - 30) + '건')
+  } else {
+    push('사용법: salesDiagnose("2026-06-26")[일자·사방넷] 또는 salesDiagnose("2026-06")[월·카페24]')
+  }
+  push('==== 진단 끝 ====')
+  const text = R.join('\n')
+  _slVerifyText = text
+  try { console.log(text) } catch (e) {}
+  return { text: text }
+}
+
 // ---- 검증 모달(관리자) ----
 function openSalesVerifyModal() {
   if (!_slIsAdmin()) { showToast('데이터 검증은 관리자 전용입니다.', 'warning'); return }
@@ -1833,6 +1908,16 @@ async function runSalesVerify() {
   }
   if (runBtn) runBtn.disabled = false
   if (abortBtn) abortBtn.classList.add('sl-vf-hidden')
+}
+async function runSalesDiagnose() {
+  if (!_slIsAdmin()) { showToast('관리자 전용', 'warning'); return }
+  const tgt = (((document.getElementById('slVfDiag') || {}).value) || '').trim()
+  if (!tgt) { showToast('진단 대상을 입력하세요 (예: 2026-06-26 또는 2026-06)', 'warning'); return }
+  const body = document.getElementById('slVerifyBody'), st = document.getElementById('slVfStatus')
+  if (body) body.textContent = '정밀 진단 중… (읽기 전용)'
+  if (st) st.textContent = '진단: ' + tgt
+  try { const res = await salesDiagnose(tgt); if (body) body.textContent = res.text; if (st) st.textContent = '진단 완료' }
+  catch (e) { if (body) body.textContent = '진단 실패: ' + ((e && e.message) || e); if (st) st.textContent = '오류' }
 }
 function _slVerifyCopy() {
   if (!_slVerifyText) { showToast('복사할 결과가 없습니다.', 'warning'); return }
@@ -1967,6 +2052,8 @@ window.closeSalesVerifyModal = closeSalesVerifyModal
 window.runSalesVerify = runSalesVerify
 window._slAbortVerify = _slAbortVerify
 window._slVerifyCopy = _slVerifyCopy
+window.salesDiagnose = salesDiagnose
+window.runSalesDiagnose = runSalesDiagnose
 window._slTogglePartnerManage = _slTogglePartnerManage
 window._slPartnerSearchInput = _slPartnerSearchInput
 window._slPartnerStartEdit = _slPartnerStartEdit
