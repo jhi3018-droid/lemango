@@ -691,10 +691,10 @@ async function renderBestList() {
   }).join('') : '<div style="color:#bbb;font-size:12px;padding:10px 0">판매 데이터 없음 — 매출관리 [집계 재계산] 후 표시</div>')
 }
 
+// 🔴 매출현황 은퇴 Stage B — BEST 클릭 → 매출관리 전체 탭(이번 달 · 품번 프리필). 구 매출현황 진입 제거.
 function goToSales(code) {
-  switchTab('sales')
-  document.getElementById('slKeyword').value = code
-  searchSales()
+  if (typeof _slOpenMatrixForCode === 'function') _slOpenMatrixForCode(code)
+  else if (typeof switchTab === 'function') switchTab('salesmgmt')
 }
 
 // 🔴 전월비 = 실데이터(L2 salesD). 구 renderSalesSummary(Math.random 가짜 + 매출관리 동명 함수와 충돌)를 대체·개명.

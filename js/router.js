@@ -35,6 +35,11 @@ function renderTabBar() {
 
 // ===== 탭 열기 (nav 버튼 또는 탭 바 클릭) =====
 function openTab(tab) {
+  // 🔴 매출현황 은퇴 Stage B — 레거시 sales 진입(네브/#sales 해시/북마크) → 매출관리로 redirect + 토스트(가역). 단일 choke point.
+  if (tab === 'sales' && typeof SALES_LEGACY_HIDDEN !== 'undefined' && SALES_LEGACY_HIDDEN) {
+    if (typeof showToast === 'function') showToast('매출현황은 매출관리로 통합되었습니다.', 'info')
+    tab = 'salesmgmt'
+  }
   // 등급 기반 접근 권한 체크
   if (typeof canAccessTab === 'function' && !canAccessTab(tab)) {
     if (typeof showToast === 'function') showToast('접근 권한이 없습니다.', 'warning')

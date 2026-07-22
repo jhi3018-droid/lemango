@@ -499,7 +499,7 @@ function _slUploadIntroHtml() {
   return `
     <div class="sl-up-intro">
       <p class="sl-up-note">원본 주문내역 파일(<b>카페24</b> 공홈/파트너 CSV · <b>사방넷</b> 주문서 xlsx)을 올리면 자동 인식됩니다.
-      기존 <b>매출현황</b> 업로드와는 별개 경로입니다.</p>
+      🔴 <b>이 업로드가 유일한 매출 입력입니다</b> (구 매출현황 업로드 통합).</p>
       <label class="btn btn-new sl-up-filebtn">📁 파일 선택
         <input type="file" id="slFileInput" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleSalesLedgerFile(this)">
       </label>
@@ -1474,6 +1474,18 @@ let _slMxSearchTimer = null
 function _slMxSearchInput(el, renderFn) { _slMxSearch = el.value || ''; clearTimeout(_slMxSearchTimer); _slMxSearchTimer = setTimeout(() => { if (typeof window[renderFn] === 'function') window[renderFn]() }, 250) }
 function _slMxToggleUnit(renderFn) { _slMxUnit = _slMxUnit === 'amt' ? 'qty' : 'amt'; if (typeof window[renderFn] === 'function') window[renderFn]() }
 
+// 🔴 대시보드 BEST 클릭 진입점(Stage B) — 매출관리 전체(매트릭스) 탭 · 기간=이번 달(1일~오늘) · 품번 검색 프리필
+function _slOpenMatrixForCode(code) {
+  const c = String(code || '').trim()
+  _slMxSearch = c
+  const today = (typeof kstDateKey === 'function' && kstDateKey()) || new Date().toISOString().slice(0, 10)
+  _slMxStart = today.slice(0, 7) + '-01'; _slMxEnd = today   // 이번 달
+  _slActiveSub = 'matrix'
+  if (typeof switchTab === 'function') switchTab('salesmgmt')   // 탭 열기(닫혀있으면 shell+activeSub=matrix 렌더)
+  // 이미 열려있던 경우: 서브탭 강제 전환 + 매트릭스 재렌더(프리필 반영)
+  if (typeof switchSalesMgmtSub === 'function' && document.getElementById('salesMgmtPage')) switchSalesMgmtSub('matrix')
+}
+
 // ---- 전체 탭 (품번 × 합계/카페24/사방넷/매장) ----
 async function renderSalesMatrix() {
   const panel = document.getElementById('slMatrixBody'); if (!panel) return
@@ -2265,6 +2277,7 @@ window._slProdNetQty = _slProdNetQty
 window._slFillProdSalesBox = _slFillProdSalesBox
 window._slProdRanking = _slProdRanking
 window._slMonthCompare = _slMonthCompare
+window._slOpenMatrixForCode = _slOpenMatrixForCode
 // 업로드 경고 아카이브(완전 숨김)
 window.openSlArchiveModal = openSlArchiveModal
 window.closeSlArchiveModal = closeSlArchiveModal

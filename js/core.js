@@ -1000,6 +1000,11 @@ const TAB_PERMISSIONS = {
 }
 window.TAB_PERMISSIONS = TAB_PERMISSIONS
 
+// 🔴 매출현황 은퇴 Stage B — 레거시 매출현황 메뉴 숨김(가역). false 로 되돌리면 즉시 복원(코드는 그대로).
+//   숨김 = 네브 버튼 미표시(updateTabVisibility) + 라우터 redirect(openTab: sales→salesmgmt + 토스트). 코드/데이터 무삭제.
+const SALES_LEGACY_HIDDEN = true
+window.SALES_LEGACY_HIDDEN = SALES_LEGACY_HIDDEN
+
 window.canAccessTab = function(tab) {
   const grade = (typeof _currentUserGrade !== 'undefined' && _currentUserGrade) ? _currentUserGrade : 1
   const required = TAB_PERMISSIONS[tab]

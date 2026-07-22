@@ -143,7 +143,9 @@ async function initApp() {
   })
 
   // 해시 기반 초기 탭
-  const initTab = location.hash.replace('#', '') || 'dashboard'
+  let initTab = location.hash.replace('#', '') || 'dashboard'
+  // 🔴 매출현황 은퇴 Stage B — #sales 북마크/직접진입 초기 로드도 매출관리로 redirect(openTab 우회 경로)
+  if (initTab.split(/[:/]/)[0] === 'sales' && typeof SALES_LEGACY_HIDDEN !== 'undefined' && SALES_LEGACY_HIDDEN) initTab = 'salesmgmt'
   State.openTabs = [initTab]
   if (initTab !== 'dashboard' && !State.openTabs.includes('dashboard')) {
     // 대시보드도 같이 열어둠 (선택)
@@ -393,6 +395,10 @@ function updateTabVisibility() {
   if (trashBtn) {
     trashBtn.classList.remove('trash-nav-hidden')
     trashBtn.style.display = (grade >= 3) ? '' : 'none'
+  }
+  // 🔴 매출현황 은퇴 Stage B — 레거시 매출현황 네브 버튼 숨김(가역: SALES_LEGACY_HIDDEN=false 로 복원)
+  if (typeof SALES_LEGACY_HIDDEN !== 'undefined' && SALES_LEGACY_HIDDEN) {
+    document.querySelectorAll('.tab-btn[data-tab="sales"]').forEach(b => { b.style.display = 'none' })
   }
 }
 window.updateTabVisibility = updateTabVisibility
