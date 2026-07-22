@@ -1335,11 +1335,23 @@ async function renderSalesSummary() {
 function downloadSalesSummary() {
   if (!_slSummaryRows.length) { showToast('내려받을 데이터가 없습니다.', 'warning'); return }
   if (typeof XLSX === 'undefined') { showToast('엑셀 모듈 로드 실패', 'error'); return }
-  const aoa = [['날짜', '공홈 매출', '공홈 반품', '공홈 순액', '파트너 매출', '파트너 반품', '파트너 순액', '카페24 적립금분', '사방넷 매출', '사방넷 반품', '사방넷 순액', '합계 순액']]
+  // 🔴 금액 + 수량 동시(분석 재료 · 화면 무관)
+  const aoa = [['날짜',
+    '공홈 매출', '공홈 반품', '공홈 순액', '공홈 판매수량', '공홈 반품수량',
+    '파트너 매출', '파트너 반품', '파트너 순액', '파트너 판매수량', '파트너 반품수량',
+    '카페24 적립금분',
+    '사방넷 매출', '사방넷 반품', '사방넷 순액', '사방넷 판매수량', '사방넷 반품수량',
+    '합계 순액']]
   _slSummaryRows.forEach(d => {
-    const c = d.c24 || {}, s = d.sb || {}, sp = _slDaySplit(d)
-    const ghS = sp.gh.samt || 0, ghR = sp.gh.ramt || 0, ptS = sp.pt.samt || 0, ptR = sp.pt.ramt || 0, sN = (s.samt || 0) - (s.ramt || 0)
-    aoa.push([d.d, ghS, ghR, ghS - ghR, ptS, ptR, ptS - ptR, c.pts || 0, s.samt || 0, s.ramt || 0, sN, (ghS - ghR) + (ptS - ptR) + sN])
+    const s = d.sb || {}, sp = _slDaySplit(d), c = d.c24 || {}
+    const gh = sp.gh, pt = sp.pt
+    const ghS = gh.samt || 0, ghR = gh.ramt || 0, ptS = pt.samt || 0, ptR = pt.ramt || 0, sN = (s.samt || 0) - (s.ramt || 0)
+    aoa.push([d.d,
+      ghS, ghR, ghS - ghR, gh.sq || 0, gh.rq || 0,
+      ptS, ptR, ptS - ptR, pt.sq || 0, pt.rq || 0,
+      c.pts || 0,
+      s.samt || 0, s.ramt || 0, sN, s.sq || 0, s.rq || 0,
+      (ghS - ghR) + (ptS - ptR) + sN])
   })
   const ws = XLSX.utils.aoa_to_sheet(aoa)
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '일자별매출')
@@ -1453,7 +1465,7 @@ function _slMxControlsHtml(idp, renderFn) {
     <button class="btn btn-outline btn-sm" onclick="_slMxPreset('month','${renderFn}')">이번 달</button>
     <span class="sl-mx-range">${esc(_slMxStart)} ~ ${esc(_slMxEnd)}</span>
     <label class="inbhist-ctl">품번 <input type="text" id="${idp}Search" class="inbhist-store" value="${esc(_slMxSearch)}" placeholder="부분일치" oninput="_slMxSearchInput(this,'${renderFn}')"></label>
-    <button class="btn btn-outline btn-sm" onclick="_slMxToggleUnit('${renderFn}')">${_slMxUnit === 'amt' ? '금액▾' : '수량▾'}</button>
+    <select class="inbhist-store sl-mx-unit" title="표시 지표" onchange="_slMxSetUnit(this.value,'${renderFn}')">${SL_MX_UNITS.map(([v, l]) => `<option value="${v}"${_slMxUnit === v ? ' selected' : ''}>${l}</option>`).join('')}</select>
     <button class="btn btn-outline" onclick="${renderFn}()">↻</button>
   </div>`
 }
@@ -1472,7 +1484,14 @@ async function _slMxPreset(kind, renderFn) {
 }
 let _slMxSearchTimer = null
 function _slMxSearchInput(el, renderFn) { _slMxSearch = el.value || ''; clearTimeout(_slMxSearchTimer); _slMxSearchTimer = setTimeout(() => { if (typeof window[renderFn] === 'function') window[renderFn]() }, 250) }
-function _slMxToggleUnit(renderFn) { _slMxUnit = _slMxUnit === 'amt' ? 'qty' : 'amt'; if (typeof window[renderFn] === 'function') window[renderFn]() }
+function _slMxToggleUnit(renderFn) { _slMxUnit = _slMxUnit === 'amt' ? 'qn' : 'amt'; if (typeof window[renderFn] === 'function') window[renderFn]() }
+// 🔴 표시 지표 4종: 순액(금액) / 순수량 / 판매수량 / 반품수량 — 매트릭스 3탭 공통. 셀·합계 전환.
+const SL_MX_UNITS = [['amt', '순액(금액)'], ['qn', '순수량'], ['qs', '판매수량'], ['qr', '반품수량']]
+function _slMxUnitLabel(u) { const f = SL_MX_UNITS.find(x => x[0] === u); return f ? f[1] : '순액(금액)' }
+function _slMxVal(it, unit) { it = it || {}; if (unit === 'qs') return it.q || 0; if (unit === 'qr') return it.rq || 0; if (unit === 'qn') return (it.q || 0) - (it.rq || 0); return (it.amt || 0) - (it.ramt || 0) }
+function _slMxAmtNet(it) { it = it || {}; return (it.amt || 0) - (it.ramt || 0) }   // 엑셀 순액
+function _slMxQtyNet(it) { it = it || {}; return (it.q || 0) - (it.rq || 0) }        // 엑셀 순수량
+function _slMxSetUnit(v, renderFn) { _slMxUnit = v; if (typeof window[renderFn] === 'function') window[renderFn]() }
 
 // 🔴 대시보드 BEST 클릭 진입점(Stage B) — 매출관리 전체(매트릭스) 탭 · 기간=이번 달(1일~오늘) · 품번 검색 프리필
 function _slOpenMatrixForCode(code) {
@@ -1498,12 +1517,12 @@ async function renderSalesMatrix() {
   const posErr = pos && pos._err; if (posErr) delete pos._err
   const nameMap = _slNameMap(), prodMap = _slProdMap()
   const codes = new Set([...Object.keys(c24), ...Object.keys(sb), ...Object.keys(pos)])
-  const net = (it) => unit === 'qty' ? ((it.q || 0) - (it.rq || 0)) : ((it.amt || 0) - (it.ramt || 0))
+  const net = (it) => _slMxVal(it, unit)   // 🔴 선택 지표(순액/순수량/판매수량/반품수량)
   let rows = [...codes].map(code => {
     const csp = _slItemSplit(c24[code])   // 공홈/파트너(재계산 전=전액 공홈)
-    const ghV = net(csp.gh), ptV = net(csp.pt), sV = net(sb[code] || {})
-    const pV = unit === 'qty' ? ((pos[code] || {}).q || 0) : ((pos[code] || {}).amt || 0)
-    return { code, name: nameMap[code.toUpperCase()] || '', gh: ghV, pt: ptV, s: sV, p: pV, tot: ghV + ptV + sV + pV }
+    const _gh = csp.gh || {}, _pt = csp.pt || {}, _s = sb[code] || {}, _p = pos[code] || {}   // raw(엑셀 금액+수량 동시용)
+    const ghV = net(_gh), ptV = net(_pt), sV = net(_s), pV = net(_p)
+    return { code, name: nameMap[code.toUpperCase()] || '', gh: ghV, pt: ptV, s: sV, p: pV, tot: ghV + ptV + sV + pV, _gh: _gh, _pt: _pt, _s: _s, _p: _p }
   })
   const q = (_slMxSearch || '').trim().toUpperCase()
   if (q) rows = rows.filter(r => r.code.toUpperCase().includes(q) || (r.name || '').toUpperCase().includes(q))
@@ -1511,7 +1530,7 @@ async function renderSalesMatrix() {
   _slMatrixRows = rows
   const fmt = v => (v || 0).toLocaleString()
   const t = rows.reduce((a, r) => { a.gh += r.gh; a.pt += r.pt; a.s += r.s; a.p += r.p; a.tot += r.tot; return a }, { gh: 0, pt: 0, s: 0, p: 0, tot: 0 })
-  const unitLbl = unit === 'amt' ? '금액(순액=매출+배송−반품)' : '수량(순=판매−반품)'
+  const unitLbl = _slMxUnitLabel(unit) + (unit === 'amt' ? ' = 매출+배송−반품' : ' = 판매' + (unit === 'qr' ? '·반품수' : unit === 'qs' ? '수' : '−반품'))
   panel.innerHTML = _slMxControlsHtml('mxA', 'renderSalesMatrix') + `
     <div class="sl-sum-basis">${esc(s)} ~ ${esc(e)} · ${unitLbl} · 배송비 포함·반품 차감(일자별 요약과 동일 기준) · 카페24=<b>공홈+파트너</b> 분리(공홈+파트너=카페24 총액 · 파트너 분리는 명단 등록+재계산 후)${posErr ? ' · ⚠️ 매장 열 조회 권한/오류로 생략' : ''}</div>
     <div class="sl-hist-wrap sl-freeze-wrap">
@@ -1541,12 +1560,12 @@ async function renderSalesMalls() {
   const mallSet = new Set()
   Object.keys(sb).forEach(code => { const m = sb[code].malls || {}; Object.keys(m).forEach(x => mallSet.add(x)) })
   const malls = [...mallSet].sort()
-  const val = mm => unit === 'qty' ? (mm.q || 0) : (mm.amt || 0)
+  const val = mm => _slMxVal(mm, unit)
   let rows = Object.keys(sb).map(code => {
     const it = sb[code], mm = it.malls || {}
     const cells = malls.map(x => val(mm[x] || {}))
-    const tot = unit === 'qty' ? ((it.q || 0) - (it.rq || 0)) : ((it.amt || 0) - (it.ramt || 0))
-    return { code, name: nameMap[code.toUpperCase()] || '', cells, tot }
+    const _cells = malls.map(x => mm[x] || {})   // raw(엑셀 금액+수량)
+    return { code, name: nameMap[code.toUpperCase()] || '', cells, tot: _slMxVal(it, unit), _it: it, _cells: _cells }
   })
   const q = (_slMxSearch || '').trim().toUpperCase()
   if (q) rows = rows.filter(r => r.code.toUpperCase().includes(q) || (r.name || '').toUpperCase().includes(q))
@@ -1555,7 +1574,7 @@ async function renderSalesMalls() {
   const fmt = v => (v || 0).toLocaleString()
   const colTot = malls.map((_, ci) => rows.reduce((a, r) => a + (r.cells[ci] || 0), 0))
   panel.innerHTML = _slMxControlsHtml('mxM', 'renderSalesMalls') + `
-    <div class="sl-sum-basis">${esc(s)} ~ ${esc(e)} · ${unit === 'amt' ? '금액(배송 포함·반품 차감)' : '수량(순)'} · 사방넷 쇼핑몰별(원본 몰명) · 합계=사방넷 순액</div>
+    <div class="sl-sum-basis">${esc(s)} ~ ${esc(e)} · ${_slMxUnitLabel(unit)} · 사방넷 쇼핑몰별(원본 몰명) · 합계=사방넷 순액 · ⚠️ 몰별 셀은 반품 미분리(판매/순=동일)</div>
     <div class="sl-hist-wrap sl-freeze-wrap">
       <table class="data-table inbhist-table sl-mx-table sl-freeze" data-fz="4">
         <thead><tr><th class="sl-thumb-th sl-fz" data-fzcol="0">이미지</th><th class="sl-fz" data-fzcol="1">품번</th><th class="sl-fz" data-fzcol="2">상품명</th><th class="sl-c sl-fz" data-fzcol="3">사방넷 합계</th>${malls.map(m => `<th class="sl-c">${esc(m)}</th>`).join('')}</tr>
@@ -1618,10 +1637,11 @@ async function _slRenderPartnerReport() {
   const cols = colKeys.map(k => ({ key: k, name: (pmap[k] && pmap[k].name) || ptBy[k].name || k })).sort((a, b) => a.name.localeCompare(b.name))
   const codeSet = new Set()
   colKeys.forEach(k => Object.keys(ptBy[k].items || {}).forEach(c => codeSet.add(c)))
-  const val = it => unit === 'qty' ? ((it.q || 0) - (it.rq || 0)) : ((it.amt || 0) - (it.ramt || 0))
+  const val = it => _slMxVal(it, unit)
   let rows = [...codeSet].map(code => {
-    const cells = cols.map(col => val((ptBy[col.key].items || {})[code] || {}))
-    return { code, name: nameMap[code.toUpperCase()] || '', cells, tot: cells.reduce((a, b) => a + b, 0) }
+    const _cells = cols.map(col => (ptBy[col.key].items || {})[code] || {})   // raw(엑셀 금액+수량)
+    const cells = _cells.map(val)
+    return { code, name: nameMap[code.toUpperCase()] || '', cells, tot: cells.reduce((a, b) => a + b, 0), _cells: _cells }
   })
   const q = (_slMxSearch || '').trim().toUpperCase()
   if (q) rows = rows.filter(r => r.code.toUpperCase().includes(q) || (r.name || '').toUpperCase().includes(q))
@@ -1632,7 +1652,7 @@ async function _slRenderPartnerReport() {
   const grand = colTot.reduce((a, b) => a + b, 0)
   if (!cols.length) { body.innerHTML = `<div class="sl-hist-empty">${esc(s)} ~ ${esc(e)} · 파트너 매입 데이터가 없습니다.${(_salesPartners || []).length ? ' (기간 내 파트너 주문 없음 — 정확 월/주가 아니면 L1 스캔, 그 외 [집계 재계산] 필요)' : ' 먼저 파트너 명단을 등록하세요.'}</div>`; return }
   body.innerHTML = `
-    <div class="sl-sum-basis">${esc(s)} ~ ${esc(e)} · ${unit === 'amt' ? '금액(순액=매출+배송−반품)' : '수량(순=판매−반품)'} · 업체=주문자ID∈파트너 명단 · 열=기간 내 매입 있는 업체만</div>
+    <div class="sl-sum-basis">${esc(s)} ~ ${esc(e)} · ${_slMxUnitLabel(unit)} · 업체=주문자ID∈파트너 명단 · 열=기간 내 매입 있는 업체만</div>
     <div class="sl-hist-wrap sl-freeze-wrap"><table class="data-table inbhist-table sl-mx-table sl-freeze" data-fz="4">
       <thead><tr><th class="sl-thumb-th sl-fz" data-fzcol="0">이미지</th><th class="sl-fz" data-fzcol="1">품번</th><th class="sl-fz" data-fzcol="2">상품명</th><th class="sl-c sl-fz" data-fzcol="3">합계</th>${cols.map(c => `<th class="sl-c">${esc(c.name)}</th>`).join('')}</tr>
         <tr class="sl-total-row"><td class="sl-fz" data-fzcol="0"></td><td class="sl-fz" data-fzcol="1"></td><td class="sl-mx-name sl-fz" data-fzcol="2">합계 (${rows.length}품번)</td><td class="sl-c sl-net sl-fz" data-fzcol="3"><b>${fmt(grand)}</b></td>${colTot.map(v => `<td class="sl-c">${fmt(v)}</td>`).join('')}</tr></thead>
@@ -1648,8 +1668,10 @@ async function _slRenderPartnerReport() {
 function downloadSalesPartner() {
   if (!_slPartnerReport || !_slPartnerReport.cols.length) { showToast('데이터 없음', 'warning'); return }
   const { cols, rows } = _slPartnerReport
-  const aoa = [['품번', '상품명', '합계', ...cols.map(c => c.name)]]
-  rows.forEach(r => aoa.push([r.code, r.name, r.tot, ...r.cells]))
+  const A = _slMxAmtNet, Q = _slMxQtyNet
+  const head = ['품번', '상품명', '합계 순액', '합계 순수량']; cols.forEach(c => { head.push(c.name + ' 순액', c.name + ' 순수량') })
+  const aoa = [head]
+  rows.forEach(r => { const cs = r._cells || []; const row = [r.code, r.name, cs.reduce((s, it) => s + A(it), 0), cs.reduce((s, it) => s + Q(it), 0)]; cs.forEach(it => { row.push(A(it), Q(it)) }); aoa.push(row) })
   _slExcel(aoa, `매출_파트너별_${_slMxStart}~${_slMxEnd}`)
 }
 
@@ -2202,15 +2224,21 @@ function _slOpenProduct(code) { if (typeof openDetailModal === 'function') openD
 // ---- 엑셀(현재 탭·현재 기간 미러) ----
 function downloadSalesMatrix() {
   if (!_slMatrixRows.length) { showToast('데이터 없음', 'warning'); return }
-  const aoa = [['품번', '상품명', '합계', '공홈', '파트너', '사방넷', '매장']]
-  _slMatrixRows.forEach(r => aoa.push([r.code, r.name, r.tot, r.gh, r.pt, r.s, r.p]))
+  const A = _slMxAmtNet, Q = _slMxQtyNet   // 🔴 화면 지표와 무관하게 순액+순수량 동시(분석 재료)
+  const aoa = [['품번', '상품명', '합계 순액', '합계 순수량', '공홈 순액', '공홈 순수량', '파트너 순액', '파트너 순수량', '사방넷 순액', '사방넷 순수량', '매장 순액', '매장 순수량']]
+  _slMatrixRows.forEach(r => {
+    const cs = [r._gh, r._pt, r._s, r._p]
+    aoa.push([r.code, r.name, cs.reduce((s, it) => s + A(it), 0), cs.reduce((s, it) => s + Q(it), 0), A(r._gh), Q(r._gh), A(r._pt), Q(r._pt), A(r._s), Q(r._s), A(r._p), Q(r._p)])
+  })
   _slExcel(aoa, `매출_전체_${_slMxStart}~${_slMxEnd}`)
 }
 function downloadSalesMalls() {
   if (!_slMallsData) { showToast('데이터 없음', 'warning'); return }
   const { malls, rows } = _slMallsData
-  const aoa = [['품번', '상품명', '사방넷합계', ...malls]]
-  rows.forEach(r => aoa.push([r.code, r.name, r.tot, ...r.cells]))
+  const A = _slMxAmtNet, Q = _slMxQtyNet
+  const head = ['품번', '상품명', '사방넷합계 순액', '사방넷합계 순수량']; malls.forEach(m => { head.push(m + ' 순액', m + ' 순수량') })
+  const aoa = [head]
+  rows.forEach(r => { const row = [r.code, r.name, A(r._it), Q(r._it)]; (r._cells || []).forEach(it => { row.push(A(it), Q(it)) }); aoa.push(row) })
   _slExcel(aoa, `매출_쇼핑몰별_${_slMxStart}~${_slMxEnd}`)
 }
 function _slExcel(aoa, fname) {
@@ -2298,6 +2326,7 @@ window._slMxSetDates = _slMxSetDates
 window._slMxPreset = _slMxPreset
 window._slMxSearchInput = _slMxSearchInput
 window._slMxToggleUnit = _slMxToggleUnit
+window._slMxSetUnit = _slMxSetUnit
 window._slToggleOrder = _slToggleOrder
 window._slOpenProduct = _slOpenProduct
 window._slStorePos = _slStorePos

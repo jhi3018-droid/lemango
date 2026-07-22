@@ -6514,6 +6514,7 @@ td[data-editable]:hover { background: #FAEEDA; }
 .store-title-sm { font-size: 14px; font-weight: 700; color: var(--primary, #1a1a2e); }
 .sl-mx-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border, #e8e6e0); }
 .sl-mx-range { font-size: 12px; color: var(--accent, #c9a96e); font-weight: 600; }
+.sl-mx-unit { font-size: 12px; padding: 4px 6px; border: 1px solid var(--border, #e8e6e0); border-radius: 6px; background: #fff; }
 .sl-mx-table { width: auto; min-width: 100%; table-layout: auto; }
 .sl-mx-table th, .sl-mx-table td { white-space: nowrap; }
 .sl-mx-table .sl-c { text-align: right; }
@@ -6530,10 +6531,12 @@ td[data-editable]:hover { background: #FAEEDA; }
 .sl-freeze .sl-total-row td, .sl-freeze .sl-total-row th { background: var(--bg, #f5f4f1); color: var(--text-main, #1a1a2e); font-weight: 700; border-top: 2px solid var(--border, #e8e6e0); box-shadow: 0 2px 3px -2px rgba(0, 0, 0, 0.2); }
 .sl-freeze .sl-total-row .sl-net b { color: var(--primary, #1a1a2e); }
 /* 좌측 고정열 셀(JS 가 position:sticky + left 인라인 지정) — 불투명 배경 필수 */
-.sl-freeze .sl-fz { z-index: 5; background: #fff; }
+.sl-freeze .sl-fz { z-index: 5; }
+.sl-freeze tbody .sl-fz { background: #fff; }   /* 🔴 본문 고정열만 흰 배경 — 헤더 고정셀엔 적용 금지(헤더=네이비 유지, 흰글씨 라벨 보이게) */
 .sl-freeze tbody tr:hover .sl-fz { background: var(--table-hover, #FAF7F1); }
-.sl-freeze thead .sl-fz { z-index: 15; }   /* 교차(헤더/합계 × 좌측) = 최상위 */
-.sl-freeze .sl-total-row .sl-fz { background: var(--bg, #f5f4f1); }
+.sl-freeze thead .sl-fz { z-index: 15; }   /* 교차(헤더/합계 × 좌측) = 최상위 (배경은 헤더행=inbhist 네이비 · 합계행=아래 규칙) */
+.sl-freeze thead tr:first-child .sl-fz { background: var(--primary, #1a1a2e); color: #fff; }   /* 헤더 고정 라벨 = 네이비+흰글씨(라벨 복구) */
+.sl-freeze .sl-total-row .sl-fz { background: var(--bg, #f5f4f1); color: var(--text-main, #1a1a2e); }
 .sl-freeze .sl-fz-edge { box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.16); }   /* 좌측 마지막 고정열 우측 그림자(가로 스크롤 어포던스) */
 /* ②: 매출관리 매트릭스 대표 이미지 썸네일 열(매출현황 .thumb 재사용, 밀집 매트릭스용 소형) */
 .sl-thumb-th { width: 44px; text-align: center; }
@@ -6551,8 +6554,8 @@ td[data-editable]:hover { background: #FAEEDA; }
 .sl-ord-notes { font-size: 11px; color: var(--text-sub, #888); margin-top: 4px; }
 
 /* ===== 매출관리 Phase 4 — 공홈/파트너 분리 + 파트너 마스터 ===== */
-.sl-pt-col { background: rgba(201, 169, 110, 0.08); }   /* 파트너 컬럼 살짝 강조(공홈과 구분) */
-.sl-sum-table th.sl-pt-col, .sl-mx-table th.sl-pt-col { background: rgba(201, 169, 110, 0.16); }
+/* 🔴 색상 통일(패키지) — 파트너 열 베이지 하이라이트 제거: 헤더=단일 네이비, 본문=단일 흰/호버. 4탭 동일 규칙. (구분은 헤더 라벨로) */
+.sl-pt-col { background: transparent; }
 .sl-pt-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
 .sl-pt-summary { font-size: 13px; font-weight: 600; color: var(--primary, #1a1a2e); }
 .sl-pt-head-actions { display: flex; gap: 6px; align-items: center; }
