@@ -744,6 +744,7 @@ function renderSalesMgmtTab() {
           <label class="inbhist-ctl">마지막일 <input type="date" id="slSumEnd" class="inbhist-date" onchange="renderSalesSummary()"></label>
           <button class="btn btn-outline" onclick="renderSalesSummary()">↻ 조회</button>
           ${canUpload ? `<button class="btn btn-new" id="slRecalcBtn" onclick="runSalesRecompute()">🔄 집계 재계산</button>` : ''}
+          ${canUpload ? `<button class="btn btn-outline" onclick="openSalesVerifyModal()">🧪 데이터 검증</button>` : ''}
           <button class="btn btn-outline" onclick="downloadSalesSummary()">📥 엑셀</button>
         </div>
         <div id="slSummaryBody"><div class="sl-hist-loading">불러오는 중…</div></div>
@@ -1581,6 +1582,225 @@ async function runFullRecompute() {
   _slBusy = false
 }
 
+// =============================================
+// ===== 🧪 데이터 검증 도구 (READ-ONLY) — 날짜/집계 정합성 진단 =====
+// =============================================
+// 🔴 READ-ONLY: .get() 만 사용(set/update/delete 0건) · 리스너 없음 · 관리자 전용 · 월 단위 청크 + 중단 가능.
+//   L1→일별 도출 = _slAggDay (재계산 _slRecomputeDay 와 동일 헬퍼 · 두 번째 구현 금지 — 파생 재사용).
+//   L2↔L3 = 저장 aggregate 간 산술 대사(salesD 월합 vs salesM shard 합).
+let _slVerifyAbort = false
+let _slVerifyText = ''
+
+function _slVfNum(n) { return (n || 0).toLocaleString() }
+function _slVfToday() { try { return (typeof kstDateKey === 'function' && kstDateKey()) || _slFmtDK(Date.now() + 9 * 3600000) } catch (e) { return _slFmtDK(Date.now()) } }
+// 연속 날짜를 'a~b, c' 로 압축(커버리지 갭 표기)
+function _slVfRanges(days) {
+  if (!days || !days.length) return ''
+  const s = [...days].sort(); const out = []; let a = s[0], p = s[0]
+  const nxt = dk => _slFmtDK(_slParseDK(dk) + 86400000)
+  for (let i = 1; i < s.length; i++) { if (s[i] === nxt(p)) { p = s[i]; continue } out.push(a === p ? a : a + '~' + p); a = s[i]; p = s[i] }
+  out.push(a === p ? a : a + '~' + p)
+  return out.join(', ')
+}
+
+// 관리자 전용 · 읽기 전용 데이터 검증. onProg(msg)=진행 표시. 반환 { text, ...summary }.
+async function salesVerify(fromDate, toDate, onProg) {
+  if (!_slIsAdmin()) throw new Error('데이터 검증은 관리자 전용입니다.')   // 심층방어(read-only 이나 콘솔 직접호출도 게이트)
+  if (typeof db === 'undefined' || !db) throw new Error('DB 연결 없음')
+  const prog = (m) => { try { if (onProg) onProg(m) } catch (e) {} }
+  const R = []; const push = (s) => R.push(s == null ? '' : String(s))
+  const SANE_MIN = '2020-01-01'
+  const today = _slVfToday()
+
+  prog('파트너 마스터 확인 중…')
+  await _slEnsurePartnerMaster()
+  const ptSet = _slPartnerActiveSet()   // _slAggDay 도출을 재계산과 동일 분류기준으로 고정
+
+  if (!fromDate || !toDate) { const [mn, mx] = await _slFullDataRange(); fromDate = fromDate || mn; toDate = toDate || mx }
+  if (!fromDate || !toDate) throw new Error('원장 데이터가 없습니다.')
+
+  push('========================================')
+  push('🧪 매출 데이터 검증 리포트 (READ-ONLY)')
+  push('생성: ' + today + ' · 검증 범위: ' + fromDate + ' ~ ' + toDate)
+  push('========================================')
+  push('')
+
+  // ---- 1) 업로드 내역 총괄 ----
+  prog('업로드 내역 집계 중…')
+  const ups = await loadSalesUploads(true)
+  let uRows = 0, uNew = 0, uMerge = 0, uSame = 0, uRet = 0, uDateFail = 0, uUnmatched = 0, uAnom = 0
+  const dfTop = []
+  ups.forEach(u => {
+    uRows += u.rows || 0; uNew += u.cntNew || 0; uMerge += u.cntMerge || 0; uSame += u.cntSame || 0; uRet += u.cntReturns || 0
+    const df = (u.dateFail || []).length; uDateFail += df
+    uUnmatched += (u.unmatched || []).length; uAnom += (u.anomaly || []).length
+    if (df > 0) dfTop.push({ f: u.fileName || u.type || '?', df: df, at: u.at || '' })
+  })
+  push('【1】 업로드 내역 총괄 — ' + ups.length + '개 파일')
+  push('  · 총 행 ' + _slVfNum(uRows) + ' · 신규 ' + _slVfNum(uNew) + ' · 병합 ' + _slVfNum(uMerge) + ' · 변경없음 ' + _slVfNum(uSame) + ' · 반품 ' + _slVfNum(uRet))
+  push('  · ⚠️ 날짜 파싱 실패(누적) ' + _slVfNum(uDateFail) + ' · 미매칭 품번 ' + _slVfNum(uUnmatched) + ' · 이상치 ' + _slVfNum(uAnom))
+  if (dfTop.length) {
+    dfTop.sort((a, b) => b.df - a.df)
+    push('  · 날짜 실패 상위 파일:')
+    dfTop.slice(0, 10).forEach(x => push('     - ' + x.f + ' : ' + x.df + '건 (' + String(x.at).slice(0, 10) + ')'))
+  }
+  push('')
+
+  // ---- 2) L1 전체 스캔 + 날짜 분포/이상(범위 밖 오류도 잡으려면 전량 스캔 필수) ----
+  prog('L1 원장 전체 스캔 중…')
+  const snap = await db.collection('salesOrders').get()
+  const orders = []; snap.forEach(d => orders.push(d.data()))
+  const dayBucket = new Map()   // day → Map(key→order) : od 또는 rd 로 그 날에 관여하는 주문(대사 도출용)
+  const addDay = (day, o) => { if (!day) return; let m = dayBucket.get(day); if (!m) { m = new Map(); dayBucket.set(day, m) } m.set(o.key || (o.ch + '_' + o.ono), o) }
+  const monthCh = {}
+  let minOd = '', maxOd = ''
+  const emptyOd = [], outWin = [], rdAnom = []
+  orders.forEach(o => {
+    const od = o.od || ''
+    if (!od) emptyOd.push(o.ono || o.key || '?')
+    else {
+      if (!minOd || od < minOd) minOd = od
+      if (!maxOd || od > maxOd) maxOd = od
+      if (od < SANE_MIN || od > today) outWin.push((o.ono || '?') + '(' + od + ')')
+      const mk = _slMonthKey(od); const b = monthCh[mk] || (monthCh[mk] = { c24: 0, sb: 0 }); b[o.ch === SL_CH.c24 ? 'c24' : 'sb']++
+      addDay(od, o)
+    }
+    ;(o.lines || []).forEach(l => {
+      if (l && l.rd) {
+        addDay(l.rd, o)
+        if (od && l.rd < od) rdAnom.push((o.ono || '?') + ' rd ' + l.rd + ' < od ' + od)
+        else if (l.rd > today) rdAnom.push((o.ono || '?') + ' rd ' + l.rd + '(미래)')
+      }
+    })
+  })
+  push('【2】 L1 원장 날짜 분포 — 총 ' + _slVfNum(orders.length) + ' 주문 (전체 스캔)')
+  push('  · od 범위: ' + (minOd || '-') + ' ~ ' + (maxOd || '-'))
+  push('  · 🔴 주문일(od) 빈값 = ' + emptyOd.length + '건' + (emptyOd.length ? ' → 집계 누락(재업로드로 정정 필요): ' + emptyOd.slice(0, 20).join(', ') + (emptyOd.length > 20 ? ' …외 ' + (emptyOd.length - 20) : '') : ''))
+  push('  · 🔴 od 범위밖(2020 이전 / 미래) = ' + outWin.length + '건' + (outWin.length ? ': ' + outWin.slice(0, 20).join(', ') + (outWin.length > 20 ? ' …외 ' + (outWin.length - 20) : '') : ''))
+  push('  · 🔴 반품일(rd) 이상(od 이전 / 미래) = ' + rdAnom.length + '건' + (rdAnom.length ? ': ' + rdAnom.slice(0, 15).join(' | ') + (rdAnom.length > 15 ? ' …외 ' + (rdAnom.length - 15) : '') : ''))
+  push('  · 월별 주문수:')
+  Object.keys(monthCh).sort().forEach(mk => push('     ' + mk + ' : 카페24 ' + monthCh[mk].c24 + ' · 사방넷 ' + monthCh[mk].sb))
+  push('')
+
+  // ---- 3) L1 → L2(salesD) 대사 (월 단위 청크, 중단 가능) ----
+  push('【3】 L1 → L2(salesD) 대사 — L1 재도출(_slAggDay) vs 저장 salesD')
+  const months = []
+  { let t = _slParseDK(_slMonthKey(fromDate) + '-01'); const te = _slParseDK(_slMonthKey(toDate) + '-01'); let g = 0
+    while (!isNaN(t) && !isNaN(te) && t <= te && g < 240) { const d = new Date(t); months.push(d.getUTCFullYear() + '-' + _slPad(d.getUTCMonth() + 1)); t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1); g++ } }
+  let l2Mismatch = 0
+  const l3Lines = []; let l3Mismatch = 0
+  for (let mi = 0; mi < months.length; mi++) {
+    if (_slVerifyAbort) { push('  ⚠️ 사용자 중단 — 부분 결과'); break }
+    const mk = months[mi]
+    prog('L1↔L2 대사 ' + (mi + 1) + '/' + months.length + ' (' + mk + ')')
+    const [ms, me] = _slMonthRange(mk)
+    const daily = await _slLoadSalesDaily(ms, me)   // 저장 salesD (READ)
+    const dMap = {}; daily.forEach(d => { dMap[d.d] = d })
+    const daySet = new Set(Object.keys(dMap))
+    dayBucket.forEach((_, day) => { if (day >= ms && day <= me) daySet.add(day) })
+    const days = [...daySet].sort()
+    const l2Sum = { c24: { q: 0, amt: 0, rq: 0, ramt: 0 }, sb: { q: 0, amt: 0, rq: 0, ramt: 0 } }
+    days.forEach(day => {
+      const bm = dayBucket.get(day); const dayOrders = bm ? [...bm.values()] : []
+      const derived = _slAggDay(dayOrders, day, ptSet)   // 🔴 재계산과 동일 헬퍼
+      const stored = dMap[day]
+      ;['c24', 'sb'].forEach(g => {
+        const dv = derived[g] || {}, sv = (stored && stored[g]) || {}
+        if (stored) { l2Sum[g].q += (sv.sq || 0); l2Sum[g].amt += (sv.samt || 0); l2Sum[g].rq += (sv.rq || 0); l2Sum[g].ramt += (sv.ramt || 0) }
+        const diffs = []
+        ;[['sq', '판매수'], ['samt', '매출'], ['rq', '반품수'], ['ramt', '반품액']].forEach(([fd, lbl]) => { const a = dv[fd] || 0, b = sv[fd] || 0; if (a !== b) diffs.push(lbl + ' L1=' + a + '/L2=' + b) })
+        if (!stored && (dv.sq || dv.samt || dv.rq || dv.ramt)) { l2Mismatch++; push('  ✗ ' + day + ' [' + g + '] salesD 누락 — L1 활동 있음(재계산 필요)') }
+        else if (diffs.length) { l2Mismatch++; push('  ✗ ' + day + ' [' + g + '] ' + diffs.join(' · ')) }
+      })
+    })
+    // ---- 4) L2 → L3(salesM shard) 대사 (이 달) ----
+    for (const g of ['c24', 'sb']) {
+      const shard = await _slReadShard('salesM', mk + '_' + g)   // 저장 shard (READ)
+      const sc = { q: 0, amt: 0, rq: 0, ramt: 0 }
+      if (shard && shard.items) Object.values(shard.items).forEach(it => { sc.q += it.q || 0; sc.amt += it.amt || 0; sc.rq += it.rq || 0; sc.ramt += it.ramt || 0 })
+      const l2 = l2Sum[g]
+      const hasL2 = l2.q || l2.amt || l2.rq || l2.ramt, hasL3 = sc.q || sc.amt || sc.rq || sc.ramt
+      if (!shard && hasL2) { l3Mismatch++; l3Lines.push('  ✗ ' + mk + ' [' + g + '] salesM shard 누락 — salesD 합 있음(재계산 필요)') }
+      else if (hasL2 || hasL3) {
+        const dd = []
+        if (l2.amt !== sc.amt) dd.push('매출 L2=' + l2.amt + '/L3=' + sc.amt)
+        if (l2.q !== sc.q) dd.push('수량 L2=' + l2.q + '/L3=' + sc.q)
+        if (l2.ramt !== sc.ramt) dd.push('반품액 L2=' + l2.ramt + '/L3=' + sc.ramt)
+        if (l2.rq !== sc.rq) dd.push('반품수 L2=' + l2.rq + '/L3=' + sc.rq)
+        if (dd.length) { l3Mismatch++; l3Lines.push('  ✗ ' + mk + ' [' + g + '] ' + dd.join(' · ')) }
+      }
+    }
+    await new Promise(r => setTimeout(r, 0))   // UI yield
+  }
+  if (!l2Mismatch) push('  ✅ 불일치 없음')
+  push('')
+  push('【4】 L2(salesD 월합) → L3(salesM shard) 대사')
+  if (l3Lines.length) l3Lines.forEach(push); else push('  ✅ 불일치 없음')
+  push('')
+
+  // ---- 5) 커버리지 갭 (참고) ----
+  push('【5】 커버리지 갭 — 활동 0인 날(참고용 · 주말/공휴일 정상)')
+  const gapDays = []
+  _slDaysInRange(fromDate, toDate).forEach(day => { const bm = dayBucket.get(day); if (!bm || !bm.size) gapDays.push(day) })
+  push('  · 활동 0일 = ' + gapDays.length + '일' + (gapDays.length ? ' (' + _slVfRanges(gapDays) + ')' : ''))
+  push('')
+
+  // ---- 6) 요약 판정 (복사용) ----
+  push('【6】 요약 판정 (복사용)')
+  push('  · 업로드 날짜파싱 실패 누적: ' + uDateFail)
+  push('  · L1 빈 od: ' + emptyOd.length + ' · od 범위밖: ' + outWin.length + ' · rd 이상: ' + rdAnom.length)
+  push('  · L1↔L2 불일치: ' + l2Mismatch + ' · L2↔L3 불일치: ' + l3Mismatch)
+  const bad = (emptyOd.length || outWin.length || rdAnom.length || l2Mismatch || l3Mismatch || uDateFail)
+  push('  · 종합: ' + (bad ? '⚠️ 확인 필요 — 위 항목 점검 후 Fable에게 결과 붙여넣기' : '✅ 이상 없음'))
+  push('========================================')
+
+  const text = R.join('\n')
+  _slVerifyText = text
+  try { console.log(text) } catch (e) {}
+  return { text: text, orders: orders.length, emptyOd: emptyOd.length, outWin: outWin.length, rdAnom: rdAnom.length, l2Mismatch: l2Mismatch, l3Mismatch: l3Mismatch, dateFail: uDateFail, aborted: _slVerifyAbort }
+}
+
+// ---- 검증 모달(관리자) ----
+function openSalesVerifyModal() {
+  if (!_slIsAdmin()) { showToast('데이터 검증은 관리자 전용입니다.', 'warning'); return }
+  const m = document.getElementById('slVerifyModal'); if (!m) return
+  _slVerifyAbort = false
+  const ss = document.getElementById('slSumStart'), se = document.getElementById('slSumEnd')
+  const vs = document.getElementById('slVfStart'), ve = document.getElementById('slVfEnd')
+  if (vs && ss && ss.value) vs.value = ss.value
+  if (ve && se && se.value) ve.value = se.value
+  if (!m.open) m.showModal()
+  if (typeof centerModal === 'function') centerModal(m)
+}
+function closeSalesVerifyModal() { _slVerifyAbort = true; const m = document.getElementById('slVerifyModal'); if (m && m.open) m.close() }
+function _slAbortVerify() { _slVerifyAbort = true; const st = document.getElementById('slVfStatus'); if (st) st.textContent = '중단 요청됨…' }
+async function runSalesVerify() {
+  if (!_slIsAdmin()) { showToast('관리자 전용', 'warning'); return }
+  const body = document.getElementById('slVerifyBody'), st = document.getElementById('slVfStatus')
+  const runBtn = document.getElementById('slVfRunBtn'), abortBtn = document.getElementById('slVfAbortBtn')
+  const vs = ((document.getElementById('slVfStart') || {}).value) || '', ve = ((document.getElementById('slVfEnd') || {}).value) || ''
+  _slVerifyAbort = false
+  if (runBtn) runBtn.disabled = true
+  if (abortBtn) abortBtn.classList.remove('sl-vf-hidden')
+  if (body) body.textContent = '검증 중… (읽기 전용)'
+  try {
+    const res = await salesVerify(vs, ve, (msg) => { if (st) st.textContent = msg })
+    if (body) body.textContent = res.text
+    if (st) st.textContent = res.aborted ? '⚠️ 중단됨(부분 결과)' : '완료'
+  } catch (e) {
+    if (body) body.textContent = '검증 실패: ' + ((e && e.message) || e)
+    if (st) st.textContent = '오류'
+  }
+  if (runBtn) runBtn.disabled = false
+  if (abortBtn) abortBtn.classList.add('sl-vf-hidden')
+}
+function _slVerifyCopy() {
+  if (!_slVerifyText) { showToast('복사할 결과가 없습니다.', 'warning'); return }
+  const ta = document.createElement('textarea'); ta.value = _slVerifyText; document.body.appendChild(ta); ta.select()
+  try { document.execCommand('copy'); showToast('검증 결과 복사됨', 'success') } catch (e) { showToast('복사 실패', 'warning') }
+  document.body.removeChild(ta)
+}
+
 // ---- 주문 조회 탭 (주문번호 exact / 품번 부분 → L1 주문 목록 + 라인 상세) ----
 async function renderSalesOrdersTab() {
   const panel = document.getElementById('slOrdersBody'); if (!panel) return
@@ -1700,6 +1920,13 @@ window._slParsePartnerRows = _slParsePartnerRows
 window.handlePartnerFile = handlePartnerFile
 window.downloadSalesPartner = downloadSalesPartner
 window.runFullRecompute = runFullRecompute
+// 🧪 데이터 검증(READ-ONLY)
+window.salesVerify = salesVerify
+window.openSalesVerifyModal = openSalesVerifyModal
+window.closeSalesVerifyModal = closeSalesVerifyModal
+window.runSalesVerify = runSalesVerify
+window._slAbortVerify = _slAbortVerify
+window._slVerifyCopy = _slVerifyCopy
 window._slTogglePartnerManage = _slTogglePartnerManage
 window._slPartnerSearchInput = _slPartnerSearchInput
 window._slPartnerStartEdit = _slPartnerStartEdit

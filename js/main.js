@@ -95,6 +95,7 @@ async function initApp() {
   makeDraggableResizable(document.getElementById('saleReceiptModal'), 480, 320)
   makeDraggableResizable(document.getElementById('saleVoidModal'), 460, 300)
   makeDraggableResizable(document.getElementById('slUploadModal'), 560, 380)   // 매출관리 주문내역 업로드
+  makeDraggableResizable(document.getElementById('slVerifyModal'), 620, 420)   // 매출관리 데이터 검증(READ-ONLY)
   makeDraggableResizable(document.getElementById('inbCancelModal'), 360, 240)
   makeDraggableResizable(document.getElementById('downloadFormatModal'), 400, 300)
   makeDraggableResizable(document.getElementById('downloadFormatEditorModal'), 600, 400)

@@ -2402,6 +2402,25 @@
   <div class="srm-body" id="slUploadBody"></div>
 </dialog>
 
+<!-- 🧪 매출 데이터 검증 (READ-ONLY) -->
+<dialog id="slVerifyModal" class="srm-modal sl-verify-modal">
+  <div class="srm-header">
+    <span class="srm-title">🧪 매출 데이터 검증 (읽기 전용)</span>
+    <button class="srm-close" onclick="closeSalesVerifyModal()">✕</button>
+  </div>
+  <div class="srm-body">
+    <div class="sl-verify-controls">
+      <label class="inbhist-ctl">시작 <input type="date" id="slVfStart" class="inbhist-date"></label>
+      <label class="inbhist-ctl">끝 <input type="date" id="slVfEnd" class="inbhist-date"></label>
+      <button class="btn btn-new" id="slVfRunBtn" onclick="runSalesVerify()">🔍 검증 실행</button>
+      <button class="btn btn-outline sl-vf-hidden" id="slVfAbortBtn" onclick="_slAbortVerify()">■ 중단</button>
+      <button class="btn btn-outline" onclick="_slVerifyCopy()">📋 결과 복사</button>
+      <span id="slVfStatus" class="sl-vf-status"></span>
+    </div>
+    <pre id="slVerifyBody" class="sl-verify-pre">기간을 비우면 전체, 지정하면 해당 구간만 검증합니다. [검증 실행]을 누르세요.  ※ READ-ONLY — 데이터에 절대 쓰지 않습니다. 정정은 재업로드/재계산으로만.</pre>
+  </div>
+</dialog>
+
 <!-- 토스트 알림 (appContainer 밖 — 로그인 페이지에서도 표시) -->
 <div id="toast" class="toast"></div>
 
