@@ -1141,12 +1141,13 @@ async function _slLoadSalesDaily(start, end) {
   const arr = []; snap.forEach(d => arr.push(d.data())); return arr
 }
 
-// 🔴 공홈/파트너 분해 fallback — 재계산 전(구 shard=gh/pt 부재) = 전액 공홈(파트너 0). 재계산 후 실제 분리.
-//   → gh+pt == c24 항상 보존(무손실). 재계산은 '파트너 몫을 pt 로 이동'만 함.
-function _slSplitBlock(c) {
-  c = c || {}
-  if (c.gh || c.pt) return { gh: c.gh || _slZeroGrp(false), pt: c.pt || _slZeroGrp(false) }
-  return { gh: c, pt: _slZeroGrp(false) }
+// 🔴 일자별 요약 공홈/파트너 분해 — L2(salesD) 는 gh/pt 를 **문서 최상위**(d.gh/d.pt, c24/sb 형제)로 저장(_slAggDay res.gh/res.pt).
+//   구 `_slSplitBlock(d.c24)` 는 **중첩** c24.gh/c24.pt 를 읽어(존재 안 함) 항상 전액 공홈·파트너 0 으로 표시하던 버그(07-22 수정).
+//   재계산 전(gh/pt 부재) fallback = 전액 공홈(파트너 0). gh+pt == c24 항상 보존(무손실).
+function _slDaySplit(d) {
+  d = d || {}
+  if (d.gh || d.pt) return { gh: d.gh || _slZeroGrp(false), pt: d.pt || _slZeroGrp(false) }
+  return { gh: d.c24 || _slZeroGrp(false), pt: _slZeroGrp(false) }
 }
 function _slItemSplit(it) {
   it = it || {}
@@ -1201,7 +1202,7 @@ async function renderSalesSummary() {
   let tG = { s: 0, r: 0 }, tP = { s: 0, r: 0 }, tCp = 0, tS = { s: 0, r: 0 }
   const body = rows.map(d => {
     const c = d.c24 || {}, s = d.sb || {}
-    const sp = _slSplitBlock(c)   // 공홈/파트너(재계산 전=전액 공홈)
+    const sp = _slDaySplit(d)   // 🔴 최상위 d.gh/d.pt 읽기(재계산 전=전액 공홈)
     const ghS = sp.gh.samt || 0, ghR = sp.gh.ramt || 0, ptS = sp.pt.samt || 0, ptR = sp.pt.ramt || 0
     const sNet = (s.samt || 0) - (s.ramt || 0)
     tG.s += ghS; tG.r += ghR; tP.s += ptS; tP.r += ptR; tCp += c.pts || 0; tS.s += s.samt || 0; tS.r += s.ramt || 0
@@ -1242,7 +1243,7 @@ function downloadSalesSummary() {
   if (typeof XLSX === 'undefined') { showToast('엑셀 모듈 로드 실패', 'error'); return }
   const aoa = [['날짜', '공홈 매출', '공홈 반품', '공홈 순액', '파트너 매출', '파트너 반품', '파트너 순액', '카페24 적립금분', '사방넷 매출', '사방넷 반품', '사방넷 순액', '합계 순액']]
   _slSummaryRows.forEach(d => {
-    const c = d.c24 || {}, s = d.sb || {}, sp = _slSplitBlock(c)
+    const c = d.c24 || {}, s = d.sb || {}, sp = _slDaySplit(d)
     const ghS = sp.gh.samt || 0, ghR = sp.gh.ramt || 0, ptS = sp.pt.samt || 0, ptR = sp.pt.ramt || 0, sN = (s.samt || 0) - (s.ramt || 0)
     aoa.push([d.d, ghS, ghR, ghS - ghR, ptS, ptR, ptS - ptR, c.pts || 0, s.samt || 0, s.ramt || 0, sN, (ghS - ghR) + (ptS - ptR) + sN])
   })
@@ -1353,9 +1354,9 @@ function _slMxControlsHtml(idp, renderFn) {
   return `<div class="sl-mx-controls">
     <label class="inbhist-ctl">시작 <input type="date" id="${idp}Start" class="inbhist-date" value="${esc(_slMxStart)}" onchange="_slMxSetDates('${idp}','${renderFn}')"></label>
     <label class="inbhist-ctl">끝 <input type="date" id="${idp}End" class="inbhist-date" value="${esc(_slMxEnd)}" onchange="_slMxSetDates('${idp}','${renderFn}')"></label>
-    <button class="btn btn-outline btn-sm" onclick="_slMxPreset('day','${renderFn}')">최신일</button>
-    <button class="btn btn-outline btn-sm" onclick="_slMxPreset('week','${renderFn}')">주</button>
-    <button class="btn btn-outline btn-sm" onclick="_slMxPreset('month','${renderFn}')">월</button>
+    <button class="btn btn-outline btn-sm" onclick="_slMxPreset('day','${renderFn}')">데이터 최신일</button>
+    <button class="btn btn-outline btn-sm" onclick="_slMxPreset('week','${renderFn}')">이번 주</button>
+    <button class="btn btn-outline btn-sm" onclick="_slMxPreset('month','${renderFn}')">이번 달</button>
     <span class="sl-mx-range">${esc(_slMxStart)} ~ ${esc(_slMxEnd)}</span>
     <label class="inbhist-ctl">품번 <input type="text" id="${idp}Search" class="inbhist-store" value="${esc(_slMxSearch)}" placeholder="부분일치" oninput="_slMxSearchInput(this,'${renderFn}')"></label>
     <button class="btn btn-outline btn-sm" onclick="_slMxToggleUnit('${renderFn}')">${_slMxUnit === 'amt' ? '금액▾' : '수량▾'}</button>
@@ -1369,10 +1370,10 @@ function _slMxSetDates(idp, renderFn) {
   if (typeof window[renderFn] === 'function') window[renderFn]()
 }
 async function _slMxPreset(kind, renderFn) {
-  const latest = await _slLatestDataDate() || _slMxEnd || (typeof kstDateKey === 'function' ? kstDateKey() : '')
-  if (kind === 'day') { _slMxStart = _slMxEnd = latest }
-  else if (kind === 'week') { _slMxStart = _slWeekStart(latest); _slMxEnd = _slWeekRange(_slMxStart)[1] }
-  else if (kind === 'month') { const r = _slMonthRange(_slMonthKey(latest)); _slMxStart = r[0]; _slMxEnd = r[1] }
+  const today = (typeof kstDateKey === 'function' && kstDateKey()) || new Date().toISOString().slice(0, 10)   // 🔴 오늘(KST)
+  if (kind === 'day') { const latest = await _slLatestDataDate() || _slMxEnd || today; _slMxStart = _slMxEnd = latest }   // 데이터 최신일 1일치(유지)
+  else if (kind === 'week') { _slMxStart = _slWeekStart(today); _slMxEnd = today }   // 이번 주: 월요일 ~ 오늘
+  else if (kind === 'month') { _slMxStart = _slMonthKey(today) + '-01'; _slMxEnd = today }   // 이번 달: 1일 ~ 오늘
   if (typeof window[renderFn] === 'function') window[renderFn]()
 }
 let _slMxSearchTimer = null
@@ -1844,36 +1845,45 @@ async function salesVerify(fromDate, toDate, onProg) {
     const daySet = new Set(Object.keys(dMap))
     dayBucket.forEach((_, day) => { if (day >= ms && day <= me) daySet.add(day) })
     const days = [...daySet].sort()
-    const l2Sum = { c24: { q: 0, amt: 0, rq: 0, ramt: 0 }, sb: { q: 0, amt: 0, rq: 0, ramt: 0 } }
+    // 🔴 gh(공홈)/pt(파트너) split 도 대사 — 구 버전은 c24/sb 총계만 비교해 split 오류(파트너 열 0 등)를 놓치던 blind spot 해소.
+    const l2Sum = { c24: { q: 0, amt: 0, rq: 0, ramt: 0 }, sb: { q: 0, amt: 0, rq: 0, ramt: 0 }, gh: { q: 0, amt: 0, rq: 0, ramt: 0 }, pt: { q: 0, amt: 0, rq: 0, ramt: 0 } }
+    const GLBL = { c24: 'c24', sb: 'sb', gh: '공홈', pt: '파트너' }
     days.forEach(day => {
       const bm = dayBucket.get(day); const dayOrders = bm ? [...bm.values()] : []
-      const derived = _slAggDay(dayOrders, day, ptSet)   // 🔴 재계산과 동일 헬퍼
+      const derived = _slAggDay(dayOrders, day, ptSet)   // 🔴 재계산과 동일 헬퍼(gh/pt 포함)
       const stored = dMap[day]
-      ;['c24', 'sb'].forEach(g => {
+      ;['c24', 'sb', 'gh', 'pt'].forEach(g => {
         const dv = derived[g] || {}, sv = (stored && stored[g]) || {}
         if (stored) { l2Sum[g].q += (sv.sq || 0); l2Sum[g].amt += (sv.samt || 0); l2Sum[g].rq += (sv.rq || 0); l2Sum[g].ramt += (sv.ramt || 0) }
         const diffs = []
         ;[['sq', '판매수'], ['samt', '매출'], ['rq', '반품수'], ['ramt', '반품액']].forEach(([fd, lbl]) => { const a = dv[fd] || 0, b = sv[fd] || 0; if (a !== b) diffs.push(lbl + ' L1=' + a + '/L2=' + b) })
-        if (!stored && (dv.sq || dv.samt || dv.rq || dv.ramt)) { l2Mismatch++; push('  ✗ ' + day + ' [' + g + '] salesD 누락 — L1 활동 있음(재계산 필요)') }
-        else if (diffs.length) { l2Mismatch++; push('  ✗ ' + day + ' [' + g + '] ' + diffs.join(' · ')) }
+        if (!stored) { if ((g === 'c24' || g === 'sb') && (dv.sq || dv.samt || dv.rq || dv.ramt)) { l2Mismatch++; push('  ✗ ' + day + ' [' + GLBL[g] + '] salesD 누락 — L1 활동 있음(재계산 필요)') } }   // gh/pt 누락은 c24 누락에 포함 → 중복 억제
+        else if (diffs.length) { l2Mismatch++; push('  ✗ ' + day + ' [' + GLBL[g] + '] ' + diffs.join(' · ')) }
       })
     })
-    // ---- 4) L2 → L3(salesM shard) 대사 (이 달) ----
+    // ---- 4) L2 → L3(salesM shard) 대사 (이 달) + 🔴 c24 gh/pt split(파트너별 데이터 정합) ----
+    const _cmpL2L3 = (lbl, l2, sc) => {
+      const hasL2 = l2.q || l2.amt || l2.rq || l2.ramt, hasL3 = sc.q || sc.amt || sc.rq || sc.ramt
+      if (!hasL2 && !hasL3) return
+      const dd = []
+      if (l2.amt !== sc.amt) dd.push('매출 L2=' + l2.amt + '/L3=' + sc.amt)
+      if (l2.q !== sc.q) dd.push('수량 L2=' + l2.q + '/L3=' + sc.q)
+      if (l2.ramt !== sc.ramt) dd.push('반품액 L2=' + l2.ramt + '/L3=' + sc.ramt)
+      if (l2.rq !== sc.rq) dd.push('반품수 L2=' + l2.rq + '/L3=' + sc.rq)
+      if (dd.length) { l3Mismatch++; l3Lines.push('  ✗ ' + mk + ' [' + lbl + '] ' + dd.join(' · ')) }
+    }
     for (const g of ['c24', 'sb']) {
       const shard = await _slReadShard('salesM', mk + '_' + g)   // 저장 shard (READ)
-      const sc = { q: 0, amt: 0, rq: 0, ramt: 0 }
-      if (shard && shard.items) Object.values(shard.items).forEach(it => { sc.q += it.q || 0; sc.amt += it.amt || 0; sc.rq += it.rq || 0; sc.ramt += it.ramt || 0 })
+      const sc = { q: 0, amt: 0, rq: 0, ramt: 0 }, scGh = { q: 0, amt: 0, rq: 0, ramt: 0 }, scPt = { q: 0, amt: 0, rq: 0, ramt: 0 }
+      if (shard && shard.items) Object.values(shard.items).forEach(it => {
+        sc.q += it.q || 0; sc.amt += it.amt || 0; sc.rq += it.rq || 0; sc.ramt += it.ramt || 0
+        if (g === 'c24') { const gh = it.gh || {}, pt = it.pt || {}; scGh.q += gh.q || 0; scGh.amt += gh.amt || 0; scGh.rq += gh.rq || 0; scGh.ramt += gh.ramt || 0; scPt.q += pt.q || 0; scPt.amt += pt.amt || 0; scPt.rq += pt.rq || 0; scPt.ramt += pt.ramt || 0 }
+      })
       const l2 = l2Sum[g]
-      const hasL2 = l2.q || l2.amt || l2.rq || l2.ramt, hasL3 = sc.q || sc.amt || sc.rq || sc.ramt
-      if (!shard && hasL2) { l3Mismatch++; l3Lines.push('  ✗ ' + mk + ' [' + g + '] salesM shard 누락 — salesD 합 있음(재계산 필요)') }
-      else if (hasL2 || hasL3) {
-        const dd = []
-        if (l2.amt !== sc.amt) dd.push('매출 L2=' + l2.amt + '/L3=' + sc.amt)
-        if (l2.q !== sc.q) dd.push('수량 L2=' + l2.q + '/L3=' + sc.q)
-        if (l2.ramt !== sc.ramt) dd.push('반품액 L2=' + l2.ramt + '/L3=' + sc.ramt)
-        if (l2.rq !== sc.rq) dd.push('반품수 L2=' + l2.rq + '/L3=' + sc.rq)
-        if (dd.length) { l3Mismatch++; l3Lines.push('  ✗ ' + mk + ' [' + g + '] ' + dd.join(' · ')) }
-      }
+      const hasL2 = l2.q || l2.amt || l2.rq || l2.ramt
+      if (!shard && hasL2) { l3Mismatch++; l3Lines.push('  ✗ ' + mk + ' [' + g + '] salesM shard 누락 — salesD 합 있음(재계산 필요)'); continue }
+      _cmpL2L3(g, l2, sc)
+      if (g === 'c24') { _cmpL2L3('공홈', l2Sum.gh, scGh); _cmpL2L3('파트너', l2Sum.pt, scPt) }   // split 정합(요약 gh/pt ↔ 파트너별 L3)
     }
     await new Promise(r => setTimeout(r, 0))   // UI yield
   }
