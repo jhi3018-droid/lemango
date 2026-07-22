@@ -241,7 +241,8 @@ function _slParseCafe24(rows) {
     const line = { c: code, o: _slStr(row[M.opt]), q: _slNum(row[M.qty]), rv: rv }
     const sz = _slExtractSize(row[M.opt]); if (sz) line.sz = sz
     const lref = _slNum(row[M.lineRefund]); if (lref) line.rf = lref
-    const rd = _slDate(row[M.refundDate]); if (rd) line.rd = rd
+    const rdRaw = row[M.refundDate], rd = _slDate(rdRaw); if (rd) line.rd = rd
+    else if (rdRaw != null && String(rdRaw).trim() !== '') warn.dateFail.push(`행${r + 1}(주문 ${orderNo}): 환불완료일 파싱 실패 "${String(rdRaw).trim().slice(0, 20)}"`)
 
     let o = orders[orderNo]
     if (!o) {
@@ -301,7 +302,8 @@ function _slParseSabang(rows) {
     const line = { c: code, o: _slStr(row[SL_SB.optRaw] || row[SL_SB.optClean]), q: _slNum(row[SL_SB.qty]), rv: rv }
     const sz = _slExtractSize(row[SL_SB.sizeAlias] || row[SL_SB.optClean] || row[SL_SB.optRaw]); if (sz) line.sz = sz
     if (sh) line.sh = sh
-    const rd = _slDate(row[SL_SB.refundDate]); if (rd) line.rd = rd
+    const rdRaw = row[SL_SB.refundDate], rd = _slDate(rdRaw); if (rd) line.rd = rd
+    else if (rdRaw != null && String(rdRaw).trim() !== '') warn.dateFail.push(`행${r + 1}(주문 ${ono}): 반품완료일자 파싱 실패 "${String(rdRaw).trim().slice(0, 20)}"`)
 
     const key = SL_CH.sb + '_' + _slSanitize(mallRaw) + '_' + ono
     let o = orders[key]
@@ -407,8 +409,11 @@ function _slMergeOrder(existing, inc, uploadId, nowIso) {
   })
   // incoming 에 없는 기존 라인 = 유지(삭제 안 함)
 
-  // 주문 레벨 변화(현금/환불금액/배송비/적립금) — 라인 무변경이어도 조정 포착(돈 정합; 집계가 doc 스칼라 사용 → stale 방지)
+  // 주문 레벨 변화(주문일/현금/환불금액/배송비/적립금) — 라인 무변경이어도 조정 포착(돈·날짜 정합; 집계가 doc od/스칼라 사용 → stale 방지)
   const scalarChg = []
+  // 🔴 od(주문일) 정정 감지 — 순수 날짜 정정 재업로드가 'same' 으로 누락되던 갭 해소(옛 od:'' → 정상날짜 획득 = 집계 편입).
+  //   재계산 영향일자 수집(confirmSalesLedgerUpload: res.doc.od[신] + ex.od[구])가 old+new 양쪽 커버 → 옛 salesD 감산·새 salesD 가산 정합.
+  if (inc.od && inc.od !== (existing.od || '')) scalarChg.push('주문일')
   if (inc.cash !== undefined && _slNum(existing.cash || 0) !== _slNum(inc.cash)) scalarChg.push('현금')
   if (inc.ref !== undefined && _slNum(existing.ref || 0) !== _slNum(inc.ref)) scalarChg.push('환불')
   if (inc.ship !== undefined && _slNum(existing.ship || 0) !== _slNum(inc.ship)) scalarChg.push('배송비')
