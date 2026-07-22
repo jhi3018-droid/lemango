@@ -856,7 +856,7 @@ function _loadStoreColW(key) {
 }
 function _saveStoreColW(key, obj) { try { localStorage.setItem(_storeColWKey(key), JSON.stringify(obj || {})) } catch (e) {} }
 
-function makeStoreColumnsResizable(tableEl, key) {
+function makeStoreColumnsResizable(tableEl, key, onResize) {
   if (!tableEl) return
   const ths = Array.from(tableEl.querySelectorAll('thead th'))
   if (!ths.length) return
@@ -883,6 +883,7 @@ function makeStoreColumnsResizable(tableEl, key) {
     const handle = document.createElement('div')
     handle.className = 'col-resize-handle'
     th.appendChild(handle)
+    handle.addEventListener('click', e => e.stopPropagation())   // 핸들 클릭이 헤더 onclick(정렬)으로 안 새게
     let startX, startW
     handle.addEventListener('mousedown', e => {
       e.preventDefault(); e.stopPropagation()
@@ -897,6 +898,7 @@ function makeStoreColumnsResizable(tableEl, key) {
         ths.forEach((t, j) => { const w = t.getBoundingClientRect().width; widths[j] = Math.round(w); sum += w })
         tableEl.style.width = sum + 'px'; tableEl.style.minWidth = '0'
         if (sum > 0) _saveStoreColW(key, widths)   // 컬럼 폭 index 기준 영속(store-scoped). sum>0 가드=드래그 중 재렌더로 th detach 시 0폭 저장 방지
+        if (typeof onResize === 'function') { try { onResize() } catch (e) {} }   // 🔴 리사이즈 후 훅(매출관리 freeze sticky offset 재계산)
       }
       document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp)
     })

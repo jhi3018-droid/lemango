@@ -1276,6 +1276,46 @@ function _slApplyFreeze(wrap) {
 }
 function _slFreezeRender(panel) { if (!panel) return; const w = panel.querySelector('.sl-freeze-wrap'); if (!w) return; _slBindFreezeResize(); if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => _slApplyFreeze(w)); else _slApplyFreeze(w) }
 
+// =============================================
+// ===== ④ 정렬(커스텀) + ⑥ 열너비(makeStoreColumnsResizable 이식) — 매트릭스 3탭 (freeze 마킹 보존) =====
+// =============================================
+// 🔴 initTableFeatures 미사용(th.innerHTML 재구성·position:relative·State 전제로 freeze 붕괴). 헤더는 템플릿에 onclick+아이콘만 추가(sl-fz/data-fzcol 보존).
+//   정렬 상태=세션 스코프(State 밖). 열너비=localStorage(store 패턴 재사용, 탭별 slmx_{id}). 리사이즈/정렬/모드/기간 재렌더 후 폭·정렬·freeze 재적용.
+let _slMxSort = { mxA: { key: 'tot', dir: 'desc' }, mxM: { key: 'tot', dir: 'desc' }, mxP: { key: 'tot', dir: 'desc' } }
+function _slMxSortState(id) { return _slMxSort[id] || { key: 'tot', dir: 'desc' } }
+function _slMxSortBy(id, key, renderFn) {
+  const cur = _slMxSortState(id)
+  let next
+  if (cur.key !== key) next = { key: key, dir: 'asc' }
+  else if (cur.dir === 'asc') next = { key: key, dir: 'desc' }
+  else next = { key: 'tot', dir: 'desc' }   // 내림 → 기본(합계 desc) 복귀
+  _slMxSort[id] = next
+  if (typeof window[renderFn] === 'function') window[renderFn]()
+}
+function _slSortIcon(id, key) { const s = _slMxSortState(id); const active = s.key === key; return `<span class="sl-sort-ic${active ? ' active' : ''}">${active ? (s.dir === 'asc' ? '▲' : '▼') : '⇅'}</span>` }
+// rows 정렬(현재 지표 값 기준). accessor(key) → (row)=>value. 기본 {tot,desc} = 구 동작 byte-identical.
+function _slMxApplySort(rows, id, accessor) {
+  const s = _slMxSortState(id), dir = s.dir === 'asc' ? 1 : -1
+  const get = accessor(s.key) || (r => r.tot || 0)
+  rows.sort((a, b) => {
+    const va = get(a), vb = get(b)
+    let c = (typeof va === 'string' || typeof vb === 'string') ? String(va || '').localeCompare(String(vb || '')) : ((va || 0) - (vb || 0))
+    return (c * dir) || String(a.code || '').localeCompare(String(b.code || ''))
+  })
+}
+// 매트릭스 렌더 후: 저장 폭 재적용 + 리사이즈 핸들(onResize=freeze 재계산) → freeze 오프셋 적용. (요약은 _slFreezeRender 유지)
+function _slMxDecorate(panel, id) {
+  if (!panel) return
+  const wrap = panel.querySelector('.sl-freeze-wrap'); if (!wrap) return
+  const table = wrap.querySelector('table.sl-freeze'); if (!table) return
+  _slBindFreezeResize()
+  const apply = () => {
+    if (typeof makeStoreColumnsResizable === 'function') makeStoreColumnsResizable(table, 'slmx_' + id, () => _slApplyFreeze(wrap))   // 저장 폭 재적용 + 핸들 + 리사이즈 후 freeze 재계산
+    _slApplyFreeze(wrap)   // 폭 적용 후 sticky offset 계산
+  }
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(apply); else apply()
+}
+
 async function renderSalesSummary() {
   const panel = document.getElementById('slSummaryBody'); if (!panel) return
   let start = (document.getElementById('slSumStart') || {}).value
@@ -1526,7 +1566,7 @@ async function renderSalesMatrix() {
   })
   const q = (_slMxSearch || '').trim().toUpperCase()
   if (q) rows = rows.filter(r => r.code.toUpperCase().includes(q) || (r.name || '').toUpperCase().includes(q))
-  rows.sort((a, b) => b.tot - a.tot || a.code.localeCompare(b.code))
+  _slMxApplySort(rows, 'mxA', k => k === 'code' ? (r => r.code) : k === 'name' ? (r => r.name || '') : (r => r[k] || 0))   // 정렬키: code/name/tot/gh/pt/s/p
   _slMatrixRows = rows
   const fmt = v => (v || 0).toLocaleString()
   const t = rows.reduce((a, r) => { a.gh += r.gh; a.pt += r.pt; a.s += r.s; a.p += r.p; a.tot += r.tot; return a }, { gh: 0, pt: 0, s: 0, p: 0, tot: 0 })
@@ -1535,7 +1575,7 @@ async function renderSalesMatrix() {
     <div class="sl-sum-basis">${esc(s)} ~ ${esc(e)} · ${unitLbl} · 배송비 포함·반품 차감(일자별 요약과 동일 기준) · 카페24=<b>공홈+파트너</b> 분리(공홈+파트너=카페24 총액 · 파트너 분리는 명단 등록+재계산 후)${posErr ? ' · ⚠️ 매장 열 조회 권한/오류로 생략' : ''}</div>
     <div class="sl-hist-wrap sl-freeze-wrap">
       <table class="data-table inbhist-table sl-mx-table sl-freeze" data-fz="4">
-        <thead><tr><th class="sl-thumb-th sl-fz" data-fzcol="0">이미지</th><th class="sl-fz" data-fzcol="1">품번</th><th class="sl-fz" data-fzcol="2">상품명</th><th class="sl-c sl-fz" data-fzcol="3">합계</th><th class="sl-c">공홈</th><th class="sl-c sl-pt-col">파트너</th><th class="sl-c">사방넷</th><th class="sl-c">매장</th></tr>
+        <thead><tr><th class="sl-thumb-th sl-fz" data-fzcol="0">이미지</th><th class="sl-fz sl-sortable" data-fzcol="1" onclick="_slMxSortBy('mxA','code','renderSalesMatrix')">품번 ${_slSortIcon('mxA', 'code')}</th><th class="sl-fz sl-sortable" data-fzcol="2" onclick="_slMxSortBy('mxA','name','renderSalesMatrix')">상품명 ${_slSortIcon('mxA', 'name')}</th><th class="sl-c sl-fz sl-sortable" data-fzcol="3" onclick="_slMxSortBy('mxA','tot','renderSalesMatrix')">합계 ${_slSortIcon('mxA', 'tot')}</th><th class="sl-c sl-sortable" onclick="_slMxSortBy('mxA','gh','renderSalesMatrix')">공홈 ${_slSortIcon('mxA', 'gh')}</th><th class="sl-c sl-pt-col sl-sortable" onclick="_slMxSortBy('mxA','pt','renderSalesMatrix')">파트너 ${_slSortIcon('mxA', 'pt')}</th><th class="sl-c sl-sortable" onclick="_slMxSortBy('mxA','s','renderSalesMatrix')">사방넷 ${_slSortIcon('mxA', 's')}</th><th class="sl-c sl-sortable" onclick="_slMxSortBy('mxA','p','renderSalesMatrix')">매장 ${_slSortIcon('mxA', 'p')}</th></tr>
           <tr class="sl-total-row"><td class="sl-fz" data-fzcol="0"></td><td class="sl-fz" data-fzcol="1"></td><td class="sl-mx-name sl-fz" data-fzcol="2">합계 (${rows.length}품번)</td><td class="sl-c sl-net sl-fz" data-fzcol="3"><b>${fmt(t.tot)}</b></td><td class="sl-c">${fmt(t.gh)}</td><td class="sl-c sl-pt-col">${fmt(t.pt)}</td><td class="sl-c">${fmt(t.s)}</td><td class="sl-c">${fmt(t.p)}</td></tr></thead>
         <tbody>${rows.length ? rows.map(r => `<tr>
           ${_slThumbCell(r.code, prodMap)}
@@ -1545,7 +1585,7 @@ async function renderSalesMatrix() {
         </tr>`).join('') : `<tr><td colspan="8" class="sl-hist-empty">데이터 없음 — 집계 재계산이 필요할 수 있습니다.</td></tr>`}</tbody>
       </table>
     </div>`
-  _slFreezeRender(panel)
+  _slMxDecorate(panel, 'mxA')
 }
 
 // ---- 쇼핑몰별 탭 (품번 × 사방넷 몰) ----
@@ -1569,7 +1609,7 @@ async function renderSalesMalls() {
   })
   const q = (_slMxSearch || '').trim().toUpperCase()
   if (q) rows = rows.filter(r => r.code.toUpperCase().includes(q) || (r.name || '').toUpperCase().includes(q))
-  rows.sort((a, b) => b.tot - a.tot || a.code.localeCompare(b.code))
+  _slMxApplySort(rows, 'mxM', k => k === 'code' ? (r => r.code) : k === 'name' ? (r => r.name || '') : k === 'tot' ? (r => r.tot || 0) : (k.charAt(0) === 'c' ? (r => (r.cells[+k.slice(2)] || 0)) : (r => r.tot || 0)))
   _slMallsData = { malls, rows, unit }
   const fmt = v => (v || 0).toLocaleString()
   const colTot = malls.map((_, ci) => rows.reduce((a, r) => a + (r.cells[ci] || 0), 0))
@@ -1577,7 +1617,7 @@ async function renderSalesMalls() {
     <div class="sl-sum-basis">${esc(s)} ~ ${esc(e)} · ${_slMxUnitLabel(unit)} · 사방넷 쇼핑몰별(원본 몰명) · 합계=사방넷 순액 · ⚠️ 몰별 셀은 반품 미분리(판매/순=동일)</div>
     <div class="sl-hist-wrap sl-freeze-wrap">
       <table class="data-table inbhist-table sl-mx-table sl-freeze" data-fz="4">
-        <thead><tr><th class="sl-thumb-th sl-fz" data-fzcol="0">이미지</th><th class="sl-fz" data-fzcol="1">품번</th><th class="sl-fz" data-fzcol="2">상품명</th><th class="sl-c sl-fz" data-fzcol="3">사방넷 합계</th>${malls.map(m => `<th class="sl-c">${esc(m)}</th>`).join('')}</tr>
+        <thead><tr><th class="sl-thumb-th sl-fz" data-fzcol="0">이미지</th><th class="sl-fz sl-sortable" data-fzcol="1" onclick="_slMxSortBy('mxM','code','renderSalesMalls')">품번 ${_slSortIcon('mxM', 'code')}</th><th class="sl-fz sl-sortable" data-fzcol="2" onclick="_slMxSortBy('mxM','name','renderSalesMalls')">상품명 ${_slSortIcon('mxM', 'name')}</th><th class="sl-c sl-fz sl-sortable" data-fzcol="3" onclick="_slMxSortBy('mxM','tot','renderSalesMalls')">사방넷 합계 ${_slSortIcon('mxM', 'tot')}</th>${malls.map((m, ci) => `<th class="sl-c sl-sortable" onclick="_slMxSortBy('mxM','c:${ci}','renderSalesMalls')">${esc(m)} ${_slSortIcon('mxM', 'c:' + ci)}</th>`).join('')}</tr>
           <tr class="sl-total-row"><td class="sl-fz" data-fzcol="0"></td><td class="sl-fz" data-fzcol="1"></td><td class="sl-mx-name sl-fz" data-fzcol="2">합계</td><td class="sl-c sl-net sl-fz" data-fzcol="3"><b>${fmt(rows.reduce((a, r) => a + r.tot, 0))}</b></td>${colTot.map(v => `<td class="sl-c">${fmt(v)}</td>`).join('')}</tr></thead>
         <tbody>${rows.length ? rows.map(r => `<tr>
           ${_slThumbCell(r.code, prodMap)}
@@ -1586,7 +1626,7 @@ async function renderSalesMalls() {
         </tr>`).join('') : `<tr><td colspan="${4 + malls.length}" class="sl-hist-empty">사방넷 데이터 없음</td></tr>`}</tbody>
       </table>
     </div>`
-  _slFreezeRender(panel)
+  _slMxDecorate(panel, 'mxM')
 }
 
 // =============================================
@@ -1645,7 +1685,7 @@ async function _slRenderPartnerReport() {
   })
   const q = (_slMxSearch || '').trim().toUpperCase()
   if (q) rows = rows.filter(r => r.code.toUpperCase().includes(q) || (r.name || '').toUpperCase().includes(q))
-  rows.sort((a, b) => b.tot - a.tot || a.code.localeCompare(b.code))
+  _slMxApplySort(rows, 'mxP', k => k === 'code' ? (r => r.code) : k === 'name' ? (r => r.name || '') : k === 'tot' ? (r => r.tot || 0) : (k.charAt(0) === 'c' ? (r => (r.cells[+k.slice(2)] || 0)) : (r => r.tot || 0)))
   _slPartnerReport = { cols, rows, unit }
   const fmt = v => (v || 0).toLocaleString()
   const colTot = cols.map((_, ci) => rows.reduce((a, r) => a + (r.cells[ci] || 0), 0))
@@ -1654,7 +1694,7 @@ async function _slRenderPartnerReport() {
   body.innerHTML = `
     <div class="sl-sum-basis">${esc(s)} ~ ${esc(e)} · ${_slMxUnitLabel(unit)} · 업체=주문자ID∈파트너 명단 · 열=기간 내 매입 있는 업체만</div>
     <div class="sl-hist-wrap sl-freeze-wrap"><table class="data-table inbhist-table sl-mx-table sl-freeze" data-fz="4">
-      <thead><tr><th class="sl-thumb-th sl-fz" data-fzcol="0">이미지</th><th class="sl-fz" data-fzcol="1">품번</th><th class="sl-fz" data-fzcol="2">상품명</th><th class="sl-c sl-fz" data-fzcol="3">합계</th>${cols.map(c => `<th class="sl-c">${esc(c.name)}</th>`).join('')}</tr>
+      <thead><tr><th class="sl-thumb-th sl-fz" data-fzcol="0">이미지</th><th class="sl-fz sl-sortable" data-fzcol="1" onclick="_slMxSortBy('mxP','code','renderSalesPartner')">품번 ${_slSortIcon('mxP', 'code')}</th><th class="sl-fz sl-sortable" data-fzcol="2" onclick="_slMxSortBy('mxP','name','renderSalesPartner')">상품명 ${_slSortIcon('mxP', 'name')}</th><th class="sl-c sl-fz sl-sortable" data-fzcol="3" onclick="_slMxSortBy('mxP','tot','renderSalesPartner')">합계 ${_slSortIcon('mxP', 'tot')}</th>${cols.map((c, ci) => `<th class="sl-c sl-sortable" onclick="_slMxSortBy('mxP','c:${ci}','renderSalesPartner')">${esc(c.name)} ${_slSortIcon('mxP', 'c:' + ci)}</th>`).join('')}</tr>
         <tr class="sl-total-row"><td class="sl-fz" data-fzcol="0"></td><td class="sl-fz" data-fzcol="1"></td><td class="sl-mx-name sl-fz" data-fzcol="2">합계 (${rows.length}품번)</td><td class="sl-c sl-net sl-fz" data-fzcol="3"><b>${fmt(grand)}</b></td>${colTot.map(v => `<td class="sl-c">${fmt(v)}</td>`).join('')}</tr></thead>
       <tbody>${rows.map(r => `<tr>
         ${_slThumbCell(r.code, prodMap)}
@@ -1663,7 +1703,7 @@ async function _slRenderPartnerReport() {
       </tr>`).join('')}</tbody>
     </table></div>
     <div class="sl-mx-toolbar"><button class="btn btn-outline btn-sm" onclick="downloadSalesPartner()">📥 엑셀</button></div>`
-  _slFreezeRender(body)
+  _slMxDecorate(body, 'mxP')
 }
 function downloadSalesPartner() {
   if (!_slPartnerReport || !_slPartnerReport.cols.length) { showToast('데이터 없음', 'warning'); return }
@@ -2327,6 +2367,7 @@ window._slMxPreset = _slMxPreset
 window._slMxSearchInput = _slMxSearchInput
 window._slMxToggleUnit = _slMxToggleUnit
 window._slMxSetUnit = _slMxSetUnit
+window._slMxSortBy = _slMxSortBy
 window._slToggleOrder = _slToggleOrder
 window._slOpenProduct = _slOpenProduct
 window._slStorePos = _slStorePos

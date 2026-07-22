@@ -6515,6 +6515,10 @@ td[data-editable]:hover { background: #FAEEDA; }
 .sl-mx-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border, #e8e6e0); }
 .sl-mx-range { font-size: 12px; color: var(--accent, #c9a96e); font-weight: 600; }
 .sl-mx-unit { font-size: 12px; padding: 4px 6px; border: 1px solid var(--border, #e8e6e0); border-radius: 6px; background: #fff; }
+/* 매트릭스 정렬 헤더(커스텀) — 클릭 정렬, ▲▼⇅ 아이콘 (freeze 마킹 보존, initTableFeatures 미사용) */
+.sl-freeze thead th.sl-sortable { cursor: pointer; user-select: none; position: relative; }   /* 🔴 relative = 리사이즈 핸들(absolute)의 컨테이닝 블록(비고정 데이터열 핸들 정위치). sticky 아님 → 세로 freeze는 thead 블록이 계속 제어(합계행 겹침 없음). 고정열은 JS 인라인 sticky 우선. */
+.sl-sort-ic { font-size: 10px; opacity: 0.5; margin-left: 2px; }
+.sl-sort-ic.active { opacity: 1; color: var(--accent, #c9a96e); }
 .sl-mx-table { width: auto; min-width: 100%; table-layout: auto; }
 .sl-mx-table th, .sl-mx-table td { white-space: nowrap; }
 .sl-mx-table .sl-c { text-align: right; }
