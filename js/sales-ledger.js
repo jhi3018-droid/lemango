@@ -54,6 +54,17 @@ function _slDate(v) {
   if (m) return m[1] + '-' + _slPad(m[2]) + '-' + _slPad(m[3])
   m = s.match(/^(\d{4})(\d{2})(\d{2})$/)   // YYYYMMDD
   if (m) return m[1] + '-' + m[2] + '-' + m[3]
+  // 🔴 M/D/YY · M/D/YYYY (연도 마지막 = 카페24/엑셀 en-US 표시형 "7/1/26"·CSV 폴백용). 월-우선 고정(SheetJS 기본 로케일)이며
+  //   첫 필드>12(월 불가)면 **거부**(D/M 모호형은 추측 안 함 = 오배치 금지 원칙). xlsx 는 시리얼 경로(_slDateAt)가 우선이라 이 분기 미도달.
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})(?:[^\d]|$)/)
+  if (m) {
+    const mo = +m[1], dd = +m[2]
+    if (mo >= 1 && mo <= 12 && dd >= 1 && dd <= 31) {
+      const y = m[3].length === 2 ? 2000 + (+m[3]) : (+m[3])   // 2자리 연도 → 20YY(매출=2000년대)
+      return y + '-' + _slPad(mo) + '-' + _slPad(dd)
+    }
+    return ''   // 첫 필드>12 = D/M 모호 → 거부
+  }
   return ''   // 파싱 실패 → 호출부가 경고
 }
 
@@ -168,6 +179,27 @@ function _slReadWorkbookRows(data, isCsv) {
   return XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false })
 }
 
+// 🔴 이중 읽기: raw:false(텍스트=품번/주문번호 선행0·정밀도 보존, 기존과 동일) + raw:true(원시값=엑셀 날짜셀이 **시리얼 숫자**로 도착).
+//   카페24 xlsx 주문일시/환불완료일이 서식상 "7/1/26"(M/D/YY 문자, 4자리연도 아님)로 렌더돼 구 파서가 전량 실패하던 문제 해소.
+//   raw:true 시리얼(46204.33) → _slDate 시리얼 분기가 TZ-agnostic(getUTC*)로 정확한 벽시계 날짜 추출(cellDates 의 로컬TZ 오프셋 함정 회피).
+function _slReadWorkbookDual(data, isCsv) {
+  const opts = isCsv ? { type: 'string', codepage: 65001 } : { type: 'array' }
+  const wb = XLSX.read(data, opts)
+  const ws = wb.Sheets[wb.SheetNames[0]]
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false })   // 텍스트(코드/주문번호 보존)
+  const rowsRaw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true })   // 원시값(날짜=시리얼 숫자)
+  return { rows: rows, rowsRaw: rowsRaw }
+}
+
+// 날짜 셀 해소: 원시(raw:true) 시리얼/숫자/Date 우선(TZ-safe) → 실패 시 텍스트(raw:false, CSV·문자 날짜) 폴백. rowsRaw 미전달 시 텍스트만(하위호환).
+function _slDateAt(rowsRaw, rows, r, idx) {
+  if (idx < 0) return ''
+  const rawV = (rowsRaw && rowsRaw[r]) ? rowsRaw[r][idx] : undefined
+  const d = _slDate(rawV)
+  if (d) return d
+  return _slDate((rows[r] || [])[idx])
+}
+
 // 헤더 서명으로 타입 판별. 카페24=이름 매칭(27/28컬럼 무관) · 사방넷=위치 기반(20컬럼) 서명.
 function _slDetectType(headers) {
   const H = (headers || []).map(h => _slStr(h))
@@ -212,7 +244,7 @@ function _slNewWarn() {
 }
 
 // 카페24 파싱: 주문번호로 그룹핑. 라인 매출 rv = P − Y. 주문 필드 cash(S)/pu(W)/grade/bid/ship(ΣQ)/ref(maxU).
-function _slParseCafe24(rows) {
+function _slParseCafe24(rows, rowsRaw) {
   const warn = _slNewWarn()
   const headers = rows[0] || []
   const M = _slC24ColMap(headers)
@@ -229,8 +261,8 @@ function _slParseCafe24(rows) {
     if (!code && !orderNo) continue                         // 완전 빈 행 skip
     if (!orderNo) { warn.dateFail.push(`행${r + 1}: 주문번호 없음`); continue }
 
-    const od = _slDate(row[M.orderDate])
-    if (!od) warn.dateFail.push(`행${r + 1}(주문 ${orderNo}): 주문일 파싱 실패`)
+    const od = _slDateAt(rowsRaw, rows, r, M.orderDate)
+    if (!od) { const odT = _slStr(row[M.orderDate]); warn.dateFail.push(`행${r + 1}(주문 ${orderNo}): 주문일 파싱 실패${odT ? ` "${odT.slice(0, 24)}"` : '(빈값)'}`) }
 
     const P = _slNum(row[M.P]), Y = _slNum(row[M.Y])
     const rv = P - Y
@@ -241,8 +273,8 @@ function _slParseCafe24(rows) {
     const line = { c: code, o: _slStr(row[M.opt]), q: _slNum(row[M.qty]), rv: rv }
     const sz = _slExtractSize(row[M.opt]); if (sz) line.sz = sz
     const lref = _slNum(row[M.lineRefund]); if (lref) line.rf = lref
-    const rdRaw = row[M.refundDate], rd = _slDate(rdRaw); if (rd) line.rd = rd
-    else if (rdRaw != null && String(rdRaw).trim() !== '') warn.dateFail.push(`행${r + 1}(주문 ${orderNo}): 환불완료일 파싱 실패 "${String(rdRaw).trim().slice(0, 20)}"`)
+    const rd = _slDateAt(rowsRaw, rows, r, M.refundDate); if (rd) line.rd = rd
+    else { const rdT = _slStr(row[M.refundDate]); if (rdT) warn.dateFail.push(`행${r + 1}(주문 ${orderNo}): 환불완료일 파싱 실패 "${rdT.slice(0, 20)}"`) }
 
     let o = orders[orderNo]
     if (!o) {
@@ -275,7 +307,7 @@ function _slParseCafe24(rows) {
 }
 
 // 사방넷 파싱: (쇼핑몰, 주문번호)로 그룹핑. 라인 rv = 결제금액(H), sh = 배송비(I) 별도. 사은품 → rv/sh 0(기존 공식 제외 미러).
-function _slParseSabang(rows) {
+function _slParseSabang(rows, rowsRaw) {
   const warn = _slNewWarn()
   const codeSet = _slProductCodeSet()
   const orders = {}
@@ -289,8 +321,8 @@ function _slParseSabang(rows) {
     if (!code) continue                                     // 기존 파서와 동일(품번 없는 행 skip)
     if (!ono) { warn.dateFail.push(`행${r + 1}: 주문번호 없음`); continue }
 
-    const od = _slDate(row[SL_SB.orderDate])
-    if (!od) warn.dateFail.push(`행${r + 1}(주문 ${ono}): 주문일 파싱 실패`)
+    const od = _slDateAt(rowsRaw, rows, r, SL_SB.orderDate)
+    if (!od) { const odT = _slStr(row[SL_SB.orderDate]); warn.dateFail.push(`행${r + 1}(주문 ${ono}): 주문일 파싱 실패${odT ? ` "${odT.slice(0, 24)}"` : '(빈값)'}`) }
 
     const isFreebie = ono.includes('_사은품') || code.includes('사은품')
     const pay = _slNum(row[SL_SB.pay]), shipv = _slNum(row[SL_SB.ship])
@@ -302,8 +334,8 @@ function _slParseSabang(rows) {
     const line = { c: code, o: _slStr(row[SL_SB.optRaw] || row[SL_SB.optClean]), q: _slNum(row[SL_SB.qty]), rv: rv }
     const sz = _slExtractSize(row[SL_SB.sizeAlias] || row[SL_SB.optClean] || row[SL_SB.optRaw]); if (sz) line.sz = sz
     if (sh) line.sh = sh
-    const rdRaw = row[SL_SB.refundDate], rd = _slDate(rdRaw); if (rd) line.rd = rd
-    else if (rdRaw != null && String(rdRaw).trim() !== '') warn.dateFail.push(`행${r + 1}(주문 ${ono}): 반품완료일자 파싱 실패 "${String(rdRaw).trim().slice(0, 20)}"`)
+    const rd = _slDateAt(rowsRaw, rows, r, SL_SB.refundDate); if (rd) line.rd = rd
+    else { const rdT = _slStr(row[SL_SB.refundDate]); if (rdT) warn.dateFail.push(`행${r + 1}(주문 ${ono}): 반품완료일자 파싱 실패 "${rdT.slice(0, 20)}"`) }
 
     const key = SL_CH.sb + '_' + _slSanitize(mallRaw) + '_' + ono
     let o = orders[key]
@@ -479,8 +511,8 @@ function handleSalesLedgerFile(input) {
   const isCsv = /\.csv$/i.test(file.name)
   const reader = new FileReader()
   reader.onload = e => {
-    let rows
-    try { rows = _slReadWorkbookRows(e.target.result, isCsv) }
+    let rows, rowsRaw
+    try { const rd = _slReadWorkbookDual(e.target.result, isCsv); rows = rd.rows; rowsRaw = rd.rowsRaw }
     catch (err) { showToast('파일을 읽지 못했습니다: ' + err.message, 'error'); return }
     input.value = ''
     const headers = rows[0] || []
@@ -489,7 +521,7 @@ function handleSalesLedgerFile(input) {
       _slRenderReject(file.name)
       return
     }
-    const parsed = (type === SL_CH.c24) ? _slParseCafe24(rows) : _slParseSabang(rows)
+    const parsed = (type === SL_CH.c24) ? _slParseCafe24(rows, rowsRaw) : _slParseSabang(rows, rowsRaw)
     parsed.fileName = file.name
     parsed.rawRowCount = Math.max(0, rows.length - 1)
     _slParsed = parsed
@@ -628,6 +660,8 @@ async function confirmSalesLedgerUpload() {
       uploadId: uploadId, type: p.type, fileName: p.fileName || '',
       rows: p.rawRowCount || 0, orders: p.orders.length,
       cntNew: cNew, cntMerge: cMerge, cntSame: cSame, cntReturns: cReturns,
+      // 🔴 실제 전체 카운트(무상한) — 리스트는 doc 크기 보호로 300 슬라이스하되 카운트는 진짜 수치 저장(300 상한 오보 방지).
+      dateFailCount: p.warn.dateFail.length, unmatchedCount: p.warn.unmatched.size, anomalyCount: p.warn.anomaly.length,
       unmatched: [...p.warn.unmatched].slice(0, 300), dateFail: p.warn.dateFail.slice(0, 300),
       anomaly: p.warn.anomaly.slice(0, 300), malls: p.warn.malls, friends: p.warn.friends || 0,
       newPartners: p.warn.newPartners ? [...p.warn.newPartners].slice(0, 300) : [],
@@ -700,7 +734,7 @@ async function renderSalesUploadHistory(force) {
   tbody.innerHTML = list.map(u => {
     const typeLabel = u.type === SL_CH.c24 ? '카페24' : (u.type === SL_CH.sb ? '사방넷' : esc(u.type || ''))
     const when = (typeof kstFormat === 'function') ? kstFormat(u.at, 'full') : esc(String(u.at || '').slice(0, 16))
-    const warnCnt = (u.unmatched ? u.unmatched.length : 0) + (u.dateFail ? u.dateFail.length : 0) + (u.anomaly ? u.anomaly.length : 0)
+    const warnCnt = (u.unmatchedCount != null ? u.unmatchedCount : (u.unmatched ? u.unmatched.length : 0)) + (u.dateFailCount != null ? u.dateFailCount : (u.dateFail ? u.dateFail.length : 0)) + (u.anomalyCount != null ? u.anomalyCount : (u.anomaly ? u.anomaly.length : 0))
     return `<tr>
       <td>${when}</td>
       <td>${typeLabel}</td>
@@ -1637,8 +1671,9 @@ async function salesVerify(fromDate, toDate, onProg) {
   const dfTop = []
   ups.forEach(u => {
     uRows += u.rows || 0; uNew += u.cntNew || 0; uMerge += u.cntMerge || 0; uSame += u.cntSame || 0; uRet += u.cntReturns || 0
-    const df = (u.dateFail || []).length; uDateFail += df
-    uUnmatched += (u.unmatched || []).length; uAnom += (u.anomaly || []).length
+    const df = (u.dateFailCount != null ? u.dateFailCount : (u.dateFail || []).length); uDateFail += df
+    uUnmatched += (u.unmatchedCount != null ? u.unmatchedCount : (u.unmatched || []).length)
+    uAnom += (u.anomalyCount != null ? u.anomalyCount : (u.anomaly || []).length)
     if (df > 0) dfTop.push({ f: u.fileName || u.type || '?', df: df, at: u.at || '' })
   })
   push('【1】 업로드 내역 총괄 — ' + ups.length + '개 파일')
