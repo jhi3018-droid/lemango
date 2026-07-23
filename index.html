@@ -110,6 +110,7 @@
       <button class="tab-btn" data-tab="product">상품조회</button>
       <button class="tab-btn" data-tab="stock">재고 관리</button>
       <button class="tab-btn" data-tab="sales">매출현황</button>
+      <button class="tab-btn" data-tab="salesanalysis">📊 매출분석</button>
       <button class="tab-btn" data-tab="plan">신규기획</button>
       <button class="tab-btn" data-tab="store">🏬 매장</button>
       <button class="tab-btn" data-tab="salesmgmt">💰 매출관리</button>
@@ -716,6 +717,11 @@
   <!-- ===== 매출관리 탭 (매출 원장 L1) ===== -->
   <section class="tab-content" id="tab-salesmgmt">
     <div class="store-page" id="salesMgmtPage"></div>
+  </section>
+
+  <!-- ===== 매출분석 탭 (READ-ONLY 분석 — 매출관리 집계 소스) ===== -->
+  <section class="tab-content" id="tab-salesanalysis">
+    <div class="store-page" id="salesAnalysisPage"></div>
   </section>
 
   <!-- ===== 개인정보 탭 ===== -->
@@ -3217,6 +3223,7 @@
 <script src="js/trash.js"></script>
 <script src="js/store.js"></script>
 <script src="js/sales-ledger.js"></script>
+<script src="js/sales-analysis.js"></script>
 <!-- 카페24 등록 CSV: cafe24-data.js(생성된 상수) → cafe24.js(로직). core/utils/color-master/product-code 뒤 로드. -->
 <script src="js/cafe24-data.js"></script>
 <script src="js/cafe24.js"></script>

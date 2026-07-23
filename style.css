@@ -6576,3 +6576,40 @@ td[data-editable]:hover { background: #FAEEDA; }
 .sl-pt-badge.on { background: rgba(76, 175, 125, 0.15); color: var(--success, #4caf7d); }
 .sl-pt-badge.off { background: rgba(150, 150, 150, 0.15); color: var(--text-sub, #888); }
 .sl-pt-editrow td { background: rgba(201, 169, 110, 0.06); }
+
+/* =============================================
+   📊 매출분석 v1 (sales-analysis.js) — READ-ONLY 분석 화면
+   ============================================= */
+.sa-card { background: var(--card-bg, #fff); border: 1px solid var(--border, #e8e6e0); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+.sa-card-title { font-size: 13px; font-weight: 700; color: var(--primary, #1a1a2e); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sa-muted { color: var(--text-sub, #999); font-weight: 400; font-size: 11px; }
+.sa-up { color: var(--success, #4caf7d); font-weight: 700; }
+.sa-down { color: var(--danger, #e05252); font-weight: 700; }
+.sa-total-row td { background: rgba(201, 169, 110, 0.10); font-weight: 700; }
+.sa-cmp-table td:first-child { font-weight: 600; }
+/* CSS 막대 차트(라이브러리 없음) — 채널 스택 */
+.sa-bars { display: flex; align-items: flex-end; gap: 10px; padding: 6px 4px 2px; overflow-x: auto; }
+.sa-bar-col { display: flex; flex-direction: column; align-items: center; min-width: 44px; flex: 1; }
+.sa-bar-stack { display: flex; flex-direction: column; justify-content: flex-end; width: 30px; background: rgba(0,0,0,0.04); border-radius: 4px 4px 0 0; overflow: hidden; }
+.sa-bar-seg { width: 100%; }
+.sa-bar-val { font-size: 10px; color: var(--text-sub, #777); margin-bottom: 3px; white-space: nowrap; }
+.sa-bar-lb { font-size: 11px; color: var(--text-sub, #666); margin-top: 4px; white-space: nowrap; }
+.sa-bar-cur .sa-bar-lb { font-weight: 700; color: var(--primary, #1a1a2e); }
+.sa-legend { font-size: 11px; color: var(--text-sub, #666); font-weight: 400; display: inline-flex; align-items: center; gap: 4px; }
+.sa-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-left: 6px; }
+/* 랭킹/반품 표 */
+.sa-rank-row { cursor: pointer; }
+.sa-rank-row:hover td { background: rgba(201, 169, 110, 0.08); }
+.sa-rank-no { font-weight: 700; color: var(--accent, #c9a96e); }
+.sa-thumb-cell { text-align: center; }
+.sa-thumb { width: 34px; height: 42px; object-fit: cover; border-radius: 4px; }
+.sa-name { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sa-rank-table th, .sa-rank-table td, .sa-ret-table th, .sa-ret-table td { font-size: 12px; }
+/* 반품 채널 요약 카드 */
+.sa-ret-cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.sa-ret-card { flex: 1; min-width: 150px; background: var(--card-bg, #fff); border: 1px solid var(--border, #e8e6e0); border-radius: 10px; padding: 12px 14px; text-align: center; }
+.sa-ret-ch { display: inline-block; font-size: 12px; font-weight: 700; border-bottom: 3px solid; padding-bottom: 2px; margin-bottom: 6px; }
+.sa-ret-rate { font-size: 22px; font-weight: 800; color: var(--primary, #1a1a2e); }
+.sa-ret-sub { font-size: 11px; color: var(--text-sub, #888); margin-top: 4px; line-height: 1.5; }
+.sa-footnote { font-size: 11px; color: var(--text-sub, #888); background: rgba(240, 165, 0, 0.08); border: 1px solid rgba(240, 165, 0, 0.25); border-radius: 6px; padding: 6px 10px; margin-bottom: 10px; }
+.sa-min-input { width: 70px; }
