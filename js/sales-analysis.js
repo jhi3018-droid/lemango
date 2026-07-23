@@ -370,8 +370,9 @@ async function renderSaRanking() {
     const pct = (r.cur - r.prev) / Math.abs(r.prev) * 100
     return `<span class="${pct >= 0 ? 'sa-up' : 'sa-down'}">${pct >= 0 ? '▲' : '▼'} ${Math.abs(pct).toFixed(1)}%</span>`
   }
-  const rowHtml = (r, i, baseRank) => `<tr class="sa-rank-row" onclick="_slOpenProduct('${esc(r.code)}')" title="클릭=상품 상세 · 품번 클릭=매출관리 매트릭스">
-    <td class="sl-c sa-rank-no">${baseRank + i}</td>
+  // 🔴 rank = baseRankOf(i)로 이미 최종 순위 — 여기서 i 를 다시 더하면 2i+1(1,3,5…) 이중가산 버그(07-23 수정)
+  const rowHtml = (r, rank) => `<tr class="sa-rank-row" onclick="_slOpenProduct('${esc(r.code)}')" title="클릭=상품 상세 · 품번 클릭=매출관리 매트릭스">
+    <td class="sl-c sa-rank-no">${rank}</td>
     <td class="sa-thumb-cell">${_saThumb(r.code, prodMap)}</td>
     <td><a class="sl-code-link" onclick="event.stopPropagation();_slOpenMatrixForCode('${esc(r.code)}')" title="매출관리 전체 탭에서 보기">${esc(r.code)}</a></td>
     <td class="sa-name" title="${esc(r.name)}">${esc(r.name)}</td>
@@ -380,7 +381,7 @@ async function renderSaRanking() {
   const tableHtml = (rows, baseRankOf) => `
     <table class="data-table inbhist-table sa-rank-table">
       <thead><tr><th class="sl-c" style="width:44px">순위</th><th style="width:52px">이미지</th><th style="width:130px">품번</th><th>상품명</th><th class="sl-c">순수량</th><th class="sl-c">순액</th><th class="sl-c">직전 대비</th></tr></thead>
-      <tbody>${rows.length ? rows.map((r, i) => rowHtml(r, i, baseRankOf(i))).join('') : '<tr><td colspan="7" class="sl-hist-empty">해당 없음</td></tr>'}</tbody>
+      <tbody>${rows.length ? rows.map((r, i) => rowHtml(r, baseRankOf(i))).join('') : '<tr><td colspan="7" class="sl-hist-empty">해당 없음</td></tr>'}</tbody>
     </table>`
   const chanSel = `<select class="inbhist-store" onchange="_saSetChannel(this.value,'renderSaRanking')">${['all', 'gh', 'pt', 'sb'].map(k => `<option value="${k}"${_saChannel === k ? ' selected' : ''}>${SA_CH_LABEL[k]}</option>`).join('')}</select>` +
     (_saChannel === 'sb' ? `<select class="inbhist-store" onchange="_saSetMall(this.value,'renderSaRanking')"><option value="">몰 전체</option>${malls.map(m => `<option value="${esc(m)}"${_saMall === m ? ' selected' : ''}>${esc(m)}</option>`).join('')}</select>` : '') +
