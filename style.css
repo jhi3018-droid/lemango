@@ -6613,3 +6613,48 @@ td[data-editable]:hover { background: #FAEEDA; }
 .sa-ret-sub { font-size: 11px; color: var(--text-sub, #888); margin-top: 4px; line-height: 1.5; }
 .sa-footnote { font-size: 11px; color: var(--text-sub, #888); background: rgba(240, 165, 0, 0.08); border: 1px solid rgba(240, 165, 0, 0.25); border-radius: 6px; padding: 6px 10px; margin-bottom: 10px; }
 .sa-min-input { width: 70px; }
+
+/* ===== 기획 인사이트 Phase 1 — 정보 완성도 / 스텁 등록 / 제외 품번 ===== */
+/* 상품조회 정보 배지 */
+.info-miss-chip { display: inline-block; min-width: 16px; padding: 1px 4px; margin: 0 1px; font-size: 10px; font-weight: 700;
+  color: #fff; background: var(--warning, #f0a500); border-radius: 3px; line-height: 1.5; }
+.info-ok { color: var(--text-sub, #bbb); font-size: 12px; }
+
+/* 업로드 미리보기 — 미등록 품번 액션 목록 */
+.sl-unk-block .sl-warn-h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sl-unk-list { max-height: 260px; overflow-y: auto; border: 1px solid var(--border, #e0e0e0); border-radius: 6px; margin-top: 6px; background: #fff; }
+.sl-unk-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--border, #eee); }
+.sl-unk-row:last-child { border-bottom: none; }
+.sl-unk-code { font-family: Inter, monospace; font-size: 12px; font-weight: 700; color: var(--primary, #1a1a2e); flex-shrink: 0; min-width: 130px; }
+.sl-unk-name { font-size: 12px; color: var(--text, #333); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sl-unk-noname { color: var(--text-sub, #aaa); font-style: italic; }
+.sl-unk-acts { display: flex; gap: 5px; flex-shrink: 0; }
+.sl-unk-noperm { font-size: 11px; color: var(--text-sub, #999); }
+.sl-unk-none { font-size: 12px; color: var(--text-sub, #888); padding: 8px 2px; }
+.sl-unk-sub { font-size: 11px; margin-top: 6px; padding: 5px 9px; border-radius: 5px; line-height: 1.6; }
+.sl-unk-sub-ex { background: rgba(201, 169, 110, 0.12); color: #7a5f22; }
+.sl-unk-sub-ok { background: rgba(76, 175, 125, 0.12); color: #256b4a; }
+.sl-unk-sub-bad { background: rgba(224, 82, 82, 0.10); color: #a03434; }
+.sl-unk-sublist { color: inherit; opacity: 0.85; }
+
+/* 제외 품번 관리 모달 */
+.sl-ex-note { font-size: 12px; color: var(--text-sub, #666); background: rgba(240, 165, 0, 0.08);
+  border: 1px solid rgba(240, 165, 0, 0.25); border-radius: 6px; padding: 8px 11px; line-height: 1.7; margin-bottom: 12px; }
+.sl-ex-add { display: flex; gap: 6px; margin-bottom: 12px; }
+.sl-ex-add input { flex: 1; padding: 6px 9px; border: 1px solid var(--border, #ddd); border-radius: 5px; font-size: 12px; }
+.sl-ex-wrap { max-height: 340px; overflow-y: auto; border: 1px solid var(--border, #e0e0e0); border-radius: 6px; }
+.sl-ex-meta { font-size: 11px; color: var(--text-sub, #999); }
+.sl-ex-count { font-size: 12px; color: var(--text-sub, #666); margin-top: 8px; text-align: right; }
+
+/* 속성 일괄 입력 모달 */
+.bulkattr-head { font-size: 13px; color: var(--text, #333); margin-bottom: 14px; }
+.bulkattr-miss { color: var(--warning, #f0a500); font-weight: 700; margin-left: 6px; }
+.bulkattr-hint { font-size: 11px; color: var(--text-sub, #888); margin-top: 5px; line-height: 1.6; }
+.bulkattr-row { margin-bottom: 13px; }
+.bulkattr-row > label { display: block; font-size: 12px; font-weight: 700; color: var(--text, #333); margin-bottom: 4px; }
+.bulkattr-row > select { width: 100%; padding: 7px 9px; border: 1px solid var(--border, #ddd); border-radius: 5px; font-size: 12px; }
+.bulkattr-sub { font-size: 11px; color: var(--text-sub, #888); margin-top: 4px; line-height: 1.6; }
+.bulkattr-only { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text, #333);
+  background: var(--bg, #f5f4f1); border-radius: 5px; padding: 8px 10px; margin: 4px 0 16px; cursor: pointer; }
+.bulkattr-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.sl-unk-more { font-size: 11px; color: var(--text-sub, #888); margin-top: 5px; line-height: 1.6; }

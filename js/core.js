@@ -210,6 +210,7 @@ window.forceUploadAll = async function() {
     stores: typeof _stores !== 'undefined' ? _stores : [],
     inboundTypes: typeof _inboundTypes !== 'undefined' ? _inboundTypes : [],
     storeDiscounts: typeof _storeDiscounts !== 'undefined' ? _storeDiscounts : [],
+    salesExcludedCodes: typeof _salesExcludedCodes !== 'undefined' ? _salesExcludedCodes : [],
     planItems: State.planItems || [],
     planPhases: typeof _planPhases !== 'undefined' ? _planPhases : null,
     designCodes: typeof _designCodes !== 'undefined' ? _designCodes : [],
@@ -308,6 +309,9 @@ async function _fsReloadSharedSettings() {
     }
     if (Array.isArray(fsData.salesPartners) && typeof _slSetPartners === 'function') {
       _slSetPartners(fsData.salesPartners, true)   // 매출관리 Phase4 파트너 마스터(sales-ledger.js 소유, fromSync=true=재저장 안 함)
+    }
+    if (Array.isArray(fsData.salesExcludedCodes) && typeof _slSetExcluded === 'function') {
+      _slSetExcluded(fsData.salesExcludedCodes, true)   // Phase 1 제외 품번 마스터(sales-ledger.js 소유, fromSync=true=재저장 안 함)
     }
     if (Array.isArray(fsData.planPhases)) {
       _planPhases = fsData.planPhases
@@ -614,6 +618,10 @@ window._onSharedDataChanged = function(docId, data) {
         case 'salesPartners':
           if (typeof _slSetPartners === 'function') _slSetPartners(parsed || [], true)   // 매출관리 Phase4 파트너 마스터(재렌더는 _slSetPartners 내부에서 조건부)
           console.log('[RealtimeSync] 파트너 마스터 동기화')
+          break
+        case 'salesExcludedCodes':
+          if (typeof _slSetExcluded === 'function') _slSetExcluded(parsed || [], true)   // Phase 1 제외 품번 마스터(재렌더는 _slSetExcluded 내부에서 조건부)
+          console.log('[RealtimeSync] 제외 품번 마스터 동기화')
           break
         case 'workCategories':
           _workCategories.length = 0

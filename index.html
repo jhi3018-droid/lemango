@@ -267,6 +267,14 @@
           <label>판매상태</label>
           <select id="pSaleStatus"><option value="all">전체</option></select>
         </div>
+        <div class="search-group">
+          <label>정보 완성도</label>
+          <select id="pInfoState" title="복종·백스타일·레그컷 중 하나라도 비어 있으면 '정보 미완성'">
+            <option value="all">전체</option>
+            <option value="incomplete">정보 미완성</option>
+            <option value="complete">입력 완료</option>
+          </select>
+        </div>
       </div>
       <div class="search-actions">
         <button class="btn btn-primary" onclick="searchProduct()">검색</button>
@@ -277,6 +285,7 @@
         <div class="action-btns">
           <button class="btn btn-accent" onclick="downloadExcel('product')">⬇ 다운로드</button>
           <button class="btn btn-outline" onclick="exportCafe24Csv()" title="선택(체크) 또는 검색결과 전체를 카페24 대량등록 CSV로 내보내기">🛒 카페24 등록 CSV</button>
+        <button class="btn btn-primary" onclick="openBulkAttrModal()" title="선택(체크) 또는 검색결과 전체의 복종·레그컷·백스타일을 한 번에 입력">✏️ 속성 일괄 입력</button>
           <label class="btn btn-outline" for="pUploadFile">⬆ 업로드</label>
           <input type="file" id="pUploadFile" accept=".xlsx,.xls" style="display:none" onchange="handleUpload(this,'product')" />
           <button class="btn btn-ghost" onclick="downloadSample('product')">상품등록 양식</button>
@@ -1493,6 +1502,24 @@
       <button type="button" class="btn btn-accent" id="upmConfirmBtn" onclick="confirmRegisterUpload()">등록하기</button>
     </div>
   </div>
+</dialog>
+
+<!-- 속성 일괄 입력 모달 (기획 인사이트 Phase 1) -->
+<dialog id="bulkAttrModal" class="srm-modal" style="width:520px;height:auto;max-height:90vh">
+  <div class="srm-header">
+    <span class="srm-title">✏️ 속성 일괄 입력</span>
+    <button class="modal-close" onclick="closeBulkAttrModal()">✕</button>
+  </div>
+  <div class="srm-body" id="bulkAttrBody" style="padding:18px 22px;overflow-y:auto;flex:1"></div>
+</dialog>
+
+<!-- 사은품 제외 품번 관리 모달 (기획 인사이트 Phase 1) -->
+<dialog id="slExcludeModal" class="srm-modal" style="width:640px;height:auto;max-height:88vh">
+  <div class="srm-header">
+    <span class="srm-title">🎁 사은품 제외 품번 관리</span>
+    <button class="modal-close" onclick="closeSlExcludeModal()">✕</button>
+  </div>
+  <div class="srm-body" id="slExcludeBody" style="padding:18px 22px;overflow-y:auto;flex:1"></div>
 </dialog>
 
 <!-- 일괄 수정 미리보기 모달 -->

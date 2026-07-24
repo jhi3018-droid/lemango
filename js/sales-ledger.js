@@ -170,6 +170,172 @@ async function _slEnsurePartnerMaster() {
 }
 
 // =============================================
+// ===== 제외 품번 마스터 (Phase 1 — 사은품류) =====
+// =============================================
+// 저장 = sharedData/salesExcludedCodes — salesPartners/inboundTypes 관리형 설정 패턴 미러(메모리 + localStorage + _fsSync + 기존 onSnapshot 편승).
+//   엔트리 { code(대문자 정규화), reason(자유 라벨), at(ISO), by(작성자명) }.
+//   🔴 Phase 1 소비처 = **스텁 생성 skip + 미리보기 분리 표시 2곳뿐**. 집계(L2/L3)·랭킹·매출분석은 무접촉(Phase 2에서 분석-타임 제외 도입).
+//      → 제외 등록해도 기존 매출/집계 수치는 1원도 안 변함(의도된 설계 · 작업지시 결정 #6).
+//   ⚠️ 서버 규칙: firestore.rules 의 일반 sharedData 규칙(승인자 write)이 적용됨 — stores/inboundTypes/storeDiscounts/salesPartners 처럼
+//      admin 전용이 아니다. 규칙 변경은 이 작업지시의 STOP 조건이라 미수행 → 현재는 **클라 게이트(_slIsAdmin)만**. 보고서 STOP-thread 참조.
+function _slCodeNorm(c) { return String(c == null ? '' : c).trim().toUpperCase() }
+
+let _salesExcludedCodes = (() => {
+  try { if (typeof localStorage === 'undefined') return []; const s = localStorage.getItem('lemango_sales_excluded_v1'); return s ? JSON.parse(s) : [] } catch { return [] }
+})()
+
+// 제외 품번 Set(정규화) — 스텁 skip·미리보기 분리 단일 소스. Phase 2 분석에서 재사용 예정.
+function _slExcludedCodeSet() {
+  const set = new Set()
+  ;(_salesExcludedCodes || []).forEach(e => { const c = _slCodeNorm(e && e.code); if (c) set.add(c) })
+  return set
+}
+function _slExcludedMap() {
+  const m = {}
+  ;(_salesExcludedCodes || []).forEach(e => { const c = _slCodeNorm(e && e.code); if (c) m[c] = e })
+  return m
+}
+
+// 메모리/localStorage 반영(동기화·CRUD 공용). fromSync=true → 재저장 안 함(에코 방지). _slSetPartners 미러.
+function _slSetExcluded(arr, fromSync) {
+  _salesExcludedCodes = Array.isArray(arr) ? arr : []
+  try { if (typeof localStorage !== 'undefined') localStorage.setItem('lemango_sales_excluded_v1', JSON.stringify(_salesExcludedCodes)) } catch (e) {}
+  // M1(리뷰): 모달이 **열려 있을 때만** 재렌더. slExcludeBody 는 정적 div 라 항상 존재 → 무조건 재렌더하면
+  //   동기화마다 입력 중이던 품번/사유 칸이 지워진다(_slSetPartners:가시성 게이트와 동일 원칙).
+  const _exModal = (typeof document !== 'undefined') ? document.getElementById('slExcludeModal') : null
+  if (_exModal && _exModal.open) { try { renderSlExcludeList() } catch (e) {} }
+}
+async function saveSalesExcludedCodes() {
+  try { if (typeof localStorage !== 'undefined') localStorage.setItem('lemango_sales_excluded_v1', JSON.stringify(_salesExcludedCodes)) } catch (e) {}
+  if (typeof _fsSync === 'function') {
+    await _fsSync('salesExcludedCodes', _salesExcludedCodes)
+    if (!window._lastSharedSaveTime) window._lastSharedSaveTime = {}
+    window._lastSharedSaveTime['salesExcludedCodes'] = Date.now()
+  }
+}
+// 세션 1회 로드(리스너 아님) — _slEnsurePartnerMaster 미러.
+let _slExcludedLoaded = false
+async function _slEnsureExcludedMaster() {
+  if ((_salesExcludedCodes || []).length || _slExcludedLoaded) return
+  if (typeof db === 'undefined' || !db) return
+  _slExcludedLoaded = true
+  try {
+    const d = await db.collection('sharedData').doc('salesExcludedCodes').get()
+    if (d.exists && d.data().data) _slSetExcluded(JSON.parse(d.data().data), true)
+  } catch (e) { _slExcludedLoaded = false }
+}
+
+// 제외 목록 추가/삭제(관리자 전용 — 클라 게이트). 중복 code 는 갱신(reason 덮어쓰기).
+async function _slExcludeAdd(code, reason) {
+  const c = _slCodeNorm(code); if (!c) return false
+  const at = new Date().toISOString()
+  const by = (typeof _currentUserName !== 'undefined' && _currentUserName) ? _currentUserName : ''
+  const idx = (_salesExcludedCodes || []).findIndex(e => _slCodeNorm(e && e.code) === c)
+  if (idx >= 0) _salesExcludedCodes[idx] = { code: c, reason: String(reason || _salesExcludedCodes[idx].reason || '사은품'), at, by }
+  else _salesExcludedCodes.push({ code: c, reason: String(reason || '사은품'), at, by })
+  await saveSalesExcludedCodes()
+  return true
+}
+async function _slExcludeRemove(code) {
+  const c = _slCodeNorm(code)
+  const before = (_salesExcludedCodes || []).length
+  _salesExcludedCodes = (_salesExcludedCodes || []).filter(e => _slCodeNorm(e && e.code) !== c)
+  if (_salesExcludedCodes.length === before) return false
+  await saveSalesExcludedCodes()
+  return true
+}
+
+// =============================================
+// ===== 스텁 상품 자동 등록 (Phase 1 B1) =====
+// =============================================
+// 🔴 `no` = max+1 (절대 length+1 금지 — gonghom.js:129 count-collision 버그 클래스 회피).
+//    삭제(soft-delete)된 상품 포함 전체에서 최대값 → gap 이 있어도 충돌 없음.
+function _slNextProductNo() {
+  let maxN = 0
+  ;(State.allProducts || []).forEach(p => {
+    const n = Number(p && p.no)
+    if (Number.isFinite(n) && n > maxN) maxN = n
+  })
+  return Math.floor(maxN) + 1
+}
+
+// 최소 필드 스텁 상품 생성. codes=품번 배열, opts={ names:{code:상품명}, source }
+//   반환 { created:[코드], skippedExisting:[], skippedExcluded:[], skippedInvalid:[] }
+//   🔴 쓰기 = State.allProducts push + saveProducts() 1회만(150건 청킹 자동). L1/L2/L3/salesUploads 절대 무접촉.
+async function createStubProducts(codes, opts) {
+  opts = opts || {}
+  const names = opts.names || {}
+  const out = { created: [], skippedExisting: [], skippedExcluded: [], skippedInvalid: [] }
+  if (!Array.isArray(codes) || !codes.length) return out
+  const known = _slProductCodeSet()
+  const excluded = _slExcludedCodeSet()
+  const seen = new Set()
+  const today = (typeof kstDateKey === 'function') ? kstDateKey() : new Date().toISOString().slice(0, 10)
+  const stamp = new Date().toISOString()
+  let nextNo = _slNextProductNo()
+  const fresh = []
+
+  codes.forEach(raw => {
+    const code = _slCodeNorm(raw)
+    if (!code || code === '(품번없음)') { out.skippedInvalid.push(String(raw)); return }
+    if (seen.has(code)) return
+    seen.add(code)
+    if (excluded.has(code)) { out.skippedExcluded.push(code); return }
+    if (known.has(code)) { out.skippedExisting.push(code); return }
+    // brand/type 은 확신 있을 때만(_sbDetectBrand/_sbDetectType 휴리스틱). 빈값 = 미완성 필터에 노출(의도).
+    const brand = (typeof _sbDetectBrand === 'function') ? (_sbDetectBrand(code) || '') : ''
+    const type = (typeof _sbDetectType === 'function') ? (_sbDetectType(code) || '') : ''
+    const nm = String(names[code] || names[raw] || '').trim()
+    fresh.push({
+      no: nextNo++,
+      brand: brand,
+      productCode: code,
+      sampleNo: '', cafe24Code: '', barcode: '',
+      nameKr: nm || code, nameEn: '',
+      colorKr: '', colorEn: '',
+      salePrice: 0, costPrice: 0,
+      type: type,
+      backStyle: '', legCut: '',
+      saleStatus: '판매중',
+      productionStatus: '지속생산',
+      barcodes: Object.fromEntries((typeof SIZES !== 'undefined' ? SIZES : []).map(sz => [sz, ''])),
+      stock: Object.fromEntries((typeof SIZES !== 'undefined' ? SIZES : []).map(sz => [sz, 0])),
+      // 🔴 F4(리뷰): 다른 상품 생성 경로(gonghom.js:127-156 / plan.js)와 동일한 컨테이너 필드를 반드시 초기화.
+      //   미초기화 시 SALES_LEGACY_HIDDEN=false 로 되돌렸을 때 p.sales[ch]·revenueLog.push 가 TypeError.
+      sales: {}, revenueLog: [], stockLog: [], scheduleLog: [],
+      registDate: today,
+      logisticsDate: '',
+      // Phase 1 additive — 출처 기록 전용. 🔴 미완성 판정은 이 플래그가 아니라 실제 필드 공백(products.js _prodMissingAttrs).
+      infoIncomplete: true,
+      stubSource: opts.source || 'sales-upload',
+      stubAt: stamp
+    })
+  })
+
+  if (!fresh.length) return out
+  fresh.forEach(p => { if (typeof stampCreated === 'function') { try { stampCreated(p) } catch (e) {} } })
+  fresh.forEach(p => State.allProducts.push(p))
+  const ok = await saveProducts()
+  // 🔴 F1/F2(리뷰): 롤백은 **동일성(identity) 기준**으로만 — 인덱스/length 절대 금지.
+  //   await 중 다른 세션의 상품 저장이 오면 실시간 훅(core.js `State.allProducts = fresh`)이 배열을 **통째로 교체**한다.
+  //   그 뒤 `length = origLen` 하면 (a) 남의 상품 유실 또는 (b) 배열에 hole 생성 → JSON.stringify 가 null 로 직렬화 →
+  //   다음 saveProducts 가 null 을 Firestore 에 영속 → 리로드 시 _narrowProduct 가 null.deleted 로 TypeError(상품조회 사망).
+  //   또한 saveProducts 는 db/State 없으면 undefined 반환 → `=== false` 로는 실패를 놓친다 ⇒ `!== true` 로 판정.
+  if (ok !== true) {
+    const added = new Set(fresh)
+    State.allProducts = State.allProducts.filter(p => !added.has(p))
+    if (typeof refreshAllProductViews === 'function') { try { refreshAllProductViews() } catch (e) {} }
+    throw new Error('상품 저장 실패 — 등록을 되돌렸습니다')
+  }
+  out.created = fresh.map(p => p.productCode)
+  if (typeof refreshAllProductViews === 'function') { try { refreshAllProductViews() } catch (e) {} }
+  if (typeof logActivity === 'function') {
+    try { logActivity('create', '상품 스텁 등록', `${out.created.length}건 (${opts.source || 'sales-upload'}): ${out.created.slice(0, 10).join(', ')}`) } catch (e) {}
+  }
+  return out
+}
+
+// =============================================
 // ===== 파일 읽기 + 타입 자동 감지 =====
 // =============================================
 function _slReadWorkbookRows(data, isCsv) {
@@ -223,6 +389,8 @@ function _slC24ColMap(headers) {
     orderDate: col('주문일시'), refundDate: col('환불완료일'), orderNo: col('주문번호'),
     buyerId: col('주문자ID'), grade: col('회원등급'), code: col('자체 상품코드'),
     opt: col('상품옵션'), shop: col('쇼핑몰'), qty: col('수량'),
+    // Phase 1(스텁 등록 표시명 전용) — 미매칭 품번의 상품명 힌트. 🔴 금액 계산 미사용·미저장(uploadRec 는 필드 명시 픽업).
+    name: col('상품명'),
     P: col('상품구매금액'), Q: col('총 배송비'), S: col('총 결제금액'), T: col('총 주문금액'),
     U: col('실제 환불금액'), W: col('사용한 적립금액'), Y: col('상품별 추가할인금액'),
     // 🔴 exact-only: '환불금액'(AA)만. fallback 허용 시 export 가 이 열을 빼면 '실제 환불금액'(U)로 오매칭 → rf 과다. 미존재 시 -1 → 0 처리.
@@ -240,7 +408,8 @@ const SL_SB = {
 // ===== 파서 (→ 주문 배열 + 경고) =====
 // =============================================
 function _slNewWarn() {
-  return { unmatched: new Set(), dateFail: [], anomaly: [], newMalls: new Set(), friends: 0, malls: {}, newPartners: new Set() }
+  // names = 미매칭 품번 → 파일상 상품명(스텁 등록 시 nameKr 힌트). 🔴 표시 전용·L1/uploadRec 저장 안 함(Phase 1 추가, additive).
+  return { unmatched: new Set(), dateFail: [], anomaly: [], newMalls: new Set(), friends: 0, malls: {}, newPartners: new Set(), names: {} }
 }
 
 // 카페24 파싱: 주문번호로 그룹핑. 라인 매출 rv = P − Y. 주문 필드 cash(S)/pu(W)/grade/bid/ship(ΣQ)/ref(maxU).
@@ -268,7 +437,10 @@ function _slParseCafe24(rows, rowsRaw) {
     const rv = P - Y
     if (rv < 0) warn.anomaly.push(`행${r + 1}(${code}): 매출액 음수 ${rv}`)
     if (!code) warn.unmatched.add('(품번없음)')
-    else if (!codeSet.has(code)) warn.unmatched.add(code)
+    else if (!codeSet.has(code)) {
+      warn.unmatched.add(code)
+      if (M.name >= 0 && !warn.names[code]) { const nm = _slStr(row[M.name]); if (nm) warn.names[code] = nm }   // 스텁 표시명 힌트(첫 등장 우선)
+    }
 
     const line = { c: code, o: _slStr(row[M.opt]), q: _slNum(row[M.qty]), rv: rv }
     const sz = _slExtractSize(row[M.opt]); if (sz) line.sz = sz
@@ -329,7 +501,10 @@ function _slParseSabang(rows, rowsRaw) {
     const rv = isFreebie ? 0 : pay                          // 사은품 매출 제외(H=0)
     const sh = isFreebie ? 0 : shipv                        // 사은품 배송비 제외(중복 방지)
     if (rv < 0) warn.anomaly.push(`행${r + 1}(${code}): 매출액 음수 ${rv}`)
-    if (!codeSet.has(code)) warn.unmatched.add(code)
+    if (!codeSet.has(code)) {
+      warn.unmatched.add(code)
+      if (!warn.names[code]) { const nm = _slStr(row[SL_SB.name]); if (nm) warn.names[code] = nm }   // 스텁 표시명 힌트(첫 등장 우선)
+    }
 
     const line = { c: code, o: _slStr(row[SL_SB.optRaw] || row[SL_SB.optClean]), q: _slNum(row[SL_SB.qty]), rv: rv }
     const sz = _slExtractSize(row[SL_SB.sizeAlias] || row[SL_SB.optClean] || row[SL_SB.optRaw]); if (sz) line.sz = sz
@@ -526,6 +701,9 @@ function handleSalesLedgerFile(input) {
     parsed.rawRowCount = Math.max(0, rows.length - 1)
     _slParsed = parsed
     _slRenderPreview()
+    // M2(리뷰): 제외 품번 마스터가 아직 메모리에 없으면(첫 접속·스냅샷 지연) 제외 품번이 '미등록'으로 보여 스텁 등록될 수 있다.
+    //   1회 read 후 도착하면 재분류만 다시 그림(리스너 아님 · 최초 렌더를 막지 않음).
+    _slEnsureExcludedMaster().then(() => { if (_slParsed === parsed) _slRenderPreview() }).catch(() => {})
   }
   if (isCsv) reader.readAsText(file, 'UTF-8'); else reader.readAsArrayBuffer(file)
 }
@@ -555,7 +733,7 @@ function _slRenderPreview() {
   const mallRows = Object.keys(w.malls).sort().map(m => `${esc(m)} <b>${w.malls[m]}</b>`).join(' · ')
 
   const warnBlocks = []
-  if (w.unmatched.size) warnBlocks.push(_slWarnBlock('품번 미매칭', w.unmatched.size, [...w.unmatched], '등록되지 않은 품번(원장엔 기록됨)'))
+  if (w.unmatched.size) warnBlocks.push(_slRenderUnknownBlock())
   if (w.dateFail.length) warnBlocks.push(_slWarnBlock('날짜/주문번호 문제', w.dateFail.length, w.dateFail, '해당 행 문제(주문번호 없는 행은 제외)'))
   if (w.anomaly.length) warnBlocks.push(_slWarnBlock('금액 이상치', w.anomaly.length, w.anomaly, '음수 매출(원장엔 기록됨)'))
   if (p.type === SL_CH.sb && w.newMalls.size) warnBlocks.push(_slWarnBlock('쇼핑몰명 목록', w.newMalls.size, [...w.newMalls], '채널 마스터 부재 — 향후 별칭 등록용'))
@@ -597,6 +775,193 @@ function _slCopyText(id) {
   const ta = document.getElementById(id); if (!ta) return
   ta.select()
   try { document.execCommand('copy'); showToast('복사됨', 'success') } catch (e) { showToast('복사 실패', 'warning') }
+}
+
+// =============================================
+// ===== 미리보기: 미매칭 품번 액션 (Phase 1 B2) =====
+// =============================================
+// 🔴 warn.unmatched(파싱 시점 Set)는 **절대 변형하지 않는다** — salesUploads.unmatched 의 의미("파일 수신 시점 미등록 품번")를
+//    보존하기 위함. 대신 렌더 시점에 현재 상품마스터/제외목록으로 재분류만 한다 → confirm 경로(confirmSalesLedgerUpload) byte-unchanged.
+//    _slProductCodeSet() 은 캐시 없이 매번 State.allProducts 로 재구성(:96-101)이라 스텁 등록 즉시 반영됨.
+let _slUnknownCache = []   // 인덱스 기반 onclick(코드 문자열 인젝션 방지 — _discGroupKeysCache 패턴)
+
+function _slUnknownView() {
+  const p = _slParsed
+  const out = { pending: [], excluded: [], registered: [], noCode: 0 }
+  if (!p || !p.warn) return out
+  const known = _slProductCodeSet()
+  const ex = _slExcludedCodeSet()
+  ;[...p.warn.unmatched].forEach(raw => {
+    if (raw === '(품번없음)') { out.noCode++; return }        // 파일 결함 — 등록 대상 아님
+    const code = _slCodeNorm(raw)
+    if (!code) return
+    if (ex.has(code)) out.excluded.push(code)
+    else if (known.has(code)) out.registered.push(code)
+    else out.pending.push(code)
+  })
+  out.pending.sort(); out.excluded.sort(); out.registered.sort()
+  return out
+}
+
+function _slRenderUnknownBlock() {
+  const v = _slUnknownView()
+  const p = _slParsed
+  const names = (p && p.warn && p.warn.names) || {}
+  const canAct = _slIsAdmin()
+  _slUnknownCache = v.pending.slice()
+
+  // M3(리뷰): 행 렌더는 200개까지만(구 _slWarnBlock 상한과 동일 — DOM 과중 방지). 전체 목록은 아래 복사창에 그대로 제공.
+  const SHOWN = 200
+  const rows = v.pending.slice(0, SHOWN).map((code, i) => {
+    const nm = names[code] ? `<span class="sl-unk-name">${esc(names[code])}</span>` : '<span class="sl-unk-name sl-unk-noname">(상품명 없음)</span>'
+    const acts = canAct
+      ? `<button class="btn btn-outline btn-sm" onclick="slStubRegisterOne(${i})">상품 등록</button>
+         <button class="btn btn-ghost btn-sm" onclick="slMarkFreebie(${i})">사은품 제외</button>`
+      : '<span class="sl-unk-noperm">관리자만 등록 가능</span>'
+    return `<div class="sl-unk-row"><code class="sl-unk-code">${esc(code)}</code>${nm}<span class="sl-unk-acts">${acts}</span></div>`
+  }).join('')
+  const moreNote = v.pending.length > SHOWN
+    ? `<div class="sl-unk-more">…외 ${v.pending.length - SHOWN}건은 목록에 표시하지 않았습니다(아래 복사창에는 전체 포함). [미등록 전체 등록]은 전체에 적용됩니다.</div>`
+    : ''
+  // M3: 구 경고블록의 복사 기능 유지(오너가 미등록 품번 목록을 외부로 내보내던 동선)
+  const copyId = 'slunk_' + Math.random().toString(36).slice(2, 8)
+  const copyBox = v.pending.length
+    ? `<textarea id="${copyId}" class="sl-warn-ta" readonly rows="3">${v.pending.map(c => esc(c)).join('\n')}</textarea>`
+    : ''
+
+  const head = `<div class="sl-warn-h">⚠️ 미등록 품번 <b>${v.pending.length}</b>건
+      <span class="sl-warn-info">상품마스터에 없는 품번 — 원장엔 그대로 기록됩니다(등록 여부와 무관)</span>
+      ${v.pending.length ? `<button class="btn btn-outline btn-sm" onclick="_slCopyText('${copyId}')">복사</button>` : ''}
+      ${canAct && v.pending.length ? `<button class="btn btn-accent btn-sm" onclick="slStubRegisterAll()">미등록 전체 등록</button>` : ''}
+    </div>`
+
+  const sub = []
+  if (v.excluded.length) sub.push(`<div class="sl-unk-sub sl-unk-sub-ex">🎁 사은품 제외됨 <b>${v.excluded.length}</b>건 <span class="sl-unk-sublist">${v.excluded.slice(0, 40).map(c => esc(c)).join(', ')}${v.excluded.length > 40 ? ' …' : ''}</span></div>`)
+  if (v.registered.length) sub.push(`<div class="sl-unk-sub sl-unk-sub-ok">✅ 이번 화면에서 등록됨 <b>${v.registered.length}</b>건 <span class="sl-unk-sublist">${v.registered.slice(0, 40).map(c => esc(c)).join(', ')}${v.registered.length > 40 ? ' …' : ''}</span></div>`)
+  if (v.noCode) sub.push(`<div class="sl-unk-sub sl-unk-sub-bad">⛔ 품번이 비어 있는 행 존재 — 파일 확인 필요(등록 불가)</div>`)
+
+  const body = v.pending.length
+    ? `<div class="sl-unk-list">${rows}</div>${moreNote}${copyBox}`
+    : `<div class="sl-unk-none">미등록 품번이 없습니다.</div>`
+
+  return `<div class="sl-warn sl-unk-block">${head}${body}${sub.join('')}</div>`
+}
+
+// 액션 3종 — 모두 상품마스터(또는 제외목록)만 쓰고 L1/L2/L3/salesUploads 는 건드리지 않는다.
+let _slStubBusy = false
+async function _slStubGuard(fn) {
+  if (_slStubBusy) return
+  if (!_slIsAdmin()) { showToast('관리자만 사용할 수 있습니다.', 'warning'); return }
+  _slStubBusy = true
+  try { await fn() }
+  catch (e) { console.error('stub action failed:', e); showToast('처리 실패: ' + (e && e.message || e), 'error') }
+  finally { _slStubBusy = false; _slRenderPreview() }
+}
+
+async function slStubRegisterOne(idx) {
+  const code = _slUnknownCache[idx]; if (!code) return
+  await _slStubGuard(async () => {
+    const names = (_slParsed && _slParsed.warn && _slParsed.warn.names) || {}
+    const r = await createStubProducts([code], { names })
+    if (r.created.length) showToast(`${code} 상품 등록됨 (정보 미완성)`, 'success')
+    else if (r.skippedExcluded.length) showToast(`${code} 는 사은품 제외 목록에 있습니다.`, 'warning')
+    else if (r.skippedInvalid.length) showToast(`${code} 는 등록할 수 없는 품번입니다.`, 'warning')   // M5(리뷰): 분기 정정
+    else showToast(`${code} 는 이미 등록되어 있습니다.`, 'warning')
+  })
+}
+
+async function slStubRegisterAll() {
+  const list = _slUnknownCache.slice(); if (!list.length) return
+  const ok = await korConfirm(`미등록 품번 ${list.length}건을 상품으로 등록합니다.\n\n최소 정보(품번·상품명)만 등록되며 "정보 미완성"으로 표시됩니다.\n속성(복종/백스타일/레그컷)은 상품조회에서 일괄 입력하세요.`, '등록', '취소')
+  if (!ok) return
+  await _slStubGuard(async () => {
+    const names = (_slParsed && _slParsed.warn && _slParsed.warn.names) || {}
+    const r = await createStubProducts(list, { names })
+    showToast(`상품 ${r.created.length}건 등록됨${r.skippedExcluded.length ? ` · 사은품 제외 ${r.skippedExcluded.length}건 건너뜀` : ''}`, 'success')
+  })
+}
+
+async function slMarkFreebie(idx) {
+  const code = _slUnknownCache[idx]; if (!code) return
+  const ok = await korConfirm(`${code} 를 사은품(제외 품번)으로 등록합니다.\n\n앞으로 이 품번은 상품 등록 대상에서 제외되고 미리보기에서 따로 표시됩니다.\n⚠️ 기존 매출·집계 수치는 변하지 않습니다.`, '제외 등록', '취소')
+  if (!ok) return
+  await _slStubGuard(async () => {
+    await _slExcludeAdd(code, '사은품')
+    showToast(`${code} 사은품 제외 등록됨`, 'success')
+  })
+}
+
+// =============================================
+// ===== 제외 품번 관리 UI (Phase 1 B3) =====
+// =============================================
+let _slExcludeCache = []   // 인덱스 기반 onclick(인젝션 방지)
+
+async function openSlExcludeModal() {
+  if (!_slIsAdmin()) { showToast('관리자만 사용할 수 있습니다.', 'warning'); return }
+  const modal = document.getElementById('slExcludeModal'); if (!modal) return
+  await _slEnsureExcludedMaster()
+  renderSlExcludeList()
+  if (!modal.open) modal.showModal()
+  if (typeof centerModal === 'function') centerModal(modal)
+}
+function closeSlExcludeModal() {
+  const modal = document.getElementById('slExcludeModal'); if (modal && modal.open) modal.close()
+}
+
+function renderSlExcludeList() {
+  const body = document.getElementById('slExcludeBody'); if (!body) return
+  const list = (_salesExcludedCodes || []).slice().sort((a, b) => String(a.code || '').localeCompare(String(b.code || '')))
+  _slExcludeCache = list.map(e => _slCodeNorm(e.code))
+  const rows = list.length
+    ? list.map((e, i) => `<tr>
+        <td><code>${esc(e.code || '')}</code></td>
+        <td>${esc(e.reason || '')}</td>
+        <td class="sl-ex-meta">${esc(String(e.at || '').slice(0, 10))}${e.by ? ' · ' + esc(e.by) : ''}</td>
+        <td style="text-align:center"><button class="btn btn-ghost btn-sm" onclick="slExcludeRemoveAt(${i})">해제</button></td>
+      </tr>`).join('')
+    : `<tr><td colspan="4" class="sl-hist-empty">등록된 제외 품번이 없습니다.</td></tr>`
+  body.innerHTML = `
+    <div class="sl-ex-note">여기에 등록된 품번은 <b>상품 자동 등록에서 제외</b>되고, 업로드 미리보기에서 따로 묶여 표시됩니다.<br>
+      🔴 <b>기존 매출·집계 수치는 바뀌지 않습니다</b> (분석에서의 제외는 다음 단계에서 적용 예정).</div>
+    <div class="sl-ex-add">
+      <input type="text" id="slExCode" placeholder="품번 (예: GIFT001)" />
+      <input type="text" id="slExReason" placeholder="사유 (예: 사은품)" value="사은품" />
+      <button class="btn btn-new btn-sm" onclick="slExcludeAddFromInput()">＋ 추가</button>
+    </div>
+    <div class="sl-ex-wrap">
+      <table class="data-table inbhist-table">
+        <thead><tr><th style="width:170px">품번</th><th>사유</th><th style="width:150px">등록</th><th style="width:70px">해제</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div class="sl-ex-count">총 <b>${list.length}</b>건</div>`
+}
+
+async function slExcludeAddFromInput() {
+  if (!_slIsAdmin()) { showToast('관리자만 사용할 수 있습니다.', 'warning'); return }
+  const codeEl = document.getElementById('slExCode'); const reasonEl = document.getElementById('slExReason')
+  const code = _slCodeNorm(codeEl && codeEl.value)
+  if (!code) { showToast('품번을 입력하세요.', 'warning'); return }
+  try {
+    await _slExcludeAdd(code, (reasonEl && reasonEl.value) || '사은품')
+    showToast(`${code} 제외 등록됨`, 'success')
+    if (codeEl) codeEl.value = ''
+    renderSlExcludeList()
+    if (_slParsed) _slRenderPreview()   // 미리보기 열려 있으면 즉시 반영
+  } catch (e) { showToast('저장 실패: ' + (e && e.message || e), 'error') }
+}
+
+async function slExcludeRemoveAt(idx) {
+  if (!_slIsAdmin()) { showToast('관리자만 사용할 수 있습니다.', 'warning'); return }
+  const code = _slExcludeCache[idx]; if (!code) return
+  const ok = await korConfirm(`${code} 를 제외 목록에서 해제합니다.`, '해제', '취소')
+  if (!ok) return
+  try {
+    await _slExcludeRemove(code)
+    showToast(`${code} 해제됨`, 'success')
+    renderSlExcludeList()
+    if (_slParsed) _slRenderPreview()
+  } catch (e) { showToast('저장 실패: ' + (e && e.message || e), 'error') }
 }
 
 // 🔴 확정 = 기존 read(청크 documentId in ≤30) → 병합 계산 → 변경분 write(op ≤450) → 업로드 내역 기록.
@@ -870,7 +1235,7 @@ function renderSalesMgmtTab() {
         <div id="slOrdersBody"></div>
       </div>
       <div class="store-panel${_slActiveSub === 'history' ? '' : ' store-panel-hidden'}" id="slPanel_history">
-        <div class="sl-hist-toolbar"><button class="btn btn-outline" onclick="renderSalesUploadHistory(true)">↻ 새로고침</button>${canUpload ? '<button class="btn btn-outline btn-sm sl-arch-toggle" id="slArchToggleBtn" onclick="_slToggleArchivedView()">아카이브 보기</button>' : ''}</div>
+        <div class="sl-hist-toolbar"><button class="btn btn-outline" onclick="renderSalesUploadHistory(true)">↻ 새로고침</button>${canUpload ? '<button class="btn btn-outline btn-sm sl-arch-toggle" id="slArchToggleBtn" onclick="_slToggleArchivedView()">아카이브 보기</button><button class="btn btn-outline btn-sm" onclick="openSlExcludeModal()">🎁 사은품 제외 품번 관리</button>' : ''}</div>
         <div class="sl-hist-wrap">
           <table class="data-table inbhist-table sl-hist-table">
             <thead><tr>
@@ -2323,6 +2688,23 @@ window._slPartnerMap = _slPartnerMap
 window._slOrderIsPartner = _slOrderIsPartner
 window._slCollectCandidate = _slCollectCandidate
 window._slPidNorm = _slPidNorm
+// Phase 1(기획 인사이트): 제외 품번 마스터 + 스텁 자동 등록 + 미리보기 액션
+window._slSetExcluded = _slSetExcluded
+window.saveSalesExcludedCodes = saveSalesExcludedCodes
+window._slExcludedCodeSet = _slExcludedCodeSet          // 🔴 Phase 2 분석-타임 제외에서 재사용 예정
+window._slEnsureExcludedMaster = _slEnsureExcludedMaster
+window._slCodeNorm = _slCodeNorm
+window.createStubProducts = createStubProducts
+window._slNextProductNo = _slNextProductNo
+window._slUnknownView = _slUnknownView
+window.slStubRegisterOne = slStubRegisterOne
+window.slStubRegisterAll = slStubRegisterAll
+window.slMarkFreebie = slMarkFreebie
+window.openSlExcludeModal = openSlExcludeModal
+window.closeSlExcludeModal = closeSlExcludeModal
+window.renderSlExcludeList = renderSlExcludeList
+window.slExcludeAddFromInput = slExcludeAddFromInput
+window.slExcludeRemoveAt = slExcludeRemoveAt
 window._slDetectPartnerHeaders = _slDetectPartnerHeaders
 window._slParsePartnerRows = _slParsePartnerRows
 window.handlePartnerFile = handlePartnerFile
