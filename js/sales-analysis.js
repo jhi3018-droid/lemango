@@ -164,8 +164,8 @@ function _saThumb(code, pmap) {
 // 기간 바(랭킹/반품 공용) — 매출관리 프리셋 컨벤션(데이터 최신일/이번 주=월~오늘/이번 달=1일~오늘)
 function _saControlsHtml(renderFn, extra) {
   return `<div class="sl-mx-controls">
-    <label class="inbhist-ctl">시작 <input type="date" id="saStart_${renderFn}" class="inbhist-date" value="${esc(_saStart)}" onchange="_saSetDates('${renderFn}')"></label>
-    <label class="inbhist-ctl">끝 <input type="date" id="saEnd_${renderFn}" class="inbhist-date" value="${esc(_saEnd)}" onchange="_saSetDates('${renderFn}')"></label>
+    <label class="inbhist-ctl">시작 <input type="date" id="saStart_${renderFn}" class="inbhist-date" min="${(typeof SALES_DATE_MIN !== 'undefined') ? SALES_DATE_MIN : '2020-01-01'}" value="${esc(_saStart)}" onchange="_saSetDates('${renderFn}')"></label>
+    <label class="inbhist-ctl">끝 <input type="date" id="saEnd_${renderFn}" class="inbhist-date" min="${(typeof SALES_DATE_MIN !== 'undefined') ? SALES_DATE_MIN : '2020-01-01'}" value="${esc(_saEnd)}" onchange="_saSetDates('${renderFn}')"></label>
     <button class="btn btn-outline btn-sm" onclick="_saPreset('day','${renderFn}')">데이터 최신일</button>
     <button class="btn btn-outline btn-sm" onclick="_saPreset('week','${renderFn}')">이번 주</button>
     <button class="btn btn-outline btn-sm" onclick="_saPreset('month','${renderFn}')">이번 달</button>

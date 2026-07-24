@@ -12,6 +12,11 @@
 // ---- 채널 코드 ----
 const SL_CH = { c24: 'c24', sb: 'sb' }
 const SL_NOTE_MAX = 5   // 주문당 변경노트 보관 상한
+// 🔴 매출 날짜 범위 UI 하한(단일 소스). 2025 등 과거 매출 파일 조회/재계산/검증/엑셀을 위해 date picker 하한을 명시.
+//   native <input type="date">는 min 미지정 시 브라우저가 연도 선택을 현재연도부터로 제한(오너 화면 2026~만 노출) → 명시 하한으로 해소.
+//   ⚠️ UI 경계만. 파서/집계/재계산/저장 의미 무관(값 자체는 항상 이 하한 이상이라 로직 무영향).
+const SALES_DATE_MIN = '2020-01-01'
+if (typeof window !== 'undefined') window.SALES_DATE_MIN = SALES_DATE_MIN
 
 // ---- 파싱/업로드 세션 상태 ----
 let _slParsed = null      // { type, orders:[...], warn:{...}, fileName }
@@ -1211,8 +1216,8 @@ function renderSalesMgmtTab() {
     <div class="store-panels">
       <div class="store-panel${_slActiveSub === 'summary' ? '' : ' store-panel-hidden'}" id="slPanel_summary">
         <div class="sl-sum-controls">
-          <label class="inbhist-ctl">시작일 <input type="date" id="slSumStart" class="inbhist-date" onchange="renderSalesSummary()"></label>
-          <label class="inbhist-ctl">마지막일 <input type="date" id="slSumEnd" class="inbhist-date" onchange="renderSalesSummary()"></label>
+          <label class="inbhist-ctl">시작일 <input type="date" id="slSumStart" class="inbhist-date" min="${SALES_DATE_MIN}" onchange="renderSalesSummary()"></label>
+          <label class="inbhist-ctl">마지막일 <input type="date" id="slSumEnd" class="inbhist-date" min="${SALES_DATE_MIN}" onchange="renderSalesSummary()"></label>
           <button class="btn btn-outline" onclick="renderSalesSummary()">↻ 조회</button>
           ${canUpload ? `<button class="btn btn-new" id="slRecalcBtn" onclick="runSalesRecompute()">🔄 집계 재계산</button>` : ''}
           ${canUpload ? `<button class="btn btn-outline" onclick="openSalesVerifyModal()">🧪 데이터 검증</button>` : ''}
@@ -1926,8 +1931,8 @@ async function _slMxEnsurePeriod() {
 }
 function _slMxControlsHtml(idp, renderFn) {
   return `<div class="sl-mx-controls">
-    <label class="inbhist-ctl">시작 <input type="date" id="${idp}Start" class="inbhist-date" value="${esc(_slMxStart)}" onchange="_slMxSetDates('${idp}','${renderFn}')"></label>
-    <label class="inbhist-ctl">끝 <input type="date" id="${idp}End" class="inbhist-date" value="${esc(_slMxEnd)}" onchange="_slMxSetDates('${idp}','${renderFn}')"></label>
+    <label class="inbhist-ctl">시작 <input type="date" id="${idp}Start" class="inbhist-date" min="${SALES_DATE_MIN}" value="${esc(_slMxStart)}" onchange="_slMxSetDates('${idp}','${renderFn}')"></label>
+    <label class="inbhist-ctl">끝 <input type="date" id="${idp}End" class="inbhist-date" min="${SALES_DATE_MIN}" value="${esc(_slMxEnd)}" onchange="_slMxSetDates('${idp}','${renderFn}')"></label>
     <button class="btn btn-outline btn-sm" onclick="_slMxPreset('day','${renderFn}')">데이터 최신일</button>
     <button class="btn btn-outline btn-sm" onclick="_slMxPreset('week','${renderFn}')">이번 주</button>
     <button class="btn btn-outline btn-sm" onclick="_slMxPreset('month','${renderFn}')">이번 달</button>
@@ -2622,6 +2627,7 @@ function openSalesVerifyModal() {
   _slVerifyAbort = false
   const ss = document.getElementById('slSumStart'), se = document.getElementById('slSumEnd')
   const vs = document.getElementById('slVfStart'), ve = document.getElementById('slVfEnd')
+  if (vs) vs.min = SALES_DATE_MIN; if (ve) ve.min = SALES_DATE_MIN   // 정적 HTML 입력 → 하한 상수로 설정(2025 등 과거 선택 가능)
   if (vs && ss && ss.value) vs.value = ss.value
   if (ve && se && se.value) ve.value = se.value
   if (!m.open) m.showModal()
