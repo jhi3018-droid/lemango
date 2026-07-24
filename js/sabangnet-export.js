@@ -66,8 +66,29 @@
   // 브랜드 라벨 — p.brand(르망고 / 르망고 느와). 없으면 '르망고'.
   function brandLabel(p) { var b = String((p && p.brand) || '').trim(); return b || '르망고'; }
 
-  // SUM 대표이미지 (col32/33/38 동일)
+  // SUM 대표이미지 패턴 (col32/33/38 폴백)
   function sumImage(code, cfg) { return BASE + '/goods/lemango/' + cfg.season + '/' + cfg.grp + '/' + code + '/' + code + '_SUM/1000_1.jpg'; }
+
+  // 🔴 B2a: 대표이미지 = 저장 필드 sabangMain 첫 URL 우선(_firstImageUrl, 카페24 cafe24Main 동일 컨벤션) · 없으면 패턴.
+  function repImage(p, cfg) {
+    var code = String((p && p.productCode) || '').trim();
+    var url = (typeof _firstImageUrl === 'function') ? _firstImageUrl(p && p.sabangMain) : '';
+    return url ? { url: url, fallback: false } : { url: sumImage(code, cfg), fallback: true };
+  }
+  // 🔴 B2a: 상세 = 저장 필드 sabangDetailUrl 우선. HTML(<img>/<center> 포함) → as-is · URL 목록 → <center><img> CRLF 래핑 · 없으면 패턴(+포일).
+  //   ⚠️ 필드 present 시 authoritative → 포일 오버레이 안 함(이중삽입 방지, 오너 결정 #2). 필드 empty 시에만 포일 체크리스트 적용.
+  function detailField(p, cfg, foil) {
+    var sd = String((p && p.sabangDetailUrl) || '').trim();
+    var code = String((p && p.productCode) || '').trim();
+    if (!sd) return { html: detailHtml(code, cfg, foil), fallback: true };
+    if (/<\s*(?:img|center|div|p|br|table)\b/i.test(sd)) return { html: sd, fallback: false };   // 완성 HTML → as-is
+    // 🔴 URL 목록 → 카페24 convertUrlsToHtml 컨벤션 미러(콤마+줄바꿈 분리·http 필터) → CRLF 정규화(골든/패턴 경로와 일관).
+    var wrapped = (typeof convertUrlsToHtml === 'function')
+      ? convertUrlsToHtml(sd).replace(/\n/g, '\r\n')
+      : _imageUrlLines(sd).map(function (u) { return '<center><img src="' + u + '"></center>'; }).join('\r\n');
+    if (wrapped) return { html: wrapped, fallback: false };
+    return { html: detailHtml(code, cfg, foil), fallback: true };   // present 이나 유효 URL 0 → 패턴 폴백(+경고)
+  }
 
   // 🔴 상세설명 HTML (col43) — 골든 시퀀스. \r\n(CRLF) 구분, <center><img src="…"></center> per line.
   //   P = {BASE}/goods/lemango/{season}/{grp}/{code}/{code}_900 · SW = {BASE}/image/product/swimwear · CONCEPT = women_01(고정).
@@ -135,12 +156,13 @@
     var nameKr = String((p && p.nameKr) || '').trim();
     var nameEn = String((p && p.nameEn) || '').trim();
     var colorKr = String((p && p.colorKr) || '').trim();
-    var img = sumImage(code, cfg);
+    var rep = repImage(p, cfg);           // 대표이미지(sabangMain 우선·폴백 패턴)
+    var det = detailField(p, cfg, !!foil); // 상세(sabangDetailUrl 우선·폴백 패턴+포일)
 
     // A. 품번 파생
     set(3, code); set(4, code); set(6, code);
-    set(32, img); set(33, img); set(38, img);
-    set(43, detailHtml(code, cfg, !!foil));
+    set(32, rep.url); set(33, rep.url); set(38, rep.url);
+    set(43, det.html);
     set(72, l4);
     // B. 마스터 조인. 🔴 약어 없으면 여분 공백 생략(카페24 동일 — `이름(6721)`). 골든 상품은 전부 약어 보유라 결과 동일.
     set(1, (nameKr + (abbr ? ' ' + abbr : '') + '(' + l4 + ')').trim());   // 상품명 = {nameKr} {약어}({last4})
@@ -159,7 +181,13 @@
     // D. 고정 상수
     Object.keys(FIXED).forEach(function (c) { set(+c, FIXED[c]); });
 
-    if (warns) { var miss = missingFields(p, cfg); if (miss.length) warns.push({ code: code, missing: miss }); }
+    if (warns) {
+      var miss = missingFields(p, cfg);
+      // 🔴 B4/correction#3: 사방넷 이미지 필드 비어있음 → 패턴 생성됨(무음 금지, 경고 목록화).
+      if (rep.fallback) miss.push('사방넷 대표이미지 비어있음(패턴생성)');
+      if (det.fallback) miss.push('사방넷 상세 비어있음(패턴생성)');
+      if (miss.length) warns.push({ code: code, missing: miss });
+    }
     return row;
   }
 
@@ -284,7 +312,7 @@
     function esc(s) { return (typeof window.esc === 'function') ? window.esc(String(s == null ? '' : s)) : String(s); }
     var byField = {};
     warns.forEach(function (w) { w.missing.forEach(function (f) { (byField[f] = byField[f] || []).push(w.code); }); });
-    var html = '<div class="sb-warn-head">⚠️ <b>' + warns.length + '건</b> 정보 부족 — 빈칸으로 포함됨. 상품조회에서 채운 뒤 다시 내보내세요.</div>';
+    var html = '<div class="sb-warn-head">⚠️ <b>' + warns.length + '건</b> 확인 필요 — 정보 부족은 빈칸 포함, 이미지 필드 비어있으면 패턴으로 생성됨. 상품조회에서 채운 뒤 다시 내보내면 저장 이미지가 반영됩니다.</div>';
     Object.keys(byField).forEach(function (f) {
       var codes = byField[f];
       html += '<div class="sb-warn-grp"><div class="sb-warn-f">' + esc(f) + ' <b>' + codes.length + '건</b></div><textarea class="sb-warn-ta" readonly rows="2">' + esc(codes.join(', ')) + '</textarea></div>';
@@ -304,5 +332,5 @@
   window.closeSbSeasonDialog = closeSeasonDialog;
   window.sbGenerateFromDialog = generateFromDialog;
   window.closeSbWarnModal = closeWarnModal;
-  window._sbhelpers = { buildRow: buildRow, build: build, detailHtml: detailHtml, sumImage: sumImage, colorAbbrev: colorAbbrev, sizesCsv: sizesCsv, fabric: fabric, missingFields: missingFields, autoFoil: autoFoil, SEASON_DEFAULTS: SEASON_DEFAULTS, FIXED: FIXED };
+  window._sbhelpers = { buildRow: buildRow, build: build, detailHtml: detailHtml, sumImage: sumImage, repImage: repImage, detailField: detailField, colorAbbrev: colorAbbrev, sizesCsv: sizesCsv, fabric: fabric, missingFields: missingFields, autoFoil: autoFoil, SEASON_DEFAULTS: SEASON_DEFAULTS, FIXED: FIXED };
 })();
