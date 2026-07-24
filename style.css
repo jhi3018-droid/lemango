@@ -6670,3 +6670,26 @@ td[data-editable]:hover { background: #FAEEDA; }
 .sa-sc-ok { background: rgba(76, 175, 125, 0.12); color: #256b4a; border: 1px solid rgba(76, 175, 125, 0.3); }
 .sa-sc-bad { background: rgba(224, 82, 82, 0.10); color: #a03434; border: 1px solid rgba(224, 82, 82, 0.3); }
 .sa-sc-baddetail { font-weight: 400; font-size: 12px; margin-top: 4px; }
+
+/* ===== 매출 원장 타깃 삭제 도구 (관리자) ===== */
+.sl-danger-btn { color: var(--danger, #e05252) !important; border-color: rgba(224,82,82,0.5) !important; }
+.sl-danger-btn:hover { background: rgba(224,82,82,0.08) !important; }
+.sl-delete-modal { width: 720px; max-width: 96vw; max-height: 90vh; }
+.sl-del-warn { font-size: 12px; line-height: 1.8; color: #7a2e2e; background: rgba(224,82,82,0.08); border: 1px solid rgba(224,82,82,0.28); border-radius: 8px; padding: 10px 13px; margin-bottom: 14px; }
+.sl-del-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.sl-del-result { margin-top: 6px; }
+.sl-del-pv-head { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.sl-del-sub { font-weight: 400; font-size: 11px; color: var(--text-sub, #888); margin-left: 6px; }
+.sl-del-tablewrap { max-height: 320px; overflow: auto; border: 1px solid var(--border, #e0e0e0); border-radius: 6px; }
+.sl-del-totals { font-size: 13px; margin: 10px 2px; padding: 8px 11px; background: var(--bg, #f5f4f1); border-radius: 6px; }
+.sl-del-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.sl-del-typewrap { font-size: 12px; color: var(--text-sub, #666); }
+.sl-del-typewrap input { width: 120px; margin-left: 4px; }
+.sl-del-restore { font-size: 11px; color: var(--text-sub, #888); margin-top: 10px; line-height: 1.6; }
+.sl-del-done { border: 1px solid rgba(76,175,125,0.35); background: rgba(76,175,125,0.08); border-radius: 8px; padding: 12px 14px; font-size: 13px; line-height: 1.8; }
+.sl-del-done-title { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+.sl-del-recalc { margin-top: 8px; padding: 8px 11px; background: rgba(240,165,0,0.1); border-radius: 6px; }
+.sl-hist-delrow { background: rgba(224,82,82,0.05); }
+.sl-hist-dellabel { display: inline-block; font-size: 11px; font-weight: 700; color: #fff; background: var(--danger, #e05252); border-radius: 4px; padding: 2px 6px; }
+.sl-recalc-flash { animation: slRecalcFlash 0.6s ease-in-out 3; }
+@keyframes slRecalcFlash { 0%,100% { box-shadow: 0 0 0 0 rgba(240,165,0,0); } 50% { box-shadow: 0 0 0 4px rgba(240,165,0,0.6); } }

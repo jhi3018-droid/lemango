@@ -1129,6 +1129,23 @@ async function renderSalesUploadHistory(force) {
   const canAct = _slIsAdmin()
   const showArch = _slShowArchived
   tbody.innerHTML = list.map(u => {
+    // 🔴 삭제 작업(type:'deletion') = 붉은 라벨 + 스코프/재계산범위 표시(전용 행 렌더)
+    if (u.type === 'deletion') {
+      const when0 = (typeof kstFormat === 'function') ? kstFormat(u.at, 'full') : esc(String(u.at || '').slice(0, 16))
+      const scope = `${u.delChannel === SL_CH.c24 ? '카페24' : '사방넷'} · ${esc(u.delStart || '')}~${esc(u.delEnd || '')}${(u.delMalls && u.delMalls.length) ? ' · 몰:' + esc(u.delMalls.slice(0, 6).join(', ')) + (u.delMalls.length > 6 ? ' 외' + (u.delMalls.length - 6) : '') : ''}`
+      const recalc = (u.recalcStart && u.recalcEnd) ? `재계산범위 ${esc(u.recalcStart)}~${esc(u.recalcEnd)}` : ''
+      return `<tr class="sl-hist-delrow">
+        <td>${when0}</td>
+        <td><span class="sl-hist-dellabel">🗑️ 삭제 작업</span></td>
+        <td class="sl-hist-file" title="${esc(u.fileName || '')}">${scope}${u.delPartial ? ' <b>(부분)</b>' : ''}</td>
+        <td class="sl-c">${_slVfNum(u.delDocs || 0)}</td>
+        <td class="sl-c">${_slVfNum(u.delDocs || 0)}</td>
+        <td class="sl-c" colspan="2" style="text-align:left;color:#a03434">삭제 ${_slVfNum(u.delDocs || 0)}건 · 수량 ${_slVfNum(u.delQty || 0)} · ${recalc}</td>
+        <td class="sl-c">-</td>
+        <td>${esc(u.workerName || '')}</td>
+        <td class="sl-hist-resolve">-</td>
+      </tr>`
+    }
     const typeLabel = u.type === SL_CH.c24 ? '카페24' : (u.type === SL_CH.sb ? '사방넷' : esc(u.type || ''))
     const when = (typeof kstFormat === 'function') ? kstFormat(u.at, 'full') : esc(String(u.at || '').slice(0, 16))
     const warnCnt = (u.unmatchedCount != null ? u.unmatchedCount : (u.unmatched ? u.unmatched.length : 0)) + (u.dateFailCount != null ? u.dateFailCount : (u.dateFail ? u.dateFail.length : 0)) + (u.anomalyCount != null ? u.anomalyCount : (u.anomaly ? u.anomaly.length : 0))
@@ -1263,7 +1280,7 @@ function renderSalesMgmtTab() {
         <div id="slOrdersBody"></div>
       </div>
       <div class="store-panel${_slActiveSub === 'history' ? '' : ' store-panel-hidden'}" id="slPanel_history">
-        <div class="sl-hist-toolbar"><button class="btn btn-outline" onclick="renderSalesUploadHistory(true)">↻ 새로고침</button>${canUpload ? '<button class="btn btn-outline btn-sm sl-arch-toggle" id="slArchToggleBtn" onclick="_slToggleArchivedView()">아카이브 보기</button><button class="btn btn-outline btn-sm" onclick="openSlExcludeModal()">🎁 사은품 제외 품번 관리</button>' : ''}</div>
+        <div class="sl-hist-toolbar"><button class="btn btn-outline" onclick="renderSalesUploadHistory(true)">↻ 새로고침</button>${canUpload ? '<button class="btn btn-outline btn-sm sl-arch-toggle" id="slArchToggleBtn" onclick="_slToggleArchivedView()">아카이브 보기</button><button class="btn btn-outline btn-sm" onclick="openSlExcludeModal()">🎁 사은품 제외 품번 관리</button><button class="btn btn-outline btn-sm sl-danger-btn" onclick="openSalesDeleteModal()">🗑️ 매출 정리(삭제)</button>' : ''}</div>
         <div class="sl-hist-wrap">
           <table class="data-table inbhist-table sl-hist-table">
             <thead><tr>
@@ -2781,6 +2798,246 @@ function _slExcel(aoa, fname) {
   const ws = XLSX.utils.aoa_to_sheet(aoa); const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, '매출'); XLSX.writeFile(wb, fname + '.xlsx')
 }
+
+// =============================================
+// ===== 🗑️ 매출 원장(L1) 타깃 삭제 도구 (관리자 전용, 몰/기간 단위) =====
+// =============================================
+// 🔴 파괴적 관리 도구 — 분석/조회 화면 아님(업로드 내역 탭 관리 툴바에서 모달 실행, 사은품 제외 관리와 동일 패턴).
+//   선택 단위 = (채널, 몰[], od 범위). 몰 매칭 = 저장 필드 `o.mall` 정확일치(doc id 파싱 금지 — 몰명에 / · (3) 등 포함).
+//   흐름: [조회](읽기전용 미리보기 + CSV 증거 다운로드) → `삭제` 타이핑 확인 → 배치 hard delete(≤450) → 감사기록(salesUploads type:'deletion') → 재계산 안내(자동실행 안 함).
+//   🔴 삭제=L1 doc 만 · L2/L3/salesSz 는 재계산으로만 정정(파생층 직접 수정 안 함) · storeSales/POS/상품마스터/매출공식 무접촉.
+//   복구: 원본 파일 재업로드(L1 병합 멱등) + 일 자동 백업. 부분 삭제=같은 선택 재실행이 멱등(이미 삭제분은 매칭 안 됨).
+//   규칙 변경 없음: salesOrders `write`(=create/update/delete) admin 허용 · salesUploads `create` admin 허용.
+let _slDelBusy = false
+let _slDelPreview = null   // { channel, start, end, targets:[{id,o}], byMall:{mall:{cnt,q,amt,ramt,odMin,odMax}}, span:{start,end}, malls:[] }
+
+function openSalesDeleteModal() {
+  if (!_slIsAdmin()) { showToast('관리자 전용입니다.', 'warning'); return }
+  _slDelPreview = null
+  const m = document.getElementById('slDeleteModal'); if (!m) return
+  const body = document.getElementById('slDeleteBody')
+  if (body) body.innerHTML = _slDelFormHtml()
+  if (!m.open) m.showModal()
+  if (typeof centerModal === 'function') centerModal(m)
+}
+function closeSalesDeleteModal() { const m = document.getElementById('slDeleteModal'); if (m && m.open) m.close(); _slDelPreview = null }
+
+function _slDelFormHtml() {
+  const today = _slVfToday ? _slVfToday() : ((typeof kstDateKey === 'function' && kstDateKey()) || new Date().toISOString().slice(0, 10))
+  return `
+    <div class="sl-del-warn">🔴 <b>매출 원장(L1) 삭제 도구</b> — 선택한 <b>채널·몰·기간</b>의 주문 기록을 <b>영구 삭제</b>합니다.<br>
+      · 삭제 전 반드시 <b>[조회]</b>로 대상을 확인하고 <b>[CSV 다운로드]</b>로 증거를 보관하세요.<br>
+      · <b>복구</b>: 원본 파일을 다시 업로드하면 그대로 복원됩니다(병합 멱등). 매일 자동 백업도 있습니다.<br>
+      · 삭제 후에는 안내되는 기간으로 <b>[집계 재계산]</b>을 실행해야 화면 숫자가 맞춰집니다.</div>
+    <div class="sl-del-form">
+      <label class="inbhist-ctl">채널
+        <select id="slDelChannel" onchange="_slDelReset()">
+          <option value="${SL_CH.sb}">사방넷 (몰 선택)</option>
+          <option value="${SL_CH.c24}">카페24 (몰 없음·기간만)</option>
+        </select>
+      </label>
+      <label class="inbhist-ctl">시작일 <input type="date" id="slDelStart" class="inbhist-date" min="${SALES_DATE_MIN}" max="${today}"></label>
+      <label class="inbhist-ctl">마지막일 <input type="date" id="slDelEnd" class="inbhist-date" min="${SALES_DATE_MIN}" max="${today}"></label>
+      <button class="btn btn-new" onclick="slDeleteQuery()">🔍 조회</button>
+    </div>
+    <div id="slDelResult" class="sl-del-result"></div>`
+}
+function _slDelReset() { _slDelPreview = null; const r = document.getElementById('slDelResult'); if (r) r.innerHTML = '' }
+
+// ---- B1: 조회(읽기전용) — od 범위 쿼리 + 채널/몰 필터 → 몰별 통계 + 재계산 span(od ∪ rds) ----
+async function slDeleteQuery() {
+  if (!_slIsAdmin()) { showToast('관리자 전용', 'warning'); return }
+  if (typeof db === 'undefined' || !db) { showToast('DB 연결 없음', 'error'); return }
+  const channel = (document.getElementById('slDelChannel') || {}).value || SL_CH.sb
+  let start = (document.getElementById('slDelStart') || {}).value
+  let end = (document.getElementById('slDelEnd') || {}).value
+  if (!start || !end) { showToast('시작일/마지막일을 선택하세요.', 'warning'); return }
+  if (start > end) { const t = start; start = end; end = t }
+  const rEl = document.getElementById('slDelResult'); if (rEl) rEl.innerHTML = '<div class="sl-hist-loading">조회 중…</div>'
+  let snap
+  try { snap = await db.collection('salesOrders').where('od', '>=', start).where('od', '<=', end).get() }
+  catch (e) { if (rEl) rEl.innerHTML = `<div class="sl-hist-empty">조회 실패: ${esc(e && e.message || '')}</div>`; return }
+  // 🔴 채널 필터 + (사방넷) 몰 그룹핑 = 저장 필드 기준(doc id 파싱 안 함)
+  const targets = []
+  const byMall = {}
+  let spanStart = '', spanEnd = ''
+  const bump = (dk) => { if (!dk) return; if (!spanStart || dk < spanStart) spanStart = dk; if (!spanEnd || dk > spanEnd) spanEnd = dk }
+  snap.forEach(d => {
+    const o = d.data(); if (!o || o.ch !== channel) return
+    targets.push({ id: d.id, o: o })
+    const mall = (channel === SL_CH.sb) ? (o.mall || '(미상)') : '(카페24 전체)'
+    const b = byMall[mall] || (byMall[mall] = { cnt: 0, q: 0, amt: 0, ramt: 0, odMin: '', odMax: '' })
+    b.cnt++
+    let saleAmt = 0, retAmt = 0
+    const ram = _slOrderRamtMap(o, true)
+    ;(o.lines || []).forEach((l, i) => { b.q += _slNum(l.q); saleAmt += _slNum(l.rv) + ((channel === SL_CH.sb) ? _slNum(l.sh || 0) : 0); retAmt += ram[i] })
+    if (channel === SL_CH.c24) saleAmt += _slNum(o.ship || 0)   // 카페24 배송비=주문단위
+    b.amt += saleAmt; b.ramt += retAmt
+    if (!b.odMin || o.od < b.odMin) b.odMin = o.od || b.odMin
+    if (!b.odMax || o.od > b.odMax) b.odMax = o.od || b.odMax
+    bump(o.od); (o.lines || []).forEach(l => { if (l.rd) bump(l.rd) })   // 🔴 재계산 span = od ∪ 모든 rd(반품일이 범위 밖 가능)
+  })
+  const malls = Object.keys(byMall).sort()
+  _slDelPreview = { channel, start, end, targets, byMall, malls, span: { start: spanStart, end: spanEnd } }
+  _slDelRenderPreview()
+}
+
+function _slDelRenderPreview() {
+  const p = _slDelPreview; const rEl = document.getElementById('slDelResult'); if (!p || !rEl) return
+  const isSb = p.channel === SL_CH.sb
+  if (!p.targets.length) { rEl.innerHTML = `<div class="sl-hist-empty">대상 주문이 없습니다 (${esc(p.start)} ~ ${esc(p.end)} · ${isSb ? '사방넷' : '카페24'}).</div>`; return }
+  const rows = p.malls.map((mall, i) => {
+    const b = p.byMall[mall]
+    const cb = isSb ? `<input type="checkbox" class="sl-del-mall" value="${i}" onchange="_slDelUpdateTotals()">` : '—'
+    return `<tr>
+      <td style="text-align:center">${cb}</td>
+      <td title="${esc(mall)}">${esc(mall)}</td>
+      <td class="sl-c">${_slVfNum(b.cnt)}</td>
+      <td class="sl-c">${_slVfNum(b.q)}</td>
+      <td class="sl-c">${_slVfNum(b.amt)}</td>
+      <td class="sl-c">${_slVfNum(b.ramt)}</td>
+      <td class="sl-c">${esc(b.odMin || '-')}~${esc(b.odMax || '-')}</td>
+    </tr>`
+  }).join('')
+  // 인덱스 캐시(체크박스 value=몰 인덱스 → 인젝션 안전)
+  rEl.innerHTML = `
+    <div class="sl-del-pv-head">대상 미리보기 — <b>${isSb ? '사방넷' : '카페24'}</b> · ${esc(p.start)} ~ ${esc(p.end)}
+      ${isSb ? '<span class="sl-del-sub">삭제할 몰을 <b>체크</b>하세요(다중 선택 필수).</span>' : '<span class="sl-del-sub">카페24는 이 기간 전체가 대상입니다.</span>'}</div>
+    <div class="sl-del-tablewrap">
+      <table class="data-table inbhist-table">
+        <thead><tr><th style="width:40px">${isSb ? '선택' : ''}</th><th>몰</th><th class="sl-c">건수</th><th class="sl-c">수량</th><th class="sl-c">매출액</th><th class="sl-c">반품액</th><th class="sl-c">주문일 범위</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div class="sl-del-totals" id="slDelTotals"></div>
+    <div class="sl-del-actions">
+      <button class="btn btn-outline" onclick="slDeleteDownloadCsv()">📥 대상 목록 CSV(증거)</button>
+      <span class="sl-del-typewrap">확인 문구 <input type="text" id="slDelConfirmText" class="inbhist-store" placeholder="삭제" autocomplete="off"></span>
+      <button class="btn btn-danger sl-danger-btn" onclick="slDeleteExecute()">🗑️ 삭제 실행</button>
+    </div>
+    <div class="sl-del-restore">복구: 원본 파일 재업로드(멱등) + 자동 백업. 삭제 후 안내 기간으로 [집계 재계산] 필요.</div>`
+  _slDelUpdateTotals()
+}
+
+// 선택된 몰(사방넷) 또는 전체(카페24) 대상 문서 배열
+function _slDelSelectedTargets() {
+  const p = _slDelPreview; if (!p) return { targets: [], malls: [] }
+  if (p.channel !== SL_CH.sb) return { targets: p.targets.slice(), malls: p.malls.slice() }
+  const checked = Array.prototype.slice.call(document.querySelectorAll('#slDelResult .sl-del-mall:checked')).map(el => p.malls[+el.value]).filter(Boolean)
+  const set = new Set(checked)
+  const targets = p.targets.filter(t => set.has(t.o.mall || '(미상)'))
+  return { targets, malls: checked }
+}
+function _slDelUpdateTotals() {
+  const el = document.getElementById('slDelTotals'); if (!el) return
+  const { targets, malls } = _slDelSelectedTargets()
+  let q = 0, amt = 0, ramt = 0
+  targets.forEach(t => { const o = t.o; const ram = _slOrderRamtMap(o, true); let s = 0; (o.lines || []).forEach((l, i) => { q += _slNum(l.q); s += _slNum(l.rv) + ((o.ch === SL_CH.sb) ? _slNum(l.sh || 0) : 0); ramt += ram[i] }); amt += s + ((o.ch === SL_CH.c24) ? _slNum(o.ship || 0) : 0) })
+  el.innerHTML = `삭제 대상 합계: 주문 <b>${_slVfNum(targets.length)}</b>건 · 수량 <b>${_slVfNum(q)}</b> · 매출액 <b>${_slVfNum(amt)}</b> · 반품액 <b>${_slVfNum(ramt)}</b>${_slDelPreview.channel === SL_CH.sb ? ` · 몰 <b>${malls.length}</b>개` : ''}`
+}
+
+// ---- CSV(증거) 다운로드 — 삭제 전 전체 대상 목록(라인 단위) ----
+function slDeleteDownloadCsv() {
+  if (!_slIsAdmin()) { showToast('관리자 전용', 'warning'); return }   // P8: 전 진입점 관리자 게이트 일관화
+  const { targets, malls } = _slDelSelectedTargets()
+  const p = _slDelPreview; if (!p) return
+  if (!targets.length) { showToast('대상이 없습니다 (몰을 선택하세요).', 'warning'); return }
+  const aoa = [['[삭제 대상 증거] ' + (p.channel === SL_CH.sb ? '사방넷' : '카페24') + ' · ' + p.start + '~' + p.end + (malls.length ? ' · 몰:' + malls.join('|') : '')],
+    ['docId', '채널', '몰', '주문번호', '주문일(od)', '품번', '옵션', '수량', '매출', '배송', '환불', '반품완료일(rd)']]
+  targets.forEach(t => { const o = t.o; (o.lines || []).forEach(l => aoa.push([t.id, o.ch, o.mall || '', o.ono || '', o.od || '', l.c || '', l.o || '', _slNum(l.q), _slNum(l.rv), _slNum(l.sh || 0), _slNum(l.rf || 0), l.rd || ''])) })
+  _slExcel(aoa, `매출삭제대상_${p.channel}_${p.start}~${p.end}`)
+}
+
+// ---- B2: 삭제 실행(배치 ≤450) + B3 감사 + B4 재계산 안내 ----
+async function slDeleteExecute() {
+  if (_slDelBusy) return
+  if (!_slIsAdmin()) { showToast('관리자 전용', 'warning'); return }
+  const p = _slDelPreview; if (!p) { showToast('먼저 [조회]하세요.', 'warning'); return }
+  const typed = ((document.getElementById('slDelConfirmText') || {}).value || '').trim()
+  if (typed !== '삭제') { showToast('확인 문구에 "삭제"를 정확히 입력하세요.', 'warning'); return }
+  const { targets, malls } = _slDelSelectedTargets()
+  if (!targets.length) { showToast(p.channel === SL_CH.sb ? '삭제할 몰을 선택하세요.' : '대상이 없습니다.', 'warning'); return }
+  if (p.channel === SL_CH.sb && !malls.length) { showToast('삭제할 몰을 1개 이상 선택하세요.', 'warning'); return }
+  // 최종 확인(합계 재표시)
+  let q = 0; targets.forEach(t => (t.o.lines || []).forEach(l => q += _slNum(l.q)))
+  const ok = await korConfirm(
+    `🔴 되돌릴 수 없는 삭제\n\n${p.channel === SL_CH.sb ? '사방넷' : '카페24'} · ${p.start} ~ ${p.end}` +
+    (malls.length ? `\n몰: ${malls.slice(0, 8).join(', ')}${malls.length > 8 ? ` 외 ${malls.length - 8}` : ''}` : '') +
+    `\n\n주문 ${targets.length.toLocaleString()}건 · 수량 ${q.toLocaleString()} 을 영구 삭제합니다.\n\n(원본 파일 재업로드로 복구 가능 · 자동 백업 존재)`,
+    '삭제 실행', '취소')
+  if (!ok) return
+  _slDelBusy = true
+  const rEl = document.getElementById('slDelResult'); if (rEl) rEl.innerHTML = '<div class="sl-hist-loading">삭제 중… (중단하지 마세요)</div>'
+  // 재계산 span = 전체 의도 대상의 od ∪ rds (부분삭제여도 이 범위 재계산이 안전)
+  let sStart = '', sEnd = ''; const bump = dk => { if (!dk) return; if (!sStart || dk < sStart) sStart = dk; if (!sEnd || dk > sEnd) sEnd = dk }
+  targets.forEach(t => { bump(t.o.od); (t.o.lines || []).forEach(l => { if (l.rd) bump(l.rd) }) })
+  let deleted = 0, failed = false
+  try {
+    for (let i = 0; i < targets.length; i += 450) {
+      const batch = db.batch()
+      targets.slice(i, i + 450).forEach(t => batch.delete(db.collection('salesOrders').doc(t.id)))
+      await batch.commit()
+      deleted += Math.min(450, targets.length - i)
+      if (rEl) rEl.innerHTML = `<div class="sl-hist-loading">삭제 중… ${deleted}/${targets.length}</div>`
+    }
+  } catch (e) { failed = true; console.error('salesOrders 삭제 실패:', e && e.message) }
+  // B3: 감사 기록(salesUploads type:'deletion') — 실제 삭제 건수 반영(부분삭제도 정직 기록)
+  const uid = (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) ? firebase.auth().currentUser.uid : ''
+  const workerName = (typeof formatUserName === 'function') ? formatUserName(_currentUserName, (typeof _currentUserPosition !== 'undefined' ? _currentUserPosition : '')) : ((typeof _currentUserName !== 'undefined' && _currentUserName) || '')
+  const nowIso = new Date().toISOString()
+  const delId = 'DEL-' + ((typeof kstStamp === 'function') ? kstStamp() : nowIso.replace(/\D/g, '').slice(0, 14)) + '-' + Math.random().toString(36).slice(2, 6)
+  try {
+    await db.collection('salesUploads').doc(delId).set({
+      uploadId: delId, type: 'deletion', fileName: `삭제: ${p.channel === SL_CH.sb ? '사방넷' : '카페24'} ${p.start}~${p.end}`,
+      delChannel: p.channel, delMalls: malls, delStart: p.start, delEnd: p.end,
+      delDocs: deleted, delQty: q, delPartial: failed, recalcStart: sStart, recalcEnd: sEnd,
+      orders: deleted, rows: deleted, cntNew: 0, cntMerge: 0, cntSame: 0, cntReturns: 0,
+      workerUid: uid, workerName: workerName, at: nowIso
+    })
+  } catch (e) { console.error('삭제 감사 기록 실패:', e && e.message) }
+  if (typeof logActivity === 'function') logActivity('delete', '매출원장 삭제', `${p.channel} ${p.start}~${p.end} ${malls.length ? '몰:' + malls.slice(0, 5).join(',') : ''} — ${deleted}건${failed ? '(부분)' : ''}`)
+  _slUploads = []   // 업로드 내역 캐시 무효화
+  _slInvalidateProdSalesCache()
+  // 🔴 minor#2(리뷰): busy 해제는 finally 로 보장(렌더 중 예상 밖 예외에도 고착 방지)
+  try { _slDelRenderResult({ deleted, failed, q, span: { start: sStart, end: sEnd }, channel: p.channel, malls }) }
+  finally { _slDelBusy = false; _slDelPreview = null }
+}
+
+function _slDelRenderResult(r) {
+  const rEl = document.getElementById('slDelResult'); if (!rEl) return
+  const spanTxt = (r.span.start && r.span.end) ? `${r.span.start} ~ ${r.span.end}` : '(대상 없음)'
+  rEl.innerHTML = `
+    <div class="sl-del-done">
+      <div class="sl-del-done-title">${r.failed ? '⚠️ 부분 삭제됨' : '✅ 삭제 완료'}</div>
+      <div>주문 <b>${_slVfNum(r.deleted)}</b>건 · 수량 <b>${_slVfNum(r.q)}</b> 삭제됨.${r.failed ? ' <b>일부 실패</b> — 같은 조건으로 [조회] 후 다시 [삭제 실행]하면 남은 건이 이어서 삭제됩니다(멱등).' : ''}</div>
+      <div class="sl-del-recalc">🔄 <b>재계산 필요 범위: ${esc(spanTxt)}</b> <span class="sl-del-sub">(반품일이 주문일 범위 밖일 수 있어 od+반품일 전체 포함)</span></div>
+      <div class="sl-del-actions">
+        <button class="btn btn-new" onclick="_slDelOpenRecompute('${esc(r.span.start)}','${esc(r.span.end)}')">🔄 이 기간으로 [집계 재계산] 열기</button>
+        <button class="btn btn-outline" onclick="closeSalesDeleteModal();switchSalesMgmtSub('history')">업로드 내역 보기</button>
+      </div>
+      <div class="sl-del-restore">복구 필요 시: 원본 파일을 다시 업로드하면 그대로 복원됩니다(병합 멱등).</div>
+    </div>`
+}
+// B4: 재계산 프리필 — 일자별 요약 탭으로 이동 + 기간 채움(자동 실행 안 함, 오너가 [집계 재계산] 클릭)
+function _slDelOpenRecompute(start, end) {
+  closeSalesDeleteModal()
+  if (typeof switchSalesMgmtSub === 'function') switchSalesMgmtSub('summary')
+  setTimeout(() => {
+    const si = document.getElementById('slSumStart'), ei = document.getElementById('slSumEnd')
+    if (si && start) si.value = start; if (ei && end) ei.value = end
+    if (typeof renderSalesSummary === 'function') renderSalesSummary()
+    const btn = document.getElementById('slRecalcBtn'); if (btn) { btn.classList.add('sl-recalc-flash'); btn.scrollIntoView({ block: 'center' }); setTimeout(() => btn.classList.remove('sl-recalc-flash'), 2400) }
+    showToast('기간이 채워졌습니다. [🔄 집계 재계산]을 눌러 실행하세요.', 'info')
+  }, 60)
+}
+window.openSalesDeleteModal = openSalesDeleteModal
+window.closeSalesDeleteModal = closeSalesDeleteModal
+window._slDelReset = _slDelReset
+window.slDeleteQuery = slDeleteQuery
+window._slDelUpdateTotals = _slDelUpdateTotals
+window.slDeleteDownloadCsv = slDeleteDownloadCsv
+window.slDeleteExecute = slDeleteExecute
+window._slDelOpenRecompute = _slDelOpenRecompute
 
 // ---- window 노출 ----
 window.renderSalesMgmtTab = renderSalesMgmtTab
