@@ -49,6 +49,8 @@ async function initApp() {
   makeDraggableResizable(document.getElementById('bulkAttrModal'), 440, 300)      // Phase 1: 속성 일괄 입력
   makeDraggableResizable(document.getElementById('slExcludeModal'), 520, 320)     // Phase 1: 사은품 제외 품번 관리
   makeDraggableResizable(document.getElementById('slDeleteModal'), 640, 400)      // 매출 원장 타깃 삭제(관리자)
+  makeDraggableResizable(document.getElementById('sbSeasonModal'), 560, 400)      // 사방넷 등록 엑셀 시즌 설정
+  makeDraggableResizable(document.getElementById('sbWarnModal'), 480, 320)        // 사방넷 정보 부족 경고
   makeDraggableResizable(document.getElementById('gonghomPreviewModal'))
   makeDraggableResizable(document.getElementById('sabangnetPreviewModal'))
   makeDraggableResizable(document.getElementById('eventRegisterModal'))

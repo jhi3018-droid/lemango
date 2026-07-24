@@ -6693,3 +6693,26 @@ td[data-editable]:hover { background: #FAEEDA; }
 .sl-hist-dellabel { display: inline-block; font-size: 11px; font-weight: 700; color: #fff; background: var(--danger, #e05252); border-radius: 4px; padding: 2px 6px; }
 .sl-recalc-flash { animation: slRecalcFlash 0.6s ease-in-out 3; }
 @keyframes slRecalcFlash { 0%,100% { box-shadow: 0 0 0 0 rgba(240,165,0,0); } 50% { box-shadow: 0 0 0 4px rgba(240,165,0,0.6); } }
+
+/* ===== 사방넷 등록 엑셀 다이얼로그 ===== */
+.sb-season-modal { width: 600px; max-width: 96vw; max-height: 90vh; }
+.sb-warn-modal { width: 500px; max-width: 95vw; max-height: 85vh; }
+.sb-season-head { font-size: 13px; color: var(--text, #333); margin-bottom: 12px; }
+.sb-fld-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin-bottom: 12px; }
+.sb-fld { display: flex; flex-direction: column; gap: 3px; }
+.sb-fld-wide { margin-bottom: 12px; }
+.sb-fld > label { font-size: 12px; font-weight: 600; color: var(--text, #333); }
+.sb-fld > input { padding: 6px 9px; border: 1px solid var(--border, #ddd); border-radius: 5px; font-size: 12px; }
+.sb-hint { font-size: 11px; color: var(--text-sub, #999); }
+.sb-foil-sec { border: 1px solid rgba(201,169,110,0.4); background: rgba(201,169,110,0.06); border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; }
+.sb-foil-head { font-size: 12px; font-weight: 700; color: #7a5f22; margin-bottom: 8px; }
+.sb-foil-list { max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
+.sb-foil-item { display: flex; align-items: center; gap: 7px; font-size: 12px; padding: 3px 4px; border-radius: 4px; cursor: pointer; }
+.sb-foil-item:hover { background: rgba(201,169,110,0.1); }
+.sb-foil-item code { font-family: Inter, monospace; font-size: 11px; color: var(--primary, #1a1a2e); }
+.sb-foil-item span { color: var(--text-sub, #666); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-season-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.sb-warn-head { font-size: 13px; color: #7a2e2e; margin-bottom: 12px; line-height: 1.6; }
+.sb-warn-grp { margin-bottom: 10px; }
+.sb-warn-f { font-size: 12px; font-weight: 700; color: var(--text, #333); margin-bottom: 3px; }
+.sb-warn-ta { width: 100%; font-size: 11px; border: 1px solid var(--border, #ddd); border-radius: 5px; padding: 5px 7px; resize: vertical; box-sizing: border-box; }

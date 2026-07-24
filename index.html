@@ -285,6 +285,7 @@
         <div class="action-btns">
           <button class="btn btn-accent" onclick="downloadExcel('product')">⬇ 다운로드</button>
           <button class="btn btn-outline" onclick="exportCafe24Csv()" title="선택(체크) 또는 검색결과 전체를 카페24 대량등록 CSV로 내보내기">🛒 카페24 등록 CSV</button>
+          <button class="btn btn-outline" onclick="exportSabangnetExcel()" title="선택(체크) 또는 검색결과 전체를 사방넷 상품 대량등록 엑셀로 내보내기">📦 사방넷 등록 엑셀</button>
         <button class="btn btn-primary" onclick="openBulkAttrModal()" title="선택(체크) 또는 검색결과 전체의 복종·레그컷·백스타일을 한 번에 입력">✏️ 속성 일괄 입력</button>
           <label class="btn btn-outline" for="pUploadFile">⬆ 업로드</label>
           <input type="file" id="pUploadFile" accept=".xlsx,.xls" style="display:none" onchange="handleUpload(this,'product')" />
@@ -2458,6 +2459,24 @@
   </div>
 </dialog>
 
+<!-- 📦 사방넷 등록 엑셀 — 시즌 설정 다이얼로그 -->
+<dialog id="sbSeasonModal" class="srm-modal sb-season-modal">
+  <div class="srm-header">
+    <span class="srm-title">📦 사방넷 등록 엑셀 — 시즌 설정</span>
+    <button class="modal-close" onclick="closeSbSeasonDialog()">✕</button>
+  </div>
+  <div class="srm-body" id="sbSeasonBody"></div>
+</dialog>
+
+<!-- 📦 사방넷 등록 엑셀 — 정보 부족 경고 -->
+<dialog id="sbWarnModal" class="srm-modal sb-warn-modal">
+  <div class="srm-header">
+    <span class="srm-title">⚠️ 정보 부족 상품</span>
+    <button class="modal-close" onclick="closeSbWarnModal()">✕</button>
+  </div>
+  <div class="srm-body" id="sbWarnBody"></div>
+</dialog>
+
 <!-- 🗑️ 매출 원장(L1) 타깃 삭제 (관리자 전용) -->
 <dialog id="slDeleteModal" class="srm-modal sl-delete-modal">
   <div class="srm-header">
@@ -3263,6 +3282,9 @@
 <!-- 카페24 등록 CSV: cafe24-data.js(생성된 상수) → cafe24.js(로직). core/utils/color-master/product-code 뒤 로드. -->
 <script src="js/cafe24-data.js"></script>
 <script src="js/cafe24.js"></script>
+<!-- 사방넷 등록 엑셀: sabangnet-data.js(골든 헤더 verbatim) → sabangnet-export.js(로직·_c24helpers 재사용). cafe24.js 뒤 로드. -->
+<script src="js/sabangnet-data.js"></script>
+<script src="js/sabangnet-export.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
