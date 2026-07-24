@@ -20,6 +20,7 @@ let _saRetData = null                 // { rows, chan, s, e } (엑셀 미러)
 let _saCmpData = null                 // 기간 비교(엑셀 미러)
 
 const SA_SUBS = [
+  { key: 'scorecard', label: '🧬 기획 인사이트' },
   { key: 'compare', label: '📈 기간 비교' },
   { key: 'ranking', label: '🏆 상품 랭킹' },
   { key: 'returns', label: '📉 반품 분석' }
@@ -43,6 +44,7 @@ function renderSalesAnalysisTab() {
     </div>
     <div class="store-subtabs">${subBar}</div>
     <div class="store-panels">
+      <div class="store-panel${_saActiveSub === 'scorecard' ? '' : ' store-panel-hidden'}" id="saPanel_scorecard"><div id="saScorecardBody"><div class="sl-hist-loading">불러오는 중…</div></div></div>
       <div class="store-panel${_saActiveSub === 'compare' ? '' : ' store-panel-hidden'}" id="saPanel_compare"><div id="saCompareBody"><div class="sl-hist-loading">불러오는 중…</div></div></div>
       <div class="store-panel${_saActiveSub === 'ranking' ? '' : ' store-panel-hidden'}" id="saPanel_ranking"><div id="saRankingBody"><div class="sl-hist-loading">불러오는 중…</div></div></div>
       <div class="store-panel${_saActiveSub === 'returns' ? '' : ' store-panel-hidden'}" id="saPanel_returns"><div id="saReturnsBody"><div class="sl-hist-loading">불러오는 중…</div></div></div>
@@ -50,7 +52,8 @@ function renderSalesAnalysisTab() {
   _saRenderSub(_saActiveSub)
 }
 function _saRenderSub(sub) {
-  if (sub === 'compare') renderSaCompare()
+  if (sub === 'scorecard') renderSaScorecard()
+  else if (sub === 'compare') renderSaCompare()
   else if (sub === 'ranking') renderSaRanking()
   else if (sub === 'returns') renderSaReturns()
 }
@@ -189,6 +192,174 @@ function _saSetChannel(v, renderFn) { _saChannel = v; if (v !== 'sb') _saMall = 
 function _saSetMall(v, renderFn) { _saMall = v; if (typeof window[renderFn] === 'function') window[renderFn]() }
 function _saSetBasis(v) { _saBasis = v; renderSaRanking() }
 function _saSetMinSales(v) { const n = parseInt(v, 10); _saMinSales = (isNaN(n) || n < 0) ? 0 : n; renderSaReturns() }
+
+// =============================================
+// ===== Tab 0 — 🧬 기획 인사이트 (속성 스코어카드) =====
+// =============================================
+// 🔴 온라인(공홈+파트너+사방넷) 전용 · 매장(POS) 제외 · 사은품 제외(_slExcludedCodeSet, 이 탭에서만).
+//   카테고리(복종)/백스타일/레그컷 = L3 items × 상품마스터 view-time 조인 · 사이즈 = salesSz 파생층(캐논 SIZES 화이트리스트).
+//   미분류 = 속성 빈 상품(무음 숨김 금지) · 하단 대사(B5): 스코어카드 합 + 사은품 제외분 == 전체 매트릭스 합(Decision #6).
+let _saScData = null   // 엑셀 미러
+
+async function _saLoadSz(grp, s, e) {
+  const key = 'sz_' + grp + '_' + s + '_' + e
+  if (_saCache[key]) return _saCache[key]
+  const items = (typeof _slSzItems === 'function') ? await _slSzItems(grp, s, e) : {}
+  _saCache[key] = items || {}
+  return _saCache[key]
+}
+function _saUp(c) { return (typeof _slCodeNorm === 'function') ? _slCodeNorm(c) : String(c == null ? '' : c).trim().toUpperCase() }
+function _saRate(rq, q) { return q > 0 ? (rq / q * 100) : 0 }
+
+// 한 차원(dimension)의 버킷 맵 → 정렬된 행 배열(순매출 desc). 미분류는 항상 마지막.
+function _saDimRows(map) {
+  const MISC = '미분류'
+  return Object.keys(map).map(k => {
+    const b = map[k]
+    return { key: k, q: b.q, rq: b.rq, amt: b.amt, ramt: b.ramt, net: (b.amt || 0) - (b.ramt || 0), rate: _saRate(b.rq, b.q), codes: b.codes.size }
+  }).sort((a, b) => (a.key === MISC ? 1 : 0) - (b.key === MISC ? 1 : 0) || b.net - a.net || String(a.key).localeCompare(String(b.key)))
+}
+function _saDimTableHtml(title, rows, opts) {
+  opts = opts || {}
+  const totNet = rows.reduce((s, r) => s + r.net, 0)
+  const body = rows.length ? rows.map(r => {
+    const isMisc = r.key === '미분류' || r.key === '기타'
+    const label = isMisc
+      ? `<span class="sa-sc-misc">${esc(r.key)}${r.key === '미분류' ? ' <span class="sa-sc-mischint">(속성 미입력 — 상품조회 → 정보 미완성 필터에서 채우면 사라짐)</span>' : (opts.miscTip ? ` <span class="sa-sc-mischint" title="${esc(opts.miscTip)}">ⓘ 원본 키</span>` : '')}</span>`
+      : esc(r.key)
+    return `<tr class="${isMisc ? 'sa-sc-miscrow' : ''}">
+      <td>${label}</td>
+      <td class="sl-c">${_saFmt(r.q)}</td>
+      <td class="sl-c">${_saFmt(r.rq)}</td>
+      <td class="sl-c">${r.rate.toFixed(1)}%</td>
+      <td class="sl-c">${_saFmt(r.net)}</td>
+      <td class="sl-c">${_saFmt(r.codes)}</td>
+    </tr>`
+  }).join('') : '<tr><td colspan="6" class="sl-hist-empty">해당 없음</td></tr>'
+  return `<div class="sa-card">
+    <div class="sa-card-title">${esc(title)} <span class="sa-muted">· 순매출 합 ${_saFmt(totNet)}</span></div>
+    <table class="data-table inbhist-table sa-sc-table">
+      <thead><tr><th>${esc(opts.col || '값')}</th><th class="sl-c">판매수량</th><th class="sl-c">반품수량</th><th class="sl-c">반품률</th><th class="sl-c">순매출액</th><th class="sl-c">상품 수</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+  </div>`
+}
+
+async function renderSaScorecard() {
+  const panel = document.getElementById('saScorecardBody'); if (!panel) return
+  await _saEnsurePeriod()
+  panel.innerHTML = '<div class="sl-hist-loading">불러오는 중…</div>'
+  const s = _saStart, e = _saEnd
+  let data, szC24, szSb
+  try {
+    data = await _saLoadItems(s, e)                 // L3 items (랭킹/반품과 세션 캐시 공유)
+    szC24 = await _saLoadSz('c24', s, e)
+    szSb = await _saLoadSz('sb', s, e)
+  } catch (err) { panel.innerHTML = `<div class="sl-hist-empty">조회 실패: ${esc(err.message)}</div>`; return }
+  if (document.getElementById('saScorecardBody') !== panel) return
+
+  const excludedSet = (typeof _slExcludedCodeSet === 'function') ? _slExcludedCodeSet() : new Set()
+  const prodMap = _slProdMap()
+  const perCode = _saChanVals(data, 'all', '')      // 온라인 전 채널 {code:{q,rq,amt,ramt}}
+
+  // 전체 매트릭스 합(RHS, 제외 포함 전체)
+  let matSale = 0, matRet = 0
+  Object.keys(perCode).forEach(c => { const v = perCode[c]; matSale += v.amt || 0; matRet += v.ramt || 0 })
+
+  // 속성 3차원 버킷 + 제외분 분리
+  const MISC = '미분류'
+  const dims = {
+    type: { title: '📦 카테고리(복종)', col: '복종', map: {}, get: p => (p && String(p.type || '').trim()) },
+    backStyle: { title: '👗 백스타일', col: '백스타일', map: {}, get: p => (p && String(p.backStyle || '').trim()) },
+    legCut: { title: '✂️ 레그컷', col: '레그컷', map: {}, get: p => (p && String(p.legCut || '').trim()) }
+  }
+  const addDim = (dk, key, v, code) => { const m = dims[dk].map; const b = m[key] || (m[key] = { q: 0, rq: 0, amt: 0, ramt: 0, codes: new Set() }); b.q += v.q || 0; b.rq += v.rq || 0; b.amt += v.amt || 0; b.ramt += v.ramt || 0; b.codes.add(code) }
+  let exclSale = 0, exclRet = 0; const exclCodes = new Set()
+  Object.keys(perCode).forEach(code => {
+    const v = perCode[code]
+    if (excludedSet.has(_saUp(code))) { exclSale += v.amt || 0; exclRet += v.ramt || 0; exclCodes.add(code); return }
+    const p = prodMap[code.toUpperCase()]
+    Object.keys(dims).forEach(dk => addDim(dk, dims[dk].get(p) || MISC, v, code))
+  })
+
+  // 사이즈 섹션 — salesSz(c24+sb) 병합, 제외 제거, 캐논 SIZES vs 기타
+  const SZ = (typeof SIZES !== 'undefined') ? SIZES : ['XS', 'S', 'M', 'L', 'XL', '2XL', 'F']
+  const szSet = new Set(SZ)
+  const szMap = {}; const miscRaw = {}
+  const addSz = (items) => {
+    Object.keys(items || {}).forEach(code => {
+      if (excludedSet.has(_saUp(code))) return
+      const szm = items[code] || {}
+      Object.keys(szm).forEach(k => {
+        const canonical = szSet.has(k)
+        const bucket = canonical ? k : '기타'
+        const b = szMap[bucket] || (szMap[bucket] = { q: 0, rq: 0, amt: 0, ramt: 0, codes: new Set() })
+        const v = szm[k] || {}; b.q += v.q || 0; b.rq += v.rq || 0; b.amt += v.amt || 0; b.ramt += v.ramt || 0; b.codes.add(code)
+        if (!canonical) miscRaw[k] = (miscRaw[k] || 0) + 1
+      })
+    })
+  }
+  addSz(szC24); addSz(szSb)
+  // 사이즈 행 순서 = 캐논 SIZES 순서 우선, 기타 마지막
+  const szRows = Object.keys(szMap).map(k => { const b = szMap[k]; return { key: k, q: b.q, rq: b.rq, amt: b.amt, ramt: b.ramt, net: (b.amt || 0) - (b.ramt || 0), rate: _saRate(b.rq, b.q), codes: b.codes.size } })
+    .sort((a, b) => { const ia = szSet.has(a.key) ? SZ.indexOf(a.key) : 99, ib = szSet.has(b.key) ? SZ.indexOf(b.key) : 99; return ia - ib || String(a.key).localeCompare(String(b.key)) })
+  const miscTip = Object.keys(miscRaw).sort().map(k => k + '(' + miscRaw[k] + ')').join(', ')
+
+  // 대사(B5): 스코어카드 합(비제외, type 차원 = 캐논 파티션) + 제외분 == 전체 매트릭스 합
+  const typeRows = _saDimRows(dims.type.map)
+  let scSale = 0, scRet = 0
+  Object.values(dims.type.map).forEach(b => { scSale += b.amt; scRet += b.ramt })
+  const okSale = (scSale + exclSale === matSale), okRet = (scRet + exclRet === matRet)
+  // 사이즈층 자체 합(비제외) — type 차원과 같아야 함(salesSz ↔ 속성층 크로스소스 정합)
+  let szSale = 0, szRet = 0; szRows.forEach(r => { szSale += r.amt; szRet += r.ramt })
+  const szConsistent = (szSale === scSale && szRet === scRet)
+  // 🔴 헤드라인 대사에 salesSz 정합도 포함(리뷰 반영) — 속성층 파티션은 동일 소스라 구조적 true 이므로,
+  //   별도 소스인 salesSz(사이즈층) 정합까지 통과해야 "일치"로 표시(성공 시에도 사이즈층 긍정 확인 노출).
+  const reconOk = okSale && okRet && szConsistent
+
+  _saScData = { s: s, e: e, dims: dims, typeRows: typeRows, szRows: szRows, miscRaw: miscRaw,
+    exclSale: exclSale, exclRet: exclRet, exclCount: exclCodes.size, matSale: matSale, matRet: matRet, scSale: scSale, scRet: scRet, reconOk: reconOk }
+
+  const header = `<div class="sl-sum-basis sa-sc-basis">
+    <b>온라인 판매 기준 · 매장(POS) 제외</b> · 순매출액 = 매출−반품(배송 포함) · 기간 ${esc(s)} ~ ${esc(e)}
+    · 사은품 제외 <b>${exclCodes.size}</b>개 품번
+    <button class="btn btn-outline btn-sm" onclick="downloadSaScorecard()">📥 엑셀</button>
+  </div>`
+
+  const reconLine = `<div class="sa-sc-recon ${reconOk ? 'sa-sc-ok' : 'sa-sc-bad'}">
+    ${reconOk ? '✅ 대사 일치' : '⚠️ 대사 불일치'} —
+    스코어카드 순매출 ${_saFmt(scSale - scRet)} + 사은품 제외분 ${_saFmt(exclSale - exclRet)} = ${_saFmt((scSale - scRet) + (exclSale - exclRet))}
+    <span class="sa-muted">vs 전체 매트릭스 순매출 ${_saFmt(matSale - matRet)}</span>
+    <span class="sa-muted"> · 사이즈층(salesSz) ${szConsistent ? '정합 ✅' : '불일치 ⚠️'}</span>
+    ${(okSale && okRet) ? '' : `<div class="sa-sc-baddetail">차액: 매출 ${_saFmt((scSale + exclSale) - matSale)} · 반품 ${_saFmt((scRet + exclRet) - matRet)} — [매출관리 → 집계 재계산] 후 재확인</div>`}
+    ${szConsistent ? '' : `<div class="sa-sc-baddetail">⚠️ 사이즈층(salesSz) 합이 속성층과 다름(매출 ${_saFmt(szSale)} vs ${_saFmt(scSale)}) — [매출관리 → 집계 재계산] 필요</div>`}
+  </div>`
+
+  panel.innerHTML = _saControlsHtml('renderSaScorecard') + header +
+    _saDimTableHtml(dims.type.title, typeRows, { col: dims.type.col }) +
+    _saDimTableHtml(dims.backStyle.title, _saDimRows(dims.backStyle.map), { col: dims.backStyle.col }) +
+    _saDimTableHtml(dims.legCut.title, _saDimRows(dims.legCut.map), { col: dims.legCut.col }) +
+    _saDimTableHtml('📐 사이즈', szRows, { col: '사이즈', miscTip: miscTip || '없음' }) +
+    reconLine
+}
+
+function downloadSaScorecard() {
+  if (!_saScData) { showToast('데이터 없음', 'warning'); return }
+  const d = _saScData
+  const aoa = [['[기획 인사이트 — 속성 스코어카드] ' + d.s + ' ~ ' + d.e + ' · 온라인 · 매장 제외 · 사은품 ' + d.exclCount + '개 품번 제외']]
+  const sect = (title, rows, col) => {
+    aoa.push([]); aoa.push([title]); aoa.push([col, '판매수량', '반품수량', '반품률(%)', '순매출액', '상품수'])
+    rows.forEach(r => aoa.push([r.key, r.q, r.rq, Math.round(r.rate * 10) / 10, r.net, r.codes]))
+  }
+  sect('카테고리(복종)', d.typeRows, '복종')
+  sect('백스타일', _saDimRows(d.dims.backStyle.map), '백스타일')
+  sect('레그컷', _saDimRows(d.dims.legCut.map), '레그컷')
+  sect('사이즈', d.szRows, '사이즈')
+  aoa.push([]); aoa.push(['[대사]', '순매출', '', '', '', ''])
+  aoa.push(['스코어카드', d.scSale - d.scRet]); aoa.push(['사은품 제외분', d.exclSale - d.exclRet])
+  aoa.push(['전체 매트릭스', d.matSale - d.matRet]); aoa.push(['판정', d.reconOk ? '일치' : '불일치'])
+  _slExcel(aoa, `매출분석_기획인사이트_${d.s}~${d.e}`)
+}
 
 // =============================================
 // ===== Tab 1 — 📈 기간 비교 =====
@@ -460,9 +631,12 @@ function downloadSaReturns() {
 // ---- window 노출 ----
 window.renderSalesAnalysisTab = renderSalesAnalysisTab
 window.switchSalesAnalysisSub = switchSalesAnalysisSub
+window.renderSaScorecard = renderSaScorecard
 window.renderSaCompare = renderSaCompare
 window.renderSaRanking = renderSaRanking
 window.renderSaReturns = renderSaReturns
+window.downloadSaScorecard = downloadSaScorecard
+window._saDimRows = _saDimRows
 window._saPreset = _saPreset
 window._saSetDates = _saSetDates
 window._saSetChannel = _saSetChannel

@@ -1452,8 +1452,71 @@ async function _slRecomputeDaysAndShards(dayArr, onProg, ptSet) {
   for (const d of dayArr) { await _slRecomputeDay(d, ptSet); months.add(_slMonthKey(d)); weeks.add(_slWeekStart(d)); if (onProg) onProg(++done, dayArr.length) }
   for (const m of months) { const [s, e] = _slMonthRange(m); for (const g of ['c24', 'sb']) await _slRecomputeShard('salesM', 'm', m + '_' + g, g, s, e, m, ptSet) }
   for (const w of weeks) { const [s, e] = _slWeekRange(w); for (const g of ['c24', 'sb']) await _slRecomputeShard('salesW', 'w', w + '_' + g, g, s, e, w, ptSet) }
+  // 🔴 Phase 2: salesSz(사이즈 파생층) 도 같은 월/주 shard 를 재도출. L2/L3 함수(_slAggShard/_slAggDay/_slRecomputeShard)는 무접촉 —
+  //   여기(유일 choke point: 업로드 확정 + 재계산 도구 공용)서 병렬 write 만 추가 → L2/L3 출력 byte-identical.
+  for (const m of months) { const [s, e] = _slMonthRange(m); for (const g of ['c24', 'sb']) await _slRecomputeSzShard('m_' + m + '_' + g, g, s, e, m, 'm') }
+  for (const w of weeks) { const [s, e] = _slWeekRange(w); for (const g of ['c24', 'sb']) await _slRecomputeSzShard('w_' + w + '_' + g, g, s, e, w, 'w') }
   return { days: dayArr.length, months: months.size, weeks: weeks.size }
 }
+
+// =============================================
+// ===== salesSz — 사이즈 파생층 (Phase 2 B1) =====
+// =============================================
+// 🔴 목적: L3 에는 사이즈 차원이 없음(Phase 0 T6) → 사이즈 롤업 전용 파생 shard.
+//   구조 = L3(salesM/salesW) 미러: 컬렉션 `salesSz`, doc id = `m_{yyyy-mm}_{grp}`(월) · `w_{월요일dateKey}_{grp}`(주) · grp∈{c24,sb}.
+//   item shape = { 품번: { szKey: {q, amt, rq, ramt} } }. 🔴 szKey = L1 lines[].sz(파싱 시 _slNormSize 정규화됨), 없으면 '(미상)'.
+//   🔴 amt/ramt 반드시 _slAggShard 와 라인 단위 동일 계산(gross: 배송 포함 · 반품=_slOrderRamtMap gross) →
+//      Σ(szKey) salesSz[code] == L3 items[code] (q/amt/rq/ramt) 정확 보존(B3 검증 불변식 · B5 대사 근거). pts(적립금)는 salesSz 불필요 → 미포함.
+//   🔴 사이즈 판별은 view-time(SIZES 화이트리스트)에서만 — 저장은 정규화 키를 있는 그대로(junk 도 그대로 → 미분류로 노출, 무음 제거 금지).
+function _slAggSzShard(orders, grp, pStart, pEnd) {
+  const items = {}
+  const get = (code, sz) => {
+    const it = items[code] || (items[code] = {})
+    return it[sz] || (it[sz] = { q: 0, amt: 0, rq: 0, ramt: 0 })
+  }
+  orders.forEach(o => {
+    const og = (o.ch === SL_CH.c24) ? 'c24' : 'sb'
+    if (og !== grp) return
+    const ram = _slOrderRamtMap(o, true)   // gross — L3(_slAggShard)와 동일 반품 분배
+    const saleIn = _slInR(o.od, pStart, pEnd)
+    const shipMap = (og === 'c24' && saleIn) ? _slAllocByRv(o.lines || [], _slNum(o.ship || 0)) : null   // 카페24 배송비 rv 가중 분배(_slAggShard 동일)
+    ;(o.lines || []).forEach((l, i) => {
+      const code = l.c || '(미상)'
+      const szk = l.sz ? _slNormSize(l.sz) : '(미상)'   // 정규화(idempotent). 미측정=(미상) → view 에서 기타/미분류
+      if (saleIn) {
+        const lineShip = (og === 'sb') ? _slNum(l.sh || 0) : (shipMap ? shipMap[i] : 0)
+        const amt = _slNum(l.rv) + lineShip
+        const b = get(code, szk); b.q += _slNum(l.q); b.amt += amt
+      }
+      if (_slInR(l.rd, pStart, pEnd)) {
+        const b = get(code, szk); b.rq += _slNum(l.q); b.ramt += ram[i]
+      }
+    })
+  })
+  return { grp: grp, items: items }
+}
+
+// salesSz shard 재도출 write(단일 doc set = 멱등). 🔴 자체 fetch(L2/L3 recompute 무접촉 = byte-identical 보장).
+async function _slRecomputeSzShard(docId, grp, pStart, pEnd, periodLabel, labelField) {
+  const orders = await _slFetchPeriodOrders(pStart, pEnd)
+  const agg = _slAggSzShard(orders, grp, pStart, pEnd)
+  const body = { grp: grp, items: agg.items, ut: new Date().toISOString() }
+  body[labelField] = periodLabel
+  // 🔴 1MB 가드: 최악 ≈ 800품번 × 8사이즈키 × 4정수 ≈ 300KB(grp 분리) — 여유 충분. 900KB 초과 시 경고만(월별 shard 라 실측 훨씬 작음).
+  try { const sz = JSON.stringify(body).length; if (sz > 900000) console.warn('[salesLedger] 대용량 salesSz shard:', docId, sz, 'bytes') } catch (e) {}
+  await db.collection('salesSz').doc(docId).set(body)
+}
+
+// salesSz 하이브리드 read(_slMatrixItems 미러): 정확 월/주 = shard · 그 외 = L1 스캔(_slAggSzShard 동일 기준).
+async function _slSzItems(grp, pStart, pEnd) {
+  const mk = _slMonthKey(pStart)
+  if (pStart === mk + '-01' && pEnd === _slMonthRange(mk)[1]) { const d = await _slReadShard('salesSz', 'm_' + mk + '_' + grp); if (d && d.items) return d.items }
+  if (_slWeekStart(pStart) === pStart && _slWeekRange(pStart)[1] === pEnd) { const d = await _slReadShard('salesSz', 'w_' + pStart + '_' + grp); if (d && d.items) return d.items }
+  const orders = await _slFetchPeriodOrders(pStart, pEnd)
+  return _slAggSzShard(orders, grp, pStart, pEnd).items
+}
+window._slAggSzShard = _slAggSzShard
+window._slSzItems = _slSzItems
 
 // rds/codes 인덱스 backfill(전 컬렉션 스캔, additive·멱등). Phase 1/2 doc 은 필드 없을 수 있음 → 재계산 도구가 1회 채움. 이후 merge 가 유지.
 function _slArrEq(a, b) { a = a || []; b = b || []; return a.length === b.length && a.every((x, i) => x === b[i]) }
@@ -2368,6 +2431,7 @@ async function salesVerify(fromDate, toDate, onProg) {
     while (!isNaN(t) && !isNaN(te) && t <= te && g < 240) { const d = new Date(t); months.push(d.getUTCFullYear() + '-' + _slPad(d.getUTCMonth() + 1)); t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1); g++ } }
   let l2Mismatch = 0
   const l3Lines = []; let l3Mismatch = 0
+  const szLines = []; let szMismatch = 0; let szMissing = 0   // 🔴 Phase 2: salesSz(사이즈 파생층) ↔ L3 대사(분리 필드 검증 blind-spot 해소)
   for (let mi = 0; mi < months.length; mi++) {
     if (_slVerifyAbort) { push('  ⚠️ 사용자 중단 — 부분 결과'); break }
     const mk = months[mi]
@@ -2417,6 +2481,33 @@ async function salesVerify(fromDate, toDate, onProg) {
       if (!shard && hasL2) { l3Mismatch++; l3Lines.push('  ✗ ' + mk + ' [' + g + '] salesM shard 누락 — salesD 합 있음(재계산 필요)'); continue }
       _cmpL2L3(g, l2, sc)
       if (g === 'c24') { _cmpL2L3('공홈', l2Sum.gh, scGh); _cmpL2L3('파트너', l2Sum.pt, scPt) }   // split 정합(요약 gh/pt ↔ 파트너별 L3)
+
+      // ---- 🔴 Phase 2: salesSz ↔ L3(salesM) 대사 — Σ(사이즈키) salesSz[품번] == L3 items[품번] (q/amt/rq/ramt) ----
+      const szShard = await _slReadShard('salesSz', 'm_' + mk + '_' + g)   // 저장 salesSz (READ)
+      const hasL3 = shard && shard.items && Object.keys(shard.items).length
+      if (!szShard || !szShard.items) {
+        if (hasL3) { szMissing++; szLines.push('  ✗ ' + mk + ' [' + g + '] salesSz shard 누락 — L3 있음(재계산 필요)') }
+      } else {
+        const szByCode = {}   // 품번 → Σ over sz {q,amt,rq,ramt}
+        Object.keys(szShard.items).forEach(code => {
+          const s4 = szByCode[code] || (szByCode[code] = { q: 0, amt: 0, rq: 0, ramt: 0 })
+          const szm = szShard.items[code] || {}
+          Object.keys(szm).forEach(k => { const v = szm[k] || {}; s4.q += v.q || 0; s4.amt += v.amt || 0; s4.rq += v.rq || 0; s4.ramt += v.ramt || 0 })
+        })
+        const l3items = (shard && shard.items) || {}
+        const codes = new Set([...Object.keys(l3items), ...Object.keys(szByCode)])
+        let perGrpBad = 0
+        codes.forEach(code => {
+          const a = l3items[code] || {}, b = szByCode[code] || {}
+          const dd = []
+          if ((a.q || 0) !== (b.q || 0)) dd.push('수량 L3=' + (a.q || 0) + '/Sz=' + (b.q || 0))
+          if ((a.amt || 0) !== (b.amt || 0)) dd.push('매출 L3=' + (a.amt || 0) + '/Sz=' + (b.amt || 0))
+          if ((a.rq || 0) !== (b.rq || 0)) dd.push('반품수 L3=' + (a.rq || 0) + '/Sz=' + (b.rq || 0))
+          if ((a.ramt || 0) !== (b.ramt || 0)) dd.push('반품액 L3=' + (a.ramt || 0) + '/Sz=' + (b.ramt || 0))
+          if (dd.length && perGrpBad < 8) { szMismatch++; szLines.push('  ✗ ' + mk + ' [' + g + '] ' + code + ' — ' + dd.join(' · ')); perGrpBad++ }
+          else if (dd.length) szMismatch++
+        })
+      }
     }
     await new Promise(r => setTimeout(r, 0))   // UI yield
   }
@@ -2424,6 +2515,13 @@ async function salesVerify(fromDate, toDate, onProg) {
   push('')
   push('【4】 L2(salesD 월합) → L3(salesM shard) 대사')
   if (l3Lines.length) l3Lines.forEach(push); else push('  ✅ 불일치 없음')
+  push('')
+
+  // ---- 4.5) salesSz(사이즈 파생층) ↔ L3 대사 ----
+  push('【4.5】 salesSz(사이즈 파생층) → L3(salesM) 대사 — 품번별 Σ(사이즈) == L3 (q/amt/rq/ramt)')
+  if (szMissing) push('  · ⚠️ salesSz shard 누락 ' + szMissing + '건 — [집계 재계산] 필요(Phase 2 신규 파생층)')
+  if (szLines.length) szLines.forEach(push)
+  if (!szLines.length && !szMissing) push('  ✅ 불일치 없음')
   push('')
 
   // ---- 5) 커버리지 갭 (참고) ----
@@ -2437,15 +2535,15 @@ async function salesVerify(fromDate, toDate, onProg) {
   push('【6】 요약 판정 (복사용)')
   push('  · 업로드 날짜파싱 실패 ' + uDateFail + (archivedFiles ? ' (아카이브 ' + archivedFiles + '개 레코드 제외)' : ''))
   push('  · L1 빈 od: ' + emptyOd.length + ' · od 범위밖: ' + outWin.length + ' · rd 이상: ' + rdAnom.length)
-  push('  · L1↔L2 불일치: ' + l2Mismatch + ' · L2↔L3 불일치: ' + l3Mismatch)
-  const bad = (emptyOd.length || outWin.length || rdAnom.length || l2Mismatch || l3Mismatch || uDateFail)
+  push('  · L1↔L2 불일치: ' + l2Mismatch + ' · L2↔L3 불일치: ' + l3Mismatch + ' · salesSz↔L3 불일치: ' + szMismatch + (szMissing ? ' · salesSz 누락 ' + szMissing : ''))
+  const bad = (emptyOd.length || outWin.length || rdAnom.length || l2Mismatch || l3Mismatch || szMismatch || szMissing || uDateFail)
   push('  · 종합: ' + (bad ? '⚠️ 확인 필요 — 위 항목 점검 후 Fable에게 결과 붙여넣기' : '✅ 이상 없음'))
   push('========================================')
 
   const text = R.join('\n')
   _slVerifyText = text
   try { console.log(text) } catch (e) {}
-  return { text: text, orders: orders.length, emptyOd: emptyOd.length, outWin: outWin.length, rdAnom: rdAnom.length, l2Mismatch: l2Mismatch, l3Mismatch: l3Mismatch, dateFail: uDateFail, archivedFiles: archivedFiles, aborted: _slVerifyAbort }
+  return { text: text, orders: orders.length, emptyOd: emptyOd.length, outWin: outWin.length, rdAnom: rdAnom.length, l2Mismatch: l2Mismatch, l3Mismatch: l3Mismatch, szMismatch: szMismatch, szMissing: szMissing, dateFail: uDateFail, archivedFiles: archivedFiles, aborted: _slVerifyAbort }
 }
 
 // =============================================

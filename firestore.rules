@@ -190,6 +190,8 @@ service cloud.firestore {
     match /salesD/{docId} { allow read: if isApproved(); allow write: if isAdmin(); }
     match /salesW/{docId} { allow read: if isApproved(); allow write: if isAdmin(); }
     match /salesM/{docId} { allow read: if isApproved(); allow write: if isAdmin(); }
+    // salesSz — 매출 사이즈 집계(Phase 2, 품번×사이즈). L1 에서 재도출되는 파생 데이터 (salesM/W 와 동일 패턴).
+    match /salesSz/{docId} { allow read: if isApproved(); allow write: if isAdmin(); }
 
     // notifications
     match /notifications/{docId} {
