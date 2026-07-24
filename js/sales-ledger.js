@@ -77,34 +77,54 @@ function _slDate(v) {
 function _slNormSize(s) { let t = String(s || '').trim().toUpperCase(); if (t === 'XXL') t = '2XL'; return t }
 // 캐논 사이즈 집합 = SIZES(core.js:760, `['XS','S','M','L','XL','2XL','F']`) 단일 소스. 로드순서상 core.js 선행 → 항상 존재(폴백은 방어).
 function _slCanonSizes() { return (typeof SIZES !== 'undefined' && Array.isArray(SIZES)) ? SIZES : ['XS', 'S', 'M', 'L', 'XL', '2XL', 'F'] }
-// 단일 토큰 → 캐논 사이즈 or '' (v2). 정규화(XXL→2XL) 후 캐논 멤버십 · 원사이즈(FREE/OS/ONE SIZE/단품) → F. 숫자(0~3 등)·색상 → ''.
+// 단일 토큰 → 캐논 사이즈 or '' (v2/v3). 정규화(XXL→2XL) 후 캐논 멤버십 · 원사이즈(FREE/OS/ONE SIZE/FREE SIZE/단품) → F. 숫자·색상 → ''.
 function _slSizeToken(tok) {
   const t = _slNormSize(tok)
   if (_slCanonSizes().indexOf(t) >= 0) return t
-  if (t === 'FREE' || t === 'OS' || t === 'ONESIZE' || t === 'ONE SIZE' || t === '단품') return 'F'   // 원사이즈 → F(Decision #3)
+  if (t === 'FREE' || t === 'OS' || t === 'ONESIZE' || t === 'ONE SIZE' || t === 'FREE SIZE' || t === 'FREESIZE' || t === '단품') return 'F'   // 원사이즈 → F(Decision #5)
   return ''
 }
-// 🔴 사이즈 추출 v2 (단일 공유 함수 — 파서 파스타임 + salesSz 집계타임 공용).
-//   규칙 순서(현재 정확 추출 무회귀 보장): R0 사이즈:/size= 접두 · R1 후행 (LETTER) 이중표기(Decision #1) ·
-//   R2 색상-사이즈 조합=구분자 분할 후 뒤에서부터 첫 캐논 토큰(Decision #2) · 원사이즈 매핑(Decision #3) · 폴백=whole-string(기타 노출).
-//   🔴 숫자 0~3 = 사이즈 아님(Decision #4) → 캐논/원사이즈 미매칭이라 자동으로 폴백(기타). 색상/SHOELACE/COLOR= 등도 폴백(기타).
+// v3 상수 — 오너 확정. 벌거벗은 한국치수(#2, whole-string 정확일치만), 색상 어휘(#4, 닫힌 집합).
+const SL_BARE_SIZE = { '75': 'XS', '80': 'S', '85': 'M', '90': 'L', '95': 'XL', '100': 'XL', '105': '2XL' }
+const SL_COLOR_LEX = new Set(['블랙', '화이트', '그레이', '핑크', '블루', '라벤더', '네이비', '다크네이비', '옐로우', '그린', '퍼플', '레몬', '아프리코트', '실버', '프리즘골드',
+  'BLACK', 'WHITE', 'GRAY', 'GREY', 'PINK', 'BLUE', 'NAVY', 'YELLOW', 'GREEN', 'PURPLE', 'LEMON', 'APRICOT', 'SILVER', 'BK', 'PK'])
+function _slBareNumericSize(s) { return SL_BARE_SIZE[String(s == null ? '' : s).trim()] || '' }
+// 색상 전용 판별(#4): '색상='/'색상:'/'COLOR=' 라벨형 OR 전 토큰이 색상 어휘. → F.
+function _slIsColorOnly(s, toks) {
+  if (/^\s*(?:색상|colou?r)\s*[:=]/i.test(String(s == null ? '' : s))) return true   // 라벨형(값 무관)
+  const t = (toks || []).filter(Boolean)
+  if (!t.length) return false
+  return t.every(x => SL_COLOR_LEX.has(_slNormSize(x)))
+}
+// 🔴 사이즈 추출 v3 (단일 공유 함수 — 파서 파스타임 + salesSz 집계타임 공용). L1 무접촉, [집계 재계산]이 소급 반영.
+//   파이프라인: 장식 스트립([SIZE]/-N개) → 언앵커 이중표기(NN(LETTER) 어디서든) → v2 규칙(R0/R1/R1.5/R2) → 벌거벗은 한국치수(#2) → 색상전용→F(#4) → 폴백(기타).
+//   🔴 범위(44-55/55-66/반)·0~3·NONE·기본형·단색·BIKINI·SHOELACE·미지 색상어 = 기타 유지(어휘 닫힘, ⓘ 툴팁 가시).
 function _slExtractSize(raw) {
   if (!raw) return ''
-  let s = String(raw).trim()
-  // R0: 명시적 '사이즈:'/'size=' 접두 — 캡처값을 토큰 규칙에 통과(원사이즈/이중표기 지원). 실패 시 현재처럼 normSize 폴백(무회귀).
-  let m = s.match(/(?:사이즈|size)\s*[:=]\s*([^\/,\s]+)/i)
+  const orig = String(raw).trim()
+  // 장식 스트립: 선행 [SIZE]/[사이즈] · 후행 -N개(수량). 원본(orig)은 폴백 표시에 보존.
+  let s = orig.replace(/^\[\s*(?:size|사이즈)\s*\]\s*/i, '').replace(/\s*-\s*\d+\s*개\s*$/, '').trim()
+  if (!s) s = orig
+  // R-dual(v3): 언앵커 이중표기 NN(LETTER) — 00001(75(XS))·80(S) 44-55반·[SIZE]80(S)… 안의 사이즈. 정수부 2~3자리 + 캐논/2XL/XXL 문자.
+  let m = s.match(/\d{2,3}\s*\(\s*(XS|S|M|L|XL|2XL|XXL|3XL)\s*\)/i)
+  if (m) { const c = _slSizeToken(m[1]); if (c) return c }
+  // R0: '사이즈:'/'size=' 접두(v2). 캡처값을 토큰 규칙에 통과, 실패 시 normSize 폴백(무회귀).
+  m = s.match(/(?:사이즈|size)\s*[:=]\s*([^\/,\s]+)/i)
   if (m) { const inner = m[1].trim(); const pin = inner.match(/\(([^)]+)\)\s*$/); const c = _slSizeToken(pin ? pin[1] : inner); return c || _slNormSize(inner) }
-  // R1: 후행 (LETTER) 이중표기. 75(XS)→XS · 105(2XL)→2XL · (M)→M. 괄호 안이 캐논/원사이즈면 채택, 아니면 현재처럼 s=안쪽으로 이어감.
+  // R1: 후행 (LETTER) 이중표기(v2). 괄호 안 캐논/원사이즈면 채택, 아니면 s=안쪽으로 이어감.
   m = s.match(/\(([^)]+)\)\s*$/); if (m) { const c = _slSizeToken(m[1]); if (c) return c; s = m[1] }
-  // R1.5: whole-string 캐논/원사이즈(plain XS…, FREE/OS/단품/ONE SIZE). 색상-조합은 여기서 '' → R2 로.
+  // R1.5: whole-string 캐논/원사이즈(plain XS…, FREE/FREE SIZE/OS/단품)(v2+#5).
   { const c = _slSizeToken(s); if (c) return c }
-  // R2: 색상-사이즈 조합 — 구분자(-:/=,공백) 분할 후 뒤에서부터 첫 캐논/원사이즈 토큰. 블랙-M→M · 화이트:FREE→F · 그레이-XL→XL.
-  //   🔴 Decision #5: '색상='/'COLOR=' 라벨의 값 토큰은 사이즈로 취급 안 함(색상=L 오귀속 방지) — 라벨 뒤 토큰 skip.
+  // R2: 색상-사이즈 조합 후행 토큰(v2). '색상='/'COLOR=' 라벨 값 토큰은 skip(색상=L 오귀속 방지 → #4 에서 F).
   const toks = s.split(/[\-:\/=,\s]+/).filter(Boolean)
   const _isColorLabel = x => /^(?:색상|colou?r)$/i.test(x)
   for (let i = toks.length - 1; i >= 0; i--) { if (i > 0 && _isColorLabel(toks[i - 1])) continue; const c = _slSizeToken(toks[i]); if (c) return c }
-  // 폴백: whole-string 정규화(캐논 아니면 view 에서 기타/미분류로 노출 — 원본 키 가시성 유지, 현재 동작 보존).
-  return _slNormSize(s)
+  // R3: 벌거벗은 한국치수(#2) — whole-string 정확일치만(75→XS…105→2XL). 범위/부분숫자 절대 미매칭(토큰 분해 안 함).
+  { const c = _slBareNumericSize(s); if (c) return c }
+  // R4: 색상 전용 → F(#4). 라벨형(색상=/COLOR=) 또는 전 토큰 색상어휘.
+  if (_slIsColorOnly(s, toks)) return 'F'
+  // 폴백: 원본 정규화 → 기타/미분류(원본 키 가시성 유지).
+  return _slNormSize(orig)
 }
 
 // doc-id 안전화(공백/슬래시/역슬래시 → _). 원본 쇼핑몰명은 mall 필드에 보존.
