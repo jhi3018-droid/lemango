@@ -75,12 +75,35 @@ function _slDate(v) {
 
 // 사이즈 best-effort 추출(편의 필드; 원본 옵션은 o 에 그대로 보존)
 function _slNormSize(s) { let t = String(s || '').trim().toUpperCase(); if (t === 'XXL') t = '2XL'; return t }
+// 캐논 사이즈 집합 = SIZES(core.js:760, `['XS','S','M','L','XL','2XL','F']`) 단일 소스. 로드순서상 core.js 선행 → 항상 존재(폴백은 방어).
+function _slCanonSizes() { return (typeof SIZES !== 'undefined' && Array.isArray(SIZES)) ? SIZES : ['XS', 'S', 'M', 'L', 'XL', '2XL', 'F'] }
+// 단일 토큰 → 캐논 사이즈 or '' (v2). 정규화(XXL→2XL) 후 캐논 멤버십 · 원사이즈(FREE/OS/ONE SIZE/단품) → F. 숫자(0~3 등)·색상 → ''.
+function _slSizeToken(tok) {
+  const t = _slNormSize(tok)
+  if (_slCanonSizes().indexOf(t) >= 0) return t
+  if (t === 'FREE' || t === 'OS' || t === 'ONESIZE' || t === 'ONE SIZE' || t === '단품') return 'F'   // 원사이즈 → F(Decision #3)
+  return ''
+}
+// 🔴 사이즈 추출 v2 (단일 공유 함수 — 파서 파스타임 + salesSz 집계타임 공용).
+//   규칙 순서(현재 정확 추출 무회귀 보장): R0 사이즈:/size= 접두 · R1 후행 (LETTER) 이중표기(Decision #1) ·
+//   R2 색상-사이즈 조합=구분자 분할 후 뒤에서부터 첫 캐논 토큰(Decision #2) · 원사이즈 매핑(Decision #3) · 폴백=whole-string(기타 노출).
+//   🔴 숫자 0~3 = 사이즈 아님(Decision #4) → 캐논/원사이즈 미매칭이라 자동으로 폴백(기타). 색상/SHOELACE/COLOR= 등도 폴백(기타).
 function _slExtractSize(raw) {
   if (!raw) return ''
   let s = String(raw).trim()
-  let m = s.match(/(?:사이즈|size)\s*[:=]\s*([^\/,\s]+)/i); if (m) return _slNormSize(m[1])
-  m = s.match(/\(([^)]+)\)\s*$/); if (m) s = m[1]                                   // 후행 (M)/(L)
-  m = s.match(/(?:^|[:_\/\s])(XS|2XL|XXL|XL|S|M|L|F)\s*$/i); if (m) return _slNormSize(m[1])
+  // R0: 명시적 '사이즈:'/'size=' 접두 — 캡처값을 토큰 규칙에 통과(원사이즈/이중표기 지원). 실패 시 현재처럼 normSize 폴백(무회귀).
+  let m = s.match(/(?:사이즈|size)\s*[:=]\s*([^\/,\s]+)/i)
+  if (m) { const inner = m[1].trim(); const pin = inner.match(/\(([^)]+)\)\s*$/); const c = _slSizeToken(pin ? pin[1] : inner); return c || _slNormSize(inner) }
+  // R1: 후행 (LETTER) 이중표기. 75(XS)→XS · 105(2XL)→2XL · (M)→M. 괄호 안이 캐논/원사이즈면 채택, 아니면 현재처럼 s=안쪽으로 이어감.
+  m = s.match(/\(([^)]+)\)\s*$/); if (m) { const c = _slSizeToken(m[1]); if (c) return c; s = m[1] }
+  // R1.5: whole-string 캐논/원사이즈(plain XS…, FREE/OS/단품/ONE SIZE). 색상-조합은 여기서 '' → R2 로.
+  { const c = _slSizeToken(s); if (c) return c }
+  // R2: 색상-사이즈 조합 — 구분자(-:/=,공백) 분할 후 뒤에서부터 첫 캐논/원사이즈 토큰. 블랙-M→M · 화이트:FREE→F · 그레이-XL→XL.
+  //   🔴 Decision #5: '색상='/'COLOR=' 라벨의 값 토큰은 사이즈로 취급 안 함(색상=L 오귀속 방지) — 라벨 뒤 토큰 skip.
+  const toks = s.split(/[\-:\/=,\s]+/).filter(Boolean)
+  const _isColorLabel = x => /^(?:색상|colou?r)$/i.test(x)
+  for (let i = toks.length - 1; i >= 0; i--) { if (i > 0 && _isColorLabel(toks[i - 1])) continue; const c = _slSizeToken(toks[i]); if (c) return c }
+  // 폴백: whole-string 정규화(캐논 아니면 view 에서 기타/미분류로 노출 — 원본 키 가시성 유지, 현재 동작 보존).
   return _slNormSize(s)
 }
 
@@ -1469,10 +1492,12 @@ async function _slRecomputeDaysAndShards(dayArr, onProg, ptSet) {
 // =============================================
 // 🔴 목적: L3 에는 사이즈 차원이 없음(Phase 0 T6) → 사이즈 롤업 전용 파생 shard.
 //   구조 = L3(salesM/salesW) 미러: 컬렉션 `salesSz`, doc id = `m_{yyyy-mm}_{grp}`(월) · `w_{월요일dateKey}_{grp}`(주) · grp∈{c24,sb}.
-//   item shape = { 품번: { szKey: {q, amt, rq, ramt} } }. 🔴 szKey = L1 lines[].sz(파싱 시 _slNormSize 정규화됨), 없으면 '(미상)'.
+//   item shape = { 품번: { szKey: {q, amt, rq, ramt} } }.
+//   🔴 szKey 유도(v2, 집계타임 재도출) = `_slExtractSize(line.o)`(원본 옵션 원문에서 v2 추출) → 실패 시 `_slNormSize(line.sz)`(파스타임 편의값) → '(미상)'.
+//     ∴ L1 무접촉 + [집계 재계산] 1회로 전 이력이 v2 로 소급 재분류(구 line.sz stale 무관). 추출 로직은 _slExtractSize 단일 소스.
 //   🔴 amt/ramt 반드시 _slAggShard 와 라인 단위 동일 계산(gross: 배송 포함 · 반품=_slOrderRamtMap gross) →
-//      Σ(szKey) salesSz[code] == L3 items[code] (q/amt/rq/ramt) 정확 보존(B3 검증 불변식 · B5 대사 근거). pts(적립금)는 salesSz 불필요 → 미포함.
-//   🔴 사이즈 판별은 view-time(SIZES 화이트리스트)에서만 — 저장은 정규화 키를 있는 그대로(junk 도 그대로 → 미분류로 노출, 무음 제거 금지).
+//      Σ(szKey) salesSz[code] == L3 items[code] (q/amt/rq/ramt) 정확 보존(B3 검증 불변식 · B5 대사 근거) — szKey 유도 변경은 **키 분포만** 바꿈(합 불변). pts(적립금)는 salesSz 불필요 → 미포함.
+//   🔴 사이즈 판별은 view-time(SIZES 화이트리스트)에서도 재확인 — 저장은 추출 키 그대로(junk 도 그대로 → 미분류로 노출, 무음 제거 금지).
 function _slAggSzShard(orders, grp, pStart, pEnd) {
   const items = {}
   const get = (code, sz) => {
@@ -1487,7 +1512,8 @@ function _slAggSzShard(orders, grp, pStart, pEnd) {
     const shipMap = (og === 'c24' && saleIn) ? _slAllocByRv(o.lines || [], _slNum(o.ship || 0)) : null   // 카페24 배송비 rv 가중 분배(_slAggShard 동일)
     ;(o.lines || []).forEach((l, i) => {
       const code = l.c || '(미상)'
-      const szk = l.sz ? _slNormSize(l.sz) : '(미상)'   // 정규화(idempotent). 미측정=(미상) → view 에서 기타/미분류
+      // 🔴 v2: 원본 옵션(o)에서 재추출 우선 → 구 line.sz 폴백 → 미상. [집계 재계산]이 전 이력 소급 재분류.
+      const szk = _slExtractSize(l.o) || (l.sz ? _slNormSize(l.sz) : '') || '(미상)'
       if (saleIn) {
         const lineShip = (og === 'sb') ? _slNum(l.sh || 0) : (shipMap ? shipMap[i] : 0)
         const amt = _slNum(l.rv) + lineShip
